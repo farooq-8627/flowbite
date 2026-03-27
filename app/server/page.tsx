@@ -1,7 +1,7 @@
-import Home from "./inner";
-import { preloadQuery, preloadedQueryResult } from "convex/nextjs";
-import { api } from "@/convex/_generated/api";
+import { preloadedQueryResult, preloadQuery } from "convex/nextjs";
 import Image from "next/image";
+import { api } from "@/convex/_generated/api";
+import Home from "./inner";
 
 export default async function ServerPage() {
 	const preloaded = await preloadQuery(api.myFunctions.listNumbers, {

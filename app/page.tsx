@@ -1,11 +1,12 @@
 "use client";
 
-import { useConvexAuth, useMutation, useQuery } from "convex/react";
-import { api } from "../convex/_generated/api";
-import Link from "next/link";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useRouter } from "next/navigation";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
+import { api } from "../convex/_generated/api";
 
 export default function Home() {
 	return (
@@ -54,6 +55,8 @@ function SignOutButton() {
 					className="bg-slate-600 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer"
 					onClick={() =>
 						void signOut().then(() => {
+							posthog.capture("user_signed_out");
+							posthog.reset();
 							router.push("/signin");
 						})
 					}
@@ -119,7 +122,9 @@ function Content() {
 				<button
 					className="bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500 text-white text-sm font-medium px-6 py-3 rounded-lg cursor-pointer transition-all duration-200 shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
 					onClick={() => {
-						void addNumber({ value: Math.floor(Math.random() * 10) });
+						const value = Math.floor(Math.random() * 10);
+						posthog.capture("number_generated", { value, viewer });
+						void addNumber({ value });
 					}}
 				>
 					+ Generate random number
@@ -221,6 +226,7 @@ function ResourceCard({
 			href={href}
 			className="flex flex-col gap-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 p-5 rounded-xl h-36 overflow-auto border border-slate-300 dark:border-slate-600 hover:border-slate-400 dark:hover:border-slate-500 shadow-sm hover:shadow-md transition-all duration-200 hover:scale-[1.02] group cursor-pointer"
 			target="_blank"
+			rel="noopener"
 		>
 			<h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 transition-colors">
 				{title} →

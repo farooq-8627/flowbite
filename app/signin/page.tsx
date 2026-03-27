@@ -1,9 +1,10 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
+import { useState } from "react";
 
 export default function SignIn() {
 	const { signIn } = useAuthActions();
@@ -47,13 +48,24 @@ export default function SignIn() {
 					setLoading(true);
 					setError(null);
 					const formData = new FormData(e.target as HTMLFormElement);
+					const email = formData.get("email") as string;
 					formData.set("flow", flow);
 					void signIn("password", formData)
 						.catch((error) => {
+							posthog.capture("sign_in_failed", {
+								flow,
+								error_message: error.message,
+							});
 							setError(error.message);
 							setLoading(false);
 						})
 						.then(() => {
+							posthog.identify(email, { email });
+							if (flow === "signIn") {
+								posthog.capture("user_signed_in", { email });
+							} else {
+								posthog.capture("user_signed_up", { email });
+							}
 							router.push("/");
 						});
 				}}
@@ -91,16 +103,17 @@ export default function SignIn() {
 					<span className="text-slate-600 dark:text-slate-400">
 						{flow === "signIn" ? "Don't have an account?" : "Already have an account?"}
 					</span>
-					<span
-						className="text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 font-medium underline decoration-2 underline-offset-2 hover:no-underline cursor-pointer transition-colors"
+					<button
+						type="button"
+						className="text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 font-medium underline decoration-2 underline-offset-2 hover:no-underline cursor-pointer transition-colors bg-transparent border-0 p-0"
 						onClick={() => setFlow(flow === "signIn" ? "signUp" : "signIn")}
 					>
 						{flow === "signIn" ? "Sign up" : "Sign in"}
-					</span>
+					</button>
 				</div>
 				{error && (
 					<div className="bg-rose-500/10 border border-rose-500/30 dark:border-rose-500/50 rounded-lg p-4">
-						<p className="text-rose-700 dark:text-rose-300 font-medium text-sm break-words">
+						<p className="text-rose-700 dark:text-rose-300 font-medium text-sm wrap-break-word">
 							Error: {error}
 						</p>
 					</div>

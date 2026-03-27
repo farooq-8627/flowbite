@@ -1,6 +1,7 @@
 "use client";
 
-import { Preloaded, useMutation, usePreloadedQuery } from "convex/react";
+import { type Preloaded, useMutation, usePreloadedQuery } from "convex/react";
+import posthog from "posthog-js";
 import { api } from "../../convex/_generated/api";
 
 export default function Home({
@@ -25,7 +26,9 @@ export default function Home({
 			<button
 				className="bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500 text-white px-6 py-3 rounded-lg mx-auto cursor-pointer transition-all duration-200 shadow-md hover:shadow-lg font-medium"
 				onClick={() => {
-					void addNumber({ value: Math.floor(Math.random() * 10) });
+					const value = Math.floor(Math.random() * 10);
+					posthog.capture("number_generated", { value, source: "server_page" });
+					void addNumber({ value });
 				}}
 			>
 				Add a random number

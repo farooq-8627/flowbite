@@ -5,9 +5,9 @@
  * You can safely delete it and remove it from package.json scripts.
  */
 
-import fs from "fs";
+import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import { config as loadEnvFile } from "dotenv";
-import { spawnSync } from "child_process";
 
 if (!fs.existsSync(".env.local")) {
 	// Something is off, skip the script.

@@ -1,0 +1,20 @@
+{
+	"HomePage": {
+		"title": "Welcome to FlowBite",
+		"description": "Build something amazing"
+	},
+	"Common": {
+		"loading": "Loading...",
+		"error": "An error occurred",
+		"save": "Save",
+		"cancel": "Cancel",
+		"confirm": "Confirm",
+		"back": "Back"
+	},
+	"Auth": {
+		"signIn": "Sign in",
+		"signOut": "Sign out",
+		"email": "Email",
+		"password": "Password"
+	}
+}

@@ -1,3 +1,4 @@
+import * as Sentry from "@sentry/nextjs";
 import posthog from "posthog-js";
 
 posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
@@ -9,3 +10,5 @@ posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
 	// Turn on debug in development mode
 	debug: process.env.NODE_ENV === "development",
 });
+
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

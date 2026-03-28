@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
-import { api } from "../convex/_generated/api";
+import { api } from "@/convex/_generated/api";
 
 export default function Home() {
 	return (

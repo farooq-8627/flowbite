@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
-import { NextIntlClientProvider } from "next-intl";
+import { notFound } from "next/navigation";
+import { hasLocale, NextIntlClientProvider } from "next-intl";
+import { setRequestLocale } from "next-intl/server";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
+import { routing } from "@/i18n/routing";
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
@@ -23,17 +26,29 @@ export const metadata: Metadata = {
 	},
 };
 
-export default function RootLayout({
+export function generateStaticParams() {
+	return routing.locales.map((locale) => ({ locale }));
+}
+
+export default async function RootLayout({
 	children,
+	params,
 }: Readonly<{
 	children: React.ReactNode;
+	params: Promise<{ locale: string }>;
 }>) {
+	const { locale } = await params;
+	if (!hasLocale(routing.locales, locale)) {
+		notFound();
+	}
+	setRequestLocale(locale);
+
 	return (
 		<ConvexAuthNextjsServerProvider>
-			<html lang="en">
+			<html lang={locale}>
 				<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
 					<ConvexClientProvider>
-						<NextIntlClientProvider>{children}</NextIntlClientProvider>
+						<NextIntlClientProvider locale={locale}>{children}</NextIntlClientProvider>
 					</ConvexClientProvider>
 				</body>
 			</html>

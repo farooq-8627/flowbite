@@ -2,7 +2,7 @@
 
 import { type Preloaded, useMutation, usePreloadedQuery } from "convex/react";
 import posthog from "posthog-js";
-import { api } from "../../convex/_generated/api";
+import { api } from "@/convex/_generated/api";
 
 export default function Home({
 	preloaded,

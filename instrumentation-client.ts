@@ -1,14 +1,8 @@
 import * as Sentry from "@sentry/nextjs";
-import posthog from "posthog-js";
 
-posthog.init(process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN!, {
-	api_host: "/ingest",
-	ui_host: "https://us.posthog.com",
-	defaults: "2026-01-30",
-	// Enables capturing unhandled exceptions via Error Tracking
-	capture_exceptions: true,
-	// Turn on debug in development mode
-	debug: process.env.NODE_ENV === "development",
-});
+// PostHog is initialized by PostHogProvider (components/providers/PostHogProvider.tsx)
+// via @posthog/next's ClientPostHogProvider. Initializing here would cause a double-init
+// conflict. All posthog options (capture_exceptions, debug, etc.) are passed via
+// PostHogProvider's clientOptions prop.
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

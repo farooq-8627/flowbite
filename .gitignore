@@ -47,5 +47,5 @@ next-env.d.ts
 
 .trigger
 /.pnpm-store
-/.github
-/.mcp
+# /.github
+# /.mcp

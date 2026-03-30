@@ -1,0 +1,53 @@
+{
+	"name": "vercel-mcp-server",
+	"version": "1.0.0",
+	"description": "A Model Context Protocol (MCP) server for Vercel API - Manage deployments, domains, projects, and more",
+	"type": "module",
+	"main": "dist/index.js",
+	"bin": {
+		"vercel-mcp": "dist/index.js"
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"claude.md"
+	],
+	"scripts": {
+		"build": "tsc",
+		"start": "node dist/index.js",
+		"dev": "tsc -w"
+	},
+	"keywords": [
+		"vercel",
+		"mcp",
+		"model-context-protocol",
+		"claude",
+		"cursor",
+		"cascade",
+		"ai",
+		"deployment",
+		"domains",
+		"serverless"
+	],
+	"author": "Quegenx",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/Quegenx/vercel-mcp-server.git"
+	},
+	"bugs": {
+		"url": "https://github.com/Quegenx/vercel-mcp-server/issues"
+	},
+	"homepage": "https://github.com/Quegenx/vercel-mcp-server#readme",
+	"dependencies": {
+		"@modelcontextprotocol/sdk": "latest",
+		"zod": "latest"
+	},
+	"devDependencies": {
+		"typescript": "latest",
+		"@types/node": "latest"
+	},
+	"engines": {
+		"node": ">=16.0.0"
+	}
+}

@@ -13,6 +13,7 @@
 		"allowSyntheticDefaultImports": true,
 
 		/* These compiler options are required by Convex */
+		"types": ["node"],
 		"target": "ESNext",
 		"lib": ["ES2023", "dom"],
 		"forceConsistentCasingInFileNames": true,

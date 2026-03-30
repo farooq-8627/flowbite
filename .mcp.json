@@ -1,0 +1,57 @@
+{
+	"mcpServers": {
+		"convex": {
+			"command": "npx",
+			"args": ["convex", "mcp", "start"],
+			"env": {
+				"CONVEX_DEPLOYMENT_URL": "${NEXT_PUBLIC_CONVEX_URL}"
+			}
+		},
+		"sentry": {
+			"command": "npx",
+			"args": ["-y", "@sentry/mcp-server@latest"],
+			"env": {
+				"SENTRY_AUTH_TOKEN": "${SENTRY_AUTH_TOKEN}",
+				"SENTRY_ORG": "reimaginy",
+				"SENTRY_PROJECT": "javascript-nextjs"
+			}
+		},
+		"trigger": {
+			"command": "npx",
+			"args": ["-y", "@trigger.dev/mcp@latest"],
+			"env": {
+				"TRIGGER_API_KEY": "${TRIGGER_SECRET_KEY}",
+				"TRIGGER_API_URL": "https://api.trigger.dev"
+			}
+		},
+		"github": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-github@latest"],
+			"env": {
+				"GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+			}
+		},
+		"firecrawl": {
+			"command": "npx",
+			"args": ["-y", "firecrawl-mcp@latest"],
+			"env": {
+				"FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+			}
+		},
+		"context7": {
+			"command": "npx",
+			"args": ["-y", "@upstash/context7-mcp@latest"]
+		},
+		"vercel": {
+			"command": "npx",
+			"args": ["-y", "--package=vercel-mcp-server", "vercel-mcp"],
+			"env": {
+				"VERCEL_TOKEN": "${VERCEL_TOKEN}"
+			}
+		},
+		"playwright": {
+			"command": "npx",
+			"args": ["-y", "@playwright/mcp@latest"]
+		}
+	}
+}

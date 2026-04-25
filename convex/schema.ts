@@ -85,6 +85,7 @@ export default defineSchema({
 		permissions: v.optional(v.array(v.string())), // fine-grained overrides
 		invitedBy: v.optional(v.id("users")),
 		joinedAt: v.number(),
+		updatedAt: v.optional(v.number()),
 		...softDelete,
 	})
 		.index("by_orgId_and_userId", ["orgId", "userId"])
@@ -126,7 +127,7 @@ export default defineSchema({
 		read: v.boolean(),
 		readAt: v.optional(v.number()),
 		archivedAt: v.optional(v.number()),
-		metadata: v.optional(v.any()),
+		metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.boolean()))),
 		...timestamps,
 	})
 		.index("by_userId_and_read", ["userId", "read"])
@@ -135,19 +136,32 @@ export default defineSchema({
 
 	// ── activityLogs ─────────────────────────────────────────────────────────
 	// Audit trail for all mutations. Always call logActivity() after mutations.
+	//
+	// actorType enables unified timeline to distinguish AI vs human vs integration actions.
+	// userId is ALWAYS required — actorType clarifies the medium, not the identity.
+	// For AI actions: userId = user who triggered the conversation, actorType = "ai".
+	// Email content belongs in a dedicated emailMessages table (Phase 4).
+	// Ref: .github/agents/base/schema.md — activityLogs + actorType design note
 	activityLogs: defineTable({
 		...orgScoped,
-		userId: v.id("users"), // actor
-		action: v.string(), // "created", "updated", "deleted"
-		entityType: v.string(), // "connection", "invoice"
+		userId: v.id("users"), // actor identity (always a user, even for AI/integration)
+		actorType: v.union(
+			v.literal("user"),
+			v.literal("ai"),
+			v.literal("integration"),
+			v.literal("system"),
+		),
+		action: v.string(), // "created", "updated", "deleted", "qualified", "stage_changed"
+		entityType: v.string(), // from ENTITY_TYPES constants
 		entityId: v.string(),
 		description: v.optional(v.string()),
-		metadata: v.optional(v.any()),
+		metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.boolean()))),
 		createdAt: v.number(),
 	})
 		.index("by_orgId_and_createdAt", ["orgId", "createdAt"])
 		.index("by_entityType_and_entityId", ["entityType", "entityId"])
-		.index("by_userId_and_createdAt", ["userId", "createdAt"]),
+		.index("by_userId_and_createdAt", ["userId", "createdAt"])
+		.index("by_orgId_and_actorType_and_createdAt", ["orgId", "actorType", "createdAt"]),
 
 	// ── featureFlags ─────────────────────────────────────────────────────────
 	// Kill-switch / rollout flags. Checked via useFeatureFlag() hook.
@@ -155,7 +169,7 @@ export default defineSchema({
 		key: v.string(), // "connections.kanban_view"
 		enabled: v.boolean(),
 		rolloutPercent: v.optional(v.number()),
-		orgOverrides: v.optional(v.any()),
+		orgOverrides: v.optional(v.record(v.string(), v.boolean())),
 		description: v.optional(v.string()),
 		...timestamps,
 	}).index("by_key", ["key"]),

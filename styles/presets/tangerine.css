@@ -1,0 +1,64 @@
+/**
+ * Tangerine theme preset — warm orange energy.
+ * Source: arhamkhnz/next-shadcn-admin-dashboard
+ * Selector: :root[data-theme-preset="tangerine"]
+ */
+
+:root[data-theme-preset="tangerine"] {
+  --background: oklch(0.99 0.008 70);
+  --foreground: oklch(0.2 0.03 60);
+  --card: oklch(0.98 0.01 70);
+  --card-foreground: oklch(0.2 0.03 60);
+  --popover: oklch(0.99 0.008 70);
+  --popover-foreground: oklch(0.2 0.03 60);
+  --primary: oklch(0.64 0.17 36.44);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.93 0.04 70);
+  --secondary-foreground: oklch(0.3 0.05 60);
+  --muted: oklch(0.94 0.03 70);
+  --muted-foreground: oklch(0.55 0.05 60);
+  --accent: oklch(0.93 0.04 70);
+  --accent-foreground: oklch(0.3 0.05 60);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.88 0.04 70);
+  --input: oklch(0.88 0.04 70);
+  --ring: oklch(0.64 0.17 36.44);
+  --sidebar-background: oklch(0.97 0.015 70);
+  --sidebar-foreground: oklch(0.3 0.05 60);
+  --sidebar-primary: oklch(0.64 0.17 36.44);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.93 0.04 70);
+  --sidebar-accent-foreground: oklch(0.3 0.05 60);
+  --sidebar-border: oklch(0.88 0.04 70);
+  --sidebar-ring: oklch(0.64 0.17 36.44);
+}
+
+.dark:root[data-theme-preset="tangerine"],
+[data-theme-preset="tangerine"].dark {
+  --background: oklch(0.18 0.02 60);
+  --foreground: oklch(0.93 0.02 70);
+  --card: oklch(0.22 0.025 60);
+  --card-foreground: oklch(0.93 0.02 70);
+  --popover: oklch(0.22 0.025 60);
+  --popover-foreground: oklch(0.93 0.02 70);
+  --primary: oklch(0.72 0.17 36.44);
+  --primary-foreground: oklch(0.15 0.02 60);
+  --secondary: oklch(0.28 0.04 60);
+  --secondary-foreground: oklch(0.93 0.02 70);
+  --muted: oklch(0.28 0.04 60);
+  --muted-foreground: oklch(0.65 0.05 60);
+  --accent: oklch(0.28 0.04 60);
+  --accent-foreground: oklch(0.93 0.02 70);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(0.32 0.04 60);
+  --input: oklch(0.32 0.04 60);
+  --ring: oklch(0.72 0.17 36.44);
+  --sidebar-background: oklch(0.2 0.025 60);
+  --sidebar-foreground: oklch(0.88 0.02 70);
+  --sidebar-primary: oklch(0.72 0.17 36.44);
+  --sidebar-primary-foreground: oklch(0.15 0.02 60);
+  --sidebar-accent: oklch(0.28 0.04 60);
+  --sidebar-accent-foreground: oklch(0.88 0.02 70);
+  --sidebar-border: oklch(0.32 0.04 60);
+  --sidebar-ring: oklch(0.72 0.17 36.44);
+}

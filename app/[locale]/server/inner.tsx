@@ -1,3 +1,3 @@
 export default function ServerInner() {
-return null;
+	return null;
 }

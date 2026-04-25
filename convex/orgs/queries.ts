@@ -117,6 +117,36 @@ export const listMembers = orgQuery({
 });
 
 /**
+ * Get the current user's membership in a specific org.
+ *
+ * HOW IT WORKS:
+ *   1. `authenticatedQuery` wrapper injects `ctx.userId` (verified JWT).
+ *   2. Queries `orgMembers` via the `by_orgId_and_userId` compound index — O(log n).
+ *   3. Returns the membership doc (role, joinedAt, etc.) or null if not a member.
+ *
+ * WHY THIS EXISTS:
+ *   `listMembers` fetches ALL members + their user profiles — O(n) reads.
+ *   The frontend `useOrgPermission` hook only needs the CURRENT user's role.
+ *   This query returns a single membership row — O(1) after index lookup.
+ *
+ * RETURN: `Doc<"orgMembers"> | null`
+ */
+export const getMyMembership = authenticatedQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", ctx.userId),
+			)
+			.first();
+
+		if (!member || member.deletedAt !== undefined) return null;
+		return member;
+	},
+});
+
+/**
  * Internal: get org by ID. No auth check — for server-side use only.
  *
  * HOW IT WORKS:
@@ -132,8 +162,6 @@ export const getInternal = internalQuery({
 		return await ctx.db.get(args.orgId);
 	},
 });
-
-
 
 /**
  * Super admin only: list ALL orgs in the platform.
@@ -154,8 +182,8 @@ export const getInternal = internalQuery({
  * Ref: .github/agents/base/rbac.md — Super Admin
  */
 export const listAll = superAdminQuery({
-args: {},
-handler: async (ctx) => {
-return await ctx.db.query("orgs").order("desc").take(100);
-},
+	args: {},
+	handler: async (ctx) => {
+		return await ctx.db.query("orgs").order("desc").take(100);
+	},
 });

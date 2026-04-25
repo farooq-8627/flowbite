@@ -200,6 +200,8 @@ describe("requirePlanFeature", () => {
 	});
 
 	it("throws FEATURE_DISABLED for unknown feature key", () => {
-		expect(() => requirePlanFeature("enterprise", "nonexistent.feature")).toThrow(ERRORS.FEATURE_DISABLED);
+		expect(() => requirePlanFeature("enterprise", "nonexistent.feature")).toThrow(
+			ERRORS.FEATURE_DISABLED,
+		);
 	});
 });

@@ -37,8 +37,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 			const email = (profile.email as string) ?? "";
 			const name = profile.name as string | undefined;
 			// picture = Google/GitHub avatar URL
-			const avatarUrl = (profile.picture ??
-				profile.image) as string | undefined;
+			const avatarUrl = (profile.picture ?? profile.image) as string | undefined;
 			// Stable identifier: providerId|sub (or email as fallback)
 			const tokenIdentifier = `${provider.id}|${(profile.sub as string) ?? email}`;
 

@@ -52,6 +52,11 @@
 		"playwright": {
 			"command": "npx",
 			"args": ["-y", "@playwright/mcp@latest"]
+		},
+		"code-review-graph": {
+			"command": "uvx",
+			"args": ["code-review-graph", "serve"],
+			"type": "stdio"
 		}
 	}
 }

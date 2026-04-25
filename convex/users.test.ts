@@ -329,7 +329,9 @@ describe("users.mutations.setDefaultOrg", () => {
 			});
 		});
 
-		await expect(asUser.mutation(api.users.mutations.setDefaultOrg, { orgId })).rejects.toThrow();
+		await expect(
+			asUser.mutation(api.users.mutations.setDefaultOrg, { orgId }),
+		).rejects.toThrow();
 	});
 });
 
@@ -437,29 +439,26 @@ describe("users.mutations.upsertFromAuth (internal)", () => {
 // ─── deleteMalformedUsers internal mutation ────────────────────────────────────
 
 describe("users.mutations.deleteMalformedUsers (internal)", () => {
-	it.skip(
-		"deletes user documents missing required fields — cannot be unit-tested via convex-test",
-		async () => {
-			/**
-			 * WHY SKIPPED:
-			 *   convex-test enforces the Convex schema at the application layer, which means
-			 *   `ctx.db.insert("users", { email: "x" })` throws a schema-validation error before
-			 *   the document is stored. In production, malformed documents only exist from
-			 *   BEFORE the schema was enforced (legacy data created without the schema).
-			 *
-			 *   This migration mutation is a one-time cleanup tool for pre-schema data. Its
-			 *   safety on a clean database is verified by the adjacent test: "does not delete
-			 *   valid users". The mutation has no observable side effects on a valid dataset.
-			 *
-			 *   To test this in CI, you would need a raw database fixture with pre-schema
-			 *   documents, which is out of scope for convex-test unit tests.
-			 *
-			 * REFERENCES:
-			 *   - https://docs.convex.dev/database/schemas — Convex schema enforcement
-			 *   - https://github.com/get-convex/convex-test — convex-test docs
-			 */
-		},
-	);
+	it.skip("deletes user documents missing required fields — cannot be unit-tested via convex-test", async () => {
+		/**
+		 * WHY SKIPPED:
+		 *   convex-test enforces the Convex schema at the application layer, which means
+		 *   `ctx.db.insert("users", { email: "x" })` throws a schema-validation error before
+		 *   the document is stored. In production, malformed documents only exist from
+		 *   BEFORE the schema was enforced (legacy data created without the schema).
+		 *
+		 *   This migration mutation is a one-time cleanup tool for pre-schema data. Its
+		 *   safety on a clean database is verified by the adjacent test: "does not delete
+		 *   valid users". The mutation has no observable side effects on a valid dataset.
+		 *
+		 *   To test this in CI, you would need a raw database fixture with pre-schema
+		 *   documents, which is out of scope for convex-test unit tests.
+		 *
+		 * REFERENCES:
+		 *   - https://docs.convex.dev/database/schemas — Convex schema enforcement
+		 *   - https://github.com/get-convex/convex-test — convex-test docs
+		 */
+	});
 
 	it("does not delete valid users", async () => {
 		const t = convexTest(schema, modules);

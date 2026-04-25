@@ -269,6 +269,63 @@ describe("orgs.queries.listMembers", () => {
 	});
 });
 
+// ─── orgs.queries.getMyMembership ─────────────────────────────────────────────
+
+describe("orgs.queries.getMyMembership", () => {
+	it("throws when not authenticated", async () => {
+		const t = convexTest(schema, modules);
+		const { asUser } = await seedUser(t);
+		const orgId = await asUser.mutation(api.orgs.mutations.create, { name: "Org" });
+
+		await expect(t.query(api.orgs.queries.getMyMembership, { orgId })).rejects.toThrow();
+	});
+
+	it("returns null for non-member", async () => {
+		const t = convexTest(schema, modules);
+		const { asUser: asAlice } = await seedUser(t, { email: "alice@example.com" });
+		const { asUser: asBob } = await seedUser(t, { email: "bob@example.com" });
+
+		const orgId = await asAlice.mutation(api.orgs.mutations.create, { name: "Alice Corp" });
+
+		const membership = await asBob.query(api.orgs.queries.getMyMembership, { orgId });
+		expect(membership).toBeNull();
+	});
+
+	it("returns membership doc for a member", async () => {
+		const t = convexTest(schema, modules);
+		const { userId, asUser } = await seedUser(t);
+
+		const orgId = await asUser.mutation(api.orgs.mutations.create, { name: "My Org" });
+
+		const membership = await asUser.query(api.orgs.queries.getMyMembership, { orgId });
+		expect(membership).not.toBeNull();
+		expect(membership!.role).toBe("owner");
+		expect(membership!.userId).toBe(userId);
+		expect(membership!.orgId).toBe(orgId);
+	});
+
+	it("excludes soft-deleted memberships", async () => {
+		const t = convexTest(schema, modules);
+		const { asUser } = await seedUser(t);
+
+		const orgId = await asUser.mutation(api.orgs.mutations.create, { name: "My Org" });
+
+		// Soft-delete the membership
+		await t.run(async (ctx) => {
+			const members = await ctx.db
+				.query("orgMembers")
+				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId))
+				.collect();
+			for (const m of members) {
+				await ctx.db.patch(m._id, { deletedAt: Date.now() });
+			}
+		});
+
+		const membership = await asUser.query(api.orgs.queries.getMyMembership, { orgId });
+		expect(membership).toBeNull();
+	});
+});
+
 // ─── orgs.mutations.update ────────────────────────────────────────────────────
 
 describe("orgs.mutations.update", () => {
@@ -337,7 +394,12 @@ describe("orgs.mutations.removeMember", () => {
 
 		// Add Bob as member
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", { orgId, userId: bobId, role: "member", joinedAt: now });
+			await ctx.db.insert("orgMembers", {
+				orgId,
+				userId: bobId,
+				role: "member",
+				joinedAt: now,
+			});
 		});
 
 		await asAlice.mutation(api.orgs.mutations.removeMember, { orgId, userId: bobId });

@@ -13,12 +13,27 @@ import type { OrgPlan } from "./validators";
 export const INVITATION_EXPIRY_MS = 48 * 60 * 60 * 1000;
 
 // Activity log entity types
+// BACKFIX-03: Added CRM entity types. Old values (CONNECTION, WORKFLOW, etc.) kept for
+// backwards compatibility with existing tests — they will be deprecated, not deleted.
 export const ENTITY_TYPES = {
+	// ── Base entities ────────────────────────────────────────────────────────
 	ORG: "org",
 	USER: "user",
 	MEMBER: "member",
 	INVITATION: "invitation",
 	NOTIFICATION: "notification",
+	// ── CRM entities (Phase 2) ───────────────────────────────────────────────
+	LEAD: "lead",
+	CONTACT: "contact",
+	COMPANY: "company",
+	DEAL: "deal",
+	NOTE: "note",
+	PIPELINE: "pipeline",
+	FIELD_DEFINITION: "fieldDefinition",
+	// ── AI (Phase 3) ─────────────────────────────────────────────────────────
+	AI_CONVERSATION: "aiConversation",
+	AI_MESSAGE: "aiMessage",
+	// ── Legacy (pre-pivot — keep, do not delete) ─────────────────────────────
 	CONNECTION: "connection",
 	WORKFLOW: "workflow",
 	WORK_ITEM: "workItem",
@@ -126,4 +141,3 @@ export const FEATURE_FLAGS = {
 	API_ACCESS: "api_access",
 	AUDIT_LOGS_FULL: "audit_logs.full",
 } as const;
-

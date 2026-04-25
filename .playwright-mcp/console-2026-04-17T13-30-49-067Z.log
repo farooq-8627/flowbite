@@ -1,0 +1,43 @@
+[   39980ms] [LOG] [PostHog.js] send "$autocapture" {uuid: 019d9ba3-af80-74f8-aec5-175b283fd04c, event: $autocapture, properties: Object, timestamp: Fri Apr 17 2026 19:01:29 GMT+0530 (India Standard Time)} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  104398ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  104573ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 2517 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  168246ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  168526ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 7475 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  239038ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  239279ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 14704 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  249174ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  249360ms] [WARNING] [PostHog.js] [FeatureFlags] Using an older version of the feature flags endpoint. Please upgrade your PostHog server to the latest version @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  315041ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  315126ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 22653 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  400214ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  400324ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 44117 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  506112ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  506192ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 98260 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  548996ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  549091ms] [WARNING] [PostHog.js] [FeatureFlags] Using an older version of the feature flags endpoint. Please upgrade your PostHog server to the latest version @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  665872ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  665959ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 209793 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  849135ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  849208ms] [WARNING] [PostHog.js] [FeatureFlags] Using an older version of the feature flags endpoint. Please upgrade your PostHog server to the latest version @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[  937346ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[  937435ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 327982 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[ 1149628ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[ 1150627ms] [WARNING] [PostHog.js] [FeatureFlags] Using an older version of the feature flags endpoint. Please upgrade your PostHog server to the latest version @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[ 1326438ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[ 1326553ms] [WARNING] [PostHog.js] Enqueued failed request for retry in 767147 @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[ 1448778ms] [ERROR] [PostHog.js] AbortError: signal is aborted without reason
+    at http://localhost:3000/_next/static/chunks/4e3de_posthog-js_cc37b538._.js:2588:43 @ :0
+[ 1448833ms] [WARNING] [PostHog.js] [FeatureFlags] Using an older version of the feature flags endpoint. Please upgrade your PostHog server to the latest version @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313

@@ -1,0 +1,20 @@
+[    1487ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/en/signin:0
+[    1760ms] [LOG] %c Console Ninja extension is connected to Next.js browser, background: rgb(30,30,30); color: rgb(255,213,92) see https://tinyurl.com/2vt8jxzw for more info. @ :0
+[    1796ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    1960ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2025ms] [LOG] [PostHog.js] set_config {config: Object, oldConfig: Object, newConfig: Object} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2032ms] [LOG] [PostHog.js] Persistence loaded localStorage+cookie {} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2033ms] [LOG] [PostHog.js] Persistence loaded sessionStorage {} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2055ms] [LOG] [PostHog.js] Initializing extensions synchronously @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2055ms] [LOG] [PostHog.js] [ExceptionAutocapture] enabled @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2060ms] [LOG] [PostHog.js] Starting in debug mode {this: pn, config: Object, thisC: Object, p: Object, s: Object} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2146ms] [LOG] [PostHog.js] [SessionId] new session ID generated {sessionId: 019d9ba2-3b00-772c-acd7-7557ffbdd79b, windowId: 019d9ba2-3b00-772c-acd7-7558e28fb10d, changeReason: Object} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2149ms] [LOG] [PostHog.js] send "$set" {uuid: 019d9ba2-3ab5-7243-b4a3-14a171dc9f4d, event: $set, properties: Object, $set_once: Object, timestamp: Fri Apr 17 2026 18:59:53 GMT+0530 (India Standard Time)} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2264ms] [LOG] [PostHog.js] send "$pageview" {uuid: 019d9ba2-3b75-7995-a3ae-ee756e9e955b, event: $pageview, properties: Object, timestamp: Fri Apr 17 2026 18:59:53 GMT+0530 (India Standard Time)} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    2271ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    3004ms] [LOG] [PostHog.js] Persistence loaded sessionStorage {$sdk_debug_extensions_init_method: synchronous, $sdk_debug_extensions_init_time_ms: 5, $referrer: $direct, $referring_domain: $direct} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    3006ms] [LOG] [PostHog.js] set_config {config: Object, oldConfig: Object, newConfig: Object} @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    3006ms] [LOG] [PostHog.js] [ExceptionAutocapture] enabled @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    3009ms] [LOG] [PostHog.js] [Surveys] flags response received, isSurveysEnabled: false @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    3010ms] [LOG] [PostHog.js] [ExceptionAutocapture] enabled @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313
+[    4731ms] [LOG] [PostHog.js] [Surveys] Surveys loaded successfully @ http://localhost:3000/_next/static/chunks/ee50c_next_dist_31a4834b._.js:2313

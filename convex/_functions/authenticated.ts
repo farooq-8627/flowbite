@@ -34,11 +34,7 @@
  */
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
-import {
-	customCtx,
-	customMutation,
-	customQuery,
-} from "convex-helpers/server/customFunctions";
+import { customCtx, customMutation, customQuery } from "convex-helpers/server/customFunctions";
 import {
 	internalMutation,
 	internalQuery,
@@ -84,14 +80,11 @@ export type SuperAdminCtx = AuthenticatedCtx & {
  *
  * Sources: https://github.com/get-convex/convex-saas/blob/main/convex/utils.ts
  */
-async function resolveUser(
-	ctx: QueryCtx | MutationCtx,
-): Promise<AuthenticatedCtx> {
+async function resolveUser(ctx: QueryCtx | MutationCtx): Promise<AuthenticatedCtx> {
 	const userId = await getAuthUserId(ctx);
 	if (userId === null) throw new ConvexError(ERRORS.UNAUTHORIZED);
 	const user = await ctx.db.get(userId);
-	if (!user || user.deletedAt !== undefined)
-		throw new ConvexError(ERRORS.USER_NOT_FOUND);
+	if (!user || user.deletedAt !== undefined) throw new ConvexError(ERRORS.USER_NOT_FOUND);
 	return { user, userId };
 }
 
@@ -109,9 +102,7 @@ async function resolveUser(
  *
  * Ref: .github/agents/base/rbac.md — Platform Roles
  */
-async function resolveSuperAdmin(
-	ctx: QueryCtx | MutationCtx,
-): Promise<SuperAdminCtx> {
+async function resolveSuperAdmin(ctx: QueryCtx | MutationCtx): Promise<SuperAdminCtx> {
 	const { user, userId } = await resolveUser(ctx);
 	if (user.platformRole !== "super_admin") {
 		throw new ConvexError(ERRORS.SUPER_ADMIN_REQUIRED);
@@ -142,14 +133,11 @@ export async function requireOrgMember(
 	const { user, userId } = await resolveUser(ctx);
 
 	const org = await ctx.db.get(orgId);
-	if (!org || org.deletedAt !== undefined)
-		throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+	if (!org || org.deletedAt !== undefined) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
 
 	const member = await ctx.db
 		.query("orgMembers")
-		.withIndex("by_orgId_and_userId", (q) =>
-			q.eq("orgId", orgId).eq("userId", userId),
-		)
+		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
 		.first();
 
 	if (!member || member.deletedAt !== undefined)
@@ -166,9 +154,7 @@ export async function requireOrgMember(
  *   const { user } = await requireSuperAdmin(ctx);
  *   ```
  */
-export async function requireSuperAdmin(
-	ctx: QueryCtx | MutationCtx,
-): Promise<SuperAdminCtx> {
+export async function requireSuperAdmin(ctx: QueryCtx | MutationCtx): Promise<SuperAdminCtx> {
 	return resolveSuperAdmin(ctx);
 }
 

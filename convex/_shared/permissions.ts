@@ -117,6 +117,65 @@ export const PERMISSIONS: Record<string, readonly OrgRole[]> = {
 	// ── Notifications ─────────────────────────────────────────────────────────
 	"notifications.viewOwn": ["owner", "admin", "member", "viewer"],
 	"notifications.markRead": ["owner", "admin", "member", "viewer"],
+
+	// ── Leads (Phase 2 — CRM Core) ────────────────────────────────────────────
+	// qualify = advance a lead through scoring stages without converting it.
+	// convert = create Contact+Deal from a Lead (destructive for the Lead record).
+	"leads.view": ["owner", "admin", "member", "viewer"],
+	"leads.create": ["owner", "admin", "member"],
+	"leads.update": ["owner", "admin", "member"],
+	"leads.delete": ["owner", "admin"],
+	"leads.assign": ["owner", "admin"],
+	"leads.qualify": ["owner", "admin", "member"],
+	"leads.convert": ["owner", "admin"],
+
+	// ── Contacts (Phase 2 — CRM Core) ────────────────────────────────────────
+	"contacts.view": ["owner", "admin", "member", "viewer"],
+	"contacts.create": ["owner", "admin", "member"],
+	"contacts.update": ["owner", "admin", "member"],
+	"contacts.delete": ["owner", "admin"],
+	"contacts.assign": ["owner", "admin"],
+
+	// ── Companies (Phase 2 — CRM Core) ───────────────────────────────────────
+	"companies.view": ["owner", "admin", "member", "viewer"],
+	"companies.create": ["owner", "admin", "member"],
+	"companies.update": ["owner", "admin", "member"],
+	"companies.delete": ["owner", "admin"],
+
+	// ── Deals (Phase 2 — CRM Core) ───────────────────────────────────────────
+	// changeStage = move a deal card between pipeline stages.
+	"deals.view": ["owner", "admin", "member", "viewer"],
+	"deals.create": ["owner", "admin", "member"],
+	"deals.update": ["owner", "admin", "member"],
+	"deals.delete": ["owner", "admin"],
+	"deals.assign": ["owner", "admin"],
+	"deals.changeStage": ["owner", "admin", "member"],
+
+	// ── Notes (Phase 2 — CRM Core) ───────────────────────────────────────────
+	// updateOwn/deleteOwn = author only. deleteAny = admin override.
+	"notes.view": ["owner", "admin", "member", "viewer"],
+	"notes.create": ["owner", "admin", "member"],
+	"notes.updateOwn": ["owner", "admin", "member"],
+	"notes.deleteOwn": ["owner", "admin", "member"],
+	"notes.deleteAny": ["owner", "admin"],
+
+	// ── Pipelines (Phase 2 — CRM Core) ───────────────────────────────────────
+	// manage = create/edit/delete pipelines and stages. view = just read.
+	"pipelines.view": ["owner", "admin", "member", "viewer"],
+	"pipelines.manage": ["owner", "admin"],
+
+	// ── Dynamic Field Definitions (Phase 2 — CRM Core) ───────────────────────
+	// manage = create/edit/delete custom fields. view = all roles.
+	"fieldDefinitions.view": ["owner", "admin", "member", "viewer"],
+	"fieldDefinitions.manage": ["owner", "admin"],
+
+	// ── AI Assistant (Phase 3 — AI Native) ───────────────────────────────────
+	// use    = trigger AI queries + actions. viewer CANNOT use AI (read-only seat).
+	// manageTools = enable/disable individual AI tools per org. admin-gated.
+	// viewHistory = see AI conversation log. viewer can read but not trigger.
+	"ai.use": ["owner", "admin", "member"],
+	"ai.manageTools": ["owner", "admin"],
+	"ai.viewHistory": ["owner", "admin", "member", "viewer"],
 } as const;
 
 // ─── Core permission checks ───────────────────────────────────────────────────

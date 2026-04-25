@@ -98,3 +98,69 @@ export const invitationStatusValidator = v.union(
 );
 export type InvitationStatus = (typeof invitationStatusValues)[number];
 
+// ─── CRM Entity Type validators (BACKFIX-04) ──────────────────────────────────
+//
+// Shared across: activityLogs, notes, fieldDefinitions, pipelines, notifications.
+// Ref: .github/agents/base/schema.md — entity types
+export const entityTypeValues = [
+	"lead",
+	"contact",
+	"company",
+	"deal",
+	"project",
+	"task",
+	"note",
+] as const;
+export const entityTypeValidator = v.union(...entityTypeValues.map((t) => v.literal(t)));
+export type EntityType = (typeof entityTypeValues)[number];
+
+// ─── Actor Type validators (BACKFIX-04) ───────────────────────────────────────
+//
+// Used in activityLogs to distinguish who (or what) performed an action.
+// user:        Human via UI. userId is always the acting user.
+// ai:          Convex AI action on behalf of userId (the user who triggered it).
+// integration: External sync job (HubSpot import, etc.) — userId is the sync initiator.
+// system:      Convex cron / internal job — userId is the org owner or service account.
+//
+// Rule: userId is ALWAYS required. actorType clarifies the medium, not the identity.
+// Ref: .github/agents/base/schema.md — actorType design note
+export const actorTypeValues = ["user", "ai", "integration", "system"] as const;
+export const actorTypeValidator = v.union(...actorTypeValues.map((t) => v.literal(t)));
+export type ActorType = (typeof actorTypeValues)[number];
+
+// ─── Field Type validators (Dynamic Fields — Phase 2) ─────────────────────────
+//
+// fieldDefinitions.fieldType values. Determines how a field is rendered + validated.
+// Ref: .github/agents/base/schema.md — fieldDefinitions table
+export const fieldTypeValues = [
+	"text",
+	"number",
+	"select",
+	"multiselect",
+	"date",
+	"boolean",
+	"url",
+	"email",
+	"relation",
+	"file",
+] as const;
+export const fieldTypeValidator = v.union(...fieldTypeValues.map((t) => v.literal(t)));
+export type FieldType = (typeof fieldTypeValues)[number];
+
+// ─── Lead/Signal Source validators (BACKFIX-04) ───────────────────────────────
+//
+// How a lead was originally captured. Used for attribution + routing rules.
+// manual: Created directly by a team member.
+// csv:    Imported via CSV upload.
+// Others: Sync'd from external integration (Phase 4+).
+export const sourceValues = ["manual", "csv", "hubspot", "reddit", "linkedin", "hn"] as const;
+export const sourceValidator = v.union(...sourceValues.map((t) => v.literal(t)));
+export type Source = (typeof sourceValues)[number];
+
+// ─── Sentiment validators (AI classification — Phase 3) ───────────────────────
+//
+// AI-generated sentiment on notes, emails, and conversation snippets.
+// Used in the unified timeline and lead scoring.
+export const sentimentValues = ["positive", "negative", "neutral"] as const;
+export const sentimentValidator = v.union(...sentimentValues.map((t) => v.literal(t)));
+export type Sentiment = (typeof sentimentValues)[number];

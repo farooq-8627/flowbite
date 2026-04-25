@@ -57,10 +57,10 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
 
 export const config = {
 	matcher: [
-		// Exclude: static files with extensions, _next internals, PostHog ingest proxy
-		// "ingest" must be excluded so intlMiddleware doesn't prefix /ingest/... with /en/
-		// (middleware runs before next.config.ts rewrites — excluding prevents 404s)
-		"/((?!.*\\..*|_next|ingest).*)",
+		// Exclude: static files with extensions, _next internals, PostHog ingest proxy,
+		// and Sentry tunnel route (/monitoring). Both "ingest" and "monitoring" must be
+		// excluded so intlMiddleware doesn't locale-prefix them before rewrites/handlers run.
+		"/((?!.*\\..*|_next|ingest|monitoring).*)",
 		"/",
 		"/(api|trpc)(.*)",
 	],

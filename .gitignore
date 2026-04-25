@@ -49,3 +49,5 @@ next-env.d.ts
 /.pnpm-store
 # /.github
 # /.mcp
+# Added by code-review-graph
+.code-review-graph/

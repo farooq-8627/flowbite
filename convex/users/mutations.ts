@@ -1,50 +1,25 @@
 /**
  * User profile mutations.
  *
- * PATTERN EXPLANATION:
- *   All public mutations that require authentication use `authenticatedMutation`
- *   from `convex/_functions/authenticated.ts` (Rule R2). This wrapper:
- *     1. Calls `getAuthUserId(ctx)` from `@convex-dev/auth/server` to validate
- *        the active session JWT before the handler runs.
- *     2. Loads the user document from the `users` table.
- *     3. Injects `ctx.user` (Doc<"users">) and `ctx.userId` (Id<"users">) into
- *        the handler context — no manual auth boilerplate needed.
- *     4. Throws `ConvexError("Unauthorized")` if the session is invalid/missing.
- *
- *   Internal mutations (`deleteMalformedUsers`, `upsertFromAuth`) use
- *   `internalMutation` because they are invoked by the auth system or cron
- *   jobs — never by the client (Rule R6).
- *
- * WHY `authenticatedMutation` (Rule R2):
- *   Using raw `mutation` + `getCurrentUser(ctx)` inside the handler works but
- *   violates R2. The risk is: if someone forgets the `getCurrentUser()` call,
- *   the mutation silently accepts unauthenticated requests. The wrapper makes
- *   the auth requirement impossible to bypass or forget.
+ * PATTERN:
+ *   - All public mutations use `authenticatedMutation` (Rule R2).
+ *   - `logActivity()` is called for org-scoped operations where an orgId is available.
+ *   - User self-service operations (profile, onboarding) that are NOT org-scoped
+ *     do not generate activity logs (no orgId context).
  *
  * Sources:
  * - https://github.com/get-convex/convex-saas/blob/main/convex/users.ts
  * - https://labs.convex.dev/auth/config/users
- * - https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/customFunctions.ts
  */
 import { ConvexError, v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { authenticatedMutation } from "../_functions/authenticated";
+import { ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
+import { logActivity } from "../activityLogs/helpers";
 
 /**
  * Update the current user's display profile (name, locale, timezone).
- *
- * HOW IT WORKS:
- *   1. `authenticatedMutation` wrapper validates the session and injects
- *      `ctx.userId` before the handler runs — no manual `getAuthUserId` call.
- *   2. `ctx.db.patch` performs a shallow merge, so only the supplied fields are
- *      updated. Missing optional fields are left unchanged.
- *   3. `updatedAt` is always refreshed (Rule R7: every mutation must update updatedAt).
- *
- * WHY it only allows name/locale/timezone:
- *   Email changes require re-authentication (handled by @convex-dev/auth).
- *   Avatar uploads go through Convex File Storage and set `avatarStorageId`.
- *   Security-sensitive fields (tokenIdentifier, defaultOrgId) have dedicated mutations.
  */
 export const updateProfile = authenticatedMutation({
 	args: {
@@ -62,16 +37,6 @@ export const updateProfile = authenticatedMutation({
 
 /**
  * Mark the current user's onboarding flow as completed.
- *
- * HOW IT WORKS:
- *   After a user creates their first org (or completes the onboarding wizard),
- *   this mutation flips `onboardingCompleted: true`. The app reads this flag
- *   in middleware to decide whether to redirect to `/onboarding` or `/dashboard`.
- *
- * WHY a dedicated mutation (not part of `updateProfile`):
- *   Onboarding completion is a one-way state transition. Isolating it in its
- *   own mutation makes it auditable (logActivity can target this specific action)
- *   and prevents accidental resets via `updateProfile`.
  */
 export const completeOnboarding = authenticatedMutation({
 	args: {},
@@ -85,16 +50,7 @@ export const completeOnboarding = authenticatedMutation({
 
 /**
  * Set the user's default org (the org loaded on dashboard entry).
- *
- * HOW IT WORKS:
- *   1. Verifies the user is an active member of the target org before setting it
- *      as the default. This prevents a user from setting an org they've been
- *      removed from as their default.
- *   2. Uses `by_orgId_and_userId` index for O(log n) membership check (Rule R4).
- *
- * WHY NOT accept userId as arg (Rule R3):
- *   The user identity comes from `ctx.userId` (verified JWT), not from the
- *   client payload. This prevents a client from setting another user's defaultOrgId.
+ * Verifies active membership before setting.
  */
 export const setDefaultOrg = authenticatedMutation({
 	args: { orgId: v.id("orgs") },
@@ -114,32 +70,42 @@ export const setDefaultOrg = authenticatedMutation({
 			defaultOrgId: args.orgId,
 			updatedAt: Date.now(),
 		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId: ctx.userId,
+			action: "updated",
+			entityType: ENTITY_TYPES.USER,
+			entityId: ctx.userId,
+			description: "Set as default organization",
+		});
 	},
 });
 
 /**
  * Soft-delete the current user's account.
- *
- * HOW IT WORKS:
- *   Sets `deletedAt` to the current timestamp. The `getCurrentUser` and
- *   `resolveUser` helpers both check `user.deletedAt !== undefined` and throw
- *   if set, so all subsequent authenticated requests will be rejected.
- *
- * WHY soft-delete (not hard delete):
- *   Org membership, activity logs, and notifications reference `userId`. Hard-deleting
- *   the user would break foreign key integrity. Soft-delete preserves history while
- *   effectively deactivating the account.
- *
- * IMPORTANT: In production, a background job should also revoke auth sessions
- *   via `@convex-dev/auth` after soft-deletion.
+ * Logs activity to the user's default org if one exists.
  */
 export const deleteAccount = authenticatedMutation({
 	args: {},
 	handler: async (ctx) => {
+		const now = Date.now();
+
 		await ctx.db.patch(ctx.userId, {
-			deletedAt: Date.now(),
-			updatedAt: Date.now(),
+			deletedAt: now,
+			updatedAt: now,
 		});
+
+		if (ctx.user.defaultOrgId) {
+			await logActivity(ctx, {
+				orgId: ctx.user.defaultOrgId,
+				userId: ctx.userId,
+				action: "deleted",
+				entityType: ENTITY_TYPES.USER,
+				entityId: ctx.userId,
+				description: "Deleted user account",
+			});
+		}
 	},
 });
 
@@ -215,9 +181,7 @@ export const upsertFromAuth = internalMutation({
 		const now = Date.now();
 		const existing = await ctx.db
 			.query("users")
-			.withIndex("by_tokenIdentifier", (q) =>
-				q.eq("tokenIdentifier", args.tokenIdentifier),
-			)
+			.withIndex("by_tokenIdentifier", (q) => q.eq("tokenIdentifier", args.tokenIdentifier))
 			.unique();
 
 		if (existing) {
@@ -241,4 +205,3 @@ export const upsertFromAuth = internalMutation({
 		});
 	},
 });
-

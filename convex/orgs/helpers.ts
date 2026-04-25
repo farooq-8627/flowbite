@@ -12,10 +12,7 @@ import { ERRORS } from "../_shared/errors";
 /**
  * Returns an org by ID. Throws if not found or soft-deleted.
  */
-export async function getOrgById(
-	ctx: QueryCtx,
-	orgId: Id<"orgs">,
-): Promise<Doc<"orgs">> {
+export async function getOrgById(ctx: QueryCtx, orgId: Id<"orgs">): Promise<Doc<"orgs">> {
 	const org = await ctx.db.get(orgId);
 	if (!org || org.deletedAt !== undefined) throw new Error(ERRORS.ORG_NOT_FOUND);
 	return org;
@@ -24,10 +21,7 @@ export async function getOrgById(
 /**
  * Returns an org by slug. Returns null if not found.
  */
-export async function getOrgBySlug(
-	ctx: QueryCtx,
-	slug: string,
-): Promise<Doc<"orgs"> | null> {
+export async function getOrgBySlug(ctx: QueryCtx, slug: string): Promise<Doc<"orgs"> | null> {
 	return await ctx.db
 		.query("orgs")
 		.withIndex("by_slug", (q) => q.eq("slug", slug))
@@ -44,9 +38,7 @@ export async function getOrgMember(
 ): Promise<Doc<"orgMembers"> | null> {
 	return await ctx.db
 		.query("orgMembers")
-		.withIndex("by_orgId_and_userId", (q) =>
-			q.eq("orgId", orgId).eq("userId", userId),
-		)
+		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
 		.first();
 }
 

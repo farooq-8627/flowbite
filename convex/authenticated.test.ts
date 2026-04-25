@@ -227,9 +227,7 @@ describe("superAdmin guards", () => {
 		const { asUser } = await seedUser(t, { email: "regular@example.com" });
 
 		// `orgs.queries.listAll` uses superAdminQuery
-		await expect(
-			asUser.query(api.orgs.queries.listAll),
-		).rejects.toThrow();
+		await expect(asUser.query(api.orgs.queries.listAll)).rejects.toThrow();
 	});
 
 	it("allows a super_admin user through a super-admin-only query", async () => {

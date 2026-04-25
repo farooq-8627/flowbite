@@ -19,7 +19,7 @@ export type NotificationInput = {
 	entityType?: string;
 	entityId?: string;
 	actionUrl?: string;
-	metadata?: Record<string, unknown>;
+	metadata?: Record<string, string | number | boolean>;
 };
 
 /**

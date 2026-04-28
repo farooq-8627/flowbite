@@ -9,7 +9,7 @@ import { THEME_PRESETS, type ThemePreset } from "./theme";
  * Validate that a string is a valid theme preset.
  */
 export function isValidThemePreset(value: string): value is ThemePreset {
-  return (THEME_PRESETS as readonly string[]).includes(value);
+	return (THEME_PRESETS as readonly string[]).includes(value);
 }
 
 /**
@@ -19,8 +19,8 @@ export function isValidThemePreset(value: string): value is ThemePreset {
  * Example: :root[data-theme-preset="tangerine"] { --primary: oklch(...); }
  */
 export function applyThemePreset(preset: ThemePreset): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-theme-preset", preset);
+	if (typeof document === "undefined") return;
+	document.documentElement.setAttribute("data-theme-preset", preset);
 }
 
 /**
@@ -28,6 +28,6 @@ export function applyThemePreset(preset: ThemePreset): void {
  * The font registry's CSS variables are applied via this attribute.
  */
 export function applyFont(fontKey: string): void {
-  if (typeof document === "undefined") return;
-  document.documentElement.setAttribute("data-font", fontKey);
+	if (typeof document === "undefined") return;
+	document.documentElement.setAttribute("data-font", fontKey);
 }

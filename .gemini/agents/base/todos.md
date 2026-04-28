@@ -55,7 +55,21 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 
 ---
 
-## Phase 1 — `_shell` (CURRENT FOCUS)
+## IMMEDIATE (Do Before Phase 2 Schema Work Begins)
+
+> These are one-line schema additions. Add to `convex/schema.ts` when writing Phase 2 tables.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| SCHEMA-P2-01 | Add `aiContext: v.optional(v.any())` to `leads`, `contacts`, `deals` tables | pending | Stores voice/OCR overflow. AI backfills to `fieldValues` when field is created later. |
+| SCHEMA-P2-02 | Add `quickCode: v.optional(v.string())` to `leads`, `contacts` tables | pending | Org-unique short code (e.g. `AHM-001`) for WhatsApp contact resolution. Auto-generate on create. Add `by_org_and_quickcode` index. |
+| SCHEMA-P2-03 | Add `showInStages: v.optional(v.array(v.string()))` to `fieldDefinitions` table | pending | Stage-aware field filtering (Approach B — backend). Empty/null = always shown. Convex query filters before sending to client. |
+| SCHEMA-P2-04 | Add `entityDocuments` table to `convex/schema.ts` | pending | Document Vault. Fields: `orgId, entityType, entityId, fileName, fileType, storageId, extractedData, uploadedBy, createdAt`. Index: `by_entity`. |
+| SCHEMA-P2-05 | Add `"whatsapp"` to `source` enum in `leads` table | pending | Track WhatsApp-originated leads. Already in schema plan. |
+| WHATSAPP-APPLY-01 | Apply for WhatsApp Business API via 360dialog | pending | Gulf-first BSP. Takes 1–2 weeks for UAE number approval. START THIS NOW in parallel with Phase 1 build. |
+
+---
+
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
@@ -144,24 +158,31 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 | ID | Task | Status | Notes |
 |---|---|---|---|
 | CRM-00 | `pipelines` Convex table + queries/mutations | pending | Per-org, per-entityType configurable stages |
-| CRM-00b | Seed default pipelines on org creation | pending | Lead/Deal/Project/Task defaults from `DEFAULT_PIPELINE_STAGES` |
-| CRM-00c | Pipeline management UI (admin) | pending | Add/edit/reorder stages, set colors, isFinal flag |
-| CRM-01 | `fieldDefinitions` + `fieldValues` Convex tables | pending | Dynamic schema system (includes `sensitive` + `groupName`) |
-| CRM-02 | `leads` Convex table + queries/mutations | pending | Uses `pipelineId` + `currentStageId` — no hardcoded status |
-| CRM-03 | `contacts` Convex table + queries/mutations | pending | |
-| CRM-04 | `deals` Convex table + queries/mutations | pending | Uses `pipelineId` + `currentStageId` — no hardcoded stage |
-| CRM-05 | `reminders` Convex table | pending | Follow-up scheduling |
-| CRM-06 | Field builder UI (admin creates custom fields) | pending | Includes `sensitive` toggle + `groupName` picker |
+| CRM-00b | Seed default pipelines on org creation | pending | Lead/Deal/Project/Task defaults from `DEFAULT_PIPELINE_STAGES`. Dubai RE template as first option. |
+| CRM-00c | Pipeline management UI (admin) | pending | Add/edit/reorder stages, set colors, isFinal flag, staleAfterDays |
+| CRM-01 | `fieldDefinitions` + `fieldValues` Convex tables | pending | Includes `sensitive`, `groupName`, `showInStages` (stage-aware filtering, backend Approach B) |
+| CRM-01b | Stage-aware field query | pending | `fieldDefinitions` query filters by `showInStages` (includes current stageId OR is empty). Backend filters — frontend receives only relevant fields. |
+| CRM-01c | `entityDocuments` table + queries/mutations | pending | Document Vault. Used by lead/contact/deal detail pages. |
+| CRM-02 | `leads` table + queries/mutations | pending | Includes `aiContext`, `quickCode`, `by_org_and_quickcode` index. Auto-generate `quickCode` on create. |
+| CRM-03 | `contacts` table + queries/mutations | pending | Includes `aiContext`, `quickCode`, `by_org_and_quickcode` index. |
+| CRM-04 | `deals` table + queries/mutations | pending | Includes `aiContext`. Uses `pipelineId` + `currentStageId` — NO hardcoded stage. Pipeline on deals ONLY (not leads). |
+| CRM-05 | `reminders` table | pending | Follow-up scheduling |
+| CRM-06 | Field builder UI (admin creates custom fields) | pending | Includes `sensitive` toggle + `groupName` picker + `showInStages` stage picker |
 | CRM-06b | `notes` Convex table + queries/mutations | pending | `authorType: "user"\|"ai"`, `isPinned`, `isInternal`. AI tools: `searchNotes`, `createNote` |
-| CRM-07 | Lead list view | pending | |
-| CRM-08 | Contact list + detail view | pending | |
-| CRM-09 | Deal pipeline kanban view | pending | Dynamic stages from `pipelines` table — NOT hardcoded |
+| CRM-07 | Lead list view | pending | Leads have simple status (new/qualified/converted) — NO full pipeline on leads |
+| CRM-08 | Contact list + detail view | pending | Detail page tabs: Overview, Activity, Deals, Notes, Documents |
+| CRM-09 | Deal pipeline kanban view | pending | Dynamic stages from `pipelines` table — NOT hardcoded. Stages on DEALS only. |
 | CRM-10 | Activity log per entity UI (Unified Timeline) | pending | Composite query: activityLogs + notes + email logs. NOT a new table |
-| CRM-11 | CSV import with field mapping UI | pending | Maps to fixed + dynamic fields |
-| CRM-12 | Dynamic form renderer (renders fields from `fieldDefinitions`) | pending | |
-| CRM-13 | `companies` Convex table + queries/mutations | pending | B2B entity. Contacts + deals link to companies via `companyId`. AI tools: `searchCompanies`, `createCompany`, `getCompanyContacts`, `getCompanyDeals` |
-| CRM-14 | Add `displayName`+`email` to leads, `displayName`+`companyId` to contacts, `title`+`companyId` to deals | pending | Denormalized fields for AI context + fast display (R13, R52). Add `by_org_and_email` index to leads |
+| CRM-11 | CSV import with field mapping UI | pending | Maps to fixed + dynamic fields. Supports Bayut/PF export format (Dubai RE). |
+| CRM-12 | Dynamic form renderer (renders fields from `fieldDefinitions`) | pending | Renders only stage-relevant fields (backend-filtered). |
+| CRM-13 | `companies` Convex table + queries/mutations | pending | B2B entity. Contacts + deals link to companies via `companyId`. |
+| CRM-14 | Add `displayName`+`email` to leads, `displayName`+`companyId` to contacts, `title`+`companyId` to deals | pending | Denormalized fields for AI context + fast display (R13, R52) |
 | CRM-15 | Company detail page (contacts list, deals list, activity timeline) | pending | |
+| CRM-16 | Documents tab on Lead/Contact/Deal detail pages | pending | Renders `entityDocuments`. Upload directly + shows WhatsApp-forwarded files. |
+| CRM-17 | `aiContext` viewer widget | pending | On entity detail page: renders `aiContext` JSON as smart pills. Button: "Create Field from this Fact" — creates `fieldDefinition` + moves data to `fieldValues`. |
+| EXPORT-01 | Industry export layer | pending | Agent-facing export: not platform-level data dump. Formats output for industry standards. Dubai RE: Ejari-format PDF, property summary sheet. Generic: CSV export of current filtered view. |
+| EXPORT-02 | Filtered list → CSV export | pending | Any DataTable view can export its current filtered/sorted rows to CSV. Uses Trigger.dev job for large exports. |
+| EXPORT-03 | Industry report templates | pending | Admin defines a report template (e.g. Ejari contract summary). AI fills from entity fieldValues. Agent downloads PDF. Trigger.dev `generate-report` job. |
 
 **Sellable gate**: Do not start Phase 3 until 3 paying clients.
 
@@ -176,14 +197,19 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 
 ---
 
-## Phase 3 — AI Assistant (Hybrid Architecture — approved Session 12)
+## Phase 3 — AI Assistant + WhatsApp Bridge (Ship Together)
+
+> **Gate: 3 paying clients (Phase 2 gate).** v2.0 — "Stop navigating your CRM. Just talk to it."
+> WhatsApp voice bridge ships WITH AI in Phase 3. They are the same product.
+
+### AI Infrastructure
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
 | AI-01 | Install `ai` + `@ai-sdk/anthropic` packages | pending | Vercel AI SDK + Anthropic provider |
 | AI-02 | Create `app/api/ai/chat/route.ts` (streaming proxy) | pending | Auth validation → Convex internalAction → stream response |
 | AI-03 | Create `convex/ai/processChat.ts` (internalAction, "use node") | pending | Core AI runtime: auth, prompt build, ToolLoopAgent, tool execution |
-| AI-04 | Create `convex/ai/systemPrompt.ts` (dynamic prompt builder) | pending | Includes org name, role, custom field definitions, today's date, Next-Best-Action suggestions |
+| AI-04 | Create `convex/ai/systemPrompt.ts` (dynamic prompt builder) | pending | Includes org name, role, custom field definitions, today's date, pipeline stages, Next-Best-Action suggestions |
 | AI-05 | Create `convex/ai/tools/` — 10+ core CRM tool handlers | pending | Each tool calls internalMutation/Query with RBAC checks. Include `searchNotes`, `createNote` |
 | AI-06 | Role-scoped tool availability matrix | pending | Owner/admin/member get different tool sets |
 | AI-07 | AI chat panel component (`ChatSheet.tsx` + `useChat()` hook) | pending | Slide-over panel, always accessible from dashboard |
@@ -193,9 +219,24 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 | AI-11 | `aiConversations` + `aiMessages` Convex tables | pending | Persist chat history scoped to orgId + userId |
 | AI-12 | Data filtering in tool handlers (role-based field stripping) | pending | Client/partner cannot access internal data fields |
 | AI-13 | AI analytics tools (pipeline summary, team performance, forecast) | pending | Pre-computed data queries, natural language output |
-| AI-14 | AI Workspace Setup tool (`setupWorkspace.ts`) | pending | Post-onboarding: AI converses about business → generates pipelines + fieldDefinitions → user approves → created. Replaces hardcoded templates. Our unfair advantage. |
+| AI-14 | AI Workspace Setup tool (`setupWorkspace.ts`) | pending | Post-onboarding: AI converses about business → generates pipelines + fieldDefinitions (with showInStages) → user approves → created. |
 
-**Sellable gate**: Do not start Phase 4 until 8 paying clients.
+### WhatsApp Voice Bridge (Ships with AI in Phase 3)
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| WA-01 | `app/api/channels/whatsapp/route.ts` — inbound webhook | pending | Receives Meta/360dialog webhook. Validates signature. Routes to Trigger.dev job. |
+| WA-02 | Trigger.dev job: `whatsapp-voice-processor` | pending | 1. Download audio. 2. Whisper API transcribe (Arabic+EN). 3. `resolveContact()` 4-layer resolution. 4. Claude maps to `fieldDefinitions`. 5. Write to `fieldValues` + `aiContext`. 6. Convex upsert. 7. WhatsApp reply confirmation. |
+| WA-03 | `convex/ai/tools/whatsapp/resolveContact.ts` | pending | Layer 1: name in transcript. Layer 2: disambiguation WhatsApp reply. Layer 3: thread context. Layer 4: quickCode match. |
+| WA-04 | Trigger.dev job: `whatsapp-document-processor` | pending | Handles forwarded Emirates ID, passport, title deed, PDF. Routes to OCR (Claude Vision / AWS Textract). Attaches to `entityDocuments`. |
+| WA-05 | WhatsApp reply confirmation | pending | Bot sends structured summary back to agent after every voice/document update. |
+| WA-06 | Whisper Mode — AI reply suggestion | pending | Agent forwards client message → bot analyzes + suggests reply in client's language → agent copies and sends. AI tool: `suggestClientReply(messageText, dealId, language)` |
+| WA-07 | `channelAccounts` table + WhatsApp credentials storage | pending | Per-org 360dialog credentials. Encrypted in Convex. |
+| WA-08 | quickCode auto-generation on lead/contact create | pending | Format: first 3 letters of displayName + sequential number. Collision-safe. e.g. `AHM-001`. |
+
+**Gate**: WhatsApp bridge demo — agent sends voice note → CRM updates in real time → manager sees on dashboard. Record 90-second demo video. This is what you sell.
+
+---
 
 ---
 
@@ -220,19 +261,17 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 
 ## Phase 5 — External Channel Bridges
 
-> **Gate: 15 paying clients (Phase 4 gate).** v4.0 milestone — WhatsApp + Email in your CRM.
-> WhatsApp FIRST — 90% of Gulf B2B. Email second.
+> **Gate: 15 paying clients (Phase 4 gate).** v4.0 — WhatsApp inbox + Email in CRM.
+> NOTE: WhatsApp VOICE BRIDGE (agent → bot → CRM) ships in Phase 3. Phase 5 adds the INBOX (two-way messaging from dashboard).
 
-### WhatsApp Bridge
+### WhatsApp Inbox Bridge (Phase 5)
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| CHAN-01 | `channelAccounts` Convex table — `orgId, channel, credentials, status` | pending | Encrypted credentials |
-| CHAN-02 | WhatsApp Business API setup (Twilio or Meta direct) | pending | Per-org phone number |
-| CHAN-03 | Inbound webhook `/api/channels/whatsapp/[orgId]` → Trigger.dev job | pending | |
-| CHAN-04 | Trigger.dev `whatsapp-inbound-processor` | pending | Phone → contact match → insert `messages` row `channel: "whatsapp"` |
-| CHAN-05 | Outbound reply via WhatsApp API from Orbitly | pending | Agent replies from inbox, no tab switching |
-| CHAN-06 | WhatsApp message status tracking (sent / delivered / read) | pending | |
+| CHAN-01 | Outbound WhatsApp from dashboard inbox | pending | Agent sends WhatsApp directly from Orbitly without switching apps. Uses Phase 3 `channelAccounts` credentials. |
+| CHAN-02 | WhatsApp message thread in conversation view | pending | Two-way messages visible in entity conversation tab alongside internal notes. |
+| CHAN-03 | WhatsApp message status tracking (sent/delivered/read) | pending | Status badges on outbound messages. |
+
 
 ### Email Bridge
 
@@ -329,11 +368,14 @@ All ARCH items done: MODULE.md+STATE.md for all modules, scanning-protocol (now 
 | GULF-03 | `labelAr` in navigation config | 1 | pending | |
 | GULF-04 | `labelAr` on all CRM form labels, RTL-safe inputs + kanban | 2 | pending | |
 | GULF-05 | AI system prompt responds in user's locale (Arabic if `locale = ar`) | 3 | pending | |
-| GULF-06 | WhatsApp Business API as first external channel | 5 | pending | Gulf B2B is WhatsApp-first |
+| GULF-06 | WhatsApp Business API setup (360dialog) — Voice Bridge | 3 | pending | Ships with AI in Phase 3. Voice note → transcription → CRM update. Gulf agents need this on day one. |
 | GULF-07 | PDPL compliance: data subject fields flagged, processing logs, right-to-erasure | 5+ | pending | Saudi data regulation |
 | GULF-08 | Direction-safe CSS audit — all components tested in ltr + rtl modes | 8 | pending | |
-| GULF-09 | Arabic number formatting (`toLocaleString("ar-SA")`) in analytics + deal values | 8 | pending | |
+| GULF-09 | Arabic number formatting (`toLocaleString("ar-SA")`) in analytics + deal values | 2 | pending | |
 | GULF-10 | Saudi Arabia + UAE phone number regex validation in contacts | 2 | pending | |
+| GULF-11 | Dubai RE industry template seed script | 3 | pending | Pipeline stages: New Inquiry → Viewing → Offer/MOU → Form F → Ejari → Handover → Active Tenancy. fieldDefinitions: budget_aed, property_type, bedrooms, location_preference, rera_number, lease_expiry_date. |
+| GULF-12 | 95-Day Rent Alert (RERA compliance) | 3 | pending | Trigger.dev daily cron. Scans deals in "Active Tenancy". Alerts agent 95 days before lease expiry. |
+
 
 ---
 

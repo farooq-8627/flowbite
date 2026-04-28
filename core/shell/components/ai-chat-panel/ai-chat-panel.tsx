@@ -20,7 +20,7 @@ export function AIChatPanel() {
 	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
 
 	return (
-		<Sidebar side="right" variant={sidebar_variant} collapsible={sidebar_collapsible}>
+		<Sidebar side="right" variant={sidebar_variant} collapsible="offcanvas">
 			<SidebarHeader>
 				<SidebarMenu>
 					<SidebarMenuItem>
@@ -54,5 +54,37 @@ export function AIChatPanel() {
 				</div>
 			</SidebarFooter>
 		</Sidebar>
+	);
+}
+
+/** Standalone content — no Sidebar primitives, safe inside Sheet on any screen size */
+export function AIChatPanelContent() {
+	return (
+		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+			<div className="flex items-center gap-2 border-b border-sidebar-border p-4 shrink-0">
+				<Bot className="size-4" />
+				<span className="font-semibold text-base">AI Assistant</span>
+			</div>
+			<ScrollArea className="flex-1 p-4">
+				<div className="space-y-4">
+					<div className="flex items-start gap-3">
+						<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary">
+							<Bot className="size-4 text-primary-foreground" />
+						</div>
+						<p className="flex-1 text-sm">
+							Hello! I'm your AI assistant. How can I help you today?
+						</p>
+					</div>
+				</div>
+			</ScrollArea>
+			<div className="border-t border-sidebar-border p-4 shrink-0">
+				<div className="flex gap-2">
+					<Input placeholder="Ask me anything..." className="flex-1" />
+					<Button size="icon">
+						<Send className="size-4" />
+					</Button>
+				</div>
+			</div>
+		</div>
 	);
 }

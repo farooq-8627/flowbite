@@ -2,7 +2,7 @@
 
 > OVERWRITE this file at end of every session. Never create a new context file.
 > Keep this file SHORT. No session history. No architecture explanations. Those live in PLAN.md.
-> Last Updated: 2026-04-26 | Session 3 COMPLETE — Architecture cleanup done.
+> Last Updated: 2026-04-27 | Strategy V2 finalized. Phase 0 COMPLETE. Phase 1 Shell = NEXT.
 
 ---
 
@@ -24,16 +24,38 @@
 
 ---
 
+## Strategy V2 Decisions (Locked 2026-04-27)
+
+> These decisions are final. Do not revisit unless explicitly requested.
+
+| Decision | Locked Value |
+|---|---|
+| First industry | Dubai Real Estate |
+| Pipeline stages on | **Deals ONLY** (not leads). Leads have simple status: new/qualified/converted. |
+| Architecture | Hybrid: Structured DB (EAV) + AI input layer (WhatsApp voice → auto-fill fieldValues) |
+| WhatsApp phase | Phase 3 — ships WITH AI, not Phase 5 |
+| WhatsApp provider | 360dialog (Gulf BSP). Apply for UAE number NOW — takes 1–2 weeks. |
+| Voice transcription | OpenAI Whisper API (best Arabic + code-switching accuracy) |
+| Schema additions (Phase 2) | `aiContext` on leads/contacts/deals. `quickCode` on leads/contacts. `showInStages` on fieldDefinitions. `entityDocuments` new table. |
+| Stage-aware fields | Approach B — backend. Convex query filters `fieldDefinitions` by `showInStages` before returning to client. |
+| RBAC | Dynamic — `orgMembers.roleId` references `orgRoles` table (not hardcoded string). Refactor in Phase 1. |
+| Export layer | Agent-facing output layer (NOT platform export). Ejari PDF, property summary, CSV of any filtered view. Phase 2+. |
+| Industry templates | Base is generic. Industry-specific fieldDefs + pipeline stages seeded via config files in `features/industry-templates/`. First: Dubai RE. |
+
+---
+
 ## What's Next (Phase 1 — in build order)
 
-1. **BACKFIX**: Update `PLAN_FEATURES` in `constants.ts` (CRM plan features) — needed before any Phase 2 mutations
-2. **SHELL-01**: `core/shell/config/navigation.ts` — single source of truth for nav
-3. **SHELL-02**: `app/[locale]/dashboard/layout.tsx` — auth guard
-4. **SHELL-03**: `app/[locale]/dashboard/[orgSlug]/layout.tsx` — org resolver
-5. **SHELL-04–09**: DashboardLayout, AppSidebar, TopNav, NotificationBell, WorkspaceSwitcher, ModuleGuard
-6. **ONBOARD-01–03**: 3-step onboarding wizard (org name → industry → complete)
-7. **SHELL-11**: Quick Win Dashboard page (metric cards + Get Started card)
-8. **SHELL-12**: Auth redirect → onboarding if not completed
+1. **IMMEDIATE**: Apply for WhatsApp Business API via 360dialog (do this today — 1–2 week approval)
+2. **BACKFIX**: Update `PLAN_FEATURES` in `constants.ts` (CRM plan features) — needed before any Phase 2 mutations
+3. **SHELL-01**: `core/shell/config/navigation.ts` — single source of truth for nav
+4. **SHELL-02**: `app/[locale]/dashboard/layout.tsx` — auth guard
+5. **SHELL-03**: `app/[locale]/dashboard/[orgSlug]/layout.tsx` — org resolver
+6. **SHELL-04–09**: DashboardLayout, AppSidebar, TopNav, NotificationBell, WorkspaceSwitcher, ModuleGuard
+7. **ONBOARD-01–03**: 3-step onboarding wizard (org name → industry → complete). Industry picker seeds Dubai RE as default option.
+8. **SHELL-11**: Quick Win Dashboard page (metric cards + Get Started card)
+9. **SHELL-12**: Auth redirect → onboarding if not completed
+10. **RBAC-REFACTOR-01–10**: Dynamic roles (`orgRoles` table, `roleId` on `orgMembers`)
 
 Full todo list with IDs: `todos.md`
 Full build checklist: `checklist.md`

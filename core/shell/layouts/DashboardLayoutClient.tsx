@@ -3,9 +3,11 @@
 import { useState, useCallback, useRef } from "react";
 import { GripVertical } from "lucide-react";
 import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
-import { AIChatPanel } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
+import { AIChatPanel, AIChatPanelContent } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
 import { TopNav } from "@/core/shell/components/TopNav";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useIsTablet } from "@/hooks/use-tablet";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 
 const CHAT_MIN_WIDTH = 280;
@@ -27,6 +29,7 @@ export function DashboardLayoutClient({
 	initialSidebarOpen: boolean;
 	initialChatOpen: boolean;
 }) {
+	const isTablet = useIsTablet();
 	const [chatOpen, setChatOpen] = useState(initialChatOpen);
 	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
 	const [isDragging, setIsDragging] = useState(false);
@@ -76,7 +79,7 @@ export function DashboardLayoutClient({
 				<SidebarInset
 					className="flex-1"
 					style={{
-						marginRight: chatOpen ? chatWidth : 0,
+						marginRight: (!isTablet && chatOpen) ? chatWidth : 0,
 						transition: isDragging ? "none" : "margin 200ms ease",
 					}}
 				>
@@ -85,30 +88,44 @@ export function DashboardLayoutClient({
 				</SidebarInset>
 			</SidebarProvider>
 
-			{/* Right AI Chat Panel */}
-			<div
-				className={`fixed right-0 top-0 h-full flex z-40 ${
-					chatOpen ? "translate-x-0" : "translate-x-full"
-				}`}
-				style={{
-					width: chatWidth,
-					transition: isDragging ? "none" : "transform 200ms ease",
-				}}
-			>
-				{/* Grip handle */}
-				<div
-					className="group/handle relative z-50 w-4 shrink-0 -mr-4 flex items-center justify-center cursor-col-resize select-none"
-					onMouseDown={onMouseDown}
-				>
-					<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
+			{/* Right AI Chat Panel — desktop only, zero-width wrapper so it doesn't affect flex layout */}
+			{!isTablet && (
+				<div className="fixed inset-0 pointer-events-none z-40">
+					<SidebarProvider
+						open={chatOpen}
+						onOpenChange={(v) => { setChatOpen(v); document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`; }}
+						style={{ "--sidebar-width": `${chatWidth}px`, "--sidebar-width-icon": `${chatWidth}px` } as React.CSSProperties}
+					>
+						{/* Grip handle */}
+						<div
+							className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none"
+							style={{ right: chatOpen ? chatWidth - 4 : -4, transition: isDragging ? "none" : "right 200ms ease-linear" }}
+							onMouseDown={onMouseDown}
+						>
+							<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
+						</div>
+						<div className="pointer-events-auto">
+							<AIChatPanel />
+						</div>
+					</SidebarProvider>
 				</div>
-				<SidebarProvider
-					defaultOpen={true}
-					style={{ "--sidebar-width": `${chatWidth}px`, "--sidebar-width-icon": `${chatWidth}px` } as React.CSSProperties}
-				>
-					<AIChatPanel />
-				</SidebarProvider>
-			</div>
+			)}
+
+			{/* Tablet + Mobile Sheet (< 1024px) */}
+			{isTablet && (
+				<Sheet open={chatOpen} onOpenChange={setChatOpen}>
+					<SheetContent
+						side="right"
+						className="!w-[85vw] !max-w-[85vw] p-0 [&>button]:hidden"
+					>
+						<SheetHeader className="sr-only">
+							<SheetTitle>AI Assistant</SheetTitle>
+							<SheetDescription>AI chat panel</SheetDescription>
+						</SheetHeader>
+						<AIChatPanelContent />
+					</SheetContent>
+				</Sheet>
+			)}
 		</div>
 	);
 }

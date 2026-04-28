@@ -7,7 +7,7 @@
  */
 
 import type { ContentLayout, NavbarStyle, SidebarCollapsible, SidebarVariant } from "./layout";
-import type { ThemePreset } from "./theme";
+import type { ThemeMode, ThemePreset } from "./theme";
 
 // --- Persistence Strategies ---
 
@@ -21,12 +21,14 @@ export type PersistenceStrategy = "cookie" | "localStorage";
 // --- Preference Keys ---
 
 export const PREFERENCE_KEYS = [
-  "sidebar_variant",
-  "sidebar_collapsible",
-  "content_layout",
-  "navbar_style",
-  "theme_preset",
-  "font",
+	"sidebar_variant",
+	"sidebar_collapsible",
+	"content_layout",
+	"navbar_style",
+	"theme_preset",
+	"theme_mode",
+	"radius",
+	"font",
 ] as const;
 export type PreferenceKey = (typeof PREFERENCE_KEYS)[number];
 
@@ -34,36 +36,42 @@ export type PreferenceKey = (typeof PREFERENCE_KEYS)[number];
 
 /** Maps each preference key to its value type */
 export interface PreferenceTypeMap {
-  sidebar_variant: SidebarVariant;
-  sidebar_collapsible: SidebarCollapsible;
-  content_layout: ContentLayout;
-  navbar_style: NavbarStyle;
-  theme_preset: ThemePreset;
-  font: string;
+	sidebar_variant: SidebarVariant;
+	sidebar_collapsible: SidebarCollapsible;
+	content_layout: ContentLayout;
+	navbar_style: NavbarStyle;
+	theme_preset: ThemePreset;
+	theme_mode: ThemeMode;
+	radius: string;
+	font: string;
 }
 
 // --- Defaults ---
 
 /** Default values for all preferences */
 export const PREFERENCE_DEFAULTS: PreferenceTypeMap = {
-  sidebar_variant: "inset",
-  sidebar_collapsible: "icon",
-  content_layout: "centered",
-  navbar_style: "sticky",
-  theme_preset: "default",
-  font: "geist",
+	sidebar_variant: "inset",
+	sidebar_collapsible: "icon",
+	content_layout: "centered",
+	navbar_style: "sticky",
+	theme_preset: "tangerine",
+	theme_mode: "system",
+	radius: "0.5",
+	font: "geist",
 } as const;
 
 // --- Persistence Config ---
 
 /** Which storage mechanism each preference uses */
 export const PREFERENCE_PERSISTENCE: Record<PreferenceKey, PersistenceStrategy> = {
-  sidebar_variant: "cookie",      // layout-critical: affects SidebarProvider
-  sidebar_collapsible: "cookie",  // layout-critical: affects sidebar rendering
-  content_layout: "cookie",       // layout-critical: affects max-width
-  navbar_style: "cookie",         // layout-critical: affects sticky behavior
-  theme_preset: "cookie",         // layout-critical: CSS custom properties
-  font: "cookie",                 // layout-critical: font-family on <html>
+	sidebar_variant: "cookie", // layout-critical: affects SidebarProvider
+	sidebar_collapsible: "cookie", // layout-critical: affects sidebar rendering
+	content_layout: "cookie", // layout-critical: affects max-width
+	navbar_style: "cookie", // layout-critical: affects sticky behavior
+	theme_preset: "cookie", // layout-critical: CSS custom properties
+	theme_mode: "cookie", // layout-critical: dark mode
+	radius: "cookie", // layout-critical: border-radius
+	font: "cookie", // layout-critical: font-family on <html>
 } as const;
 
 // --- Cookie Config ---

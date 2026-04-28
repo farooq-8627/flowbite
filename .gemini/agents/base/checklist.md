@@ -99,6 +99,13 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 - [ ] Update `FEATURE_FLAGS` map with new CRM + AI flags
 - [ ] Verify `requirePlanFeature()` works with new keys
 
+### Schema Additions (do with Phase 2 tables — confirmed Strategy V2)
+- [ ] `aiContext: v.optional(v.any())` on `leads`, `contacts`, `deals`
+- [ ] `quickCode: v.optional(v.string())` on `leads`, `contacts` + `by_org_and_quickcode` index
+- [ ] `showInStages: v.optional(v.array(v.string()))` on `fieldDefinitions`
+- [ ] `entityDocuments` new table + `by_entity` index
+- [ ] `"whatsapp"` added to `source` enum on `leads`
+
 ### Infrastructure Libraries
 - [ ] Install `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities`
 - [ ] Install `@tanstack/react-table`
@@ -113,33 +120,39 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 - [ ] `DEFAULT_PIPELINE_STAGES` in `convex/_shared/constants.ts`
 - [ ] Seed default pipelines on org creation in `orgs/mutations.ts`
 - [ ] Pipeline management admin UI
+- [ ] Stage-aware field query: `fieldDefinitions` filtered by `showInStages` includes current stageId OR is empty
 
 ### Dynamic Fields (CRM-01)
-- [ ] `fieldDefinitions` + `fieldValues` tables in `convex/schema.ts`
-- [ ] Field builder admin UI (sensitive toggle + group picker)
-- [ ] Dynamic form renderer
+- [ ] `fieldDefinitions` + `fieldValues` tables in `convex/schema.ts` (includes `showInStages`)
+- [ ] Field builder admin UI (sensitive toggle + group picker + stage picker for `showInStages`)
+- [ ] Dynamic form renderer (renders only stage-relevant fields — backend-filtered)
+- [ ] `entityDocuments` table + Documents tab on Lead/Contact/Deal detail pages
+- [ ] `aiContext` viewer widget (renders JSON as smart pills + "Create Field from Fact" button)
 
 ### CRM Entities
-- [ ] `leads` table — `pipelineId`, `currentStageId`, `stageEnteredAt`, `displayName`, `email`
-- [ ] `contacts` table — `displayName`, `companyId`
+- [ ] `leads` table — `pipelineId`, `currentStageId`, `stageEnteredAt`, `displayName`, `email`, `aiContext`, `quickCode`
+- [ ] `contacts` table — `displayName`, `companyId`, `aiContext`, `quickCode`
 - [ ] `companies` table — B2B first-class entity
-- [ ] `deals` table — `pipelineId`, `currentStageId`, `stageEnteredAt`, `title`, `companyId`
+- [ ] `deals` table — `pipelineId`, `currentStageId`, `stageEnteredAt`, `title`, `companyId`, `aiContext`
+- [ ] Pipeline on DEALS ONLY — leads use simple status (new/qualified/converted)
 - [ ] `reminders` table
 - [ ] `notes` table — `authorType: "user"|"ai"`, `isPinned`, `isInternal`
 - [ ] Dedup engine — email + phone normalization + fuzzy name matching + auto-merge with undo
 - [ ] `savedViews` table — shareable across org (`scope: "user"|"org"`)
 - [ ] `tags` + `entityTags` tables — org-wide consistency
+- [ ] quickCode auto-generation on lead/contact create (format: `AHM-001`)
 
 ### CRM UI
-- [ ] Lead list view + create/edit form
-- [ ] Contact list + detail view
+- [ ] Lead list view + create/edit form (simple status — no kanban for leads)
+- [ ] Contact list + detail view (tabs: Overview, Activity, Deals, Notes, Documents)
 - [ ] Company list + detail view
 - [ ] Deal pipeline kanban view — dynamic stages from `pipelines` table
 - [ ] Activity log per entity (Unified Timeline — `activityLogs` + `notes`)
-- [ ] CSV import with field mapping UI (AI-assisted column → Orbitly field)
+- [ ] CSV import with field mapping UI (AI-assisted + Bayut/PF format support)
 - [ ] Search bar across leads/contacts/deals
 - [ ] Bulk actions — select-all + bulk update/tag/assign/delete
 - [ ] Cmd+K command palette
+- [ ] Export layer: CSV from any filtered DataTable view (EXPORT-01, EXPORT-02)
 
 ### Stripe Billing
 - [ ] Install `stripe` + `@stripe/stripe-js`
@@ -181,9 +194,10 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 
 ---
 
-## Phase 3 — AI Assistant (PENDING)
+## Phase 3 — AI Assistant + WhatsApp Bridge (Ship Together)
 
 > **Sellable Gate: v2.0 — "Stop navigating your CRM. Just talk to it."**
+> WhatsApp voice bridge ships in Phase 3 WITH AI — not Phase 5.
 > Module rules: `core/ai/MODULE.md`
 
 ### AI Infrastructure
@@ -191,7 +205,7 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 - [ ] Add `ANTHROPIC_API_KEY` env to Convex deployment
 - [ ] `convex/ai/processChat.ts` — internalAction, "use node", ToolLoopAgent
 - [ ] `app/api/ai/chat/route.ts` — thin streaming proxy (auth → Convex → stream)
-- [ ] `convex/ai/systemPrompt.ts` — dynamic prompt builder (org, role, field defs, today)
+- [ ] `convex/ai/systemPrompt.ts` — dynamic prompt builder (org, role, field defs, today, pipeline stages)
 - [ ] `convex/ai/tools/` — 11 core tools (search, create, update, detail, notes, reminders, analytics, email, bulkUpdate, setupWorkspace, send_chat_message)
 - [ ] Role-scoped tool availability matrix (owner/admin/member/client)
 - [ ] Each tool logs with `actorType: "ai"` in activityLogs
@@ -206,22 +220,40 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 - [ ] Disambiguation UX + Confirmation UX for destructive actions
 - [ ] `aiConversations` + `aiMessages` Convex tables (persist history per orgId + userId)
 
+### WhatsApp Voice Bridge (ships with AI — Phase 3)
+- [ ] `app/api/channels/whatsapp/route.ts` — inbound webhook (validates 360dialog signature)
+- [ ] Trigger.dev job: `whatsapp-voice-processor` (Whisper → Claude → fieldValues + aiContext → Convex)
+- [ ] Trigger.dev job: `whatsapp-document-processor` (OCR → Claude Vision → entityDocuments)
+- [ ] `convex/ai/tools/whatsapp/resolveContact.ts` — 4-layer contact resolution
+- [ ] WhatsApp reply confirmation (bot summarizes what was updated, sent back to agent)
+- [ ] Whisper Mode: `suggestClientReply()` AI tool
+- [ ] `channelAccounts` Convex table + 360dialog credentials storage
+- [ ] quickCode auto-generation wired to lead/contact `create` mutations
+
+### Dubai RE Template (ships with Phase 3)
+- [ ] `features/industry-templates/config/dubai-real-estate.ts` — seed config
+- [ ] Pipeline stages: New Inquiry → Viewing → Offer/MOU → Form F → Ejari → Handover → Active Tenancy
+- [ ] fieldDefinitions: `budget_aed`, `property_type`, `bedrooms`, `location_preference`, `rera_number`, `lease_expiry_date`
+- [ ] 95-Day Rent Alert: Trigger.dev scheduled job (`ejari-renewal-check`, daily 8am Gulf time)
+
 ### 🧪 Testing + 🔒 Security + 📊 Monitoring (Phase 3)
 - [ ] Unit tests: tool registry — role-filtered correctly
 - [ ] Unit tests: system prompt — no PII, role-specific instructions
 - [ ] E2E — AI panel: "show me my top deals" → deal cards rendered
 - [ ] E2E — "create a lead named Sarah Johnson" → lead appears
 - [ ] E2E — Confirmation flow: "move deal to Won" → confirm card → stage updated
+- [ ] E2E — WhatsApp voice note → contact updated → manager sees it on Kanban in real time
 - [ ] API route: userId + orgId from server session (NEVER from request body)
 - [ ] Tool definitions filtered by role BEFORE passing to Claude
 - [ ] No raw user input in system prompt (R51)
 - [ ] Rate limiting: max 20 requests/minute per user
 
-### ✅ Phase 3 Gate — Shippable: v2.0 AI-Powered CRM
+### ✅ Phase 3 Gate — Shippable: v2.0 AI-Powered CRM + WhatsApp Bridge
 - [ ] `pnpm typecheck` — 0 errors | `pnpm build` — 0 errors | `pnpm test` — 160+ passing
 - [ ] Demo: "show me my top deals" → deal cards in AI panel ✅
 - [ ] Demo: "create a lead for Sarah at Acme" → lead created ✅
 - [ ] Demo: viewer sees only read tools — no destructive actions ✅
+- [ ] **Demo: agent sends WhatsApp voice note → CRM updates in real time → manager sees on Kanban** ✅
 - [ ] Streaming latency: first token < 2 seconds ✅
 
 ---
@@ -234,7 +266,7 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 | Phase | Name | Gate | Module |
 |---|---|---|---|
 | 4 | Built-in Communications | 15 clients | `features/` (conversations, messages) |
-| 5 | External Channels (WhatsApp + Email) | 25 clients | `features/integrations/` |
+| 5 | External Channels (WhatsApp Inbox + Email) | 25 clients | `features/integrations/` — NOTE: WhatsApp VOICE BRIDGE is Phase 3. Phase 5 = outbound inbox. |
 | 6 | Integration Bridges | 35 clients | `features/integrations/MODULE.md` |
 | 7 | AI Automation | 40 clients | `features/ai-automation/MODULE.md` |
 | 8 | Project Management | Enterprise | `features/project-management/MODULE.md` |
@@ -247,8 +279,8 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 > Threads through every phase. Gulf-native from day one.
 
 - [ ] Phase 1: `dir="rtl"` on Arabic `<html>`, `messages/ar.json` bootstrapped, `labelAr` in nav config
-- [ ] Phase 2: `labelAr` on CRM form labels, RTL-safe inputs + kanban, Gulf phone validation
-- [ ] Phase 3: AI responds in Arabic when `locale = ar`
-- [ ] Phase 5: WhatsApp Business API as first external channel (Gulf B2B is WhatsApp-first)
-- [ ] Phase 5+: PDPL compliance (Saudi data regulation)
-- [ ] Cross-phase: Direction-safe CSS audit, Arabic number formatting (`toLocaleString("ar-SA")`), mobile RTL testing (390px)
+- [ ] Phase 2: `labelAr` on CRM form labels, RTL-safe inputs + kanban, Gulf phone validation, Arabic number formatting
+- [ ] Phase 3: AI responds in Arabic when `locale = ar`. WhatsApp voice bridge (360dialog). Dubai RE template seeded.
+- [ ] Phase 3: 95-Day Rent Alert (RERA compliance) — Trigger.dev daily cron
+- [ ] Phase 5: PDPL compliance (Saudi data regulation)
+- [ ] Cross-phase: Direction-safe CSS audit, mobile RTL testing (390px)

@@ -101,6 +101,11 @@ Spread into schema via `...authTables`
 Admin-defined schema per entity type. Defines what fields exist at runtime.
 AI reads these to know what fields are available. AI can create new ones (admin-only tool).
 
+**Stage-Aware Field Filtering (Approach B — Backend):**
+The Convex query filters `fieldDefinitions` by `showInStages` BEFORE returning to the client.
+If the current deal stage is `"viewing"`, the query returns only fields where `showInStages` includes `"viewing"` (or where `showInStages` is null/empty = always shown).
+This means the frontend only receives relevant fields — no extra filtering logic needed in UI.
+
 ```typescript
 fieldDefinitions: defineTable({
   orgId: v.id("orgs"),
@@ -115,6 +120,7 @@ fieldDefinitions: defineTable({
   groupName: v.optional(v.string()),  // UI grouping: "Financial", "Technical", "Custom"
   sensitive: v.optional(v.boolean()), // true = PII field (phone, SSN). Excluded from AI prompts for non-admin roles.
   defaultValue: v.optional(v.any()),
+  showInStages: v.optional(v.array(v.string())), // stage IDs where this field is visible. null/empty = always shown.
   createdAt: v.number(),
   updatedAt: v.number(),
 })
@@ -187,13 +193,15 @@ leads: defineTable({
   orgId: v.id("orgs"),
   displayName: v.optional(v.string()),      // denormalized: "Sarah Johnson" or "Acme Corp" — for AI context + list display (R13)
   email: v.optional(v.string()),            // for dedup and AI lookup — sync'd from fieldValues
-  source: v.string(),            // "manual"|"csv"|"hubspot"|"reddit"|"linkedin"|"hn"
+  source: v.string(),            // "manual"|"csv"|"hubspot"|"reddit"|"linkedin"|"hn"|"whatsapp"
   externalId: v.optional(v.string()), // for dedup from integrations
   pipelineId: v.id("pipelines"),      // which pipeline this lead follows
   currentStageId: v.string(),         // matches pipelines.stages[].id — dynamic, NOT hardcoded
   assignedTo: v.optional(v.id("users")),
   qualificationScore: v.optional(v.number()),
   stageEnteredAt: v.optional(v.number()),    // when entity entered current stage (enables staleness detection)
+  quickCode: v.optional(v.string()),         // e.g. "AHM-001" — org-unique short code for WhatsApp voice resolution
+  aiContext: v.optional(v.any()),            // overflow from voice/OCR/AI that has no fieldDefinition yet
   createdAt: v.number(),
   updatedAt: v.number(),
   deletedAt: v.optional(v.number()),
@@ -204,6 +212,7 @@ leads: defineTable({
 .index("by_org_and_assigned", ["orgId", "assignedTo"])
 .index("by_org_and_external", ["orgId", "externalId"])
 .index("by_org_and_email", ["orgId", "email"])
+.index("by_org_and_quickcode", ["orgId", "quickCode"])
 ```
 
 ### `contacts`
@@ -217,6 +226,8 @@ contacts: defineTable({
   displayName: v.optional(v.string()),  // denormalized: "Sarah Johnson" — for AI context + list display (R13)
   email: v.optional(v.string()),
   assignedTo: v.optional(v.id("users")),
+  quickCode: v.optional(v.string()),         // e.g. "AHM-001" — org-unique short code for WhatsApp voice resolution
+  aiContext: v.optional(v.any()),            // overflow from voice/OCR/AI that has no fieldDefinition yet
   createdAt: v.number(),
   updatedAt: v.number(),
   deletedAt: v.optional(v.number()),
@@ -225,6 +236,7 @@ contacts: defineTable({
 .index("by_org_and_email", ["orgId", "email"])
 .index("by_org_and_company", ["orgId", "companyId"])
 .index("by_org_and_assigned", ["orgId", "assignedTo"])
+.index("by_org_and_quickcode", ["orgId", "quickCode"])
 ```
 
 ### `companies`
@@ -268,6 +280,7 @@ deals: defineTable({
   lostAt: v.optional(v.number()),
   lostReason: v.optional(v.string()),
   stageEnteredAt: v.optional(v.number()),    // when entity entered current stage (enables staleness detection)
+  aiContext: v.optional(v.any()),            // overflow from voice/OCR/AI that has no fieldDefinition yet
   createdAt: v.number(),
   updatedAt: v.number(),
   deletedAt: v.optional(v.number()),
@@ -385,6 +398,30 @@ contactMergeHistory: defineTable({
 .index("by_org", ["orgId"])
 .index("by_survivor", ["orgId", "survivorId"])
 ```
+
+---
+
+## Entity Documents Table — Phase 2 (Document Vault)
+
+### `entityDocuments`
+Stores files forwarded via WhatsApp (Emirates IDs, passports, title deeds, contracts) or uploaded directly from the dashboard. Surfaced as a "Documents" tab on Lead/Contact/Deal detail pages.
+
+```typescript
+entityDocuments: defineTable({
+  orgId: v.id("orgs"),
+  entityType: v.string(),         // "lead" | "contact" | "deal"
+  entityId: v.string(),           // _id of the referenced entity
+  fileName: v.string(),
+  fileType: v.string(),           // "emirates_id"|"passport"|"title_deed"|"contract"|"other"
+  storageId: v.id("_storage"),    // Convex file storage
+  extractedData: v.optional(v.any()), // OCR/AI output if applicable
+  uploadedBy: v.string(),         // "whatsapp_bot" | userId
+  createdAt: v.number(),
+})
+.index("by_entity", ["orgId", "entityType", "entityId"])
+```
+
+> **AI tools**: `extractDocumentData(imageUrl, documentType)` — supports `emirates_id`, `passport`, `title_deed`, `ejari_contract`, `tenancy_contract`
 
 ---
 
@@ -739,3 +776,14 @@ Key exports: `PERMISSIONS`, `hasPermission()`, `requireRole()`, `hasMinRole()`, 
 
 **Status**: Phase 0 base tables ✅ complete. Phase 2 CRM tables pending (start after _shell).
 **Tests**: 102 passing, 1 skipped
+
+## Schema Additions Confirmed (Strategy V2 — 2026-04-27)
+
+| Field/Table | Added To | Purpose |
+|---|---|---|
+| `aiContext` | `leads`, `contacts`, `deals` | Overflow storage for voice/OCR data without a matching `fieldDefinition`. AI backfills to proper fields if a `fieldDefinition` is created later. |
+| `quickCode` | `leads`, `contacts` | Org-unique short code (e.g. `AHM-001`) for WhatsApp voice resolution. Auto-generated on creation. Index: `by_org_and_quickcode`. |
+| `showInStages` | `fieldDefinitions` | Array of stage IDs where this field is visible. Empty/null = always shown. Backend query filters by current stage (Approach B). |
+| `entityDocuments` | New table (Phase 2) | Document vault per entity. Stores WhatsApp-forwarded IDs, deeds, contracts with Convex file storage + OCR output. |
+
+**Stage-Aware Fields Architecture**: Backend filters `fieldDefinitions` by `showInStages` in Convex query before returning to client. Frontend renders exactly what it receives — no extra logic needed.

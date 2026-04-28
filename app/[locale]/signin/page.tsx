@@ -47,7 +47,7 @@ export default function SignIn() {
 	const handleOAuth = (provider: "github" | "google") => {
 		setOauthLoading(provider);
 		setError(null);
-		void signIn(provider, { redirectTo: "/" }).catch((err: Error) => {
+		void signIn(provider).catch((err: Error) => {
 			posthog.capture("oauth_sign_in_failed", { provider, error_message: err.message });
 			setError(err.message);
 			setOauthLoading(null);
@@ -114,14 +114,6 @@ export default function SignIn() {
 						const email = formData.get("email") as string;
 						formData.set("flow", flow);
 						void signIn("password", formData)
-							.catch((err: Error) => {
-								posthog.capture("sign_in_failed", {
-									flow,
-									error_message: err.message,
-								});
-								setError(err.message);
-								setLoading(false);
-							})
 							.then(() => {
 								posthog.identify(email, { email });
 								posthog.capture(
@@ -132,6 +124,14 @@ export default function SignIn() {
 									},
 								);
 								router.push("/");
+							})
+							.catch((err: Error) => {
+								posthog.capture("sign_in_failed", {
+									flow,
+									error_message: err.message,
+								});
+								setError(err.message);
+								setLoading(false);
 							});
 					}}
 				>

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { notFound } from "next/navigation";
@@ -9,8 +8,11 @@ import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { routing } from "@/i18n/routing";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
+import { PreferencesInitializer } from "@/components/providers/PreferencesInitializer";
+import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { ALL_FONT_CLASSES } from "@/lib/fonts/registry";
 
 /**
  * Root layout with all providers in correct nesting order.
@@ -24,22 +26,7 @@ import { Toaster } from "@/components/ui/sonner";
  * 6. NextIntlClientProvider — i18n translations
  * 7. TooltipProvider — shadcn tooltip context
  * 8. Toaster — shadcn sonner toast notifications
- *
- * Sources:
- * - https://github.com/pacocoursey/next-themes/blob/main/README.md — suppressHydrationWarning
- * - https://github.com/posthog/posthog-js/blob/main/packages/next/README.md — PostHogProvider
- * - https://github.com/StevanFreeborn/conve-x/blob/main/src/providers/index.tsx — provider nesting
  */
-
-const geistSans = Geist({
-	variable: "--font-geist-sans",
-	subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-	variable: "--font-geist-mono",
-	subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
 	title: "FlowBite",
@@ -68,18 +55,21 @@ export default async function RootLayout({
 
 	return (
 		<ConvexAuthNextjsServerProvider>
-			<html lang={locale} suppressHydrationWarning>
-				<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+			<html lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} suppressHydrationWarning>
+				<body className={`${ALL_FONT_CLASSES.map((f) => f.className).join(" ")} antialiased`}>
 					<PostHogProvider>
 						<ThemeProvider>
-							<ConvexClientProvider>
-								<NextIntlClientProvider locale={locale}>
-									<TooltipProvider>
-										{children}
-										<Toaster />
-									</TooltipProvider>
-								</NextIntlClientProvider>
-							</ConvexClientProvider>
+							<PreferencesProvider>
+								<PreferencesInitializer />
+								<ConvexClientProvider>
+									<NextIntlClientProvider locale={locale}>
+										<TooltipProvider>
+											{children}
+											<Toaster />
+										</TooltipProvider>
+									</NextIntlClientProvider>
+								</ConvexClientProvider>
+							</PreferencesProvider>
 						</ThemeProvider>
 					</PostHogProvider>
 				</body>

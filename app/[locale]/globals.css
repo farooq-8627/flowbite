@@ -2,14 +2,27 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Theme presets — loaded via data-theme-preset attribute on <html> */
+@import "../../styles/presets/tangerine.css";
+@import "../../styles/presets/brutalist.css";
+@import "../../styles/presets/soft-pop.css";
+@import "../../styles/presets/orbitly.css";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
-	--font-sans: var(--font-sans);
+	--font-sans: var(--font-geist);
 	--font-mono: var(--font-geist-mono);
-	--font-heading: var(--font-sans);
+	--font-heading: var(--font-geist);
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+	--radius-2xl: calc(var(--radius) + 8px);
+	--radius-3xl: calc(var(--radius) + 12px);
+	--radius-4xl: calc(var(--radius) + 16px);
 	--color-sidebar-ring: var(--sidebar-ring);
 	--color-sidebar-border: var(--sidebar-border);
 	--color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -39,82 +52,75 @@
 	--color-popover: var(--popover);
 	--color-card-foreground: var(--card-foreground);
 	--color-card: var(--card);
-	--radius-sm: calc(var(--radius) * 0.6);
-	--radius-md: calc(var(--radius) * 0.8);
-	--radius-lg: var(--radius);
-	--radius-xl: calc(var(--radius) * 1.4);
-	--radius-2xl: calc(var(--radius) * 1.8);
-	--radius-3xl: calc(var(--radius) * 2.2);
-	--radius-4xl: calc(var(--radius) * 2.6);
 }
 
 :root {
-	--background: oklch(1 0 0);
-	--foreground: oklch(0.145 0 0);
 	--card: oklch(1 0 0);
-	--card-foreground: oklch(0.145 0 0);
+	--card-foreground: oklch(0.147 0.004 49.3);
 	--popover: oklch(1 0 0);
-	--popover-foreground: oklch(0.145 0 0);
-	--primary: oklch(0.205 0 0);
-	--primary-foreground: oklch(0.985 0 0);
-	--secondary: oklch(0.97 0 0);
-	--secondary-foreground: oklch(0.205 0 0);
-	--muted: oklch(0.97 0 0);
-	--muted-foreground: oklch(0.556 0 0);
-	--accent: oklch(0.97 0 0);
-	--accent-foreground: oklch(0.205 0 0);
+	--popover-foreground: oklch(0.147 0.004 49.3);
+	--primary: oklch(0.214 0.009 43.1);
+	--primary-foreground: oklch(0.986 0.002 67.8);
+	--secondary: oklch(0.96 0.002 17.2);
+	--secondary-foreground: oklch(0.214 0.009 43.1);
+	--muted: oklch(0.96 0.002 17.2);
+	--muted-foreground: oklch(0.547 0.021 43.1);
+	--accent: oklch(0.96 0.002 17.2);
+	--accent-foreground: oklch(0.214 0.009 43.1);
 	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.922 0 0);
-	--input: oklch(0.922 0 0);
-	--ring: oklch(0.708 0 0);
-	--chart-1: oklch(0.87 0 0);
-	--chart-2: oklch(0.556 0 0);
-	--chart-3: oklch(0.439 0 0);
-	--chart-4: oklch(0.371 0 0);
-	--chart-5: oklch(0.269 0 0);
+	--border: oklch(0.922 0.005 34.3);
+	--input: oklch(0.922 0.005 34.3);
+	--ring: oklch(0.714 0.014 41.2);
+	--chart-1: oklch(0.868 0.007 39.5);
+	--chart-2: oklch(0.547 0.021 43.1);
+	--chart-3: oklch(0.438 0.017 39.3);
+	--chart-4: oklch(0.367 0.016 35.7);
+	--chart-5: oklch(0.268 0.011 36.5);
 	--radius: 0.625rem;
-	--sidebar: oklch(0.985 0 0);
-	--sidebar-foreground: oklch(0.145 0 0);
-	--sidebar-primary: oklch(0.205 0 0);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.97 0 0);
-	--sidebar-accent-foreground: oklch(0.205 0 0);
-	--sidebar-border: oklch(0.922 0 0);
-	--sidebar-ring: oklch(0.708 0 0);
+	--sidebar: oklch(0.986 0.002 67.8);
+	--sidebar-foreground: oklch(0.147 0.004 49.3);
+	--sidebar-primary: oklch(0.214 0.009 43.1);
+	--sidebar-primary-foreground: oklch(0.986 0.002 67.8);
+	--sidebar-accent: oklch(0.96 0.002 17.2);
+	--sidebar-accent-foreground: oklch(0.214 0.009 43.1);
+	--sidebar-border: oklch(0.922 0.005 34.3);
+	--sidebar-ring: oklch(0.714 0.014 41.2);
+	--background: oklch(1 0 0);
+	--foreground: oklch(0.147 0.004 49.3);
 }
 
 .dark {
-	--background: oklch(0.145 0 0);
-	--foreground: oklch(0.985 0 0);
-	--card: oklch(0.205 0 0);
-	--card-foreground: oklch(0.985 0 0);
-	--popover: oklch(0.205 0 0);
-	--popover-foreground: oklch(0.985 0 0);
-	--primary: oklch(0.922 0 0);
-	--primary-foreground: oklch(0.205 0 0);
-	--secondary: oklch(0.269 0 0);
-	--secondary-foreground: oklch(0.985 0 0);
-	--muted: oklch(0.269 0 0);
-	--muted-foreground: oklch(0.708 0 0);
-	--accent: oklch(0.269 0 0);
-	--accent-foreground: oklch(0.985 0 0);
+	--background: oklch(0.147 0.004 49.3);
+	--foreground: oklch(0.986 0.002 67.8);
+	--card: oklch(0.214 0.009 43.1);
+	--card-foreground: oklch(0.986 0.002 67.8);
+	--popover: oklch(0.214 0.009 43.1);
+	--popover-foreground: oklch(0.986 0.002 67.8);
+	--primary: oklch(0.922 0.005 34.3);
+	--primary-foreground: oklch(0.214 0.009 43.1);
+	--secondary: oklch(0.268 0.011 36.5);
+	--secondary-foreground: oklch(0.986 0.002 67.8);
+	--muted: oklch(0.268 0.011 36.5);
+	--muted-foreground: oklch(0.714 0.014 41.2);
+	--accent: oklch(0.268 0.011 36.5);
+	--accent-foreground: oklch(0.986 0.002 67.8);
 	--destructive: oklch(0.704 0.191 22.216);
 	--border: oklch(1 0 0 / 10%);
 	--input: oklch(1 0 0 / 15%);
-	--ring: oklch(0.556 0 0);
-	--chart-1: oklch(0.87 0 0);
-	--chart-2: oklch(0.556 0 0);
-	--chart-3: oklch(0.439 0 0);
-	--chart-4: oklch(0.371 0 0);
-	--chart-5: oklch(0.269 0 0);
-	--sidebar: oklch(0.205 0 0);
-	--sidebar-foreground: oklch(0.985 0 0);
+	--ring: oklch(0.547 0.021 43.1);
+	--chart-1: oklch(0.868 0.007 39.5);
+	--chart-2: oklch(0.547 0.021 43.1);
+	--chart-3: oklch(0.438 0.017 39.3);
+	--chart-4: oklch(0.367 0.016 35.7);
+	--chart-5: oklch(0.268 0.011 36.5);
+	--sidebar: oklch(0.214 0.009 43.1);
+	--sidebar-foreground: oklch(0.986 0.002 67.8);
 	--sidebar-primary: oklch(0.488 0.243 264.376);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
-	--sidebar-accent: oklch(0.269 0 0);
-	--sidebar-accent-foreground: oklch(0.985 0 0);
+	--sidebar-primary-foreground: oklch(0.986 0.002 67.8);
+	--sidebar-accent: oklch(0.268 0.011 36.5);
+	--sidebar-accent-foreground: oklch(0.986 0.002 67.8);
 	--sidebar-border: oklch(1 0 0 / 10%);
-	--sidebar-ring: oklch(0.556 0 0);
+	--sidebar-ring: oklch(0.547 0.021 43.1);
 }
 
 @layer base {
@@ -127,4 +133,59 @@
 	html {
 		@apply font-sans;
 	}
+}
+
+/* Font switching via data-font attribute on <html> */
+/* Tailwind v4 @theme inline resolves at build time, so we override font-family directly */
+[data-font="geist"] body { font-family: var(--font-geist), sans-serif; }
+[data-font="inter"] body { font-family: var(--font-inter), sans-serif; }
+[data-font="outfit"] body { font-family: var(--font-outfit), sans-serif; }
+[data-font="dm-sans"] body { font-family: var(--font-dm-sans), sans-serif; }
+[data-font="plus-jakarta-sans"] body { font-family: var(--font-plus-jakarta-sans), sans-serif; }
+[data-font="montserrat"] body { font-family: var(--font-montserrat), sans-serif; }
+[data-font="raleway"] body { font-family: var(--font-raleway), sans-serif; }
+[data-font="nunito"] body { font-family: var(--font-nunito), sans-serif; }
+[data-font="lato"] body { font-family: var(--font-lato), sans-serif; }
+[data-font="roboto"] body { font-family: var(--font-roboto), sans-serif; }
+[data-font="open-sans"] body { font-family: var(--font-open-sans), sans-serif; }
+[data-font="ibm-plex-sans"] body { font-family: var(--font-ibm-plex-sans), sans-serif; }
+[data-font="josefin-sans"] body { font-family: var(--font-josefin-sans), sans-serif; }
+[data-font="playfair-display"] body { font-family: var(--font-playfair-display), serif; }
+[data-font="merriweather"] body { font-family: var(--font-merriweather), serif; }
+[data-font="libre-baskerville"] body { font-family: var(--font-libre-baskerville), serif; }
+[data-font="source-code-pro"] body { font-family: var(--font-source-code-pro), monospace; }
+[data-font="geist-mono"] body { font-family: var(--font-geist-mono), monospace; }
+
+/* Radius overrides — apply --radius to all UI components that hardcode rounded-none */
+:root [data-slot="dropdown-menu-content"],
+:root [data-slot="context-menu-content"],
+:root [data-slot="context-menu-sub-content"],
+:root [data-slot="select-content"],
+:root [data-slot="popover-content"],
+:root [data-slot="tooltip-content"],
+:root [data-slot="dialog-content"],
+:root [data-slot="alert-dialog-content"],
+:root [data-slot="command-dialog-content"],
+:root [data-slot="navigation-menu-viewport"],
+:root [data-slot="combobox-content"],
+:root [data-slot="menubar-content"],
+:root [data-slot="sheet-content"] {
+	border-radius: var(--radius) !important;
+}
+
+:root [data-slot="dropdown-menu-item"],
+:root [data-slot="context-menu-item"],
+:root [data-slot="select-item"],
+:root [data-slot="combobox-item"],
+:root [data-slot="command-item"],
+:root [data-slot="menubar-item"],
+:root [data-sidebar="menu-button"],
+:root [data-sidebar="menu-action"],
+:root [data-sidebar="group-action"],
+:root [data-sidebar="group-label"] {
+	border-radius: calc(var(--radius) - 2px) !important;
+}
+
+:root [data-slot="card"] {
+	border-radius: var(--radius) !important;
 }

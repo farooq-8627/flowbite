@@ -2,8 +2,7 @@
 
 import { useEffect } from "react";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
-import { applyThemePreset } from "@/lib/preferences/theme-utils";
-import { applyFont } from "@/lib/preferences/layout-utils";
+import { applyThemePreset, applyFont } from "@/lib/preferences/theme-utils";
 
 export function PreferencesInitializer() {
 	const theme_preset = usePreferencesStore((s) => s.theme_preset);

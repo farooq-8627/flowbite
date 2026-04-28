@@ -23,11 +23,11 @@ import type {
 } from "@/lib/preferences/layout";
 import {
 	applyContentLayout,
-	applyFont,
 	applyNavbarStyle,
 	applySidebarCollapsible,
 	applySidebarVariant,
 } from "@/lib/preferences/layout-utils";
+import { applyFont } from "@/lib/preferences/theme-utils";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
 import { persistPreference } from "@/lib/preferences/preferences-storage";
 import { THEME_PRESET_OPTIONS, type ThemeMode, type ThemePreset } from "@/lib/preferences/theme";

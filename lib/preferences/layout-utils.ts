@@ -88,10 +88,4 @@ export function applyNavbarStyle(style: NavbarStyle): void {
 	document.documentElement.setAttribute("data-navbar-style", style);
 }
 
-/**
- * Apply font by setting data attribute on <html>
- */
-export function applyFont(fontKey: string): void {
-	if (typeof document === "undefined") return;
-	document.documentElement.setAttribute("data-font", fontKey);
-}
+

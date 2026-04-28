@@ -48,6 +48,14 @@ export function DashboardLayoutClient({
 		startWidth.current = chatWidth;
 		setIsDragging(true);
 
+		// Disable transitions on all sidebar elements AND the main content during drag
+		const allElements = document.querySelectorAll('[data-sidebar="sidebar"], .sidebar-container, [data-side="right"], [data-sidebar="inset"]');
+		allElements.forEach((el) => {
+			const element = el as HTMLElement;
+			element.style.transition = 'none';
+			element.style.transform = element.style.transform; // Force style recalc
+		});
+
 		const onMouseMove = (e: MouseEvent) => {
 			const delta = startX.current - e.clientX;
 			const newWidth = Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, startWidth.current + delta));
@@ -56,6 +64,13 @@ export function DashboardLayoutClient({
 
 		const onMouseUp = () => {
 			setIsDragging(false);
+			
+			// Re-enable transitions on all elements
+			allElements.forEach((el) => {
+				const element = el as HTMLElement;
+				element.style.transition = '';
+			});
+			
 			document.removeEventListener("mousemove", onMouseMove);
 			document.removeEventListener("mouseup", onMouseUp);
 			document.body.style.cursor = "";
@@ -88,18 +103,19 @@ export function DashboardLayoutClient({
 				</SidebarInset>
 			</SidebarProvider>
 
-			{/* Right AI Chat Panel — desktop only, zero-width wrapper so it doesn't affect flex layout */}
-			{!isTablet && (
-				<div className="fixed inset-0 pointer-events-none z-40">
+			{/* Right AI Chat Panel — desktop only, completely removed from DOM when closed */}
+			{!isTablet && chatOpen && (
+				<div className="fixed top-0 right-0 h-full pointer-events-none z-40">
 					<SidebarProvider
 						open={chatOpen}
 						onOpenChange={(v) => { setChatOpen(v); document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`; }}
 						style={{ "--sidebar-width": `${chatWidth}px`, "--sidebar-width-icon": `${chatWidth}px` } as React.CSSProperties}
+						className="!w-0 !min-h-0"
 					>
-						{/* Grip handle */}
+						{/* Grip handle — icon only on hover */}
 						<div
 							className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none"
-							style={{ right: chatOpen ? chatWidth - 4 : -4, transition: isDragging ? "none" : "right 200ms ease-linear" }}
+							style={{ right: chatWidth - 6 }}
 							onMouseDown={onMouseDown}
 						>
 							<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />

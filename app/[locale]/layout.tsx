@@ -13,6 +13,8 @@ import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ALL_FONT_CLASSES } from "@/lib/fonts/registry";
+import { WebVitalsMonitor } from "@/components/monitoring/WebVitalsMonitor";
+import { PreferencesAnalytics } from "@/components/monitoring/PreferencesAnalytics";
 
 /**
  * Root layout with all providers in correct nesting order.
@@ -61,6 +63,8 @@ export default async function RootLayout({
 						<ThemeProvider>
 							<PreferencesProvider>
 								<PreferencesInitializer />
+								<WebVitalsMonitor />
+								<PreferencesAnalytics />
 								<ConvexClientProvider>
 									<NextIntlClientProvider locale={locale}>
 										<TooltipProvider>

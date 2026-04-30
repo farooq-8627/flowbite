@@ -1,3 +1,20 @@
+/**
+ * Nav User Component
+ * STATUS: IMPLEMENTED
+ * 
+ * User menu in sidebar footer with avatar, name, and dropdown actions.
+ * Provides quick access to profile, billing, feedback, and logout.
+ * 
+ * Features:
+ * - User avatar with fallback initials
+ * - Dropdown menu with user actions
+ * - Profile, billing, feedback, logout options
+ * 
+ * @see data/users.ts for user data structure
+ * 
+ * @example
+ * <NavUser user={currentUser} />
+ */
 "use client";
 
 import { CircleUser, CreditCard, EllipsisVertical, LogOut, MessageSquareDot } from "lucide-react";

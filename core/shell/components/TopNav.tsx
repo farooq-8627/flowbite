@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { Bot, Globe } from "lucide-react";
-import { useState } from "react";
 
 import { AccountSwitcher } from "@/core/shell/components/sidebar/account-switcher";
 import { LayoutControls } from "@/core/shell/components/sidebar/layout-controls";
@@ -13,6 +12,12 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
+/**
+ * TopNav - Top navigation bar with search, theme controls, and user menu
+ * Supports sticky and scroll navbar styles via CSS data attributes
+ * @param orgSlug - Organization slug for routing
+ * @param onToggleChat - Callback to toggle AI chat panel
+ */
 export function TopNav({ orgSlug, onToggleChat }: { orgSlug: string; onToggleChat?: () => void }) {
 	// Mock users - replace with actual data
 	const users = [

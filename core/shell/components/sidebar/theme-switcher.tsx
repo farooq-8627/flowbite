@@ -8,6 +8,10 @@ import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 const THEME_CYCLE = ["light", "dark", "system"] as const;
 
+/**
+ * ThemeSwitcher - Button to cycle through light, dark, and system theme modes
+ * Updates both store state and persists preference to storage
+ */
 export function ThemeSwitcher() {
 	const theme_mode = usePreferencesStore((s) => s.theme_mode);
 	const setThemeMode = usePreferencesStore((s) => s.setThemeMode);

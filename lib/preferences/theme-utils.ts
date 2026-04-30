@@ -31,3 +31,55 @@ export function applyFont(fontKey: string): void {
 	if (typeof document === "undefined") return;
 	document.documentElement.setAttribute("data-font", fontKey);
 }
+
+/**
+ * Apply theme mode (light/dark/system) with smooth transitions disabled during change
+ * @param mode - Theme mode to apply
+ * @returns The resolved theme mode (light or dark)
+ */
+export function applyThemeMode(mode: "light" | "dark" | "system"): "light" | "dark" {
+	if (typeof document === "undefined") return "light";
+
+	// Disable transitions during theme change
+	document.documentElement.classList.add("disable-transitions");
+
+	let resolvedMode: "light" | "dark";
+
+	if (mode === "system") {
+		const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+			? "dark"
+			: "light";
+		document.documentElement.classList.toggle("dark", systemTheme === "dark");
+		document.documentElement.setAttribute("data-theme-mode", "system");
+		resolvedMode = systemTheme;
+	} else {
+		document.documentElement.classList.toggle("dark", mode === "dark");
+		document.documentElement.setAttribute("data-theme-mode", mode);
+		resolvedMode = mode;
+	}
+
+	// Re-enable transitions after a frame
+	requestAnimationFrame(() => {
+		requestAnimationFrame(() => {
+			document.documentElement.classList.remove("disable-transitions");
+		});
+	});
+
+	return resolvedMode;
+}
+
+/**
+ * Subscribe to system theme changes
+ * @param callback - Function to call when system theme changes
+ * @returns Cleanup function to remove the listener
+ */
+export function subscribeToSystemTheme(callback: (isDark: boolean) => void): () => void {
+	if (typeof window === "undefined") return () => {};
+
+	const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+	const handler = (e: MediaQueryListEvent) => callback(e.matches);
+
+	mediaQuery.addEventListener("change", handler);
+
+	return () => mediaQuery.removeEventListener("change", handler);
+}

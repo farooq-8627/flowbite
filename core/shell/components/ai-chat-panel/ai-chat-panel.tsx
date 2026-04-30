@@ -15,9 +15,12 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 
+/**
+ * AIChatPanel - Right sidebar AI assistant panel for desktop
+ * Uses Sidebar primitives and adapts to user's sidebar variant preference
+ */
 export function AIChatPanel() {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
-	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
 
 	return (
 		<Sidebar side="right" variant={sidebar_variant} collapsible="offcanvas">
@@ -57,7 +60,10 @@ export function AIChatPanel() {
 	);
 }
 
-/** Standalone content — no Sidebar primitives, safe inside Sheet on any screen size */
+/**
+ * AIChatPanelContent - Standalone chat panel content for mobile/tablet Sheet
+ * Does not use Sidebar primitives to avoid conflicts with Sheet component
+ */
 export function AIChatPanelContent() {
 	return (
 		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">

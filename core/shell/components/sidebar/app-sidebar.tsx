@@ -1,3 +1,24 @@
+/**
+ * App Sidebar Component
+ * STATUS: IMPLEMENTED
+ * 
+ * Main navigation sidebar with org-scoped navigation items.
+ * Supports dynamic variants (inset/sidebar/floating) and collapsible modes (icon/offcanvas).
+ * 
+ * Features:
+ * - Dynamic variant based on user preferences
+ * - Collapsible modes (icon/offcanvas)
+ * - Org-specific navigation items
+ * - Support card in footer
+ * - User menu in footer
+ * 
+ * @see navigation/sidebar/sidebar-items.ts for nav configuration
+ * @see lib/preferences/layout.ts for variant types
+ * @see lib/stores/preferences-store.ts for preference management
+ * 
+ * @example
+ * <AppSidebar orgSlug="acme" />
+ */
 "use client";
 
 import Link from "next/link";

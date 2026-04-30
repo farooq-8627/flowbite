@@ -34,6 +34,11 @@ import { THEME_PRESET_OPTIONS, type ThemeMode, type ThemePreset } from "@/lib/pr
 import { applyThemePreset } from "@/lib/preferences/theme-utils";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
+/**
+ * LayoutControls - Popover with comprehensive preference controls
+ * Manages theme preset, font, radius, theme mode, layout, navbar, and sidebar preferences
+ * All changes are persisted to storage and applied immediately
+ */
 export function LayoutControls() {
 	const theme_mode = usePreferencesStore((s) => s.theme_mode);
 	const resolvedThemeMode = usePreferencesStore((s) => s.resolvedThemeMode);

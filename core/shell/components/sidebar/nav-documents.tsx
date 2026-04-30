@@ -19,6 +19,10 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 
+/**
+ * NavDocuments - Displays a list of document links in the sidebar with action menus
+ * @param items - Array of document items with name, url, and icon
+ */
 export function NavDocuments({
 	items,
 }: {

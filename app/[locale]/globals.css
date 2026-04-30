@@ -3,10 +3,18 @@
 @import "shadcn/tailwind.css";
 
 /* Theme presets — loaded via data-theme-preset attribute on <html> */
+@import "../../styles/presets/default.css";
 @import "../../styles/presets/tangerine.css";
 @import "../../styles/presets/brutalist.css";
 @import "../../styles/presets/soft-pop.css";
 @import "../../styles/presets/orbitly.css";
+
+/* Disable transitions during theme changes to prevent flash */
+.disable-transitions,
+.disable-transitions * {
+	transition: none !important;
+	animation: none !important;
+}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -136,25 +144,29 @@
 }
 
 /* Font switching via data-font attribute on <html> */
-/* Tailwind v4 @theme inline resolves at build time, so we override font-family directly */
-[data-font="geist"] body { font-family: var(--font-geist), sans-serif; }
-[data-font="inter"] body { font-family: var(--font-inter), sans-serif; }
-[data-font="outfit"] body { font-family: var(--font-outfit), sans-serif; }
-[data-font="dm-sans"] body { font-family: var(--font-dm-sans), sans-serif; }
-[data-font="plus-jakarta-sans"] body { font-family: var(--font-plus-jakarta-sans), sans-serif; }
-[data-font="montserrat"] body { font-family: var(--font-montserrat), sans-serif; }
-[data-font="raleway"] body { font-family: var(--font-raleway), sans-serif; }
-[data-font="nunito"] body { font-family: var(--font-nunito), sans-serif; }
-[data-font="lato"] body { font-family: var(--font-lato), sans-serif; }
-[data-font="roboto"] body { font-family: var(--font-roboto), sans-serif; }
-[data-font="open-sans"] body { font-family: var(--font-open-sans), sans-serif; }
-[data-font="ibm-plex-sans"] body { font-family: var(--font-ibm-plex-sans), sans-serif; }
-[data-font="josefin-sans"] body { font-family: var(--font-josefin-sans), sans-serif; }
-[data-font="playfair-display"] body { font-family: var(--font-playfair-display), serif; }
-[data-font="merriweather"] body { font-family: var(--font-merriweather), serif; }
-[data-font="libre-baskerville"] body { font-family: var(--font-libre-baskerville), serif; }
-[data-font="source-code-pro"] body { font-family: var(--font-source-code-pro), monospace; }
-[data-font="geist-mono"] body { font-family: var(--font-geist-mono), monospace; }
+[data-font="geist"] { --font-sans: var(--font-geist); --font-heading: var(--font-geist); }
+[data-font="inter"] { --font-sans: var(--font-inter); --font-heading: var(--font-inter); }
+[data-font="outfit"] { --font-sans: var(--font-outfit); --font-heading: var(--font-outfit); }
+[data-font="dm-sans"] { --font-sans: var(--font-dm-sans); --font-heading: var(--font-dm-sans); }
+[data-font="plus-jakarta-sans"] { --font-sans: var(--font-plus-jakarta-sans); --font-heading: var(--font-plus-jakarta-sans); }
+[data-font="montserrat"] { --font-sans: var(--font-montserrat); --font-heading: var(--font-montserrat); }
+[data-font="raleway"] { --font-sans: var(--font-raleway); --font-heading: var(--font-raleway); }
+[data-font="nunito"] { --font-sans: var(--font-nunito); --font-heading: var(--font-nunito); }
+[data-font="lato"] { --font-sans: var(--font-lato); --font-heading: var(--font-lato); }
+[data-font="roboto"] { --font-sans: var(--font-roboto); --font-heading: var(--font-roboto); }
+[data-font="open-sans"] { --font-sans: var(--font-open-sans); --font-heading: var(--font-open-sans); }
+[data-font="ibm-plex-sans"] { --font-sans: var(--font-ibm-plex-sans); --font-heading: var(--font-ibm-plex-sans); }
+[data-font="josefin-sans"] { --font-sans: var(--font-josefin-sans); --font-heading: var(--font-josefin-sans); }
+[data-font="playfair-display"] { --font-sans: var(--font-playfair-display); --font-heading: var(--font-playfair-display); }
+[data-font="merriweather"] { --font-sans: var(--font-merriweather); --font-heading: var(--font-merriweather); }
+[data-font="libre-baskerville"] { --font-sans: var(--font-libre-baskerville); --font-heading: var(--font-libre-baskerville); }
+[data-font="source-code-pro"] { --font-sans: var(--font-source-code-pro); --font-heading: var(--font-source-code-pro); }
+[data-font="geist-mono"] { --font-sans: var(--font-geist-mono); --font-heading: var(--font-geist-mono); }
+
+/* Apply font to body */
+body {
+	font-family: var(--font-sans), sans-serif;
+}
 
 /* Radius overrides — apply --radius to all UI components that hardcode rounded-none */
 :root [data-slot="dropdown-menu-content"],

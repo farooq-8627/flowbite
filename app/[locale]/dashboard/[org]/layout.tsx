@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import { DashboardLayout } from "@/core/shell/layouts/DashboardLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { DashboardError } from "@/components/errors/DashboardError";
 
 export default async function Layout({
 	children,
@@ -11,5 +13,9 @@ export default async function Layout({
 }>) {
 	const { org } = await params;
 
-	return <DashboardLayout orgSlug={org}>{children}</DashboardLayout>;
+	return (
+		<ErrorBoundary fallback={<DashboardError />}>
+			<DashboardLayout orgSlug={org}>{children}</DashboardLayout>
+		</ErrorBoundary>
+	);
 }

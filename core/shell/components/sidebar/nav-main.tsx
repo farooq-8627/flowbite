@@ -1,3 +1,23 @@
+/**
+ * Nav Main Component
+ * STATUS: IMPLEMENTED
+ * 
+ * Renders the main navigation items in the sidebar.
+ * Supports nested items, icons, active state highlighting, and collapsible sections.
+ * 
+ * Features:
+ * - Collapsible nested navigation items
+ * - Active state highlighting based on current path
+ * - Icon support (lucide-react)
+ * - Badge support for counts/notifications
+ * - Dropdown actions for quick access
+ * 
+ * @see navigation/sidebar/sidebar-items.ts for nav structure
+ * @see hooks/use-active-path.ts for active state logic (if exists)
+ * 
+ * @example
+ * <NavMain items={sidebarItems} />
+ */
 "use client";
 
 import Link from "next/link";

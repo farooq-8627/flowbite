@@ -1,66 +1,78 @@
 /**
- * Brutalist theme preset — bold monochrome, high contrast.
- * Source: arhamkhnz/next-shadcn-admin-dashboard
- * Selector: :root[data-theme-preset="brutalist"]
+ * Brutalist Theme Preset
+ * High contrast, bold, raw aesthetic with sharp edges
  */
 
 :root[data-theme-preset="brutalist"] {
-	--background: oklch(0.99 0 0);
-	--foreground: oklch(0.05 0 0);
-	--card: oklch(0.96 0 0);
-	--card-foreground: oklch(0.05 0 0);
-	--popover: oklch(0.99 0 0);
-	--popover-foreground: oklch(0.05 0 0);
-	--primary: oklch(0.1 0 0);
-	--primary-foreground: oklch(0.99 0 0);
-	--secondary: oklch(0.92 0 0);
-	--secondary-foreground: oklch(0.1 0 0);
-	--muted: oklch(0.92 0 0);
-	--muted-foreground: oklch(0.5 0 0);
-	--accent: oklch(0.92 0 0);
-	--accent-foreground: oklch(0.1 0 0);
-	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.05 0 0);
-	--input: oklch(0.85 0 0);
-	--ring: oklch(0.1 0 0);
-	--radius: 0rem;
-	--sidebar-background: oklch(0.95 0 0);
-	--sidebar-foreground: oklch(0.05 0 0);
-	--sidebar-primary: oklch(0.1 0 0);
-	--sidebar-primary-foreground: oklch(0.99 0 0);
-	--sidebar-accent: oklch(0.88 0 0);
-	--sidebar-accent-foreground: oklch(0.1 0 0);
-	--sidebar-border: oklch(0.05 0 0);
-	--sidebar-ring: oklch(0.1 0 0);
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 0%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 0%;
+  
+  --primary: 0 0% 0%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 0%;
+  
+  --muted: 0 0% 90%;
+  --muted-foreground: 0 0% 20%;
+  
+  --accent: 48 100% 50%;
+  --accent-foreground: 0 0% 0%;
+  
+  --destructive: 0 100% 50%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 0 0% 0%;
+  --input: 0 0% 0%;
+  --ring: 0 0% 0%;
+  
+  --radius: 0rem;
+  
+  --chart-1: 0 0% 0%;
+  --chart-2: 0 0% 30%;
+  --chart-3: 0 0% 60%;
+  --chart-4: 48 100% 50%;
+  --chart-5: 0 100% 50%;
 }
 
-.dark:root[data-theme-preset="brutalist"],
-[data-theme-preset="brutalist"].dark {
-	--background: oklch(0.08 0 0);
-	--foreground: oklch(0.95 0 0);
-	--card: oklch(0.12 0 0);
-	--card-foreground: oklch(0.95 0 0);
-	--popover: oklch(0.12 0 0);
-	--popover-foreground: oklch(0.95 0 0);
-	--primary: oklch(0.95 0 0);
-	--primary-foreground: oklch(0.08 0 0);
-	--secondary: oklch(0.18 0 0);
-	--secondary-foreground: oklch(0.95 0 0);
-	--muted: oklch(0.18 0 0);
-	--muted-foreground: oklch(0.6 0 0);
-	--accent: oklch(0.18 0 0);
-	--accent-foreground: oklch(0.95 0 0);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(0.9 0 0);
-	--input: oklch(0.25 0 0);
-	--ring: oklch(0.95 0 0);
-	--radius: 0rem;
-	--sidebar-background: oklch(0.1 0 0);
-	--sidebar-foreground: oklch(0.9 0 0);
-	--sidebar-primary: oklch(0.95 0 0);
-	--sidebar-primary-foreground: oklch(0.08 0 0);
-	--sidebar-accent: oklch(0.18 0 0);
-	--sidebar-accent-foreground: oklch(0.9 0 0);
-	--sidebar-border: oklch(0.9 0 0);
-	--sidebar-ring: oklch(0.95 0 0);
+:root[data-theme-preset="brutalist"].dark {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  
+  --card: 0 0% 5%;
+  --card-foreground: 0 0% 100%;
+  
+  --popover: 0 0% 5%;
+  --popover-foreground: 0 0% 100%;
+  
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 0%;
+  
+  --secondary: 0 0% 10%;
+  --secondary-foreground: 0 0% 100%;
+  
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 80%;
+  
+  --accent: 48 100% 50%;
+  --accent-foreground: 0 0% 0%;
+  
+  --destructive: 0 100% 50%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 0 0% 100%;
+  --input: 0 0% 100%;
+  --ring: 0 0% 100%;
+  
+  --chart-1: 0 0% 100%;
+  --chart-2: 0 0% 70%;
+  --chart-3: 0 0% 40%;
+  --chart-4: 48 100% 50%;
+  --chart-5: 0 100% 50%;
 }

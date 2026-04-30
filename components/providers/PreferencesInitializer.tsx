@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
-import { applyThemePreset, applyFont } from "@/lib/preferences/theme-utils";
+import { applyThemePreset, applyFont, applyThemeMode } from "@/lib/preferences/theme-utils";
 
 export function PreferencesInitializer() {
 	const theme_preset = usePreferencesStore((s) => s.theme_preset);
@@ -15,19 +15,6 @@ export function PreferencesInitializer() {
 		applyThemePreset(theme_preset);
 
 		// Apply theme mode
-		const applyThemeMode = (mode: string) => {
-			if (mode === "system") {
-				const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-					? "dark"
-					: "light";
-				document.documentElement.classList.toggle("dark", systemTheme === "dark");
-				document.documentElement.setAttribute("data-theme-mode", "system");
-			} else {
-				document.documentElement.classList.toggle("dark", mode === "dark");
-				document.documentElement.setAttribute("data-theme-mode", mode);
-			}
-		};
-
 		applyThemeMode(theme_mode);
 
 		// Listen for system theme changes when in system mode

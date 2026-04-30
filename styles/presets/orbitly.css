@@ -1,66 +1,76 @@
 /**
- * Orbitly brand theme preset — deep indigo-violet with professional polish.
- * Orbitly's own brand identity. Used as the default preset.
- * Selector: :root[data-theme-preset="orbitly"]
+ * Orbitly Theme Preset
+ * Brand colors - Purple/Blue gradient aesthetic
  */
 
 :root[data-theme-preset="orbitly"] {
-	--background: oklch(0.99 0.005 265);
-	--foreground: oklch(0.15 0.04 265);
-	--card: oklch(0.97 0.008 265);
-	--card-foreground: oklch(0.15 0.04 265);
-	--popover: oklch(0.99 0.005 265);
-	--popover-foreground: oklch(0.15 0.04 265);
-	--primary: oklch(0.55 0.2 260);
-	--primary-foreground: oklch(0.99 0 0);
-	--secondary: oklch(0.93 0.03 265);
-	--secondary-foreground: oklch(0.25 0.05 265);
-	--muted: oklch(0.94 0.02 265);
-	--muted-foreground: oklch(0.52 0.05 265);
-	--accent: oklch(0.9 0.06 220);
-	--accent-foreground: oklch(0.2 0.06 220);
-	--destructive: oklch(0.577 0.245 27.325);
-	--border: oklch(0.88 0.03 265);
-	--input: oklch(0.88 0.03 265);
-	--ring: oklch(0.55 0.2 260);
-	--radius: 0.625rem;
-	--sidebar-background: oklch(0.96 0.015 265);
-	--sidebar-foreground: oklch(0.25 0.05 265);
-	--sidebar-primary: oklch(0.55 0.2 260);
-	--sidebar-primary-foreground: oklch(0.99 0 0);
-	--sidebar-accent: oklch(0.91 0.03 265);
-	--sidebar-accent-foreground: oklch(0.25 0.05 265);
-	--sidebar-border: oklch(0.88 0.03 265);
-	--sidebar-ring: oklch(0.55 0.2 260);
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  
+  --primary: 262 83% 58%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 217 91% 60%;
+  --secondary-foreground: 0 0% 100%;
+  
+  --muted: 220 13% 91%;
+  --muted-foreground: 220 9% 46%;
+  
+  --accent: 189 94% 43%;
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 262 83% 58%;
+  
+  --chart-1: 262 83% 58%;
+  --chart-2: 217 91% 60%;
+  --chart-3: 189 94% 43%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
 }
 
-.dark:root[data-theme-preset="orbitly"],
-[data-theme-preset="orbitly"].dark {
-	--background: oklch(0.14 0.025 265);
-	--foreground: oklch(0.93 0.015 265);
-	--card: oklch(0.18 0.03 265);
-	--card-foreground: oklch(0.93 0.015 265);
-	--popover: oklch(0.18 0.03 265);
-	--popover-foreground: oklch(0.93 0.015 265);
-	--primary: oklch(0.65 0.2 260);
-	--primary-foreground: oklch(0.1 0.02 265);
-	--secondary: oklch(0.24 0.04 265);
-	--secondary-foreground: oklch(0.93 0.015 265);
-	--muted: oklch(0.24 0.04 265);
-	--muted-foreground: oklch(0.6 0.05 265);
-	--accent: oklch(0.25 0.07 220);
-	--accent-foreground: oklch(0.88 0.04 220);
-	--destructive: oklch(0.704 0.191 22.216);
-	--border: oklch(0.28 0.04 265);
-	--input: oklch(0.28 0.04 265);
-	--ring: oklch(0.65 0.2 260);
-	--radius: 0.625rem;
-	--sidebar-background: oklch(0.16 0.028 265);
-	--sidebar-foreground: oklch(0.88 0.015 265);
-	--sidebar-primary: oklch(0.65 0.2 260);
-	--sidebar-primary-foreground: oklch(0.1 0.02 265);
-	--sidebar-accent: oklch(0.22 0.04 265);
-	--sidebar-accent-foreground: oklch(0.88 0.015 265);
-	--sidebar-border: oklch(0.28 0.04 265);
-	--sidebar-ring: oklch(0.65 0.2 260);
+:root[data-theme-preset="orbitly"].dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  
+  --primary: 262 83% 58%;
+  --primary-foreground: 0 0% 100%;
+  
+  --secondary: 217 91% 60%;
+  --secondary-foreground: 0 0% 100%;
+  
+  --muted: 220 13% 15%;
+  --muted-foreground: 220 9% 65%;
+  
+  --accent: 189 94% 43%;
+  --accent-foreground: 0 0% 100%;
+  
+  --destructive: 0 63% 31%;
+  --destructive-foreground: 0 0% 100%;
+  
+  --border: 220 13% 15%;
+  --input: 220 13% 15%;
+  --ring: 262 83% 58%;
+  
+  --chart-1: 262 83% 58%;
+  --chart-2: 217 91% 60%;
+  --chart-3: 189 94% 43%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 340 75% 55%;
 }

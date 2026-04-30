@@ -4,6 +4,11 @@ import { DashboardLayoutClient } from "./DashboardLayoutClient";
 import { SIDEBAR_COLLAPSIBLE_MODES, SIDEBAR_VARIANTS } from "@/lib/preferences/layout";
 import { getPreference } from "@/lib/preferences/preferences-storage";
 
+/**
+ * DashboardLayout - Server component that loads initial preferences and renders client layout
+ * @param children - Page content to render inside the dashboard
+ * @param orgSlug - Organization slug for routing and data fetching
+ */
 export async function DashboardLayout({
 	children,
 	orgSlug,

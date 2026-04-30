@@ -1,5 +1,9 @@
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
+/**
+ * SidebarSupportCard - Support/help card displayed in sidebar footer
+ * Hidden when sidebar is collapsed to icon mode
+ */
 export function SidebarSupportCard() {
 	return (
 		<Card size="sm" className="shadow-none group-data-[collapsible=icon]:hidden">

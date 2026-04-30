@@ -38,6 +38,8 @@ interface PreferencesState {
 	font: string;
 	// Hydration flag
 	_hydrated: boolean;
+	// Sync flag - indicates if preferences are synced with storage
+	isSynced: boolean;
 }
 
 // --- Actions Shape ---
@@ -64,28 +66,29 @@ export const usePreferencesStore = create<PreferencesStore>()((set) => ({
 	...PREFERENCE_DEFAULTS,
 	resolvedThemeMode: null,
 	_hydrated: false,
+	isSynced: true,
 
 	// Actions
 	setSidebarVariant: (value) => {
 		setPreference("sidebar_variant", value);
-		set({ sidebar_variant: value });
+		set({ sidebar_variant: value, isSynced: true });
 	},
 	setSidebarCollapsible: (value) => {
 		setPreference("sidebar_collapsible", value);
-		set({ sidebar_collapsible: value });
+		set({ sidebar_collapsible: value, isSynced: true });
 	},
 	setContentLayout: (value) => {
 		setPreference("content_layout", value);
-		set({ content_layout: value });
+		set({ content_layout: value, isSynced: true });
 	},
 	setNavbarStyle: (value) => {
 		setPreference("navbar_style", value);
-		set({ navbar_style: value });
+		set({ navbar_style: value, isSynced: true });
 	},
 	setThemePreset: (value) => {
 		setPreference("theme_preset", value);
 		document.documentElement.setAttribute("data-theme-preset", value);
-		set({ theme_preset: value });
+		set({ theme_preset: value, isSynced: true });
 	},
 	setThemeMode: (value) => {
 		setPreference("theme_mode", value);
@@ -95,21 +98,21 @@ export const usePreferencesStore = create<PreferencesStore>()((set) => ({
 				? "dark"
 				: "light";
 			document.documentElement.classList.toggle("dark", systemTheme === "dark");
-			set({ theme_mode: value, resolvedThemeMode: systemTheme });
+			set({ theme_mode: value, resolvedThemeMode: systemTheme, isSynced: true });
 		} else {
 			document.documentElement.classList.toggle("dark", value === "dark");
-			set({ theme_mode: value, resolvedThemeMode: value });
+			set({ theme_mode: value, resolvedThemeMode: value, isSynced: true });
 		}
 	},
 	setRadius: (value) => {
 		setPreference("radius", value);
 		document.documentElement.style.setProperty("--radius", `${value}rem`);
-		set({ radius: value });
+		set({ radius: value, isSynced: true });
 	},
 	setFont: (value) => {
 		setPreference("font", value);
 		document.documentElement.setAttribute("data-font", value);
-		set({ font: value });
+		set({ font: value, isSynced: true });
 	},
 
 	/** Read all preferences from cookies and populate store */
@@ -127,6 +130,6 @@ export const usePreferencesStore = create<PreferencesStore>()((set) => ({
 			resolvedMode = prefs.theme_mode;
 		}
 
-		set({ ...prefs, resolvedThemeMode: resolvedMode, _hydrated: true });
+		set({ ...prefs, resolvedThemeMode: resolvedMode, _hydrated: true, isSynced: true });
 	},
 }));

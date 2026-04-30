@@ -36,6 +36,10 @@ const searchItems = [
 	{ group: "Authentication", label: "Register v2" },
 ];
 
+/**
+ * SearchDialog - Command palette for searching dashboards and features
+ * Opens with Cmd/Ctrl+J keyboard shortcut
+ */
 export function SearchDialog() {
 	const [open, setOpen] = React.useState(false);
 	const groups = [...new Set(searchItems.map((item) => item.group))];

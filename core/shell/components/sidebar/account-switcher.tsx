@@ -15,6 +15,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn, getInitials } from "@/lib/utils";
 
+/**
+ * AccountSwitcher - Dropdown menu for switching between user accounts
+ * @param users - Array of user accounts with id, name, email, avatar, and role
+ */
 export function AccountSwitcher({
 	users,
 }: {

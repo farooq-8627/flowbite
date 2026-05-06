@@ -4,10 +4,40 @@
  * All queries are org-scoped and require `members.invite` permission to read.
  */
 import { v } from "convex/values";
+import { query } from "../_generated/server";
 import { orgQuery } from "../_functions/authenticated";
 import { requireRole } from "../_shared/permissions";
 import type { OrgRole } from "../_shared/validators";
 import { getOrgMember } from "../orgs/helpers";
+
+/**
+ * Get an invitation by token — public query (no auth required).
+ * Used by the join-org page to show invitation details before the user logs in.
+ * Returns only safe fields (no invitedBy user details).
+ */
+export const getByToken = query({
+	args: { token: v.string() },
+	handler: async (ctx, args) => {
+		const invitation = await ctx.db
+			.query("invitations")
+			.withIndex("by_token", (q) => q.eq("token", args.token))
+			.first();
+
+		if (!invitation) return null;
+
+		const org = await ctx.db.get(invitation.orgId);
+
+		return {
+			_id: invitation._id,
+			email: invitation.email,
+			role: invitation.role,
+			status: invitation.status,
+			expiresAt: invitation.expiresAt,
+			orgName: org?.name ?? "Unknown",
+			orgSlug: org?.slug ?? "",
+		};
+	},
+});
 
 /**
  * List pending invitations for an org. Requires `members.invite` permission.

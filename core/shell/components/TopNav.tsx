@@ -1,74 +1,99 @@
 "use client";
 
-import Link from "next/link";
-import { Bot, Globe } from "lucide-react";
-
-import { AccountSwitcher } from "@/core/shell/components/sidebar/account-switcher";
-import { LayoutControls } from "@/core/shell/components/sidebar/layout-controls";
-import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
-import { ThemeSwitcher } from "@/core/shell/components/sidebar/theme-switcher";
+import { useEffect } from "react";
+import { Bell, Bot, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { ThemeSwitcher } from "@/core/shell/components/sidebar/theme-switcher";
 import { cn } from "@/lib/utils";
 
 /**
- * TopNav - Top navigation bar with search, theme controls, and user menu
- * Supports sticky and scroll navbar styles via CSS data attributes
- * @param orgSlug - Organization slug for routing
- * @param onToggleChat - Callback to toggle AI chat panel
+ * TopNav — Minimal top navigation bar.
+ *
+ * Left: sidebar trigger + separator + page-specific slot (breadcrumbs, tabs, filters)
+ * Right: search (⌘J) + notification bell + theme switcher + AI chat toggle (⌘.)
+ *
+ * Page-specific content is passed via `children` prop from each page layout.
  */
-export function TopNav({ orgSlug, onToggleChat }: { orgSlug: string; onToggleChat?: () => void }) {
-	// Mock users - replace with actual data
-	const users = [
-		{
-			id: "1",
-			name: "User",
-			email: "user@example.com",
-			avatar: "",
-			role: "admin",
-		},
-	];
+export function TopNav({
+	onToggleChat,
+	onToggleSearch,
+	children,
+}: {
+	onToggleChat?: () => void;
+	onToggleSearch?: () => void;
+	children?: React.ReactNode;
+}) {
+	// Keyboard shortcuts
+	useEffect(() => {
+		function handleKeyDown(e: KeyboardEvent) {
+			if ((e.metaKey || e.ctrlKey) && e.key === ".") {
+				e.preventDefault();
+				onToggleChat?.();
+			}
+			if ((e.metaKey || e.ctrlKey) && e.key === "j") {
+				e.preventDefault();
+				onToggleSearch?.();
+			}
+		}
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [onToggleChat, onToggleSearch]);
 
 	return (
 		<header
 			className={cn(
-				"flex h-12 shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
-				"[html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:overflow-hidden [html[data-navbar-style=sticky]_&]:rounded-t-[inherit] [html[data-navbar-style=sticky]_&]:bg-background/50 [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
+				"flex h-12 shrink-0 items-center gap-2 border-b rounded-t-[var(--radius)] transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12",
+				"[html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:bg-background/80 [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
 			)}
 		>
 			<div className="flex w-full items-center justify-between px-4 lg:px-6">
+				{/* Left: sidebar trigger + page content */}
 				<div className="flex items-center gap-1 lg:gap-2">
-					<SidebarTrigger className="-ml-1" />
-					<Separator
-						orientation="vertical"
-						className="mx-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
-					/>
-					<SearchDialog />
+					<SidebarTrigger className="-ms-1" />
+					{children}
 				</div>
-				<div className="flex items-center gap-2">
-					<LayoutControls />
-					<ThemeSwitcher />
-					<Button asChild size="icon">
-						<Link
-							prefetch={false}
-							href="https://github.com/yourusername/flowbite"
-							target="_blank"
-							rel="noreferrer"
-							aria-label="Open GitHub repository"
-						>
-							<Globe className="size-4" />
-						</Link>
+
+				{/* Right: search + bell + theme + AI */}
+				<div className="flex items-center gap-1">
+					{/* Search button: icon + ⌘J hint */}
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={onToggleSearch}
+						aria-label="Search (⌘J)"
+						className="flex items-center gap-1.5 px-2 text-muted-foreground hover:text-foreground"
+					>
+						<Search className="size-4" />
+						<span className="hidden items-center gap-0.5 text-xs sm:flex">
+							<kbd className="rounded-[--radius] border border-border bg-muted px-1 py-0.5 font-mono text-[10px] leading-none">⌘</kbd>
+							<kbd className="rounded-[--radius] border border-border bg-muted px-1 py-0.5 font-mono text-[10px] leading-none">J</kbd>
+						</span>
 					</Button>
+
+					<Separator orientation="vertical" className="h-4" />
+
+					{/* Notification bell */}
+					<Button size="icon" variant="ghost" aria-label="Notifications" className="relative">
+						<Bell className="size-4" />
+						{/* TODO: Wire to real notification count query */}
+						<span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-destructive" />
+					</Button>
+
+					{/* Theme switcher */}
+					<ThemeSwitcher variant="button" />
+
+					{/* AI chat toggle */}
 					<Button
 						size="icon"
-						variant="outline"
+						variant="ghost"
 						onClick={onToggleChat}
-						aria-label="Toggle AI Assistant"
+						aria-label="Toggle AI Assistant (⌘.)"
+						title="AI Assistant (⌘.)"
 					>
 						<Bot className="size-4" />
 					</Button>
-					<AccountSwitcher users={users} />
 				</div>
 			</div>
 		</header>

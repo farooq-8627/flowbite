@@ -6,36 +6,38 @@ import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { routing } from "@/i18n/routing";
-import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { PreferencesInitializer } from "@/components/providers/PreferencesInitializer";
 import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ALL_FONT_CLASSES } from "@/lib/fonts/registry";
-import { WebVitalsMonitor } from "@/components/monitoring/WebVitalsMonitor";
-import { PreferencesAnalytics } from "@/components/monitoring/PreferencesAnalytics";
+import { ThemeBootScript } from "@/components/scripts/theme-boot";
+import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
 
 /**
  * Root layout with all providers in correct nesting order.
  *
+ * Font strategy:
+ * - ALL font instances' `.variable` classes go on <body> → registers CSS variables
+ * - ThemeBootScript in <head> reads cookie and sets `data-font` on <html> BEFORE hydration
+ * - CSS in globals.css maps `[data-font="X"]` → `--font-sans: var(--font-X)`
+ * - Result: zero FOUC for fonts
+ *
  * Provider order (outermost → innermost):
  * 1. ConvexAuthNextjsServerProvider — server-side auth token handling
- * 2. html + body — DOM root with suppressHydrationWarning for next-themes
- * 3. PostHogProvider — analytics, feature flags, pageview tracking
- * 4. ThemeProvider — dark/light/system theme via next-themes
+ * 2. html + body — DOM root with suppressHydrationWarning for theme-boot
+ * 3. PostHogProvider — analytics, feature flags
+ * 4. PreferencesProvider — Zustand store hydration
  * 5. ConvexClientProvider — Convex React client + auth
  * 6. NextIntlClientProvider — i18n translations
  * 7. TooltipProvider — shadcn tooltip context
- * 8. Toaster — shadcn sonner toast notifications
  */
 
 export const metadata: Metadata = {
-	title: "FlowBite",
-	description: "B2B SaaS Platform",
-	icons: {
-		icon: "/convex.svg",
-	},
+	title: "Orbitly",
+	description: "AI-Powered CRM for Gulf Businesses",
+	icons: { icon: "/convex.svg" },
 };
 
 export function generateStaticParams() {
@@ -55,26 +57,39 @@ export default async function RootLayout({
 	}
 	setRequestLocale(locale);
 
+	// Font variable classes — registers CSS custom properties without activating any font
+	const fontVars = ALL_FONT_CLASSES.map((f) => f.variable).join(" ");
+
 	return (
 		<ConvexAuthNextjsServerProvider>
-			<html lang={locale} dir={locale === "ar" ? "rtl" : "ltr"} suppressHydrationWarning>
-				<body className={`${ALL_FONT_CLASSES.map((f) => f.className).join(" ")} antialiased`}>
+			<html
+				lang={locale}
+				dir={locale === "ar" ? "rtl" : "ltr"}
+				data-theme-mode={PREFERENCE_DEFAULTS.theme_mode}
+				data-theme-preset={PREFERENCE_DEFAULTS.theme_preset}
+				data-font={PREFERENCE_DEFAULTS.font}
+				data-content-layout={PREFERENCE_DEFAULTS.content_layout}
+				data-navbar-style={PREFERENCE_DEFAULTS.navbar_style}
+				data-sidebar-variant={PREFERENCE_DEFAULTS.sidebar_variant}
+				data-sidebar-collapsible={PREFERENCE_DEFAULTS.sidebar_collapsible}
+				suppressHydrationWarning
+			>
+				<head>
+					<ThemeBootScript />
+				</head>
+				<body className={`${fontVars} min-h-screen antialiased`}>
 					<PostHogProvider>
-						<ThemeProvider>
-							<PreferencesProvider>
-								<PreferencesInitializer />
-								<WebVitalsMonitor />
-								<PreferencesAnalytics />
-								<ConvexClientProvider>
-									<NextIntlClientProvider locale={locale}>
-										<TooltipProvider>
-											{children}
-											<Toaster />
-										</TooltipProvider>
-									</NextIntlClientProvider>
-								</ConvexClientProvider>
-							</PreferencesProvider>
-						</ThemeProvider>
+						<PreferencesProvider>
+							<PreferencesInitializer />
+							<ConvexClientProvider>
+								<NextIntlClientProvider locale={locale}>
+									<TooltipProvider>
+										{children}
+										<Toaster />
+									</TooltipProvider>
+								</NextIntlClientProvider>
+							</ConvexClientProvider>
+						</PreferencesProvider>
 					</PostHogProvider>
 				</body>
 			</html>

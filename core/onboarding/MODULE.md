@@ -1,26 +1,187 @@
-# onboarding Module (Core)
+# core/onboarding — MODULE.md
 
-> 3-step wizard — get to dashboard in < 2 minutes. No field customization during onboarding.
+> Scan this file before writing any onboarding code. All decisions are final unless explicitly revised.
 
-## Ownership
-- **Location**: `core/onboarding/`
-- **Routes**: `app/[locale]/onboarding/`
-- **Phase**: 1 | **Status**: NOT_STARTED
+## Structure
 
-## Rules
-- [ ] R-ONB-01: Maximum 3 steps — never add more steps to onboarding
-- [ ] R-ONB-02: Only seed DEFAULT pipeline in Step 2 — no field templates during onboarding
-- [ ] R-ONB-03: On complete, set `users.onboardingCompleted = true` → redirect to dashboard
-- [ ] R-ONB-04: Onboarding route accessible ONLY to authenticated + onboarding-incomplete users
+```
+core/onboarding/
+  MODULE.md                        ← this file
+  components/
+    OnboardingPage.tsx             ← single-page 3-step wizard (all steps in one component)
+  layouts/
+    OnboardingLayout.tsx           ← wraps AuthShellLayout + step progress dots (legacy, not used by OnboardingPage)
+  steps/
+    steps-config.ts                ← ONBOARDING_STEPS array (legacy, not used by OnboardingPage)
+    OrgNameStep.tsx                ← legacy step component (superseded by OnboardingPage)
+    IndustryStep.tsx               ← legacy step component (superseded by OnboardingPage)
+    CompleteStep.tsx               ← legacy step component (superseded by OnboardingPage)
+```
 
-## Checklist
-- [ ] `components/OnboardingWizard.tsx` — step container
-- [ ] `components/OrgNameStep.tsx` — Step 1: org name + your name
-- [ ] `components/IndustryPicker.tsx` — Step 2: industry → seeds default pipeline
-- [ ] `components/CompleteStep.tsx` — Step 3: complete → dashboard
-- [ ] `hooks/useOnboarding.ts` — step state + completion mutation
+## Decisions (from deep-plan.md Module 6 + session decisions)
 
-## Avoids
-- ❌ Never add field customization to onboarding (that's AI Workspace Setup in Phase 3)
-- ❌ Never add more than 3 steps
-- ❌ Never block onboarding on external API calls
+| # | Decision | Outcome |
+|---|---|---|
+| O1 | Single route | All 3 steps live at `/onboarding` — no sub-routes (`/onboarding/org-name` etc.). State managed via `useState` in `OnboardingPage`. |
+| O2 | Step navigation | Back and forth freely. Back button on steps 2 and 3. No data loss on back — orgId persisted in component state. |
+| O3 | Resume mid-onboarding | `onboardingStep` field on org (0=created, 1=industry-set, 2=complete). Future: resume from last step. |
+| O4 | Post-onboarding landing | Dashboard with AI banner: "💡 Let AI customize your workspace → Start". |
+| O5 | Onboarding speed | < 2 minutes. No field setup, no advanced config. Dashboard first. AI Workspace Setup handles the rest. |
+| O6 | Org creation | `createOrg` mutation. Slug validated live (useQuery checkSlug). If taken → show error, suggest `slug-2`. |
+| O7 | Slug uniqueness | GitHub-style: `acme-corp` → `acme-corp-2` → `acme-corp-3`. `ensureUniqueSlug()` in helpers.ts. |
+| O8 | platformOrgId | Generated from `PLATFORM_PREFIX` env var (never hardcoded). Format: `ORB-XXXXX` where XXXXX = last 5 chars of Convex ID. |
+| O9 | Industry step | Grid of industry cards. Selecting seeds DEFAULT pipeline for that industry (pipeline seeding pending). |
+| O10 | No field templates at onboarding | Keep it fast. Field setup happens via AI Workspace Setup after dashboard loads. |
+| O11 | Right panel changes per step | Each step passes its own `panel` props to `AuthShellLayout`. Step 1=workspace icon, Step 2=briefcase, Step 3=rocket. |
+| O12 | Border-radius | All `rounded-*` use `rounded-[--radius]`. Never hardcode. |
+| O13 | RTL-safe classes | `start-0`, `border-e`, `text-start` etc. No `left-*`, `right-*`, `border-l`, `border-r`. |
+| O14 | No hardcoded app strings | `APP_CONFIG.name`, `APP_CONFIG.description`, `APP_CONFIG.url` everywhere. |
+
+## Onboarding Steps
+
+```
+Step 1 — Create Organization
+  - Org name (required)
+  - Org slug (auto-generated from name, editable, live uniqueness check)
+  - Mutation: createOrg → returns { orgId, slug, platformOrgId }
+
+Step 2 — Select Industry
+  - Grid of industry cards (10 options)
+  - Team size pills (5 options)
+  - Mutation: updateOrgIndustry → sets org.industry, org.teamSize, org.onboardingStep=1
+
+Step 3 — Complete
+  - Summary checklist (3 items)
+  - Mutation: markOnboardingComplete → sets users.onboardingCompleted=true, org.onboardingStep=2
+  - Redirect: /dashboard/[slug] (real slug from mutation return value)
+```
+
+## Convex Mutations
+
+| Mutation | Args | Returns | Notes |
+|---|---|---|---|
+| `orgs.mutations.createOrg` | `{ name, slug }` | `{ orgId, slug, platformOrgId }` | Throws if slug taken |
+| `orgs.mutations.updateOrgIndustry` | `{ orgId, industry, teamSize }` | void | Requires org membership |
+| `orgs.mutations.markOnboardingComplete` | `{ orgId }` | `{ slug }` | Sets user.onboardingCompleted=true |
+| `orgs.mutations.suggestSlug` | `{ name }` | `{ slug }` | Returns first available slug |
+
+## Convex Queries
+
+| Query | Args | Returns | Notes |
+|---|---|---|---|
+| `orgs.queries.checkSlug` | `{ slug }` | `{ available: boolean }` | Used for live validation |
+
+## Routing
+
+| Route | Component | Notes |
+|---|---|---|
+| `/onboarding` | `app/[locale]/onboarding/page.tsx` → `OnboardingPage` | Single thin wrapper |
+| Post-completion redirect | `/${slug}/dashboard` | Real slug from markOnboardingComplete return value |
+
+## What's Pending
+
+- [ ] Seed default pipeline on industry selection (pipeline seeding mutations)
+- [ ] Resume from last step (read `org.onboardingStep` on mount)
+- [ ] Onboarding guard: redirect users with `onboardingCompleted=true` away from `/onboarding` (currently no guard — they'd just re-onboard)
+- [ ] Join-org flow (UI ready, mutation pending)
+
+---
+
+## Product Tour (Post-Onboarding) — Using Onborda
+
+> **Decision O15**: Use [onborda](https://github.com/uixmat/onborda) for the in-app product tour that runs AFTER the user completes onboarding and lands on the dashboard for the first time.
+
+### What is Onborda?
+
+Onborda is a Next.js-native product tour library built on top of Framer Motion. It uses CSS selectors to highlight elements and shows step-by-step tooltips.
+
+- **GitHub**: https://github.com/uixmat/onborda
+- **Live Demo**: https://www.onborda.dev/
+- **npm**: `onborda` (install with `pnpm add onborda`)
+
+### Why Onborda (not Shepherd.js, Intro.js, etc.)
+
+| Criteria | Onborda | Others |
+|---|---|---|
+| Next.js native | ✅ Built for Next.js App Router | ❌ DOM-based, SSR issues |
+| Framer Motion | ✅ Smooth animations | ❌ CSS-only or jQuery |
+| TypeScript | ✅ Full types | ⚠️ Partial |
+| Customizable | ✅ Custom card component | ⚠️ Limited |
+| Bundle size | ✅ Small | ❌ Shepherd.js is large |
+
+### Integration Plan (When Building)
+
+```tsx
+// 1. Install
+pnpm add onborda
+
+// 2. Wrap layout with OnbordaProvider
+import { OnbordaProvider, Onborda } from "onborda";
+
+// 3. Define tour steps
+const steps = [
+  {
+    icon: "👋",
+    title: "Welcome to your workspace",
+    content: "This is your dashboard. Let's take a quick tour.",
+    selector: "#sidebar-nav",
+    side: "right",
+    showControls: true,
+  },
+  {
+    icon: "🔍",
+    title: "Search anything",
+    content: "Press ⌘J to search across all your records.",
+    selector: "#topnav-search",
+    side: "bottom",
+  },
+  {
+    icon: "🤖",
+    title: "AI Assistant",
+    content: "Press ⌘. to open the AI panel. Ask it anything.",
+    selector: "#ai-toggle",
+    side: "left",
+  },
+  // ... more steps
+];
+
+// 4. Trigger tour on first dashboard visit
+// Check users.dismissedCards includes "product_tour" — if not, start tour
+// After completion: call users.mutations.dismissCard("product_tour")
+```
+
+### Tour Steps Planned
+
+| Step | Target Element | Content |
+|---|---|---|
+| 1 | Sidebar workspace switcher | "Switch between workspaces here" |
+| 2 | Sidebar nav | "Your CRM modules live here" |
+| 3 | TopNav search (⌘J) | "Search across all records" |
+| 4 | AI toggle (⌘.) | "Your AI assistant is always here" |
+| 5 | NavUser dropdown | "Access settings and billing" |
+| 6 | Dashboard main area | "This is your home base" |
+
+### State Tracking
+
+- Tour completion stored in `users.dismissedCards[]` (already in schema)
+- Key: `"product_tour_v1"` (versioned so we can re-trigger on major UI changes)
+- Check on dashboard mount: if `!user.dismissedCards?.includes("product_tour_v1")` → start tour
+- On tour complete/skip: call `api.users.mutations.dismissCard({ card: "product_tour_v1" })`
+
+### Files to Create (When Building)
+
+```
+core/onboarding/
+  tour/
+    tour-steps.ts          ← step definitions array
+    TourCard.tsx           ← custom card component (matches our design system)
+    useTourTrigger.ts      ← hook: checks dismissedCards, triggers tour on first visit
+```
+
+### Important Notes
+
+- Tour runs AFTER onboarding wizard (not during)
+- Tour is skippable — never block the user
+- Tour re-runs if `product_tour_v1` is not in `dismissedCards`
+- Custom `TourCard` component must use our design tokens (rounded-[--radius], theme colors)
+- RTL support: Onborda supports `dir="rtl"` — test with Arabic locale

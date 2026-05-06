@@ -1,24 +1,10 @@
-/**
- * Nav User Component
- * STATUS: IMPLEMENTED
- * 
- * User menu in sidebar footer with avatar, name, and dropdown actions.
- * Provides quick access to profile, billing, feedback, and logout.
- * 
- * Features:
- * - User avatar with fallback initials
- * - Dropdown menu with user actions
- * - Profile, billing, feedback, logout options
- * 
- * @see data/users.ts for user data structure
- * 
- * @example
- * <NavUser user={currentUser} />
- */
 "use client";
 
-import { CircleUser, CreditCard, EllipsisVertical, LogOut, MessageSquareDot } from "lucide-react";
-
+import { CircleUser, CreditCard, EllipsisVertical, LogOut, Settings } from "lucide-react";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { useQuery } from "convex/react";
+import Link from "next/link";
+import { api } from "@/convex/_generated/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -36,82 +22,94 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { getInitials } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export function NavUser({
-	user,
-}: {
-	readonly user: {
-		readonly name: string;
-		readonly email: string;
-		readonly avatar: string;
-	};
-}) {
+export function NavUser({ orgSlug }: { orgSlug?: string }) {
 	const { isMobile } = useSidebar();
+	const { signOut } = useAuthActions();
+	const user = useQuery(api.users.queries.me);
+
+	if (user === undefined) {
+		return (
+			<SidebarMenu>
+				<SidebarMenuItem>
+					<div className="flex h-10 items-center gap-2 px-2">
+						<Skeleton className="size-7 rounded-[--radius]" />
+						<div className="flex-1 space-y-1">
+							<Skeleton className="h-3 w-20" />
+							<Skeleton className="h-2.5 w-28" />
+						</div>
+					</div>
+				</SidebarMenuItem>
+			</SidebarMenu>
+		);
+	}
+
+	if (!user) return null;
+
+	const name = user.name ?? "User";
+	const email = (user.email ?? "").toLowerCase();
 
 	return (
 		<SidebarMenu>
 			<SidebarMenuItem>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton
-							size="lg"
-							className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-						>
-							<Avatar className="h-8 w-8 rounded-lg grayscale">
-								<AvatarImage src={user.avatar || undefined} alt={user.name} />
-								<AvatarFallback className="rounded-lg">
-									{getInitials(user.name)}
+						<SidebarMenuButton className="h-12 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+							<Avatar className="size-6 rounded-[--radius] grayscale">
+								<AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
+								<AvatarFallback className="rounded-[--radius] text-xs">
+									{getInitials(name)}
 								</AvatarFallback>
 							</Avatar>
-							<div className="grid flex-1 text-left text-sm leading-tight">
-								<span className="truncate font-medium">{user.name}</span>
-								<span className="truncate text-muted-foreground text-xs">
-									{user.email}
-								</span>
+							<div className="grid flex-1 leading-tight">
+								<span className="truncate text-sm font-medium">{name}</span>
+								<span className="truncate text-xs text-muted-foreground">{email}</span>
 							</div>
-							<EllipsisVertical className="ml-auto size-4" />
 						</SidebarMenuButton>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
-						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-[--radius]"
 						side={isMobile ? "bottom" : "right"}
 						align="end"
 						sideOffset={4}
 					>
 						<DropdownMenuLabel className="p-0 font-normal">
-							<div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-								<Avatar className="h-8 w-8 rounded-lg">
-									<AvatarImage src={user.avatar || undefined} alt={user.name} />
-									<AvatarFallback className="rounded-lg">
-										{getInitials(user.name)}
+							<div className="flex items-center gap-2 px-2 py-2 text-sm">
+								<Avatar className="size-7 rounded-[--radius]">
+									<AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
+									<AvatarFallback className="rounded-[--radius] text-xs">
+										{getInitials(name)}
 									</AvatarFallback>
 								</Avatar>
-								<div className="grid flex-1 text-left text-sm leading-tight">
-									<span className="truncate font-medium">{user.name}</span>
-									<span className="truncate text-muted-foreground text-xs">
-										{user.email}
-									</span>
+								<div className="grid flex-1 leading-tight">
+									<span className="truncate font-medium">{name}</span>
+									<span className="truncate text-xs text-muted-foreground">{email}</span>
 								</div>
 							</div>
 						</DropdownMenuLabel>
 						<DropdownMenuSeparator />
 						<DropdownMenuGroup>
 							<DropdownMenuItem>
-								<CircleUser />
+								<CircleUser className="size-4 shrink-0" />
 								Account
 							</DropdownMenuItem>
 							<DropdownMenuItem>
-								<CreditCard />
+								<CreditCard className="size-4 shrink-0" />
 								Billing
 							</DropdownMenuItem>
-							<DropdownMenuItem>
-								<MessageSquareDot />
-								Notifications
-							</DropdownMenuItem>
+							{orgSlug && (
+								<DropdownMenuItem asChild>
+									<Link prefetch={false} href={`/${orgSlug}/dashboard/settings`}>
+										<Settings className="size-4 shrink-0" />
+										Settings
+									</Link>
+								</DropdownMenuItem>
+							)}
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem>
-							<LogOut />
+						<DropdownMenuItem onClick={() => void signOut()}>
+							<LogOut className="size-4 shrink-0" />
 							Log out
 						</DropdownMenuItem>
 					</DropdownMenuContent>

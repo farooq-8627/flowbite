@@ -5,6 +5,7 @@ import { GripVertical } from "lucide-react";
 import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
 import { AIChatPanel, AIChatPanelContent } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
 import { TopNav } from "@/core/shell/components/TopNav";
+import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
@@ -42,6 +43,7 @@ export function DashboardLayoutClient({
 }) {
 	const isTablet = useIsTablet();
 	const [chatOpen, setChatOpen] = useState(initialChatOpen);
+	const [searchOpen, setSearchOpen] = useState(false);
 	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
 	const [isDragging, setIsDragging] = useState(false);
 	const startX = useRef(0);
@@ -98,7 +100,6 @@ export function DashboardLayoutClient({
 			{/* Left Sidebar */}
 			<SidebarProvider
 				defaultOpen={initialSidebarOpen}
-				style={{ "--sidebar-width": "16rem", "--sidebar-width-icon": "3rem" } as React.CSSProperties}
 			>
 				<Suspense fallback={<SidebarSkeleton />}>
 					<AppSidebar variant={variant} collapsible={collapsible} orgSlug={orgSlug} />
@@ -110,7 +111,8 @@ export function DashboardLayoutClient({
 						transition: isDragging ? "none" : "margin 200ms ease",
 					}}
 				>
-					<TopNav orgSlug={orgSlug} onToggleChat={toggleChat} />
+					<TopNav onToggleChat={toggleChat} onToggleSearch={() => setSearchOpen(true)} />
+					<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 					<div className="h-full p-4 md:p-6">{children}</div>
 				</SidebarInset>
 			</SidebarProvider>

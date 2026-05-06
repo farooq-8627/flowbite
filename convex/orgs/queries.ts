@@ -23,6 +23,21 @@ import { authenticatedQuery, orgQuery, superAdminQuery } from "../_functions/aut
 import { getOrgById, getUserOrgs } from "./helpers";
 
 /**
+ * Check if a slug is available. Returns true if available, false if taken.
+ * Used by onboarding to validate slug uniqueness as the user types.
+ */
+export const checkSlug = authenticatedQuery({
+	args: { slug: v.string() },
+	handler: async (ctx, args) => {
+		const existing = await ctx.db
+			.query("orgs")
+			.withIndex("by_slug", (q) => q.eq("slug", args.slug))
+			.unique();
+		return { available: existing === null };
+	},
+});
+
+/**
  * List all orgs the current user is an active member of.
  *
  * HOW IT WORKS:

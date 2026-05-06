@@ -52,7 +52,7 @@ interface NavMainProps {
 }
 
 const IsComingSoon = () => (
-	<span className="ml-auto rounded-md bg-gray-200 px-2 py-1 text-xs dark:text-gray-800">
+	<span className="ms-auto rounded-md bg-gray-200 px-2 py-1 text-xs dark:text-gray-800">
 		Soon
 	</span>
 );
@@ -84,7 +84,7 @@ const NavItemExpanded = ({
 							{item.icon && <item.icon />}
 							<span>{item.title}</span>
 							{item.comingSoon && <IsComingSoon />}
-							<ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+							<ChevronRight className="ms-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 						</SidebarMenuButton>
 					) : (
 						<SidebarMenuButton

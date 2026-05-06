@@ -65,16 +65,37 @@ export async function getUserOrgs(
 }
 
 /**
- * Generates a URL-safe slug from an org name.
- * Appends a random suffix to ensure uniqueness.
+ * Generates a URL-safe base slug from an org name (no suffix).
+ * Caller is responsible for uniqueness — use ensureUniqueSlug() for that.
  */
 export function generateSlug(name: string): string {
-	const base = name
+	return name
 		.toLowerCase()
 		.trim()
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "")
-		.slice(0, 40);
-	const suffix = Math.random().toString(36).slice(2, 6);
-	return `${base}-${suffix}`;
+		.slice(0, 48);
+}
+
+/**
+ * Ensures a slug is unique by appending -2, -3, etc. (GitHub-style).
+ * Returns the first available slug.
+ */
+export async function ensureUniqueSlug(ctx: QueryCtx, base: string): Promise<string> {
+	const existing = await ctx.db
+		.query("orgs")
+		.withIndex("by_slug", (q) => q.eq("slug", base))
+		.unique();
+	if (!existing) return base;
+
+	for (let i = 2; i <= 999; i++) {
+		const candidate = `${base}-${i}`;
+		const taken = await ctx.db
+			.query("orgs")
+			.withIndex("by_slug", (q) => q.eq("slug", candidate))
+			.unique();
+		if (!taken) return candidate;
+	}
+	// Extremely unlikely — fall back to timestamp suffix
+	return `${base}-${Date.now()}`;
 }

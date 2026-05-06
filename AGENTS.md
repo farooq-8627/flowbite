@@ -8,7 +8,104 @@ Convex agent skills for common tasks can be installed by running `npx convex ai-
 
 ---
 
+# 🏗️ GLOBAL CODING RULES (apply to every file, every session)
+
+## RULE: Write decisions to MODULE.md
+
+Every time you make a design decision, architecture choice, or answer a "why" question about a module:
+- Write it to that module's `MODULE.md` file immediately.
+- Format: decision table row `| # | Decision | Outcome |`
+- Never leave decisions only in chat — they will be lost between sessions.
+- If a `MODULE.md` doesn't exist for the module you're working in, create it.
+- Scan `MODULE.md` at the start of every task before writing code for that module.
+
+## RULE: RTL-safe Tailwind classes only
+
+This app supports Arabic (RTL) and English (LTR). **Never use directional CSS classes.**
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `ml-*`, `mr-*` | `ms-*`, `me-*` |
+| `pl-*`, `pr-*` | `ps-*`, `pe-*` |
+| `left-*`, `right-*` | `start-*`, `end-*` |
+| `border-l`, `border-r` | `border-s`, `border-e` |
+| `rounded-l-*`, `rounded-r-*` | `rounded-s-*`, `rounded-e-*` |
+| `text-left`, `text-right` | `text-start`, `text-end` |
+| `float-left`, `float-right` | `float-start`, `float-end` |
+
+Apply `dir="rtl"` to `<html>` for Arabic locale. All logical properties flip automatically.
+
+## RULE: Dynamic border-radius — never hardcode
+
+All border-radius values must use the CSS variable `--radius` (set by the theme system).
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `rounded-md`, `rounded-lg`, `rounded-xl` | `rounded-[--radius]` |
+| `rounded-full` | OK only for avatars/pills/dots |
+| `border-radius: 8px` in CSS | `border-radius: var(--radius)` |
+
+The `--radius` variable is set in `globals.css` and controlled by the theme preset. This ensures all UI elements respect the workspace's chosen border-radius setting.
+
+## RULE: No hardcoded app strings
+
+Never hardcode the app name, description, URL, or platform prefix in user-visible code.
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `"Orbitly"` in JSX/UI | `APP_CONFIG.name` |
+| `"AI-Powered CRM..."` | `APP_CONFIG.description` |
+| `"orbitly.app"` | `APP_CONFIG.url` |
+| `"ORB"` prefix | `APP_CONFIG.platformPrefix` |
+
+`APP_CONFIG` reads from `process.env.NEXT_PUBLIC_*` — white-label deployments just change env vars.
+
+## RULE: Convex env vars for backend secrets
+
+For Convex functions (not Next.js), use `process.env.VARIABLE_NAME` directly — Convex reads from the Convex dashboard environment variables, not `.env.local`. Never hardcode platform names or prefixes in Convex functions.
+
+---
+
 # 🔴 CRITICAL SESSION RULES (NON-NEGOTIABLE — read before anything else)
+
+## ⛔ RULE 0: UPDATE STATE.md BEFORE ENDING EVERY SESSION (NON-NEGOTIABLE)
+
+> This rule fires BEFORE Rule 1. No exceptions. No skipping. Ever.
+
+**After completing ANY work in a module, you MUST:**
+- Update `STATE.md` in EVERY module you touched during the session
+- Mark completed items as ✅, add new pending items as ⬜
+- Record the new route structure, file paths, and architecture decisions
+- If a module has no `STATE.md`, create one before ending
+
+**Modules that MUST have STATE.md:**
+- `core/shell/STATE.md` — shell layout, navigation, guards
+- `core/onboarding/STATE.md` — onboarding wizard, steps, mutations
+- `core/auth/STATE.md` — auth flow, guards, OAuth
+- `core/entities/STATE.md` — entity scaffolds, list/detail/form
+- `core/ai/STATE.md` — AI tools, conversations, system prompt
+- `core/settings/STATE.md` — settings pages, RBAC gates
+- Any other `core/*/STATE.md` or `features/*/STATE.md` you worked in
+
+**Format for STATE.md:**
+```
+# [Module] — State
+> Updated: [DATE]
+> Status: [X% Complete] — [one-line summary]
+
+## ✅ Completed
+| Component | File | Notes |
+
+## ⬜ Pending
+| Task | Priority | Notes |
+
+## Architecture Notes
+[Key decisions made this session]
+```
+
+**Failure to update STATE.md = broken contract. The next AI session will have no context.**
+
+---
 
 ## ⛔ RULE 1: NEVER END SESSION WITHOUT EXPLICIT USER PERMISSION
 

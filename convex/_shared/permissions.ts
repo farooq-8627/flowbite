@@ -283,3 +283,71 @@ export function requirePlanFeature(plan: string, featureKey: string): void {
 		throw new ConvexError(ERRORS.FEATURE_DISABLED);
 	}
 }
+
+// ─── DB-backed permission check (Phase 1 RBAC refactor) ──────────────────────
+//
+// These functions replace the hardcoded PERMISSIONS map for runtime checks.
+// They load the member's role from `orgRoles` and check `role.permissions[]`.
+// Falls back to legacy string role + PERMISSIONS map if no roleId is set.
+//
+// USAGE in mutations:
+//   ```ts
+//   await requirePermission(ctx, args.orgId, ctx.userId, "leads.create");
+//   ```
+
+/**
+ * DB-backed permission check. Loads the member's role from `orgRoles` and
+ * checks `role.permissions[]`. Falls back to legacy PERMISSIONS map if no roleId.
+ *
+ * Throws ConvexError(FORBIDDEN) if the user does not have the permission.
+ *
+ * @param ctx - Convex query or mutation context (must have ctx.db)
+ * @param orgId - The org to check membership in
+ * @param userId - The user to check
+ * @param permission - Permission key e.g. "leads.create"
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function requirePermission(ctx: { db: any }, orgId: string, userId: string, permission: string): Promise<void> {
+	const member = await ctx.db
+		.query("orgMembers")
+		.withIndex("by_orgId_and_userId", (q: { eq: (f: string, v: string) => { eq: (f: string, v: string) => unknown } }) =>
+			q.eq("orgId", orgId).eq("userId", userId),
+		)
+		.first();
+
+	if (!member || member.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	// If member has a roleId, use DB role permissions
+	if (member.roleId) {
+		const role = await ctx.db.get(member.roleId);
+		if (role && Array.isArray(role.permissions)) {
+			if (!role.permissions.includes(permission)) {
+				throw new ConvexError(ERRORS.FORBIDDEN);
+			}
+			return;
+		}
+	}
+
+	// Fallback: legacy string role + PERMISSIONS map
+	if (member.role) {
+		requireRole(member.role as OrgRole, permission);
+		return;
+	}
+
+	throw new ConvexError(ERRORS.FORBIDDEN);
+}
+
+/**
+ * DB-backed permission check — returns boolean instead of throwing.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function hasPermissionFromDB(ctx: { db: any }, orgId: string, userId: string, permission: string): Promise<boolean> {
+	try {
+		await requirePermission(ctx, orgId, userId, permission);
+		return true;
+	} catch {
+		return false;
+	}
+}

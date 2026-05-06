@@ -21,9 +21,8 @@ export default defineSchema({
 
 	// ── users ────────────────────────────────────────────────────────────────
 	// App-level user profile. Separate from authTables which handles credentials.
-	// Pattern ref: https://github.com/get-convex/convex-saas/blob/main/convex/schema.ts
 	users: defineTable({
-		tokenIdentifier: v.string(), // links to @convex-dev/auth createOrUpdateUser callback
+		tokenIdentifier: v.string(),
 		email: v.string(),
 		name: v.optional(v.string()),
 		avatarUrl: v.optional(v.string()),
@@ -33,9 +32,8 @@ export default defineSchema({
 		timezone: v.optional(v.string()),
 		onboardingCompleted: v.boolean(),
 		lastActiveAt: v.optional(v.number()),
-		// Platform role — only super_admin is elevated. Absent = regular user.
-		// Super admin controls orgs from OUTSIDE — cannot enter/operate within orgs.
-		// Ref: .github/agents/base/rbac.md — Platform Roles
+		dismissedCards: v.optional(v.array(v.string())),
+		preferredLanguage: v.optional(v.string()),
 		platformRole: v.optional(v.literal("super_admin")),
 		...timestamps,
 		...softDelete,
@@ -45,11 +43,11 @@ export default defineSchema({
 
 	// ── orgs ─────────────────────────────────────────────────────────────────
 	// Multi-tenant root. Every downstream row has orgId.
-	// Pattern ref: https://github.com/dbjpanda/convex-tenants
 	orgs: defineTable({
 		name: v.string(),
-		slug: v.string(), // URL-safe unique identifier
+		slug: v.string(),
 		logoStorageId: v.optional(v.id("_storage")),
+		platformOrgId: v.optional(v.string()), // "ORB-001" — set on org creation
 		plan: v.union(
 			v.literal("free"),
 			v.literal("starter"),
@@ -58,10 +56,16 @@ export default defineSchema({
 		),
 		stripeCustomerId: v.optional(v.string()),
 		stripeSubscriptionId: v.optional(v.string()),
+		aiContext: v.optional(v.string()),
+		industry: v.optional(v.string()), // e.g. "real-estate", "technology" — set during onboarding
+		teamSize: v.optional(v.string()), // e.g. "1–5", "6–20" — set during onboarding
+		onboardingStep: v.optional(v.number()), // 0=org-created, 1=industry-set, 2=complete
 		settings: v.optional(
 			v.object({
 				defaultCurrency: v.optional(v.string()),
 				timezone: v.optional(v.string()),
+				codePrefixes: v.optional(v.any()), // { person: "P", deal: "D", company: "CO", ... }
+				modules: v.optional(v.any()), // ModuleConfig[] — workspace navigation config
 			}),
 		),
 		...timestamps,
@@ -70,19 +74,35 @@ export default defineSchema({
 		.index("by_slug", ["slug"])
 		.index("by_stripeCustomerId", ["stripeCustomerId"]),
 
+	// ── orgRoles ─────────────────────────────────────────────────────────────
+	// Dynamic roles per org. Seeded with Owner/Admin/Member on org creation.
+	orgRoles: defineTable({
+		...orgScoped,
+		name: v.string(), // "Owner", "Admin", "Member", or custom
+		description: v.optional(v.string()),
+		permissions: v.array(v.string()), // ["leads.create", "deals.view", ...]
+		isSystem: v.boolean(), // true = cannot be deleted (Owner, Admin, Member)
+		isDefault: v.boolean(), // true = assigned to new members by default
+		color: v.optional(v.string()),
+		...timestamps,
+	})
+		.index("by_orgId", ["orgId"])
+		.index("by_orgId_and_name", ["orgId", "name"]),
+
 	// ── orgMembers ───────────────────────────────────────────────────────────
 	// Maps users → orgs with role. One row per user-org pair.
-	// Pattern ref: https://github.com/dbjpanda/convex-tenants/blob/main/example/convex/tenants.ts
 	orgMembers: defineTable({
 		...orgScoped,
 		userId: v.id("users"),
-		role: v.union(
+		// Phase 1 RBAC refactor: roleId will become required, role will be removed
+		roleId: v.optional(v.id("orgRoles")), // FK to orgRoles — dynamic role system
+		role: v.optional(v.union(
 			v.literal("owner"),
 			v.literal("admin"),
 			v.literal("member"),
 			v.literal("viewer"),
-		),
-		permissions: v.optional(v.array(v.string())), // fine-grained overrides
+		)),
+		permissions: v.optional(v.array(v.string())),
 		invitedBy: v.optional(v.id("users")),
 		joinedAt: v.number(),
 		updatedAt: v.optional(v.number()),

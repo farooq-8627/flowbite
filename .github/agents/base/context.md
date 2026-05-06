@@ -1,72 +1,67 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never create a new context file.
-> Keep this file SHORT. No session history. No architecture explanations. Those live in PLAN.md.
-> Last Updated: 2026-04-27 | Strategy V2 finalized. Phase 0 COMPLETE. Phase 1 Shell = NEXT.
+> Last Updated: 2026-05-07
 
 ---
 
-## Current Phase: 1 — Shell (PENDING — Next up)
+## Current Phase: 1 — Shell + RBAC Refactor (MOSTLY COMPLETE)
 
-**Phase 0: ✅ COMPLETE**
-- Auth (Password, GitHub, Google), full RBAC (102 tests), invitations module ✅
-- All 8 production quality gaps resolved ✅
-- `pnpm typecheck` 0 errors | `pnpm test` 102 passing | `pnpm build` 0 errors ✅
-- Architecture setup (MODULE.md, theme presets, preferences library, Zustand store) ✅
-- All docs + folder structure cleaned and synced ✅
-
-**Architecture (final):**
-- `core/` — 11 modules (shell, entities, ai, settings, csv-import, kanban, datatable, timelines, notifications, onboarding, command-palette) — NEVER plan-gated
-- `features/` — 5 modules (ai-automation, client-portal, integrations, industry-templates, project-management) — CAN be plan-gated
-- `convex/ai/` — AI tools centralized, role-filtered before Claude call
-- Two timelines: Unified (RBAC audit log) + Activity Chat (people + AI on-behalf)
-- Entity scaffolds: 4 shared scaffolds for all 6 entity types
+**Phase 0: ✅ COMPLETE** — Auth, RBAC (102 tests), invitations, preferences, theme presets, Zustand store.
+**Shell: 95% DONE** — Layout, sidebar, TopNav, WorkspaceSwitcher, all auth flows, RBAC refactor done. Missing: dashboard home page, dead code cleanup.
+**RBAC Refactor: 80% DONE** — Schema, orgRoles CRUD, seeding, requirePermission() DB lookup done. Missing: update tests, update invitations.accept, update useOrgPermission hook.
 
 ---
 
-## Strategy V2 Decisions (Locked 2026-04-27)
+## Architecture State
 
-> These decisions are final. Do not revisit unless explicitly requested.
-
-| Decision | Locked Value |
+| Layer | Status |
 |---|---|
-| First industry | Dubai Real Estate |
-| Pipeline stages on | **Deals ONLY** (not leads). Leads have simple status: new/qualified/converted. |
-| Architecture | Hybrid: Structured DB (EAV) + AI input layer (WhatsApp voice → auto-fill fieldValues) |
-| WhatsApp phase | Phase 3 — ships WITH AI, not Phase 5 |
-| WhatsApp provider | 360dialog (Gulf BSP). Apply for UAE number NOW — takes 1–2 weeks. |
-| Voice transcription | OpenAI Whisper API (best Arabic + code-switching accuracy) |
-| Schema additions (Phase 2) | `aiContext` on leads/contacts/deals. `quickCode` on leads/contacts. `showInStages` on fieldDefinitions. `entityDocuments` new table. |
-| Stage-aware fields | Approach B — backend. Convex query filters `fieldDefinitions` by `showInStages` before returning to client. |
-| RBAC | Dynamic — `orgMembers.roleId` references `orgRoles` table (not hardcoded string). Refactor in Phase 1. |
-| Export layer | Agent-facing output layer (NOT platform export). Ejari PDF, property summary, CSV of any filtered view. Phase 2+. |
-| Industry templates | Base is generic. Industry-specific fieldDefs + pipeline stages seeded via config files in `features/industry-templates/`. First: Dubai RE. |
+| Root layout + fonts + ThemeBootScript | ✅ Working (zero FOUC) |
+| `core/shell/config/navigation.ts` | ✅ Dynamic, workspace-driven |
+| `core/shell/layouts/` | ✅ DashboardLayout + DashboardLayoutClient |
+| `core/shell/components/TopNav.tsx` | ✅ Search (⌘J) + Bell + ThemeSwitcher + AI toggle |
+| `core/shell/components/sidebar/app-sidebar.tsx` | ✅ Compact padding, WorkspaceSwitcher in header |
+| `core/shell/components/sidebar/workspace-switcher.tsx` | ✅ Org list + platformOrgId + create/join/logout |
+| `core/shell/components/sidebar/nav-user.tsx` | ✅ Compact, lowercase email, Settings in dropdown |
+| `core/shell/components/ModuleGuard.tsx` | ✅ Module access gating |
+| `components/scripts/theme-boot.tsx` | ✅ FOUC prevention |
+| `convex/schema.ts` | ✅ orgRoles + updated users/orgs/orgMembers |
+| `convex/orgRoles/` | ✅ queries (list, get) + mutations (create, update, remove) |
+| `convex/_shared/permissions.ts` | ✅ requirePermission() DB lookup + legacy fallback |
+| Auth flows (signin, signup, verify, reset, join) | ✅ All built |
+| Dashboard home page | ⬜ Pending |
+| Dead code cleanup | ⬜ Pending |
+| Update 102 tests for roleId | ⬜ Pending |
 
 ---
 
-## What's Next (Phase 1 — in build order)
+## Key Design Decisions (This Session)
 
-1. **IMMEDIATE**: Apply for WhatsApp Business API via 360dialog (do this today — 1–2 week approval)
-2. **BACKFIX**: Update `PLAN_FEATURES` in `constants.ts` (CRM plan features) — needed before any Phase 2 mutations
-3. **SHELL-01**: `core/shell/config/navigation.ts` — single source of truth for nav
-4. **SHELL-02**: `app/[locale]/dashboard/layout.tsx` — auth guard
-5. **SHELL-03**: `app/[locale]/dashboard/[orgSlug]/layout.tsx` — org resolver
-6. **SHELL-04–09**: DashboardLayout, AppSidebar, TopNav, NotificationBell, WorkspaceSwitcher, ModuleGuard
-7. **ONBOARD-01–03**: 3-step onboarding wizard (org name → industry → complete). Industry picker seeds Dubai RE as default option.
-8. **SHELL-11**: Quick Win Dashboard page (metric cards + Get Started card)
-9. **SHELL-12**: Auth redirect → onboarding if not completed
-10. **RBAC-REFACTOR-01–10**: Dynamic roles (`orgRoles` table, `roleId` on `orgMembers`)
+1. **WorkspaceSwitcher**: Logo click opens dropdown. Shows `org.platformOrgId` (e.g. `ORB-XXXXX`) under org name so users can share their org ID. Create workspace → `/onboarding`. Join workspace → `/join`.
 
-Full todo list with IDs: `todos.md`
-Full build checklist: `checklist.md`
-Module rules: `core/shell/MODULE.md`
+2. **Sidebar Padding**: `SidebarHeader/Footer className="px-2 py-1.5"`. Groups `py-1`. All buttons `size="sm"`. NavUser avatar `h-5 w-5`, text `text-xs/[10px]`.
+
+3. **Auth Flows**: All built using Convex Auth Password provider flows. Email verification: `flow: "email-verification"`. Password reset: `flow: "reset"` → `flow: "reset-verification"`. Join-org: `invitations.queries.getByToken` (public) + `invitations.mutations.accept`.
+
+4. **RBAC Seeding**: `createOrg` now seeds 3 system roles (Owner/Admin/Member) and sets `orgMembers.roleId` for the owner. Member role has `isDefault: true`.
+
+5. **requirePermission()**: DB-backed. Loads `orgRoles` doc via `member.roleId`, checks `role.permissions[]`. Falls back to legacy `role` string + PERMISSIONS map if no `roleId`.
+
+6. **Product Tour**: Documented in `core/onboarding/MODULE.md`. Will use `onborda` library (https://github.com/uixmat/onborda). Triggers after first dashboard visit. State tracked in `users.dismissedCards["product_tour_v1"]`.
 
 ---
 
-## Known Issues
+## What's Next (Exact Order)
 
-| Issue | Status |
-|---|---|
-| `pnpm lint-check` fails — `biome lint --check .` invalid for Biome v2 | pending fix |
-| Auth redirect (`P0-AUTH-REDIRECT`) blocked on shell being built | blocked → Phase 1 |
-| Pre-existing next-intl TS error in `.next/dev/types/validator.ts` | not our code |
+1. Dashboard home page (`app/[locale]/[orgSlug]/dashboard/page.tsx`) — Get Started card + metric cards
+2. Seed default pipeline on industry selection (needed for CRM)
+3. Update `invitations.mutations.accept` to assign Member roleId
+4. Update `useOrgPermission` hook to load from DB
+5. Update 102 tests for new roleId field
+6. Delete dead code from `core/shell/`
+7. Product tour (onborda) — after dashboard home page
+
+---
+
+## `pnpm typecheck`: ✅ 0 errors

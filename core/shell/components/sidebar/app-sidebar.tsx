@@ -1,75 +1,134 @@
-/**
- * App Sidebar Component
- * STATUS: IMPLEMENTED
- * 
- * Main navigation sidebar with org-scoped navigation items.
- * Supports dynamic variants (inset/sidebar/floating) and collapsible modes (icon/offcanvas).
- * 
- * Features:
- * - Dynamic variant based on user preferences
- * - Collapsible modes (icon/offcanvas)
- * - Org-specific navigation items
- * - Support card in footer
- * - User menu in footer
- * 
- * @see navigation/sidebar/sidebar-items.ts for nav configuration
- * @see lib/preferences/layout.ts for variant types
- * @see lib/stores/preferences-store.ts for preference management
- * 
- * @example
- * <AppSidebar orgSlug="acme" />
- */
 "use client";
 
 import Link from "next/link";
-import { Command } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LifeBuoy, BookOpen } from "lucide-react";
 
 import {
 	Sidebar,
 	SidebarContent,
 	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupContent,
+	SidebarGroupLabel,
 	SidebarHeader,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
+	SidebarSeparator,
 } from "@/components/ui/sidebar";
-import { APP_CONFIG } from "@/config/app-config";
-import { rootUser } from "@/data/users";
-import { sidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
-
-import { NavMain } from "./nav-main";
+import { buildNavigation, DEFAULT_MODULES, type NavGroup } from "@/core/shell/config/navigation";
 import { NavUser } from "./nav-user";
-import { SidebarSupportCard } from "./sidebar-support-card";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 
+/**
+ * AppSidebar — Dynamic, workspace-driven sidebar navigation.
+ *
+ * Structure:
+ * - Header: App logo + name
+ * - Content: Dynamic CRM nav groups (from org module config)
+ * - Footer: Support card → User menu (Settings + Theme are in TopNav/NavUser dropdown)
+ */
 export function AppSidebar({
 	orgSlug,
 	...props
 }: React.ComponentProps<typeof Sidebar> & { orgSlug?: string }) {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
 	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
+	const pathname = usePathname();
+
+	// TODO: Replace DEFAULT_MODULES with org's module config from Convex query
+	const navGroups = buildNavigation(orgSlug ?? "", DEFAULT_MODULES);
 
 	return (
 		<Sidebar {...props} variant={sidebar_variant} collapsible={sidebar_collapsible}>
-			<SidebarHeader>
+			<SidebarHeader className="py-2">
+				<WorkspaceSwitcher currentOrgSlug={orgSlug ?? ""} />
+			</SidebarHeader>
+
+			<SidebarContent className="gap-0">
+				{navGroups.map((group) => (
+					<NavGroupSection
+						key={group.id}
+						group={group}
+						pathname={pathname}
+					/>
+				))}
+			</SidebarContent>
+
+			<SidebarFooter className="py-2">
+				<SidebarSupportCard />
+				<SidebarSeparator/>
+				<NavUser orgSlug={orgSlug} />
+			</SidebarFooter>
+		</Sidebar>
+	);
+}
+
+// ─── Support Card ─────────────────────────────────────────────────────────────
+
+function SidebarSupportCard() {
+	return (
+		<SidebarGroup>
+			<SidebarGroupContent>
 				<SidebarMenu>
 					<SidebarMenuItem>
-						<SidebarMenuButton asChild>
-							<Link prefetch={false} href="/dashboard">
-								<Command />
-								<span className="font-semibold text-base">{APP_CONFIG.name}</span>
-							</Link>
+						<SidebarMenuButton asChild tooltip="Documentation" className="h-8">
+							<a href="https://docs.orbitly.app" target="_blank" rel="noopener noreferrer">
+								<BookOpen />
+								<span>Documentation</span>
+							</a>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+					<SidebarMenuItem>
+						<SidebarMenuButton asChild tooltip="Support" className="h-8">
+							<a href="mailto:support@orbitly.app">
+								<LifeBuoy />
+								<span>Support</span>
+							</a>
 						</SidebarMenuButton>
 					</SidebarMenuItem>
 				</SidebarMenu>
-			</SidebarHeader>
-			<SidebarContent>
-				<NavMain items={sidebarItems} />
-			</SidebarContent>
-			<SidebarFooter>
-				<SidebarSupportCard />
-				<NavUser user={rootUser} />
-			</SidebarFooter>
-		</Sidebar>
+			</SidebarGroupContent>
+		</SidebarGroup>
+	);
+}
+
+// ─── Nav Group Section ────────────────────────────────────────────────────────
+
+function NavGroupSection({
+	group,
+	pathname,
+}: {
+	group: NavGroup;
+	pathname: string;
+}) {
+	return (
+		<SidebarGroup className="py-1">
+			{group.label && <SidebarGroupLabel className="h-6 px-2">{group.label}</SidebarGroupLabel>}
+			<SidebarGroupContent>
+				<SidebarMenu>
+					{group.items.map((item) => (
+						<SidebarMenuItem key={item.url}>
+							<SidebarMenuButton
+								asChild
+								isActive={
+									item.url === pathname ||
+									(item.url !== `/dashboard/` && pathname.startsWith(item.url + "/"))
+								}
+								tooltip={item.title}
+								className="h-8"
+							>
+								<Link prefetch={false} href={item.url}>
+									<item.icon />
+									<span>{item.title}</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					))}
+				</SidebarMenu>
+			</SidebarGroupContent>
+		</SidebarGroup>
 	);
 }

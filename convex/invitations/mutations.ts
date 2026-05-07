@@ -136,11 +136,19 @@ export const accept = authenticatedMutation({
 				joinedAt: now,
 			});
 		} else {
+			// Look up the org's default role (Member) to assign roleId
+			const defaultRole = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId", (q) => q.eq("orgId", invitation.orgId))
+				.filter((q) => q.eq(q.field("isDefault"), true))
+				.first();
+
 			// Create new membership
 			await ctx.db.insert("orgMembers", {
 				orgId: invitation.orgId,
 				userId: ctx.userId,
 				role: invitation.role,
+				roleId: defaultRole?._id,
 				invitedBy: invitation.invitedBy,
 				joinedAt: now,
 			});

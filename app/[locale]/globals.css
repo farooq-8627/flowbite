@@ -201,3 +201,11 @@ body {
 :root [data-slot="card"] {
 	border-radius: var(--radius) !important;
 }
+
+/* Hide scrollbars everywhere */
+* {
+	scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+	display: none;
+}

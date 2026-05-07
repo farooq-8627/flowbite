@@ -183,6 +183,80 @@ export default defineSchema({
 		.index("by_userId_and_createdAt", ["userId", "createdAt"])
 		.index("by_orgId_and_actorType_and_createdAt", ["orgId", "actorType", "createdAt"]),
 
+	// ── pipelines ────────────────────────────────────────────────────────────
+	// Deal pipelines with inline stages. Seeded on industry selection.
+	pipelines: defineTable({
+		...orgScoped,
+		name: v.string(),
+		entityType: v.string(), // "deal" only for now
+		isDefault: v.boolean(),
+		stages: v.array(v.object({
+			id: v.string(),
+			name: v.string(),
+			order: v.number(),
+			color: v.optional(v.string()),
+			isFinal: v.optional(v.boolean()),
+			finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
+			staleAfterDays: v.optional(v.number()),
+		})),
+		...timestamps,
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_entity", ["orgId", "entityType"])
+		.index("by_org_and_default", ["orgId", "isDefault"]),
+
+	// ── entityCodeCounters ───────────────────────────────────────────────────
+	// Per-org, per-type atomic counters for personCode, dealCode, etc.
+	entityCodeCounters: defineTable({
+		orgId: v.id("orgs"),
+		entityType: v.string(), // "person" | "deal" | "company" | "followup" | "project" | "task"
+		count: v.number(),
+		createdAt: v.number(),
+	}).index("by_org_and_type", ["orgId", "entityType"]),
+
+	// ── orbitLinks ────────────────────────────────────────────────────────────
+	// Universal junction table for lateral connections between entities.
+	// personCode handles vertical (everything → person). orbitLinks handles lateral.
+	// Examples: deal ↔ company, contact ↔ whatsapp thread, document ↔ contact.
+	orbitLinks: defineTable({
+		orgId: v.id("orgs"),
+		fromCode: v.string(), // "P-001" | "D-007" | "CO-003"
+		fromType: v.string(), // "lead" | "contact" | "deal" | "company"
+		toCode: v.string(), // target entity code or system ID
+		toType: v.string(), // "contact" | "deal" | "company" | "whatsapp_msg" | "document"
+		linkType: v.string(), // "converted_to" | "has_deal" | "works_at" | "whatsapp_thread" | "has_document"
+		metadata: v.optional(v.any()),
+		createdAt: v.number(),
+		createdBy: v.optional(v.id("users")),
+	})
+		.index("by_org_and_from", ["orgId", "fromCode"])
+		.index("by_org_and_to", ["orgId", "toCode"])
+		.index("by_org_and_type", ["orgId", "linkType"]),
+
+	// ── platformTemplates ─────────────────────────────────────────────────────
+	// Industry templates stored in DB — not TypeScript config files.
+	// Platform_admin creates/edits from admin UI. AI can generate templates.
+	// Org owners can customize after seeding.
+	platformTemplates: defineTable({
+		key: v.string(), // "dubai_re" | "b2b_sales" | "freelancer"
+		name: v.string(),
+		description: v.string(),
+		isBuiltIn: v.boolean(), // true = created by platform_admin
+		entityLabels: v.optional(v.any()), // { lead: { singular: "Inquiry", plural: "Inquiries" } }
+		entityVisibility: v.optional(v.any()), // { company: true, entity5: false }
+		codePrefixDefaults: v.optional(v.any()), // { person: "IN", deal: "D" }
+		defaultPipelineName: v.string(),
+		defaultStages: v.array(v.any()), // [{ id, name, order, color, isFinal, finalType, staleAfterDays }]
+		defaultFieldDefinitions: v.optional(v.array(v.any())),
+		dashboardMetrics: v.optional(v.array(v.string())),
+		aiPersona: v.optional(v.string()),
+		navHiddenSlots: v.optional(v.array(v.string())),
+		createdBy: v.optional(v.id("users")),
+		...timestamps,
+	})
+		.index("by_key", ["key"])
+		.index("by_builtin", ["isBuiltIn"]),
+
 	// ── featureFlags ─────────────────────────────────────────────────────────
 	// Kill-switch / rollout flags. Checked via useFeatureFlag() hook.
 	featureFlags: defineTable({

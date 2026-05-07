@@ -18,7 +18,89 @@ Remaining small items from Phase 0 (do before Phase 1 begins):
 
 ---
 
-## Phase 1 — Shell + Onboarding (CURRENT FOCUS)
+## Phase 1 — Shell + Onboarding ✅ COMPLETE
+
+> **Sellable Gate: v0.1 — Demo-ready.**
+> `pnpm tsc --noEmit` → 0 errors | `npx vitest run --config vitest.convex.config.ts` → 102 passing
+
+### Shell + Navigation ✅
+- [x] `core/shell/config/navigation.ts` — NAV_GROUPS, buildNavigation(), resolveModuleType()
+- [x] `app/[locale]/[orgSlug]/dashboard/layout.tsx` — org resolver + DashboardLayout
+- [x] `core/shell/layouts/DashboardLayout.tsx` — server component, reads cookies
+- [x] `core/shell/layouts/DashboardLayoutClient.tsx` — 3-pane, resizable AI panel (280-600px)
+- [x] `core/shell/components/sidebar/app-sidebar.tsx` — dynamic nav from buildNavigation()
+- [x] `core/shell/components/TopNav.tsx` — Search + Bell + Theme + AI toggle
+- [x] `core/shell/components/sidebar/nav-user.tsx` — real Convex auth, h-10 trigger
+- [x] `core/shell/components/sidebar/workspace-switcher.tsx` — h-10 trigger, consistent dropdown
+- [x] `core/shell/components/ModuleGuard.tsx` — feature flag gating
+- [x] `core/shell/hooks/useModuleEnabled.ts` — calls featureFlags.queries.getForOrg
+- [x] `core/shell/hooks/useViewToggle.ts` — URL-synced view toggle
+- [x] `app/[locale]/[orgSlug]/dashboard/page.tsx` — Get Started card + metric cards + recent activity
+- [x] Dead code removed: nav-main, nav-documents, nav-secondary, account-switcher, sidebar-support-card, navigation/sidebar/, data/users.ts
+
+### Onboarding Flow ✅
+- [x] `app/[locale]/onboarding/page.tsx` — 3-step wizard
+- [x] Step 1: Org name + slug
+- [x] Step 2: Industry picker → seeds default pipeline (idempotent)
+- [x] Step 3: Complete → `users.onboardingCompleted = true` → redirect to dashboard
+- [x] `core/onboarding/components/OnboardingGuard.tsx` — redirects incomplete users
+
+### RBAC Dynamic Roles ✅
+- [x] `orgRoles` table in schema
+- [x] `orgMembers.roleId` field (FK to orgRoles) — dual field migration-safe
+- [x] Seed 3 system roles on org creation (Owner, Admin, Member)
+- [x] `requirePermission()` DB-backed with legacy fallback
+- [x] `invitations/mutations.ts` accept — assigns default roleId
+- [x] `useOrgPermission` hook — loads from DB via getMyMembership + orgRoles.get
+- [x] `PermissionGate` — accepts orgId prop
+- [x] 102 tests passing (vitest.convex.config.ts)
+
+### Schema Additions (v2/v3 Architecture) ✅
+- [x] `entityCodeCounters` table — per-org, per-type atomic counters
+- [x] `orbitLinks` table — lateral connections between entities
+- [x] `platformTemplates` table — industry templates in DB
+- [x] `pipelines` table — deal pipelines with inline stages
+- [x] `featureFlags` table — kill-switch / rollout flags
+
+### Record Code System ✅
+- [x] `convex/_shared/recordCodes.ts` — generatePersonCode(), generateEntityCode()
+- [x] `orgs.settings.codePrefixes` field in schema
+- [x] `platformOrgId` generated on org creation (ORB-XXXXX format)
+
+### Notifications ✅
+- [x] `convex/notifications/helpers.ts` — sendNotification() helper
+- [x] `convex/notifications/queries.ts` — listMine, getSummary
+- [x] `convex/notifications/mutations.ts` — markRead, markAllRead
+
+### Feature Flags ✅
+- [x] `convex/featureFlags/queries.ts` — getForOrg
+- [x] `core/shell/hooks/useModuleEnabled.ts` — calls real query
+
+### Auth Flows ✅
+- [x] SignIn, SignUp, ForgotPassword, ResetPassword, VerifyEmail, Join, Join/[token]
+- [x] AuthShellLayout
+
+### 🧪 Testing ✅
+- [x] 102 unit tests passing (convex-test)
+- [x] `vitest.convex.config.ts` — dedicated config for convex tests
+- [x] `pnpm tsc --noEmit` — 0 errors
+
+### ✅ Phase 1 Gate — COMPLETE
+- [x] `pnpm tsc --noEmit` — 0 errors
+- [x] `npx vitest run --config vitest.convex.config.ts` — 102 passing
+- [x] Sign up → org created → 3-step onboarding → dashboard renders ✅
+- [x] Invite flow: owner invites member → member accepts → roleId assigned ✅
+- [x] RBAC: requirePermission() loads from DB ✅
+- [x] Record codes: generatePersonCode/generateEntityCode ready for Phase 2 ✅
+- [x] Notifications: listMine/getSummary/markRead/markAllRead ready ✅
+- [x] Feature flags: getForOrg wired to useModuleEnabled ✅
+
+### ⬜ Deferred to Phase 3+
+- [ ] Route group restructure `(private)/` — current middleware.ts works, restructure with landing page
+- [ ] `platformOrgIdCounter` table — sequential ORB-001 (current ORB-XXXXX works)
+- [ ] Record code prefix rename background job — needed for Settings → Record Codes page
+- [ ] PostHog events: user_signed_up, onboarding_completed, org_created
+- [ ] E2E tests (Playwright)
 
 > **Sellable Gate: v0.1 — Demo-ready. Investors + early waitlist can sign up.**
 > Module rules: `core/shell/MODULE.md` | `core/onboarding/MODULE.md`

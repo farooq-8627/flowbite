@@ -202,3 +202,46 @@ export const listAll = superAdminQuery({
 		return await ctx.db.query("orgs").order("desc").take(100);
 	},
 });
+
+/**
+ * Get dashboard stats for the current org.
+ * Single parallel query — no N+1. Returns industry-aware metrics.
+ */
+export const getDashboardStats = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", ctx.userId),
+			)
+			.first();
+		if (!member || member.deletedAt !== undefined) return null;
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return null;
+
+		const [memberCount, recentActivity] = await Promise.all([
+			ctx.db
+				.query("orgMembers")
+				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
+				.filter((q) => q.eq(q.field("deletedAt"), undefined))
+				.take(100)
+				.then((m) => m.length),
+			ctx.db
+				.query("activityLogs")
+				.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
+				.order("desc")
+				.take(10),
+		]);
+
+		return {
+			orgName: org.name,
+			industry: org.industry ?? "default",
+			plan: org.plan,
+			memberCount,
+			recentActivity,
+			// Phase 2: leadCount, dealCount, pipelineValue added when CRM tables exist
+		};
+	},
+});

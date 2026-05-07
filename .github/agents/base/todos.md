@@ -1,129 +1,123 @@
 # Active Todos
 
 > OVERWRITE this file — never append.
-> Status: `pending` | `in_progress` | `done` | `blocked`
 > Updated: 2026-05-07
+> Status: **Phase 1 COMPLETE ✅ — Ready for Phase 2**
 
 ---
 
-## Phase 0 — Foundation ✅ COMPLETE
+## Phase 1 — COMPLETE ✅
 
-All done: Auth (Password, GitHub, Google), RBAC (102 tests), invitations, 16 shadcn components, PostHog + Sentry, PermissionGate, features/_registry.ts, theme presets, preferences library, Zustand store, all MODULE.md files.
+`pnpm tsc --noEmit` → 0 errors  
+`npx vitest run --config vitest.convex.config.ts` → 102 passing, 1 skipped
 
----
-
-## Phase 0 — Remaining (Small Items)
-
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| DX-01 | Fix `pnpm lint-check` Biome baseline | pending | `biome lint --check .` invalid for installed Biome v2 |
-
----
-
-## Shell — Current State ✅ MOSTLY COMPLETE
-
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| SHELL-01 | `core/shell/config/navigation.ts` | ✅ done | Dynamic, workspace-driven. buildNavigation() + resolveModuleType() |
-| SHELL-02 | `app/[locale]/[orgSlug]/dashboard/layout.tsx` | ✅ done | ErrorBoundary + OnboardingGuard + DashboardLayout |
-| SHELL-03 | `core/shell/layouts/DashboardLayout.tsx` | ✅ done | Server component, reads cookies for preferences |
-| SHELL-04 | `core/shell/layouts/DashboardLayoutClient.tsx` | ✅ done | Sidebar + TopNav + SearchDialog + AI chat panel. Gap fix: !p-0 |
-| SHELL-05 | `core/shell/components/sidebar/app-sidebar.tsx` | ✅ done | Compact padding, WorkspaceSwitcher in header, SidebarSupportCard + NavUser in footer |
-| SHELL-06 | `core/shell/components/TopNav.tsx` | ✅ done | Search (⌘J) + Bell + ThemeSwitcher + AI toggle (⌘.) |
-| SHELL-07 | `core/shell/components/sidebar/nav-user.tsx` | ✅ done | Compact (h-5 avatar, text-xs), lowercase email, Settings in dropdown |
-| SHELL-08 | `core/shell/components/sidebar/theme-switcher.tsx` | ✅ done | Button variant used in TopNav |
-| SHELL-09 | `core/shell/components/ModuleGuard.tsx` | ✅ done | Module access gating |
-| SHELL-10 | `components/scripts/theme-boot.tsx` | ✅ done | FOUC prevention |
-| SHELL-11 | Root layout font fix | ✅ done | Uses .variable classes + ThemeBootScript |
-| SHELL-12 | Auth guard | ✅ done | middleware.ts handles globally |
-| SHELL-13 | Onboarding guard | ✅ done | OnboardingGuard client component in dashboard layout |
-| SHELL-14 | `core/shell/components/sidebar/workspace-switcher.tsx` | ✅ done | Org list + platformOrgId + create/join/logout |
-| SHELL-15 | Dashboard home page | pending | Get Started card + metrics |
-| SHELL-16 | Delete dead code | pending | nav-main, nav-documents, nav-secondary, layout-controls, account-switcher, sidebar-support-card, data/users.ts, navigation/sidebar/ |
+| Area | Status |
+|---|---|
+| Auth flows (signin, signup, verify, reset, join) | ✅ |
+| Onboarding wizard (3 steps, pipeline seeding) | ✅ |
+| Shell (sidebar, TopNav, WorkspaceSwitcher, NavUser) | ✅ |
+| RBAC (orgRoles, requirePermission DB-backed, PermissionGate) | ✅ |
+| invitations.accept assigns roleId | ✅ |
+| useOrgPermission loads from DB | ✅ |
+| Schema: entityCodeCounters, orbitLinks, platformTemplates, pipelines | ✅ |
+| recordCodes.ts: generatePersonCode, generateEntityCode | ✅ |
+| notifications/queries.ts + mutations.ts | ✅ |
+| featureFlags/queries.ts + useModuleEnabled wired | ✅ |
+| Dashboard home page (Get Started + metrics + activity) | ✅ |
+| Dead code cleanup (7 files removed) | ✅ |
+| 102 tests passing | ✅ |
+| vitest.convex.config.ts created | ✅ |
 
 ---
 
-## Auth — Current State ✅ COMPLETE
+## Phase 1 — Low Priority Deferred Items
 
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| AUTH-01 | SignInPage | ✅ done | Email/password + OAuth. toast.authError(). Forgot password link. |
-| AUTH-02 | SignUpPage | ✅ done | Email/password + OAuth. Password mismatch check. toast.authError() |
-| AUTH-03 | AuthShellLayout | ✅ done | Split-screen. Panel uses rounded-[calc(var(--radius)*3)] |
-| AUTH-04 | Toast error mapping | ✅ done | lib/toast.ts maps Convex codes → human-readable |
-| AUTH-05 | Email verification | ✅ done | /verify-email?email=... — Convex Auth flow: email-verification + resend-verification |
-| AUTH-06 | Password reset | ✅ done | /forgot-password → /reset-password?email=... — Convex Auth flow: reset + reset-verification |
-| AUTH-07 | Join-org flow | ✅ done | /join (enter token) + /join/[token] (accept). Full backend + UI. |
+| ID | Task | Notes |
+|---|---|---|
+| DEFER-01 | Route group restructure `(private)/` | middleware.ts works; restructure when adding landing page |
+| DEFER-02 | `platformOrgIdCounter` table (sequential ORB-001) | Current ORB-XXXXX works; switch in Phase 4 platform admin |
+| DEFER-03 | Record code prefix rename background job | Needed for Settings → Record Codes page |
+| DEFER-04 | PostHog events (user_signed_up, onboarding_completed) | Add in Phase 2 alongside CRM events |
+| DEFER-05 | E2E Playwright tests | Add in Phase 2 |
 
 ---
 
-## Onboarding — Current State
+## Phase 2 — CRM Core (NEXT — START HERE)
 
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| ONBOARD-01 | OnboardingPage 3-step wizard | ✅ done | Workspace → Industry → Complete |
-| ONBOARD-02 | Toast error handling | ✅ done | All mutations use toast.mutationError() |
-| ONBOARD-03 | Seed default pipeline on industry selection | pending | Pipeline seeding mutations not built |
-| ONBOARD-04 | Resume from last step | pending | Read org.onboardingStep on mount |
-| ONBOARD-05 | Guard: redirect completed users away from /onboarding | pending | |
-| ONBOARD-06 | Product tour (onborda) | pending | Plan documented in MODULE.md. Build after dashboard home page. |
-
----
-
-## RBAC Refactor ✅ COMPLETE
-
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| RBAC-01 | `orgRoles` table in schema | ✅ done | name, permissions[], isSystem, isDefault, color |
-| RBAC-02 | `orgMembers.roleId` field added | ✅ done | Optional during migration, will become required |
-| RBAC-03 | `convex/orgRoles/` queries + mutations | ✅ done | list, get, create, update, remove |
-| RBAC-04 | Seed 3 default roles on org creation | ✅ done | Owner(isSystem), Admin(isSystem), Member(isSystem, isDefault) |
-| RBAC-05 | `requirePermission()` DB lookup | ✅ done | _shared/permissions.ts — DB lookup with legacy fallback |
-| RBAC-06 | Update `invitations/mutations.ts` — accept uses `roleId` | pending | Currently uses legacy role string |
-| RBAC-07 | Update `useOrgPermission` hook — load from DB | pending | |
-| RBAC-08 | Update all 102 tests | pending | Tests still use legacy role string |
-
----
-
-## CRM Structure
-
-| ID | Task | Status | Notes |
-|---|---|---|---|
-| CRM-01 | convex/crm/entities/ subfolder | ✅ done | leads, contacts, deals, companies, entity5, entityCodeCounters |
-| CRM-02 | convex/crm/shared/ subfolder | ✅ done | notes, reminders, tags, savedViews, orbitLinks |
-| CRM-03 | convex/crm/fields/ | ✅ done | fieldDefinitions, fieldValues, pipelines, dedup |
-| CRM-04 | Implement leads mutations/queries | pending | Phase 2 |
-| CRM-05 | Implement contacts mutations/queries | pending | Phase 2 |
-| CRM-06 | Implement deals mutations/queries | pending | Phase 2 |
-| CRM-07 | Implement pipeline stages as DB entities | pending | Phase 2 |
-
----
-
-## Phase 1 Remaining (Before Phase 2)
+### Backend First (Convex)
 
 | ID | Task | Priority | Notes |
 |---|---|---|---|
-| P1-01 | Dashboard home page | HIGH | Get Started card + metric cards |
-| P1-02 | Seed default pipeline on industry selection | HIGH | Needed for CRM to work |
-| P1-03 | Update invitations.accept to use roleId | MEDIUM | Assign Member role by default |
-| P1-04 | Update useOrgPermission hook | MEDIUM | Load from DB instead of hardcoded map |
-| P1-05 | Update 102 tests for new roleId field | MEDIUM | Tests still use legacy role string |
-| P1-06 | Delete dead code from core/shell/ | LOW | nav-main, nav-documents, etc. |
-| P1-07 | Product tour (onborda) | LOW | After dashboard home page |
+| CRM-01 | `convex/crm/entities/leads/mutations.ts` + `queries.ts` | HIGH | list, get, create, update, delete, qualify, convert. Use generatePersonCode(). Follow "One Function, Three Callers" pattern. |
+| CRM-02 | `convex/crm/entities/contacts/mutations.ts` + `queries.ts` | HIGH | list, get, create (personCode passed from lead), update, delete |
+| CRM-03 | `convex/crm/entities/companies/mutations.ts` + `queries.ts` | HIGH | list, get, create (generateEntityCode "company"), update, delete |
+| CRM-04 | `convex/crm/entities/deals/mutations.ts` + `queries.ts` | HIGH | list, get, create (generateEntityCode "deal"), update, changeStage, closeAsWon/Lost |
+| CRM-05 | `convex/crm/fields/pipelines/queries.ts` | HIGH | listByOrg, getDefault, getById |
+| CRM-06 | `convex/crm/shared/notes/mutations.ts` + `queries.ts` | MEDIUM | create (authorType: "user"|"ai"), list by entity, pin, delete |
+| CRM-07 | `convex/crm/shared/reminders/mutations.ts` + `queries.ts` | MEDIUM | create (generateEntityCode "followup"), list, markDone |
+| CRM-08 | `convex/crm/shared/tags/mutations.ts` + `queries.ts` | LOW | create, list, attach to entity |
+| CRM-09 | `convex/orgs/queries.ts` getDashboardStats | HIGH | Add leadCount, dealCount, pipelineValue when CRM tables exist |
 
----
+### Schema Additions for Phase 2
 
-## Blocked
-
-| ID | Task | Blocker |
+| Table | Fields | Notes |
 |---|---|---|
-| All CRM UI | Phase 2 features | P1-01 (dashboard) + P1-02 (pipeline seeding) must be done first |
+| `leads` | personCode, aiContext, pipelineId (optional), currentStageId (optional), status, source, displayName, email, assignedTo | personCode from generatePersonCode() |
+| `contacts` | personCode (from lead), aiContext, companyId, displayName, email, assignedTo | personCode PASSED from lead, never regenerated |
+| `companies` | companyCode, aiContext, name, industry, website | companyCode from generateEntityCode("company") |
+| `deals` | dealCode, personCode, companyCode, aiContext, pipelineId, currentStageId, title, value, assignedTo | dealCode from generateEntityCode("deal") |
+| `notes` | entityType, entityId, content, authorId, authorType, isInternal, isPinned | |
+| `reminders` | followUpCode, personCode, dealCode, entityType, entityId, dueAt, assignedTo, completedAt | |
+| `tags` + `entityTags` | org-wide tags, junction table | |
+
+### Frontend (Next.js)
+
+| ID | Task | Priority | Notes |
+|---|---|---|---|
+| UI-01 | `core/entities/scaffolds/` — EntityListPage, EntityDetailPage, EntityFormDialog, EntityCard | HIGH | Build once, use 4x |
+| UI-02 | Leads list + detail pages | HIGH | First entity, sets pattern |
+| UI-03 | Contacts list + detail pages | HIGH | |
+| UI-04 | Companies list page | MEDIUM | List only in Phase 2 |
+| UI-05 | Deals kanban | HIGH | shadboard UI + dnd-kit logic from shadcn-dashboard-2 |
+| UI-06 | Dashboard home page — real CRM metrics | HIGH | Update getDashboardStats with leadCount/dealCount |
+| UI-07 | TopNav: NotificationBell (real data) | MEDIUM | From shadboard notification-dropdown.tsx |
+| UI-08 | TopNav: LanguageSwitcher | MEDIUM | From shadboard language-dropdown.tsx |
+| UI-09 | TopNav: FullscreenToggle | LOW | From shadboard full-screen-toggle.tsx |
+
+### Infrastructure
+
+| ID | Task | Priority | Notes |
+|---|---|---|---|
+| INFRA-01 | Install @dnd-kit/core + @dnd-kit/sortable | HIGH | For deals kanban |
+| INFRA-02 | Install @tanstack/react-table | HIGH | For entity list pages |
+| INFRA-03 | `core/kanban/` — KanbanBoard, KanbanColumn, KanbanCard | HIGH | shadboard UI + dnd-kit logic |
+| INFRA-04 | `core/datatable/` — DataTable, DataTableToolbar | HIGH | TanStack Table wrapper |
 
 ---
 
-## Known Issues
+## Phase 3 — AI + WhatsApp (PENDING)
 
-- `pnpm lint-check` fails (`biome lint --check .` invalid for Biome v2)
-- Dead code in sidebar folder (nav-main, nav-documents, etc.) — cleanup pending
-- Old `navigation/sidebar/sidebar-items.ts` — dead, replaced by `core/shell/config/navigation.ts`
-- 102 tests still use legacy `role` string — need update after RBAC-06/07
+See checklist.md for full Phase 3 breakdown.
+
+Key items:
+- Vercel AI SDK + Anthropic
+- convex/ai/processChat.ts (internalAction)
+- 11 AI tools (all call canonical Convex mutations)
+- 360dialog WhatsApp webhook
+- Trigger.dev voice processor (Whisper → Claude → fieldValues)
+- Dubai RE template seeded
+
+---
+
+## Architecture Decisions (Locked — Do Not Change)
+
+| Decision | Value |
+|---|---|
+| Record codes | personCode on leads/contacts (P-001), entityCodes per type |
+| personCode generation | ONLY at lead creation. Passed to contact on conversion. Never regenerated. |
+| AI context | 3 layers: platformContext (global) + orgAIContext (org) + entityAIContext (per-entity) |
+| OrbitLinks | Lateral connections. personCode handles vertical. |
+| Kanban | shadboard UI + dnd-kit logic from shadcn-dashboard-2 |
+| One Function Three Callers | Every mutation works for UI + AI + WhatsApp + MCP |
+| platformTemplates | In DB, not TypeScript config files |
+| RBAC | DB-backed orgRoles, requirePermission() loads from DB |

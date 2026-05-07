@@ -140,14 +140,16 @@ describe("orgs.mutations.create", () => {
 	it("throws ORG_SLUG_TAKEN when slug is already in use", async () => {
 		/**
 		 * Slug uniqueness is enforced at the mutation level via `by_slug` index lookup.
+		 * createOrg (onboarding flow) throws on duplicate slug.
+		 * The legacy `create` mutation auto-increments instead.
 		 */
 		const t = convexTest(schema, modules);
 		const { asUser } = await seedUser(t);
 
-		await asUser.mutation(api.orgs.mutations.create, { name: "Org A", slug: "shared-slug" });
+		await asUser.mutation(api.orgs.mutations.createOrg, { name: "Org A", slug: "shared-slug" });
 
 		await expect(
-			asUser.mutation(api.orgs.mutations.create, { name: "Org B", slug: "shared-slug" }),
+			asUser.mutation(api.orgs.mutations.createOrg, { name: "Org B", slug: "shared-slug" }),
 		).rejects.toThrow();
 	});
 });

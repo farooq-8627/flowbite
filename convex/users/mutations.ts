@@ -26,6 +26,7 @@ export const updateProfile = authenticatedMutation({
 		name: v.optional(v.string()),
 		locale: v.optional(v.string()),
 		timezone: v.optional(v.string()),
+		dismissedCards: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		await ctx.db.patch(ctx.userId, {

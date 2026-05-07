@@ -96,7 +96,7 @@ export function DashboardLayoutClient({
 	}, [chatWidth]);
 
 	return (
-		<div className="flex h-screen w-full">
+		<div className="flex h-screen w-full overflow-hidden">
 			{/* Left Sidebar */}
 			<SidebarProvider
 				defaultOpen={initialSidebarOpen}
@@ -105,7 +105,7 @@ export function DashboardLayoutClient({
 					<AppSidebar variant={variant} collapsible={collapsible} orgSlug={orgSlug} />
 				</Suspense>
 				<SidebarInset
-					className="flex-1"
+					className="flex-1 flex flex-col overflow-hidden"
 					style={{
 						marginRight: (!isTablet && chatOpen) ? chatWidth : 0,
 						transition: isDragging ? "none" : "margin 200ms ease",
@@ -113,7 +113,7 @@ export function DashboardLayoutClient({
 				>
 					<TopNav onToggleChat={toggleChat} onToggleSearch={() => setSearchOpen(true)} />
 					<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-					<div className="h-full p-4 md:p-6">{children}</div>
+					<main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
 				</SidebarInset>
 			</SidebarProvider>
 

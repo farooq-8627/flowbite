@@ -29,8 +29,11 @@
 
 import type { ReactNode } from "react";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
+import type { Id } from "@/convex/_generated/dataModel";
 
 interface PermissionGateProps {
+	/** Org ID to check permission against */
+	orgId?: Id<"orgs">;
 	/** Permission key to check (e.g. "members.invite", "connections.create") */
 	permission: string;
 	/** Content to render if permission is granted */
@@ -39,8 +42,8 @@ interface PermissionGateProps {
 	fallback?: ReactNode;
 }
 
-export function PermissionGate({ permission, children, fallback = null }: PermissionGateProps) {
-	const allowed = useOrgPermission(permission);
+export function PermissionGate({ orgId, permission, children, fallback = null }: PermissionGateProps) {
+	const allowed = useOrgPermission(orgId, permission);
 
 	if (!allowed) return <>{fallback}</>;
 

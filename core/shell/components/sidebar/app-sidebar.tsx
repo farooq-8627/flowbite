@@ -15,7 +15,6 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
-	SidebarSeparator,
 } from "@/components/ui/sidebar";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 import { buildNavigation, DEFAULT_MODULES, type NavGroup } from "@/core/shell/config/navigation";
@@ -59,7 +58,6 @@ export function AppSidebar({
 
 			<SidebarFooter className="py-2">
 				<SidebarSupportCard />
-				<SidebarSeparator/>
 				<NavUser orgSlug={orgSlug} />
 			</SidebarFooter>
 		</Sidebar>

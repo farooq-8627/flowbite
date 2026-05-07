@@ -186,9 +186,38 @@ All code and suggestions were sourced from live web searches, MCP servers, and p
 
 If you cannot provide sources, **do not write the code**. Ask the user for direction instead.
 
+## RULE: `app/` contains thin wrappers only
+
+Files inside `app/` (Next.js App Router pages and layouts) must be **thin wrappers only**.
+
+| ❌ Banned in `app/` | ✅ Put it here instead |
+|---|---|
+| Component definitions (functions, classes) | `core/*/views/`, `core/*/components/`, `features/*/` |
+| Business logic, hooks, data fetching | `core/*/views/` (client components) |
+| Inline JSX beyond a single `return <View />` | `core/*/views/` |
+
+**App pages must only:**
+1. Unwrap `params` / `searchParams`
+2. Import and render a single view component from `core/` or `features/`
+3. Export `metadata` or `generateMetadata` if needed
+
+```tsx
+// ✅ Correct — thin wrapper
+export default async function Page({ params }) {
+  const { orgSlug } = await params;
+  return <MyFeatureView orgSlug={orgSlug} />;
+}
+
+// ❌ Wrong — logic in app/
+export default function Page() {
+  const data = useQuery(...);
+  return <div>...</div>;
+}
+```
+
 ---
 
-# Base Agent
+
 
 > **Before doing ANY work in this project, read all files in `.github/agents/base/` in this order:**
 

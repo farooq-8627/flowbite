@@ -149,3 +149,26 @@ Lost deals follow the same pattern but set `lostAt` and do **not** trigger proje
 - 🚫 Never delete a deal without `deals.delete` permission — prefer archiving.
 - 🚫 Never auto-create projects for lost deals.
 - 🚫 Never let `dealCode` be manually edited after creation.
+
+---
+
+## Frontend Architecture Decisions (Locked)
+
+| # | Decision | Value |
+|---|---|---|
+| 1 | Primary view | Kanban (grouped by pipeline stage) — list is secondary toggle (`?view=list`) |
+| 2 | Deal value | Hidden from members by default — `deals.viewValues` permission required |
+| 3 | Stale border | Color from `stage.staleColor` — configurable in Settings → Pipelines |
+| 4 | Warning border | Color from `stage.warningColor` — configurable in Settings → Pipelines |
+| 5 | Won deal | Confetti animation (canvas-confetti) — client-side only, after closeAsDone resolves |
+| 6 | Stage move | `moveToStage()` called on drag-drop — NEVER generic update() |
+| 7 | Close deal | `closeAsDone()` called from CloseAsDoneDialog — NEVER generic update() |
+| 8 | Entity label | NEVER hardcode "Deal" — always from `orgSettings.entityLabels.deal` |
+| 9 | Route slug | NEVER hardcode "/deals" — always from `orgSettings.entityLabels.deal.slug` |
+| 10 | personCode on cards | Always shown — links to PersonDetailPage |
+
+## See Also
+
+- `FRONTEND-DECISIONS.md` — all locked frontend decisions
+- `PHASE2-PROGRESS.md` — build plan and slice order
+- `core/entities/deals/` — DealKanban, DealCard, DealDetail

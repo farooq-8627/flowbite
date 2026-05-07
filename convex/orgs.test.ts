@@ -90,7 +90,8 @@ describe("orgs.mutations.create", () => {
 				.first();
 		});
 		expect(member).not.toBeNull();
-		expect(member!.role).toBe("owner");
+		// roleId is now the source of truth — role string is no longer stored
+		expect(member!.roleId).toBeTruthy();
 	});
 
 	it("sets defaultOrgId on the user when they have no default", async () => {
@@ -265,7 +266,7 @@ describe("orgs.queries.listMembers", () => {
 		const members = await asAlice.query(api.orgs.queries.listMembers, { orgId });
 		expect(members).toHaveLength(1);
 		expect(members[0].userId).toBe(aliceId);
-		expect(members[0].role).toBe("owner");
+		expect(members[0].roleId).toBeTruthy();
 		expect(members[0].user).toBeDefined();
 		expect(members[0].user.email).toBe("alice@example.com");
 	});
@@ -301,7 +302,7 @@ describe("orgs.queries.getMyMembership", () => {
 
 		const membership = await asUser.query(api.orgs.queries.getMyMembership, { orgId });
 		expect(membership).not.toBeNull();
-		expect(membership!.role).toBe("owner");
+		expect(membership!.roleId).toBeTruthy();
 		expect(membership!.userId).toBe(userId);
 		expect(membership!.orgId).toBe(orgId);
 	});
@@ -461,6 +462,16 @@ describe("orgs.mutations.updateMemberRole", () => {
 		const orgId = await asAlice.mutation(api.orgs.mutations.create, { name: "Alice Corp" });
 		const now = Date.now();
 
+		// Get the Admin role for this org
+		const adminRoleId = await t.run(async (ctx) => {
+			const role = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Admin"))
+				.first();
+			return role!._id;
+		});
+
+		// Seed Bob as a member (with role string for legacy compat)
 		await t.run(async (ctx) => {
 			await ctx.db.insert("orgMembers", {
 				orgId,
@@ -473,7 +484,7 @@ describe("orgs.mutations.updateMemberRole", () => {
 		await asAlice.mutation(api.orgs.mutations.updateMemberRole, {
 			orgId,
 			userId: bobId,
-			role: "admin",
+			roleId: adminRoleId,
 		});
 
 		const member = await t.run(async (ctx) => {
@@ -482,7 +493,7 @@ describe("orgs.mutations.updateMemberRole", () => {
 				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", bobId))
 				.first();
 		});
-		expect(member!.role).toBe("admin");
+		expect(member!.roleId).toBe(adminRoleId);
 	});
 
 	it("non-owner cannot change roles (FORBIDDEN)", async () => {

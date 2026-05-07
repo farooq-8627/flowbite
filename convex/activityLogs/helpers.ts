@@ -22,6 +22,7 @@ export type ActivityLogInput = {
 	action: string; // "created" | "updated" | "deleted" | custom verb
 	entityType: string; // from ENTITY_TYPES constants
 	entityId: string;
+	personCode?: string; // denormalized for timeline queries — pass when action relates to a person
 	description?: string;
 	metadata?: Record<string, string | number | boolean>;
 };
@@ -40,6 +41,7 @@ export async function logActivity(
 		action: input.action,
 		entityType: input.entityType,
 		entityId: input.entityId,
+		personCode: input.personCode,
 		description: input.description,
 		metadata: input.metadata,
 		createdAt: Date.now(),

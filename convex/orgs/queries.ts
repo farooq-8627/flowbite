@@ -204,8 +204,37 @@ export const listAll = superAdminQuery({
 });
 
 /**
+ * Get entity labels for the current org.
+ * Returns configured labels with fallbacks to defaults.
+ * Used by nav, list pages, and any component that shows entity names.
+ */
+export const getEntityLabels = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", ctx.userId),
+			)
+			.first();
+		if (!member || member.deletedAt !== undefined) return null;
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return null;
+
+		const l = org.entityLabels;
+		return {
+			lead: { singular: l?.lead?.singular ?? "Lead", plural: l?.lead?.plural ?? "Leads", slug: l?.lead?.slug ?? "leads" },
+			contact: { singular: l?.contact?.singular ?? "Contact", plural: l?.contact?.plural ?? "Contacts", slug: l?.contact?.slug ?? "contacts" },
+			deal: { singular: l?.deal?.singular ?? "Deal", plural: l?.deal?.plural ?? "Deals", slug: l?.deal?.slug ?? "deals" },
+			company: { singular: l?.company?.singular ?? "Company", plural: l?.company?.plural ?? "Companies", slug: l?.company?.slug ?? "companies" },
+		};
+	},
+});
+
+/**
  * Get dashboard stats for the current org.
- * Single parallel query — no N+1. Returns industry-aware metrics.
+ * Single parallel query — no N+1. Returns real CRM metrics.
  */
 export const getDashboardStats = orgQuery({
 	args: { orgId: v.id("orgs") },
@@ -221,13 +250,43 @@ export const getDashboardStats = orgQuery({
 		const org = await ctx.db.get(args.orgId);
 		if (!org) return null;
 
-		const [memberCount, recentActivity] = await Promise.all([
+		const now = Date.now();
+
+		const [
+			memberCount,
+			leads,
+			contacts,
+			deals,
+			remindersDueToday,
+			recentActivity,
+		] = await Promise.all([
 			ctx.db
 				.query("orgMembers")
 				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
-				.filter((q) => q.eq(q.field("deletedAt"), undefined))
+				.take(200)
+				.then((m) => m.filter((x) => x.deletedAt === undefined).length),
+			ctx.db
+				.query("leads")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(1000)
+				.then((rows) => rows.filter((r) => !r.deletedAt && !r.convertedAt)),
+			ctx.db
+				.query("contacts")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(1000)
+				.then((rows) => rows.filter((r) => !r.deletedAt)),
+			ctx.db
+				.query("deals")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(1000)
+				.then((rows) => rows.filter((r) => !r.deletedAt)),
+			ctx.db
+				.query("reminders")
+				.withIndex("by_org_and_due", (q) =>
+					q.eq("orgId", args.orgId).lte("dueAt", now + 86_400_000),
+				)
 				.take(100)
-				.then((m) => m.length),
+				.then((rows) => rows.filter((r) => r.status === "pending").length),
 			ctx.db
 				.query("activityLogs")
 				.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
@@ -235,13 +294,21 @@ export const getDashboardStats = orgQuery({
 				.take(10),
 		]);
 
+		const openDeals = deals.filter((d) => !d.wonAt && !d.lostAt);
+		const pipelineValue = openDeals.reduce((sum, d) => sum + (d.value ?? 0), 0);
+
 		return {
 			orgName: org.name,
 			industry: org.industry ?? "default",
 			plan: org.plan,
 			memberCount,
+			leadCount: leads.length,
+			contactCount: contacts.length,
+			dealCount: openDeals.length,
+			pipelineValue,
+			currency: org.settings?.defaultCurrency ?? "USD",
+			remindersDueToday,
 			recentActivity,
-			// Phase 2: leadCount, dealCount, pipelineValue added when CRM tables exist
 		};
 	},
 });

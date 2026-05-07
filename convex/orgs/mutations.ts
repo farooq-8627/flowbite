@@ -53,6 +53,17 @@ export const createOrg = authenticatedMutation({
 		const cleanSlug = args.slug.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 48);
 		if (!cleanSlug) throw new ConvexError("Invalid slug.");
 
+		// Reserved slugs — these are static route segments in the app
+		const RESERVED_SLUGS = [
+			"platform", "api", "admin", "billing", "auth",
+			"onboarding", "profile", "settings", "notifications",
+			"signin", "signup", "pricing", "portal",
+			"join", "dashboard", "app", "help", "support", "docs", "status",
+		];
+		if (RESERVED_SLUGS.includes(cleanSlug)) {
+			throw new ConvexError(`Slug "${cleanSlug}" is reserved. Please choose a different one.`);
+		}
+
 		// Check exact slug — if taken, throw so UI can show error
 		const existing = await getOrgBySlug(ctx, cleanSlug);
 		if (existing) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
@@ -83,7 +94,7 @@ export const createOrg = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -106,7 +117,7 @@ export const createOrg = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -143,7 +154,6 @@ export const createOrg = authenticatedMutation({
 		await ctx.db.insert("orgMembers", {
 			orgId,
 			userId: ctx.userId,
-			role: "owner",
 			roleId: ownerRoleId,
 			joinedAt: now,
 		});
@@ -293,10 +303,76 @@ export const create = authenticatedMutation({
 		const platformOrgId = buildPlatformOrgId(PLATFORM_PREFIX, orgId);
 		await ctx.db.patch(orgId, { platformOrgId });
 
+		// Seed owner role for this org
+		const ownerRoleId = await ctx.db.insert("orgRoles", {
+			orgId,
+			name: "Owner",
+			description: "Full access.",
+			permissions: [
+				"org.viewSettings", "org.editName", "org.editLogo", "org.editSettings", "org.viewBilling", "org.delete",
+				"members.view", "members.invite", "members.cancelInvitation", "members.remove", "members.changeRole", "members.leave",
+				"leads.view", "leads.create", "leads.update", "leads.delete", "leads.assign", "leads.qualify", "leads.convert",
+				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
+				"companies.view", "companies.create", "companies.update", "companies.delete",
+				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
+				"ai.use", "ai.manageTools", "ai.viewHistory",
+				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
+			],
+			isSystem: true,
+			isDefault: false,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		await ctx.db.insert("orgRoles", {
+			orgId,
+			name: "Admin",
+			description: "Full operational access.",
+			permissions: [
+				"org.viewSettings", "org.editLogo", "org.editSettings",
+				"members.view", "members.invite", "members.cancelInvitation", "members.remove", "members.leave",
+				"leads.view", "leads.create", "leads.update", "leads.delete", "leads.assign", "leads.qualify", "leads.convert",
+				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
+				"companies.view", "companies.create", "companies.update", "companies.delete",
+				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
+				"ai.use", "ai.manageTools", "ai.viewHistory",
+				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
+			],
+			isSystem: true,
+			isDefault: false,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		await ctx.db.insert("orgRoles", {
+			orgId,
+			name: "Member",
+			description: "Standard access.",
+			permissions: [
+				"members.view", "members.leave",
+				"leads.view", "leads.create", "leads.update", "leads.qualify",
+				"contacts.view", "contacts.create", "contacts.update",
+				"companies.view", "companies.create", "companies.update",
+				"deals.view", "deals.create", "deals.update", "deals.changeStage",
+				"notes.view", "notes.create", "notes.updateOwn", "notes.deleteOwn",
+				"pipelines.view", "fieldDefinitions.view",
+				"ai.use", "ai.viewHistory",
+				"activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
+			],
+			isSystem: true,
+			isDefault: true,
+			createdAt: now,
+			updatedAt: now,
+		});
+
 		await ctx.db.insert("orgMembers", {
 			orgId,
 			userId: ctx.userId,
-			role: "owner",
+			roleId: ownerRoleId,
 			joinedAt: now,
 		});
 
@@ -329,6 +405,12 @@ export const update = orgMutation({
 		orgId: v.id("orgs"),
 		name: v.optional(v.string()),
 		slug: v.optional(v.string()),
+		entityLabels: v.optional(v.object({
+			lead: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+			contact: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+			deal: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+			company: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+		})),
 		settings: v.optional(
 			v.object({
 				defaultCurrency: v.optional(v.string()),
@@ -350,6 +432,21 @@ export const update = orgMutation({
 		if (updates.slug) {
 			const existing = await getOrgBySlug(ctx, updates.slug);
 			if (existing && existing._id !== orgId) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
+		}
+
+		// Validate entity label slugs against reserved route segments
+		if (updates.entityLabels) {
+			const RESERVED_ROUTE_SEGMENTS = [
+				"profile", "settings", "notifications", "companies", "deals",
+				"join", "dashboard", "app", "help", "support", "docs", "status",
+				"platform", "api", "admin", "billing", "auth", "onboarding",
+				"signin", "signup", "pricing", "portal",
+			];
+			for (const [, label] of Object.entries(updates.entityLabels)) {
+				if (label?.slug && RESERVED_ROUTE_SEGMENTS.includes(label.slug)) {
+					throw new ConvexError(`Entity slug "${label.slug}" conflicts with a reserved route. Choose a different slug.`);
+				}
+			}
 		}
 
 		await ctx.db.patch(orgId, { ...updates, updatedAt: now });
@@ -387,16 +484,24 @@ export const removeMember = orgMutation({
 		if (!targetMember || targetMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
-		if (targetMember.role === "owner") {
-			const ownerCount = await ctx.db
-				.query("orgMembers")
-				.withIndex("by_orgId_and_role", (q) =>
-					q.eq("orgId", args.orgId).eq("role", "owner"),
-				)
-				.take(10);
-			const activeOwners = ownerCount.filter((m) => m.deletedAt === undefined);
-			if (activeOwners.length <= 1)
-				throw new ConvexError("Cannot remove the last owner of an organization.");
+		if (targetMember.roleId) {
+			const targetRole = await ctx.db.get(targetMember.roleId);
+			if (targetRole?.name === "Owner") {
+				const allMembers = await ctx.db
+					.query("orgMembers")
+					.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
+					.take(200);
+				const ownerRoleIds = await ctx.db
+					.query("orgRoles")
+					.withIndex("by_orgId_and_name", (q) => q.eq("orgId", args.orgId).eq("name", "Owner"))
+					.take(1);
+				const ownerRoleId = ownerRoleIds[0]?._id;
+				const activeOwners = allMembers.filter(
+					(m) => m.deletedAt === undefined && m.roleId === ownerRoleId,
+				);
+				if (activeOwners.length <= 1)
+					throw new ConvexError("Cannot remove the last owner of an organization.");
+			}
 		}
 
 		await ctx.db.patch(targetMember._id, { deletedAt: now });
@@ -432,7 +537,7 @@ export const updateMemberRole = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		userId: v.id("users"),
-		role: invitationRoleValidator,
+		roleId: v.id("orgRoles"),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -447,8 +552,16 @@ export const updateMemberRole = orgMutation({
 		if (!targetMember || targetMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
-		const previousRole = targetMember.role;
-		await ctx.db.patch(targetMember._id, { role: args.role, updatedAt: now });
+		// Validate the new role belongs to this org
+		const newRoleDoc = await ctx.db.get(args.roleId);
+		if (!newRoleDoc || newRoleDoc.orgId !== args.orgId) {
+			throw new ConvexError("Role not found in this organization.");
+		}
+
+		await ctx.db.patch(targetMember._id, {
+			roleId: args.roleId,
+			updatedAt: now,
+		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -456,17 +569,16 @@ export const updateMemberRole = orgMutation({
 			action: "updated",
 			entityType: ENTITY_TYPES.MEMBER,
 			entityId: targetMember._id,
-			description: `Changed role from ${previousRole} to ${args.role}`,
+			description: `Changed role to ${newRoleDoc.name}`,
 		});
 
-		// Notify the affected user about role change
 		if (args.userId !== ctx.userId) {
 			await sendNotification(ctx, {
 				orgId: args.orgId,
 				userId: args.userId,
 				type: "member.roleChanged",
 				title: "Your role has been updated",
-				body: `Your role has been changed from ${previousRole} to ${args.role}.`,
+				body: `Your role has been changed to ${newRoleDoc.name}.`,
 				entityType: ENTITY_TYPES.MEMBER,
 				entityId: targetMember._id,
 			});

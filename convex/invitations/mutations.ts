@@ -129,26 +129,35 @@ export const accept = authenticatedMutation({
 
 		// If previously soft-deleted, reactivate
 		if (existingMember && existingMember.deletedAt !== undefined) {
+			const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+			const roleDoc = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", invitation.orgId).eq("name", capitalize(invitation.role)),
+				)
+				.first();
 			await ctx.db.patch(existingMember._id, {
-				role: invitation.role,
+				roleId: roleDoc?._id,
 				deletedAt: undefined,
 				updatedAt: now,
 				joinedAt: now,
 			});
 		} else {
-			// Look up the org's default role (Member) to assign roleId
-			const defaultRole = await ctx.db
+			const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+			const roleDoc = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId", (q) => q.eq("orgId", invitation.orgId))
-				.filter((q) => q.eq(q.field("isDefault"), true))
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", invitation.orgId).eq("name", capitalize(invitation.role)),
+				)
 				.first();
+
+			if (!roleDoc) throw new ConvexError("Role not found in this organization.");
 
 			// Create new membership
 			await ctx.db.insert("orgMembers", {
 				orgId: invitation.orgId,
 				userId: ctx.userId,
-				role: invitation.role,
-				roleId: defaultRole?._id,
+				roleId: roleDoc._id,
 				invitedBy: invitation.invitedBy,
 				joinedAt: now,
 			});

@@ -1,101 +1,187 @@
 /**
- * Pipeline mutations — create, update, delete pipelines and stages.
- * Phase 2: Full CRUD. For now only seedDefault (internal) is needed.
+ * Pipelines Mutations — convex/crm/fields/pipelines/mutations.ts
+ * STATUS: IMPLEMENTED
  */
-import { v } from "convex/values";
-import { internalMutation } from "../../../_generated/server";
+import { ConvexError, v } from "convex/values";
+import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { requireRole } from "../../../_shared/permissions";
+import { logActivity } from "../../../activityLogs/helpers";
+import { ERRORS } from "../../../_shared/errors";
 
-type StageInput = {
-	name: string;
-	color: string;
-	isFinal?: boolean;
-	finalType?: "positive" | "negative" | "neutral";
-	staleAfterDays?: number;
-};
+const stageShape = v.object({
+	id: v.string(),
+	name: v.string(),
+	order: v.number(),
+	color: v.optional(v.string()),
+	isFinal: v.optional(v.boolean()),
+	finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
+	staleAfterDays: v.optional(v.number()),
+});
 
-const INDUSTRY_STAGES: Record<string, StageInput[]> = {
-	"real-estate": [
-		{ name: "New Inquiry",    color: "#3b82f6" },
-		{ name: "Viewing",        color: "#8b5cf6", staleAfterDays: 3 },
-		{ name: "Offer / MOU",    color: "#f59e0b", staleAfterDays: 5 },
-		{ name: "Under Contract", color: "#10b981" },
-		{ name: "Closed Won",     color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost",           color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	"technology": [
-		{ name: "Prospecting",  color: "#3b82f6" },
-		{ name: "Qualified",    color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Demo",         color: "#f59e0b" },
-		{ name: "Proposal",     color: "#f97316", staleAfterDays: 5 },
-		{ name: "Negotiation",  color: "#10b981" },
-		{ name: "Closed Won",   color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Closed Lost",  color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	"finance": [
-		{ name: "Lead",          color: "#3b82f6" },
-		{ name: "Discovery",     color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Proposal",      color: "#f59e0b" },
-		{ name: "Due Diligence", color: "#f97316" },
-		{ name: "Closed",        color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost",          color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	"healthcare": [
-		{ name: "Inquiry",    color: "#3b82f6" },
-		{ name: "Assessment", color: "#8b5cf6" },
-		{ name: "Proposal",   color: "#f59e0b" },
-		{ name: "Contract",   color: "#10b981" },
-		{ name: "Won",        color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost",       color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-};
+function nanoid12(): string {
+	return Math.random().toString(36).slice(2, 14).padEnd(12, "0");
+}
 
-const DEFAULT_STAGES: StageInput[] = [
-	{ name: "New",       color: "#3b82f6" },
-	{ name: "Contacted", color: "#8b5cf6", staleAfterDays: 7 },
-	{ name: "Proposal",  color: "#f59e0b" },
-	{ name: "Won",       color: "#22c55e", isFinal: true, finalType: "positive" },
-	{ name: "Lost",      color: "#ef4444", isFinal: true, finalType: "negative" },
-];
-
-/**
- * Internal: seed a default pipeline for an org. Idempotent.
- * Called from orgs/mutations.ts updateOrgIndustry via ctx.scheduler.
- */
-export const seedDefault = internalMutation({
+export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
-		industry: v.optional(v.string()),
+		name: v.string(),
+		entityType: v.string(),
+		stages: v.optional(v.array(stageShape)),
+		isDefault: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
-		const now = Date.now();
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.role ?? "viewer", "pipelines.manage");
 
-		const existing = await ctx.db
-			.query("pipelines")
-			.withIndex("by_org_and_default", (q) =>
-				q.eq("orgId", args.orgId).eq("isDefault", true),
+		if (args.isDefault) {
+			const existing = await ctx.db
+				.query("pipelines")
+				.withIndex("by_org_and_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", args.entityType),
+				)
+				.filter((q) => q.eq(q.field("isDefault"), true))
+				.first();
+			if (existing) {
+				await ctx.db.patch(existing._id, { isDefault: false, updatedAt: Date.now() });
+			}
+		}
+
+		const pipelineId = await ctx.db.insert("pipelines", {
+			orgId: args.orgId,
+			name: args.name,
+			entityType: args.entityType,
+			isDefault: args.isDefault ?? false,
+			stages: args.stages ?? [],
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "pipeline_created",
+			entityType: "pipeline",
+			entityId: pipelineId,
+			description: `Pipeline created: ${args.name}`,
+		});
+
+		return pipelineId;
+	},
+});
+
+export const addStage = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		pipelineId: v.id("pipelines"),
+		stage: v.object({
+			name: v.string(),
+			color: v.optional(v.string()),
+			isFinal: v.optional(v.boolean()),
+			finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
+			staleAfterDays: v.optional(v.number()),
+		}),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.role ?? "viewer", "pipelines.manage");
+
+		const pipeline = await ctx.db.get(args.pipelineId);
+		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		const newStage = {
+			id: `stage_${nanoid12()}`,
+			name: args.stage.name,
+			order: pipeline.stages.length,
+			color: args.stage.color,
+			isFinal: args.stage.isFinal,
+			finalType: args.stage.finalType,
+			staleAfterDays: args.stage.staleAfterDays,
+		};
+
+		await ctx.db.patch(args.pipelineId, {
+			stages: [...pipeline.stages, newStage],
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "stage_added",
+			entityType: "pipeline",
+			entityId: args.pipelineId,
+			description: `Stage added: ${args.stage.name}`,
+		});
+
+		return newStage.id;
+	},
+});
+
+export const removeStage = orgMutation({
+	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageId: v.string() },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.role ?? "viewer", "pipelines.manage");
+
+		const pipeline = await ctx.db.get(args.pipelineId);
+		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		const dealsInStage = await ctx.db
+			.query("deals")
+			.withIndex("by_org_and_stage", (q) =>
+				q.eq("orgId", args.orgId).eq("currentStageId", args.stageId),
 			)
 			.first();
-		if (existing) return existing._id;
+		if (dealsInStage) throw new ConvexError({ code: "STAGE_HAS_DEALS", message: "Cannot remove stage with active deals" });
 
-		const set: StageInput[] = (args.industry ? INDUSTRY_STAGES[args.industry] : undefined) ?? DEFAULT_STAGES;
-		const stages = set.map((s, i) => ({
-			id: `stage_${args.orgId.slice(-6)}_${i}`,
-			name: s.name,
-			order: i,
-			color: s.color,
-			isFinal: s.isFinal,
-			finalType: s.finalType,
-			staleAfterDays: s.staleAfterDays,
-		}));
+		const filtered = pipeline.stages
+			.filter((s) => s.id !== args.stageId)
+			.map((s, i) => ({ ...s, order: i }));
 
-		return await ctx.db.insert("pipelines", {
-			orgId: args.orgId,
-			name: "Sales Pipeline",
-			entityType: "deal",
-			isDefault: true,
-			stages,
-			createdAt: now,
-			updatedAt: now,
+		await ctx.db.patch(args.pipelineId, { stages: filtered, updatedAt: Date.now() });
+	},
+});
+
+export const reorderStages = orgMutation({
+	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageIds: v.array(v.string()) },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.role ?? "viewer", "pipelines.manage");
+
+		const pipeline = await ctx.db.get(args.pipelineId);
+		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
+		const reordered = args.stageIds.map((id, i) => {
+			const stage = stageMap.get(id);
+			if (!stage) throw new ConvexError({ code: "INVALID_STAGE", message: `Stage ${id} not found` });
+			return { ...stage, order: i };
 		});
+
+		await ctx.db.patch(args.pipelineId, { stages: reordered, updatedAt: Date.now() });
+	},
+});
+
+export const deletePipeline = orgMutation({
+	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.role ?? "viewer", "pipelines.manage");
+
+		const pipeline = await ctx.db.get(args.pipelineId);
+		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+		if (pipeline.isDefault) throw new ConvexError({ code: "DEFAULT_PIPELINE", message: "Cannot delete the default pipeline" });
+
+		for (const stage of pipeline.stages) {
+			const deal = await ctx.db
+				.query("deals")
+				.withIndex("by_org_and_stage", (q) =>
+					q.eq("orgId", args.orgId).eq("currentStageId", stage.id),
+				)
+				.first();
+			if (deal) throw new ConvexError({ code: "PIPELINE_HAS_DEALS", message: `Cannot delete — deals exist in stage "${stage.name}"` });
+		}
+
+		await ctx.db.delete(args.pipelineId);
 	},
 });

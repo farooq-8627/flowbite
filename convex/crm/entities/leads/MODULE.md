@@ -132,3 +132,23 @@ All mutations and queries check RBAC via `assertPermission(ctx, orgId, permissio
 - 🚫 **NEVER** skip `logActivity()` in a mutation — every state change must be auditable.
 - 🚫 **NEVER** skip RBAC checks — no "internal-only" bypass for user-facing mutations.
 - 🚫 **NEVER** allow `convertToContact()` on an already-converted lead (status === "converted").
+
+---
+
+## Frontend Architecture Decisions (Locked)
+
+| # | Decision | Value |
+|---|---|---|
+| 1 | Lead detail page | Does NOT exist separately — use PersonDetailPage at `/people/[personCode]` |
+| 2 | Lead list page | Exists at `/[entitySlug]` (slug from `orgSettings.entityLabels.lead.slug`) |
+| 3 | Entity label | NEVER hardcode "Lead" — always from `orgSettings.entityLabels.lead` |
+| 4 | Route slug | NEVER hardcode "/leads" — always from `orgSettings.entityLabels.lead.slug` |
+| 5 | Converted leads | Hidden by default in list — "Show Converted" filter toggle |
+| 6 | personCode on cards | Always shown prominently — agents reference it in WhatsApp/voice |
+| 7 | Staleness | Configurable per stage (staleAfterDays, staleColor) — never hardcoded |
+
+## See Also
+
+- `FRONTEND-DECISIONS.md` — all locked frontend decisions
+- `PHASE2-PROGRESS.md` — build plan and slice order
+- `core/entities/people/` — PersonDetailPage (unified lead + contact detail)

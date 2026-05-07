@@ -15,6 +15,14 @@ const orgScoped = { orgId: v.id("orgs") };
 const timestamps = { createdAt: v.number(), updatedAt: v.number() };
 const softDelete = { deletedAt: v.optional(v.number()) };
 
+// Typed aiContext — replaces v.any() for AI-written fields
+const aiContextValidator = v.optional(v.object({
+	summary: v.optional(v.string()),
+	keyFacts: v.optional(v.array(v.string())),
+	lastUpdatedAt: v.optional(v.number()),
+	rawNotes: v.optional(v.string()),
+}));
+
 export default defineSchema({
 	// ── Convex Auth managed tables (DO NOT TOUCH) ────────────────────────────
 	...authTables,
@@ -60,12 +68,33 @@ export default defineSchema({
 		industry: v.optional(v.string()), // e.g. "real-estate", "technology" — set during onboarding
 		teamSize: v.optional(v.string()), // e.g. "1–5", "6–20" — set during onboarding
 		onboardingStep: v.optional(v.number()), // 0=org-created, 1=industry-set, 2=complete
+		entityLabels: v.optional(
+			v.object({
+				// Each slot: singular label, plural label, URL slug
+				// Defaults: lead/leads/leads, contact/contacts/contacts, deal/deals/deals, company/companies/companies
+				lead: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+				contact: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+				deal: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+				company: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+			}),
+		),
 		settings: v.optional(
 			v.object({
 				defaultCurrency: v.optional(v.string()),
 				timezone: v.optional(v.string()),
-				codePrefixes: v.optional(v.any()), // { person: "P", deal: "D", company: "CO", ... }
-				modules: v.optional(v.any()), // ModuleConfig[] — workspace navigation config
+				leadStaleAfterDays: v.optional(v.number()), // staleness for leads (no pipeline stages)
+				codePrefixes: v.optional(v.object({
+					person: v.optional(v.string()),
+					deal: v.optional(v.string()),
+					company: v.optional(v.string()),
+					followup: v.optional(v.string()),
+				})),
+				modules: v.optional(v.array(v.object({
+					slot: v.string(),
+					label: v.optional(v.string()),
+					hidden: v.optional(v.boolean()),
+					order: v.optional(v.number()),
+				}))),
 			}),
 		),
 		...timestamps,
@@ -91,12 +120,13 @@ export default defineSchema({
 
 	// ── orgMembers ───────────────────────────────────────────────────────────
 	// Maps users → orgs with role. One row per user-org pair.
+	// RBAC refactor complete: roleId is the source of truth.
+	// role string kept for test compatibility — will be removed in Phase 1 RBAC cleanup.
 	orgMembers: defineTable({
 		...orgScoped,
 		userId: v.id("users"),
-		// Phase 1 RBAC refactor: roleId will become required, role will be removed
-		roleId: v.optional(v.id("orgRoles")), // FK to orgRoles — dynamic role system
-		role: v.optional(v.union(
+		roleId: v.optional(v.id("orgRoles")), // FK to orgRoles — primary source of truth
+		role: v.optional(v.union(             // legacy string — kept for test compat only
 			v.literal("owner"),
 			v.literal("admin"),
 			v.literal("member"),
@@ -109,8 +139,7 @@ export default defineSchema({
 		...softDelete,
 	})
 		.index("by_orgId_and_userId", ["orgId", "userId"])
-		.index("by_userId", ["userId"])
-		.index("by_orgId_and_role", ["orgId", "role"]),
+		.index("by_userId", ["userId"]),
 
 	// ── invitations ──────────────────────────────────────────────────────────
 	// Pending invitations to join an org. Token-based for email links.
@@ -174,6 +203,7 @@ export default defineSchema({
 		action: v.string(), // "created", "updated", "deleted", "qualified", "stage_changed"
 		entityType: v.string(), // from ENTITY_TYPES constants
 		entityId: v.string(),
+		personCode: v.optional(v.string()), // denormalized for timeline queries — P-001
 		description: v.optional(v.string()),
 		metadata: v.optional(v.record(v.string(), v.union(v.string(), v.number(), v.boolean()))),
 		createdAt: v.number(),
@@ -181,7 +211,8 @@ export default defineSchema({
 		.index("by_orgId_and_createdAt", ["orgId", "createdAt"])
 		.index("by_entityType_and_entityId", ["entityType", "entityId"])
 		.index("by_userId_and_createdAt", ["userId", "createdAt"])
-		.index("by_orgId_and_actorType_and_createdAt", ["orgId", "actorType", "createdAt"]),
+		.index("by_orgId_and_actorType_and_createdAt", ["orgId", "actorType", "createdAt"])
+		.index("by_org_and_personCode", ["orgId", "personCode"]),
 
 	// ── pipelines ────────────────────────────────────────────────────────────
 	// Deal pipelines with inline stages. Seeded on industry selection.
@@ -198,6 +229,9 @@ export default defineSchema({
 			isFinal: v.optional(v.boolean()),
 			finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
 			staleAfterDays: v.optional(v.number()),
+			staleColor: v.optional(v.string()),        // hex color for stale indicator
+			warningAfterDays: v.optional(v.number()),  // days before stale to show warning
+			warningColor: v.optional(v.string()),      // hex color for warning indicator
 		})),
 		...timestamps,
 	})
@@ -267,4 +301,271 @@ export default defineSchema({
 		description: v.optional(v.string()),
 		...timestamps,
 	}).index("by_key", ["key"]),
+
+	// ── fieldDefinitions ─────────────────────────────────────────────────────
+	// Admin-defined custom fields per entity type. AI reads these to know what fields exist.
+	fieldDefinitions: defineTable({
+		...orgScoped,
+		entityType: v.string(), // "lead" | "contact" | "company" | "deal"
+		name: v.string(), // internal: "budget", "tech_stack"
+		label: v.string(), // display: "Budget", "Tech Stack"
+		labelAr: v.optional(v.string()),
+		type: v.string(), // "text"|"number"|"select"|"multiselect"|"date"|"boolean"|"url"|"email"|"relation"|"file"
+		options: v.optional(v.array(v.string())),
+		required: v.boolean(),
+		order: v.number(),
+		groupName: v.optional(v.string()),
+		sensitive: v.optional(v.boolean()),
+		defaultValue: v.optional(v.any()),
+		showInStages: v.optional(v.array(v.string())),
+		...timestamps,
+	}).index("by_org_and_entity", ["orgId", "entityType"]),
+
+	// ── fieldValues ──────────────────────────────────────────────────────────
+	// Actual data per record. One row per field per entity.
+	fieldValues: defineTable({
+		...orgScoped,
+		entityType: v.string(),
+		entityId: v.string(),
+		fieldId: v.id("fieldDefinitions"),
+		fieldName: v.string(), // denormalized for fast lookup
+		value: v.any(),
+		updatedAt: v.number(),
+	})
+		.index("by_entity", ["orgId", "entityType", "entityId"])
+		.index("by_field", ["orgId", "fieldId"]),
+
+	// ── leads ────────────────────────────────────────────────────────────────
+	// Entry point for every person. personCode generated HERE only.
+	leads: defineTable({
+		...orgScoped,
+		personCode: v.string(), // "P-001" — generated on create, NEVER regenerated
+		displayName: v.string(),
+		email: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		normalizedPhone: v.optional(v.string()), // digits only — for dedup index lookup
+		status: v.string(), // "new"|"contacted"|"qualified"|"converted"|"lost"
+		source: v.string(), // "manual"|"ai"|"csv"|"whatsapp"|"gmail"|"zapier"|"rest_api"
+		assignedTo: v.optional(v.id("users")),
+		convertedAt: v.optional(v.number()),
+		contactId: v.optional(v.id("contacts")), // set on conversion
+		aiContext: aiContextValidator,
+		...timestamps,
+		...softDelete,
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_status", ["orgId", "status"])
+		.index("by_org_and_assignee", ["orgId", "assignedTo"])
+		.index("by_org_and_personCode", ["orgId", "personCode"])
+		.index("by_org_and_email", ["orgId", "email"])
+		.index("by_org_and_normalizedPhone", ["orgId", "normalizedPhone"])
+		.searchIndex("search_leads_displayName", {
+			searchField: "displayName",
+			filterFields: ["orgId"],
+		}),
+
+	// ── contacts ─────────────────────────────────────────────────────────────
+	// Qualified leads promoted to contacts. personCode PASSED from lead.
+	contacts: defineTable({
+		...orgScoped,
+		personCode: v.string(), // passed from lead OR generated if direct create
+		displayName: v.string(),
+		email: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		normalizedPhone: v.optional(v.string()), // digits only — for dedup index lookup
+		leadId: v.optional(v.id("leads")), // traceability
+		companyId: v.optional(v.id("companies")),
+		companyCode: v.optional(v.string()),
+		assignedTo: v.optional(v.id("users")),
+		aiContext: aiContextValidator, // passed from lead on conversion, never recreated
+		...timestamps,
+		...softDelete,
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_personCode", ["orgId", "personCode"])
+		.index("by_org_and_company", ["orgId", "companyId"])
+		.index("by_org_and_assignee", ["orgId", "assignedTo"])
+		.index("by_org_and_email", ["orgId", "email"])
+		.index("by_org_and_normalizedPhone", ["orgId", "normalizedPhone"])
+		.searchIndex("search_contacts_displayName", {
+			searchField: "displayName",
+			filterFields: ["orgId"],
+		}),
+
+	// ── companies ────────────────────────────────────────────────────────────
+	// B2B company entity. companyCode auto-generated (CO-001).
+	companies: defineTable({
+		...orgScoped,
+		companyCode: v.string(), // "CO-001" — auto-generated
+		name: v.string(),
+		industry: v.optional(v.string()),
+		website: v.optional(v.string()),
+		size: v.optional(v.string()), // "1-10"|"11-50"|"51-200"|"201-1000"|"1000+"
+		assignedTo: v.optional(v.id("users")),
+		aiContext: aiContextValidator,
+		...timestamps,
+		...softDelete,
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_companyCode", ["orgId", "companyCode"])
+		.index("by_org_and_assignee", ["orgId", "assignedTo"])
+		.searchIndex("search_companies_name", {
+			searchField: "name",
+			filterFields: ["orgId"],
+		}),
+
+	// ── deals ────────────────────────────────────────────────────────────────
+	// Opportunities in pipeline. dealCode auto-generated (D-001).
+	deals: defineTable({
+		...orgScoped,
+		dealCode: v.string(), // "D-001" — auto-generated
+		personCode: v.optional(v.string()), // links to person
+		companyCode: v.optional(v.string()), // links to company
+		title: v.string(),
+		value: v.optional(v.number()),
+		currency: v.optional(v.string()), // "AED"|"USD"
+		pipelineId: v.id("pipelines"),
+		currentStageId: v.string(), // stage.id from pipeline.stages[]
+		stageEnteredAt: v.number(), // for staleness calculation
+		contactId: v.optional(v.id("contacts")),
+		companyId: v.optional(v.id("companies")),
+		assignedTo: v.optional(v.id("users")),
+		source: v.string(),
+		wonAt: v.optional(v.number()),
+		lostAt: v.optional(v.number()),
+		outcomeReason: v.optional(v.string()),
+		expectedCloseDate: v.optional(v.number()),
+		aiContext: aiContextValidator,
+		...timestamps,
+		...softDelete,
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_pipeline", ["orgId", "pipelineId"])
+		.index("by_org_and_stage", ["orgId", "currentStageId"])
+		.index("by_org_and_personCode", ["orgId", "personCode"])
+		.index("by_org_and_dealCode", ["orgId", "dealCode"])
+		.index("by_org_and_assignee", ["orgId", "assignedTo"])
+		.searchIndex("search_deals_title", {
+			searchField: "title",
+			filterFields: ["orgId"],
+		}),
+
+	// ── notes ────────────────────────────────────────────────────────────────
+	// Rich text notes attached to any entity. authorType distinguishes user vs AI.
+	notes: defineTable({
+		...orgScoped,
+		entityType: v.string(), // "lead"|"contact"|"company"|"deal"
+		entityId: v.string(),
+		personCode: v.optional(v.string()), // for cross-entity person linking
+		content: v.string(),
+		authorId: v.id("users"),
+		authorType: v.string(), // "user"|"ai"|"portal_client" — REQUIRED
+		isPinned: v.boolean(),
+		isInternal: v.boolean(),
+		isActivityChat: v.optional(v.boolean()), // true = message (Messages tab), false/undefined = note (Notes tab)
+		embedding: v.optional(v.array(v.float64())), // Phase 3: vector embedding for semantic search
+		...timestamps,
+	})
+		.index("by_entity", ["orgId", "entityType", "entityId"])
+		.index("by_org_and_author", ["orgId", "authorId"])
+		.index("by_org_and_created", ["orgId", "createdAt"])
+		.vectorIndex("by_embedding", {
+			vectorField: "embedding",
+			dimensions: 1536, // OpenAI text-embedding-3-small
+			filterFields: ["orgId"],
+		}),
+
+	// ── reminders ────────────────────────────────────────────────────────────
+	// Follow-up reminders. followUpCode auto-generated (FU-001).
+	reminders: defineTable({
+		...orgScoped,
+		followUpCode: v.string(), // "FU-001" — auto-generated
+		personCode: v.string(), // REQUIRED — always linked to a person
+		dealCode: v.optional(v.string()),
+		entityType: v.string(),
+		entityId: v.string(),
+		title: v.string(),
+		note: v.optional(v.string()),
+		dueAt: v.number(),
+		assignedTo: v.id("users"),
+		status: v.string(), // "pending"|"completed"|"overdue"
+		completedAt: v.optional(v.number()),
+		source: v.string(), // "manual"|"ai"|"automation"
+		createdAt: v.number(),
+	})
+		.index("by_org_and_person", ["orgId", "personCode"])
+		.index("by_org_and_due", ["orgId", "dueAt"])
+		.index("by_org_and_status", ["orgId", "status"])
+		.index("by_user_and_due", ["assignedTo", "dueAt"]),
+
+	// ── tags ─────────────────────────────────────────────────────────────────
+	// Org-wide tag definitions.
+	tags: defineTable({
+		...orgScoped,
+		name: v.string(),
+		color: v.optional(v.string()),
+		createdAt: v.number(),
+	})
+		.index("by_org", ["orgId"])
+		.index("by_org_and_name", ["orgId", "name"]),
+
+	// ── entityTags ───────────────────────────────────────────────────────────
+	// Junction table linking tags to any entity.
+	entityTags: defineTable({
+		...orgScoped,
+		tagId: v.id("tags"),
+		entityType: v.string(),
+		entityId: v.string(),
+		createdAt: v.number(),
+	})
+		.index("by_entity", ["orgId", "entityType", "entityId"])
+		.index("by_tag", ["orgId", "tagId"]),
+
+	// ── savedViews ───────────────────────────────────────────────────────────
+	// Filter presets pinnable to sidebar. scope: "user" (personal) | "org" (shared).
+	savedViews: defineTable({
+		...orgScoped,
+		name: v.string(),
+		entityType: v.string(), // "lead"|"contact"|"deal"|"company"
+		scope: v.string(), // "user" | "org"
+		filters: v.string(), // JSON-serialized filter config
+		sortBy: v.optional(v.string()),
+		sortOrder: v.optional(v.string()), // "asc" | "desc"
+		columns: v.optional(v.array(v.string())),
+		isPinned: v.boolean(),
+		createdBy: v.id("users"),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_org_and_entity", ["orgId", "entityType"])
+		.index("by_org_and_creator", ["orgId", "createdBy"])
+		.index("by_org_and_pinned", ["orgId", "isPinned"]),
+
+	// ── aiConversations ──────────────────────────────────────────────────────
+	// Phase 3: AI chat panel conversations. One per user per org (or per entity context).
+	aiConversations: defineTable({
+		...orgScoped,
+		userId: v.id("users"),
+		title: v.optional(v.string()),
+		entityType: v.optional(v.string()), // context: "lead"|"contact"|"deal" or null for general
+		entityId: v.optional(v.string()),
+		personCode: v.optional(v.string()),
+		status: v.string(), // "active"|"archived"
+		...timestamps,
+	})
+		.index("by_org_and_user", ["orgId", "userId"])
+		.index("by_org_and_entity", ["orgId", "entityType", "entityId"]),
+
+	// ── aiMessages ───────────────────────────────────────────────────────────
+	// Phase 3: Individual messages in an AI conversation.
+	aiMessages: defineTable({
+		...orgScoped,
+		conversationId: v.id("aiConversations"),
+		role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")),
+		content: v.string(),
+		toolCalls: v.optional(v.any()), // Phase 3: structured tool call results
+		tokenCount: v.optional(v.number()),
+		createdAt: v.number(),
+	})
+		.index("by_conversation", ["conversationId", "createdAt"]),
 });

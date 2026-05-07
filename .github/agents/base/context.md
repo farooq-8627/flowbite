@@ -1,67 +1,119 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never create a new context file.
-> Last Updated: 2026-05-07
+> Last Updated: 2026-05-08
 
 ---
 
-## Current Phase: 1 — Shell + RBAC Refactor (MOSTLY COMPLETE)
+## Current Phase: 2 — CRM Core (Backend COMPLETE, Frontend NEXT)
 
-**Phase 0: ✅ COMPLETE** — Auth, RBAC (102 tests), invitations, preferences, theme presets, Zustand store.
-**Shell: 95% DONE** — Layout, sidebar, TopNav, WorkspaceSwitcher, all auth flows, RBAC refactor done. Missing: dashboard home page, dead code cleanup.
-**RBAC Refactor: 80% DONE** — Schema, orgRoles CRUD, seeding, requirePermission() DB lookup done. Missing: update tests, update invitations.accept, update useOrgPermission hook.
+**Phase 0: ✅ COMPLETE** — Auth, RBAC (70 tests), invitations, preferences, theme presets, Zustand store.
+**Phase 1: ✅ COMPLETE** — Shell, sidebar, TopNav, WorkspaceSwitcher, onboarding, dashboard home, notifications, feature flags, record codes.
+**Phase 2 Backend: ✅ 100% COMPLETE** — All CRM tables, all mutations + queries, canonical pattern steps 1-6.
+**Phase 2 Frontend: ⬜ NEXT** — Vertical slices. Start with Slice 0 (shared primitives).
 
 ---
 
-## Architecture State
+## MUST READ Before Any Frontend Work
 
-| Layer | Status |
+1. `FRONTEND-DECISIONS.md` — ALL locked frontend decisions (20 rules)
+2. `PHASE2-PROGRESS.md` — Backend status + frontend vertical slice plan
+3. `CONVEX-ARCHITECTURE.md` — Convex patterns, caching, realtime, timeline, AI context
+4. `.kiro/code-architecture-v.md` — Full architecture bible (36 modules)
+
+---
+
+## Key Decisions (Summary — Full Detail in FRONTEND-DECISIONS.md)
+
+| Decision | Value |
 |---|---|
-| Root layout + fonts + ThemeBootScript | ✅ Working (zero FOUC) |
-| `core/shell/config/navigation.ts` | ✅ Dynamic, workspace-driven |
-| `core/shell/layouts/` | ✅ DashboardLayout + DashboardLayoutClient |
-| `core/shell/components/TopNav.tsx` | ✅ Search (⌘J) + Bell + ThemeSwitcher + AI toggle |
-| `core/shell/components/sidebar/app-sidebar.tsx` | ✅ Compact padding, WorkspaceSwitcher in header |
-| `core/shell/components/sidebar/workspace-switcher.tsx` | ✅ Org list + platformOrgId + create/join/logout |
-| `core/shell/components/sidebar/nav-user.tsx` | ✅ Compact, lowercase email, Settings in dropdown |
-| `core/shell/components/ModuleGuard.tsx` | ✅ Module access gating |
-| `components/scripts/theme-boot.tsx` | ✅ FOUC prevention |
-| `convex/schema.ts` | ✅ orgRoles + updated users/orgs/orgMembers |
-| `convex/orgRoles/` | ✅ queries (list, get) + mutations (create, update, remove) |
-| `convex/_shared/permissions.ts` | ✅ requirePermission() DB lookup + legacy fallback |
-| Auth flows (signin, signup, verify, reset, join) | ✅ All built |
-| Dashboard home page | ⬜ Pending |
-| Dead code cleanup | ⬜ Pending |
-| Update 102 tests for roleId | ⬜ Pending |
+| Entity labels | NEVER hardcoded — always from `orgSettings.entityLabels` (DB) |
+| Route slugs | NEVER hardcoded — always from `orgSettings.entityLabels[slot].slug` (DB) |
+| Person detail page | ONE page for lead + contact — `/people/[personCode]` |
+| Notes | Inline in Unified Timeline — NOT a separate tab |
+| AI capabilities | Everything the user has permission to do |
+| Staleness colors | Configurable per stage (`stage.staleColor`, `stage.warningColor`) |
+| Client portal | Permission gates on every section from day one |
+| Platform timeline | `/settings/activity-log` — org-wide, admin only |
+| Per-person timeline | `/people/[personCode]` → Timeline tab — scoped to personCode |
 
 ---
 
-## Key Design Decisions (This Session)
+## App Route Structure (Current + Planned)
 
-1. **WorkspaceSwitcher**: Logo click opens dropdown. Shows `org.platformOrgId` (e.g. `ORB-XXXXX`) under org name so users can share their org ID. Create workspace → `/onboarding`. Join workspace → `/join`.
+```
+app/[locale]/
+  (auth)/          ← signin, signup, forgot-password, verify-email, join  ✅
+  (private)/       ← auth guard (client-side useConvexAuth)               ✅
+    layout.tsx     ← redirects to /signin if not authenticated
+    onboarding/    ← 3-step wizard
+    [orgSlug]/     ← org resolver + DashboardLayout + OnboardingGuard     ✅
+      page.tsx     ← dashboard home  →  /{locale}/{orgSlug}
+      profile/     ← person detail + list  ✅ stub
+        page.tsx   ← all profiles (leads + contacts combined)
+        [personCode]/page.tsx  ← unified profile page (P-001)
+      [entitySlug]/page.tsx    ← dynamic: leads, contacts, deals, companies + renamed  ✅ stub
+      companies/[id]/page.tsx  ← company detail  ✅ stub
+      deals/[id]/page.tsx      ← deal detail  ✅ stub
+      notifications/page.tsx   ← all notifications  ✅ stub
+      settings/    ← all settings pages (stubs → Slice 6)
+```
 
-2. **Sidebar Padding**: `SidebarHeader/Footer className="px-2 py-1.5"`. Groups `py-1`. All buttons `size="sm"`. NavUser avatar `h-5 w-5`, text `text-xs/[10px]`.
+**URL pattern**: `/{locale}/{orgSlug}/...` — orgSlug directly after locale, no "dashboard" segment.
+**No separate /leads or /contacts directories** — `[entitySlug]` handles all entity list views.
 
-3. **Auth Flows**: All built using Convex Auth Password provider flows. Email verification: `flow: "email-verification"`. Password reset: `flow: "reset"` → `flow: "reset-verification"`. Join-org: `invitations.queries.getByToken` (public) + `invitations.mutations.accept`.
+## Key Decisions Locked This Session
 
-4. **RBAC Seeding**: `createOrg` now seeds 3 system roles (Owner/Admin/Member) and sets `orgMembers.roleId` for the owner. Member role has `isDefault: true`.
-
-5. **requirePermission()**: DB-backed. Loads `orgRoles` doc via `member.roleId`, checks `role.permissions[]`. Falls back to legacy `role` string + PERMISSIONS map if no `roleId`.
-
-6. **Product Tour**: Documented in `core/onboarding/MODULE.md`. Will use `onborda` library (https://github.com/uixmat/onborda). Triggers after first dashboard visit. State tracked in `users.dismissedCards["product_tour_v1"]`.
+- Profile page at `/profile/[personCode]` (not /people/)
+- `[entitySlug]` dynamic route handles ALL entity lists (leads, contacts, deals, companies + renamed)
+- No separate /leads and /contacts directories
+- Profile page tabs: Overview | Messages | Timeline | Notes | Deals | Reminders | Files
+- Overview tab = right sidebar content (no separate panel — space taken by AI chat panel)
+- Notes = separate tab (editable, AI briefing at top)
+- Messages = chat bubbles (human + AI on-behalf), stored in notes with isActivityChat: true
+- Timeline = system log (activityLogs + reminders), AI scans this, feed UI with colored icons
+- Staleness: same thresholds/colors for leads AND deals — configured per pipeline stage
+- PersonCodeBadge = always a clickable link to /profile/[personCode]
+- PersonCard = compact popover version of Overview tab (for deal cards etc.)
+- Reserved slugs validated in orgs.create: platform, api, admin, billing, auth, onboarding, profile, settings, notifications, signin, signup, pricing, portal
 
 ---
 
-## What's Next (Exact Order)
+## Backend State (100% Complete)
 
-1. Dashboard home page (`app/[locale]/[orgSlug]/dashboard/page.tsx`) — Get Started card + metric cards
-2. Seed default pipeline on industry selection (needed for CRM)
-3. Update `invitations.mutations.accept` to assign Member roleId
-4. Update `useOrgPermission` hook to load from DB
-5. Update 102 tests for new roleId field
-6. Delete dead code from `core/shell/`
-7. Product tour (onborda) — after dashboard home page
+All tables: leads, contacts, companies, deals, notes, reminders, tags, entityTags,
+fieldDefinitions, fieldValues, savedViews, pipelines, entityCodeCounters.
+
+All mutations follow canonical pattern (steps 1-6). Step 7 (AI context rebuild) = TODO comment.
 
 ---
 
-## `pnpm typecheck`: ✅ 0 errors
+## Frontend — Next Steps (Exact Order)
+
+```bash
+# Install first:
+pnpm add @dnd-kit/core @dnd-kit/sortable @tanstack/react-table canvas-confetti
+pnpm add -D @types/canvas-confetti
+```
+
+```
+Slice 0: Shared primitives (DataTable, KanbanBoard, scaffolds, shared components)
+Slice 1: Leads list + Contacts list (separate list views)
+Slice 2: PersonDetailPage (unified person hub — /people/[personCode])
+Slice 3: Companies list + detail
+Slice 4: Deals kanban + detail
+Slice 5: Unified Timeline component
+Slice 6: Settings pages
+Slice 7: Dashboard home (real metrics)
+```
+
+Full file-by-file breakdown: `PHASE2-PROGRESS.md`
+
+---
+
+## Verification
+
+```
+pnpm tsc --noEmit  →  ✅ 0 errors
+Tests              →  ✅ 70 passing, 1 skipped
+```

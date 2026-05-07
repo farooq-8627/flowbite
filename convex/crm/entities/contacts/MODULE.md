@@ -112,6 +112,14 @@ All mutations enforce RBAC via `assertPermission()` before execution.
 
 ---
 
+## Architecture Decisions
+
+| # | Decision | Outcome |
+|---|----------|---------|
+| 1 | personCode on conversion | personCode is PASSED from lead to contact — never regenerated. One person = one code forever. |
+| 2 | aiContext traversal | aiContext is PASSED from lead to contact on conversion — never recreated. The same aiContext blob travels with the person (lead → contact → deals). AI updates it in-place via `updateAiContext()`. Creating a new aiContext on conversion would lose all AI-enriched data from the lead stage. |
+| 3 | Direct contact creation | When a contact is created directly (CSV, integration, manual) without a lead, `generatePersonCode()` is called to mint a new code. This is the ONLY other place personCode is generated. |
+
 ## Never-Do List
 
 - ❌ Never expose contacts across orgs (multi-tenant boundary).
@@ -119,3 +127,24 @@ All mutations enforce RBAC via `assertPermission()` before execution.
 - ❌ Never overwrite `personCode` after initial assignment.
 - ❌ Never skip `runDedup()` in `create()`.
 - ❌ Never store PII in `aiContext` — only AI-generated summaries/tags.
+- ❌ Never recreate `aiContext` on lead→contact conversion — pass it through from the lead record.
+
+---
+
+## Frontend Architecture Decisions (Locked)
+
+| # | Decision | Value |
+|---|---|---|
+| 1 | Contact detail page | Does NOT exist separately — use PersonDetailPage at `/people/[personCode]` |
+| 2 | Contact list page | Exists at `/[entitySlug]` (slug from `orgSettings.entityLabels.contact.slug`) |
+| 3 | Entity label | NEVER hardcode "Contact" — always from `orgSettings.entityLabels.contact` |
+| 4 | Route slug | NEVER hardcode "/contacts" — always from `orgSettings.entityLabels.contact.slug` |
+| 5 | personCode on cards | Always shown prominently — same code as the originating lead |
+| 6 | Company link | CompanySelect dropdown — links to companies table |
+| 7 | Dedup banner | Shown when email/phone matches existing contact |
+
+## See Also
+
+- `FRONTEND-DECISIONS.md` — all locked frontend decisions
+- `PHASE2-PROGRESS.md` — build plan and slice order
+- `core/entities/people/` — PersonDetailPage (unified lead + contact detail)

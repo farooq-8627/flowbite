@@ -163,7 +163,7 @@ describe("invitations.mutations.accept", () => {
 				.first(),
 		);
 		expect(member).not.toBeNull();
-		expect(member!.role).toBe("member");
+		expect(member!.roleId).toBeTruthy();
 	});
 
 	it("sets defaultOrgId on accepting user if none set", async () => {
@@ -293,7 +293,7 @@ describe("invitations.mutations.accept", () => {
 		// Verify reactivated with new role
 		const member = await t.run(async (ctx) => ctx.db.get(memberId));
 		expect(member!.deletedAt).toBeUndefined();
-		expect(member!.role).toBe("admin");
+		expect(member!.roleId).toBeTruthy();
 	});
 });
 

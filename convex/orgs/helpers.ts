@@ -36,10 +36,22 @@ export async function getOrgMember(
 	orgId: Id<"orgs">,
 	userId: Id<"users">,
 ): Promise<Doc<"orgMembers"> | null> {
-	return await ctx.db
+	const member = await ctx.db
 		.query("orgMembers")
 		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
 		.first();
+
+	if (!member) return null;
+
+	// Resolve role from roleId when role string is absent
+	if (member.roleId && !member.role) {
+		const orgRole = await ctx.db.get(member.roleId);
+		if (orgRole) {
+			return { ...member, role: orgRole.name.toLowerCase() as Doc<"orgMembers">["role"] };
+		}
+	}
+
+	return member;
 }
 
 /**

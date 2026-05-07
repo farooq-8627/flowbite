@@ -1,123 +1,127 @@
 # Active Todos
 
 > OVERWRITE this file — never append.
-> Updated: 2026-05-07
-> Status: **Phase 1 COMPLETE ✅ — Ready for Phase 2**
+> Updated: 2026-05-08
+> Status: **Phase 2 Backend ✅ 100% COMPLETE — Phase 2 Frontend NEXT**
 
 ---
 
-## Phase 1 — COMPLETE ✅
+## MUST READ Before Starting
 
-`pnpm tsc --noEmit` → 0 errors  
-`npx vitest run --config vitest.convex.config.ts` → 102 passing, 1 skipped
-
-| Area | Status |
-|---|---|
-| Auth flows (signin, signup, verify, reset, join) | ✅ |
-| Onboarding wizard (3 steps, pipeline seeding) | ✅ |
-| Shell (sidebar, TopNav, WorkspaceSwitcher, NavUser) | ✅ |
-| RBAC (orgRoles, requirePermission DB-backed, PermissionGate) | ✅ |
-| invitations.accept assigns roleId | ✅ |
-| useOrgPermission loads from DB | ✅ |
-| Schema: entityCodeCounters, orbitLinks, platformTemplates, pipelines | ✅ |
-| recordCodes.ts: generatePersonCode, generateEntityCode | ✅ |
-| notifications/queries.ts + mutations.ts | ✅ |
-| featureFlags/queries.ts + useModuleEnabled wired | ✅ |
-| Dashboard home page (Get Started + metrics + activity) | ✅ |
-| Dead code cleanup (7 files removed) | ✅ |
-| 102 tests passing | ✅ |
-| vitest.convex.config.ts created | ✅ |
+- `FRONTEND-DECISIONS.md` — 20 locked rules (entity labels, routes, person page, AI, staleness, etc.)
+- `PHASE2-PROGRESS.md` — full file-by-file build plan
 
 ---
 
-## Phase 1 — Low Priority Deferred Items
+## Phase 2 Backend — ✅ COMPLETE
 
-| ID | Task | Notes |
+All tables, mutations, queries, canonical pattern (steps 1-6), app route groups — done.
+
+---
+
+## Phase 2 Frontend — NEXT (Vertical Slices)
+
+### Install First
+
+```bash
+pnpm add @dnd-kit/core @dnd-kit/sortable @tanstack/react-table canvas-confetti
+pnpm add -D @types/canvas-confetti
+```
+
+### Slice 0 — Shared Primitives (do first — all slices depend on these)
+
+| ID | Task | Priority |
 |---|---|---|
-| DEFER-01 | Route group restructure `(private)/` | middleware.ts works; restructure when adding landing page |
-| DEFER-02 | `platformOrgIdCounter` table (sequential ORB-001) | Current ORB-XXXXX works; switch in Phase 4 platform admin |
-| DEFER-03 | Record code prefix rename background job | Needed for Settings → Record Codes page |
-| DEFER-04 | PostHog events (user_signed_up, onboarding_completed) | Add in Phase 2 alongside CRM events |
-| DEFER-05 | E2E Playwright tests | Add in Phase 2 |
+| S0-01 | `core/datatable/DataTable.tsx` + `DataTableToolbar.tsx` | HIGH |
+| S0-02 | `core/kanban/KanbanBoard.tsx` + `KanbanColumn.tsx` + `KanbanCard.tsx` | HIGH |
+| S0-03 | `core/entities/scaffolds/EntityListPage.tsx` | HIGH |
+| S0-04 | `core/entities/scaffolds/EntityDetailPage.tsx` | HIGH |
+| S0-05 | `core/entities/scaffolds/EntityFormDialog.tsx` | HIGH |
+| S0-06 | `core/entities/shared/DedupBanner.tsx` | HIGH |
+| S0-07 | `core/entities/shared/AssigneeSelect.tsx` | HIGH |
+| S0-08 | `core/entities/shared/TagPicker.tsx` | HIGH |
+| S0-09 | `core/entities/shared/PersonCodeBadge.tsx` | HIGH |
+| S0-10 | `core/entities/shared/StaleIndicator.tsx` (reads stage.staleColor from DB) | HIGH |
+| S0-11 | `core/entities/shared/DynamicFieldRenderer.tsx` | HIGH |
 
----
+### Slice 1 — Leads List + Contacts List
 
-## Phase 2 — CRM Core (NEXT — START HERE)
-
-### Backend First (Convex)
-
-| ID | Task | Priority | Notes |
-|---|---|---|---|
-| CRM-01 | `convex/crm/entities/leads/mutations.ts` + `queries.ts` | HIGH | list, get, create, update, delete, qualify, convert. Use generatePersonCode(). Follow "One Function, Three Callers" pattern. |
-| CRM-02 | `convex/crm/entities/contacts/mutations.ts` + `queries.ts` | HIGH | list, get, create (personCode passed from lead), update, delete |
-| CRM-03 | `convex/crm/entities/companies/mutations.ts` + `queries.ts` | HIGH | list, get, create (generateEntityCode "company"), update, delete |
-| CRM-04 | `convex/crm/entities/deals/mutations.ts` + `queries.ts` | HIGH | list, get, create (generateEntityCode "deal"), update, changeStage, closeAsWon/Lost |
-| CRM-05 | `convex/crm/fields/pipelines/queries.ts` | HIGH | listByOrg, getDefault, getById |
-| CRM-06 | `convex/crm/shared/notes/mutations.ts` + `queries.ts` | MEDIUM | create (authorType: "user"|"ai"), list by entity, pin, delete |
-| CRM-07 | `convex/crm/shared/reminders/mutations.ts` + `queries.ts` | MEDIUM | create (generateEntityCode "followup"), list, markDone |
-| CRM-08 | `convex/crm/shared/tags/mutations.ts` + `queries.ts` | LOW | create, list, attach to entity |
-| CRM-09 | `convex/orgs/queries.ts` getDashboardStats | HIGH | Add leadCount, dealCount, pipelineValue when CRM tables exist |
-
-### Schema Additions for Phase 2
-
-| Table | Fields | Notes |
+| ID | Task | Priority |
 |---|---|---|
-| `leads` | personCode, aiContext, pipelineId (optional), currentStageId (optional), status, source, displayName, email, assignedTo | personCode from generatePersonCode() |
-| `contacts` | personCode (from lead), aiContext, companyId, displayName, email, assignedTo | personCode PASSED from lead, never regenerated |
-| `companies` | companyCode, aiContext, name, industry, website | companyCode from generateEntityCode("company") |
-| `deals` | dealCode, personCode, companyCode, aiContext, pipelineId, currentStageId, title, value, assignedTo | dealCode from generateEntityCode("deal") |
-| `notes` | entityType, entityId, content, authorId, authorType, isInternal, isPinned | |
-| `reminders` | followUpCode, personCode, dealCode, entityType, entityId, dueAt, assignedTo, completedAt | |
-| `tags` + `entityTags` | org-wide tags, junction table | |
+| S1-01 | leads: types, hooks (useLeads, useLeadColumns, useLeadMutations) | HIGH |
+| S1-02 | leads: LeadList, LeadCard, AddLeadDialog | HIGH |
+| S1-03 | leads: LeadsView (replace stub) | HIGH |
+| S1-04 | contacts: types, hooks (useContacts, useContactColumns, useContactMutations) | HIGH |
+| S1-05 | contacts: ContactList, ContactCard, AddContactDialog | HIGH |
+| S1-06 | contacts: ContactsView (replace stub) | HIGH |
 
-### Frontend (Next.js)
+### Slice 2 — PersonDetailPage (Unified Person Hub)
 
-| ID | Task | Priority | Notes |
-|---|---|---|---|
-| UI-01 | `core/entities/scaffolds/` — EntityListPage, EntityDetailPage, EntityFormDialog, EntityCard | HIGH | Build once, use 4x |
-| UI-02 | Leads list + detail pages | HIGH | First entity, sets pattern |
-| UI-03 | Contacts list + detail pages | HIGH | |
-| UI-04 | Companies list page | MEDIUM | List only in Phase 2 |
-| UI-05 | Deals kanban | HIGH | shadboard UI + dnd-kit logic from shadcn-dashboard-2 |
-| UI-06 | Dashboard home page — real CRM metrics | HIGH | Update getDashboardStats with leadCount/dealCount |
-| UI-07 | TopNav: NotificationBell (real data) | MEDIUM | From shadboard notification-dropdown.tsx |
-| UI-08 | TopNav: LanguageSwitcher | MEDIUM | From shadboard language-dropdown.tsx |
-| UI-09 | TopNav: FullscreenToggle | LOW | From shadboard full-screen-toggle.tsx |
+| ID | Task | Priority |
+|---|---|---|
+| S2-01 | `convex/crm/people/queries.ts` — getByPersonCode (resolves lead or contact) | HIGH |
+| S2-02 | `app/(private)/dashboard/[orgSlug]/people/[personCode]/page.tsx` | HIGH |
+| S2-03 | `core/entities/people/views/PersonDetailView.tsx` | HIGH |
+| S2-04 | `core/entities/people/components/PersonHeader.tsx` | HIGH |
+| S2-05 | `core/entities/people/components/PersonSidebar.tsx` | HIGH |
+| S2-06 | `core/entities/people/components/PersonDealsTab.tsx` | HIGH |
+| S2-07 | `core/entities/people/components/PersonRemindersTab.tsx` | HIGH |
+| S2-08 | `core/entities/people/components/ActivityChatTab.tsx` | HIGH |
+| S2-09 | `core/entities/people/components/ConvertLeadDialog.tsx` | HIGH |
 
-### Infrastructure
+### Slice 3 — Companies
 
-| ID | Task | Priority | Notes |
-|---|---|---|---|
-| INFRA-01 | Install @dnd-kit/core + @dnd-kit/sortable | HIGH | For deals kanban |
-| INFRA-02 | Install @tanstack/react-table | HIGH | For entity list pages |
-| INFRA-03 | `core/kanban/` — KanbanBoard, KanbanColumn, KanbanCard | HIGH | shadboard UI + dnd-kit logic |
-| INFRA-04 | `core/datatable/` — DataTable, DataTableToolbar | HIGH | TanStack Table wrapper |
+| ID | Task | Priority |
+|---|---|---|
+| S3-01 | companies: types, hooks | MEDIUM |
+| S3-02 | companies: CompanyList, CompanyDetail, AddCompanyDialog | MEDIUM |
+| S3-03 | companies: CompaniesView (replace stub) | MEDIUM |
+
+### Slice 4 — Deals (Kanban Primary)
+
+| ID | Task | Priority |
+|---|---|---|
+| S4-01 | deals: types, hooks (useDeals, useDealColumns, useDealMutations) | HIGH |
+| S4-02 | deals: DealKanban, DealList, DealCard, DealDetail | HIGH |
+| S4-03 | deals: AddDealDialog, CloseAsDoneDialog | HIGH |
+| S4-04 | deals: DealsView + DealDetailView (replace stubs) | HIGH |
+
+### Slice 5 — Unified Timeline
+
+| ID | Task | Priority |
+|---|---|---|
+| S5-01 | `convex/crm/shared/timeline/queries.ts` — getForPerson, getForEntity, getForOrg | HIGH |
+| S5-02 | `core/timelines/hooks/useEntityTimeline.ts` | HIGH |
+| S5-03 | `core/timelines/components/UnifiedTimeline.tsx` | HIGH |
+| S5-04 | `core/timelines/components/TimelineEntry.tsx` + NoteEntry + ReminderEntry | HIGH |
+| S5-05 | `core/timelines/components/NoteComposer.tsx` | HIGH |
+| S5-06 | `core/timelines/components/TimelineFilters.tsx` | MEDIUM |
+
+### Slice 6 — Settings Pages
+
+| ID | Task | Priority |
+|---|---|---|
+| S6-01 | GeneralSettingsView (entity labels, staleness defaults) | MEDIUM |
+| S6-02 | MembersSettingsView | MEDIUM |
+| S6-03 | RolesSettingsView (GitHub-style permission picker) | MEDIUM |
+| S6-04 | BillingSettingsView | MEDIUM |
+| S6-05 | PipelinesSettingsView (stage drag-reorder + stale thresholds + colors) | HIGH |
+| S6-06 | AppearanceSettingsView | LOW |
+
+### Slice 7 — Dashboard Home (Real Metrics)
+
+| ID | Task | Priority |
+|---|---|---|
+| S7-01 | Update `getDashboardStats` query (leadCount, dealCount, pipelineValue, staleDeals) | HIGH |
+| S7-02 | Replace DashboardHomeView placeholder with real metric cards | HIGH |
 
 ---
 
 ## Phase 3 — AI + WhatsApp (PENDING)
 
-See checklist.md for full Phase 3 breakdown.
-
-Key items:
-- Vercel AI SDK + Anthropic
-- convex/ai/processChat.ts (internalAction)
-- 11 AI tools (all call canonical Convex mutations)
-- 360dialog WhatsApp webhook
-- Trigger.dev voice processor (Whisper → Claude → fieldValues)
-- Dubai RE template seeded
-
----
-
-## Architecture Decisions (Locked — Do Not Change)
-
-| Decision | Value |
-|---|---|
-| Record codes | personCode on leads/contacts (P-001), entityCodes per type |
-| personCode generation | ONLY at lead creation. Passed to contact on conversion. Never regenerated. |
-| AI context | 3 layers: platformContext (global) + orgAIContext (org) + entityAIContext (per-entity) |
-| OrbitLinks | Lateral connections. personCode handles vertical. |
-| Kanban | shadboard UI + dnd-kit logic from shadcn-dashboard-2 |
-| One Function Three Callers | Every mutation works for UI + AI + WhatsApp + MCP |
-| platformTemplates | In DB, not TypeScript config files |
-| RBAC | DB-backed orgRoles, requirePermission() loads from DB |
+- `convex/ai/processChat.ts` — internalAction
+- `convex/ai/systemPrompt.ts` — 3-layer prompt builder
+- `convex/ai/tools/` — 11 core tools (everything user can do)
+- WhatsApp webhook + Trigger.dev voice processor
+- AI context rebuild (step 7 of canonical pattern)
+- `convex/crm/shared/timeline/queries.ts::getForOrg` — platform timeline (admin only)

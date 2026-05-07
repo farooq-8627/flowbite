@@ -144,20 +144,44 @@ export const PERMISSIONS: Record<string, readonly OrgRole[]> = {
 
 	// ── Deals (Phase 2 — CRM Core) ───────────────────────────────────────────
 	// changeStage = move a deal card between pipeline stages.
+	// close = set wonAt/lostAt via closeAsDone() — separate from generic update.
 	"deals.view": ["owner", "admin", "member", "viewer"],
 	"deals.create": ["owner", "admin", "member"],
 	"deals.update": ["owner", "admin", "member"],
 	"deals.delete": ["owner", "admin"],
 	"deals.assign": ["owner", "admin"],
 	"deals.changeStage": ["owner", "admin", "member"],
+	"deals.close": ["owner", "admin"],
 
 	// ── Notes (Phase 2 — CRM Core) ───────────────────────────────────────────
 	// updateOwn/deleteOwn = author only. deleteAny = admin override.
 	"notes.view": ["owner", "admin", "member", "viewer"],
+	"notes.viewInternal": ["owner", "admin"], // internal notes visible only to admin+
 	"notes.create": ["owner", "admin", "member"],
 	"notes.updateOwn": ["owner", "admin", "member"],
 	"notes.deleteOwn": ["owner", "admin", "member"],
 	"notes.deleteAny": ["owner", "admin"],
+	"notes.pin": ["owner", "admin"],
+
+	// ── Reminders (Phase 2 — CRM Core) ───────────────────────────────────────
+	// manage = create/update/delete/complete reminders.
+	"reminders.view": ["owner", "admin", "member", "viewer"],
+	"reminders.create": ["owner", "admin", "member"],
+	"reminders.manage": ["owner", "admin", "member"],
+
+	// ── Tags (Phase 2 — CRM Core) ─────────────────────────────────────────────
+	// manage = create/delete org-wide tags. attach = apply tags to entities.
+	"tags.view": ["owner", "admin", "member", "viewer"],
+	"tags.manage": ["owner", "admin"],
+	"tags.attach": ["owner", "admin", "member"],
+
+	// ── Saved Views (Phase 2 — CRM Core) ─────────────────────────────────────
+	// createPersonal = save a view for yourself only.
+	// createOrg = save a view visible to all org members.
+	"savedViews.view": ["owner", "admin", "member", "viewer"],
+	"savedViews.createPersonal": ["owner", "admin", "member"],
+	"savedViews.createOrg": ["owner", "admin"],
+	"savedViews.delete": ["owner", "admin"],
 
 	// ── Pipelines (Phase 2 — CRM Core) ───────────────────────────────────────
 	// manage = create/edit/delete pipelines and stages. view = just read.

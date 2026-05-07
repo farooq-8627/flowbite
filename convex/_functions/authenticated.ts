@@ -143,6 +143,16 @@ export async function requireOrgMember(
 	if (!member || member.deletedAt !== undefined)
 		throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
+	// roleId is the authoritative source. Always resolve from it when present.
+	// Falls back to role string for legacy/test records that have no roleId.
+	if (member.roleId) {
+		const orgRole = await ctx.db.get(member.roleId);
+		if (orgRole) {
+			const canonicalRole = orgRole.name.toLowerCase() as Doc<"orgMembers">["role"];
+			return { user, userId, org, member: { ...member, role: canonicalRole } };
+		}
+	}
+
 	return { user, userId, org, member };
 }
 

@@ -35,6 +35,22 @@ That's it. Everything else is supplementary.
 | `CONVEX-ARCHITECTURE.md` | When writing Convex functions | Convex patterns, caching, realtime, logActivity, timeline |
 | `.github/agents/base/context.md` | When resuming after a break | Current build state summary |
 | `AGENTS.md` | When starting a new session | Global coding rules (RTL, no hardcoded strings, etc.) |
+| `TEMPLATE_ANALYSIS.md` | Before building any UI component | Component placement map, which template to copy from |
+
+---
+
+## TEMPLATE REPOS — LOCAL PATHS
+
+Before building any UI component, scan the relevant template first. All 4 repos are cloned locally:
+
+| Template | Local Path | Best for |
+|---|---|---|
+| `next-shadcn-admin-dashboard` | `/Users/shaikumarfarooq/Clones/Orbitly/next-shadcn-admin-dashboard` | Industry dashboards, data tables, charts |
+| `shadcn-dashboard-2` | `/Users/shaikumarfarooq/Clones/Orbitly/shadcn-dashboard-2` | Kanban, notifications, chat UI, form fields |
+| `shadboard/full-kit` | `/Users/shaikumarfarooq/Clones/Orbitly/shadboard/full-kit` | Notification bell, fullscreen toggle, language switcher, settings pages |
+| `shadcnstore/nextjs-version` | `/Users/shaikumarfarooq/Clones/Orbitly/shadcnstore/nextjs-version` | Calendar, chat, dashboard metrics |
+
+See `TEMPLATE_ANALYSIS.md` for the full component placement map and exact file paths within each template.
 
 ---
 

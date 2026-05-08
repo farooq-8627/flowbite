@@ -1,72 +1,119 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never create a new context file.
-> Keep this file SHORT. No session history. No architecture explanations. Those live in PLAN.md.
-> Last Updated: 2026-04-27 | Strategy V2 finalized. Phase 0 COMPLETE. Phase 1 Shell = NEXT.
+> Last Updated: 2026-05-08
 
 ---
 
-## Current Phase: 1 — Shell (PENDING — Next up)
+## Current Phase: 2 — CRM Core (Backend COMPLETE, Frontend NEXT)
 
-**Phase 0: ✅ COMPLETE**
-- Auth (Password, GitHub, Google), full RBAC (102 tests), invitations module ✅
-- All 8 production quality gaps resolved ✅
-- `pnpm typecheck` 0 errors | `pnpm test` 102 passing | `pnpm build` 0 errors ✅
-- Architecture setup (MODULE.md, theme presets, preferences library, Zustand store) ✅
-- All docs + folder structure cleaned and synced ✅
-
-**Architecture (final):**
-- `core/` — 11 modules (shell, entities, ai, settings, csv-import, kanban, datatable, timelines, notifications, onboarding, command-palette) — NEVER plan-gated
-- `features/` — 5 modules (ai-automation, client-portal, integrations, industry-templates, project-management) — CAN be plan-gated
-- `convex/ai/` — AI tools centralized, role-filtered before Claude call
-- Two timelines: Unified (RBAC audit log) + Activity Chat (people + AI on-behalf)
-- Entity scaffolds: 4 shared scaffolds for all 6 entity types
+**Phase 0: ✅ COMPLETE** — Auth, RBAC (70 tests), invitations, preferences, theme presets, Zustand store.
+**Phase 1: ✅ COMPLETE** — Shell, sidebar, TopNav, WorkspaceSwitcher, onboarding, dashboard home, notifications, feature flags, record codes.
+**Phase 2 Backend: ✅ 100% COMPLETE** — All CRM tables, all mutations + queries, canonical pattern steps 1-6.
+**Phase 2 Frontend: ⬜ NEXT** — Vertical slices. Start with Slice 0 (shared primitives).
 
 ---
 
-## Strategy V2 Decisions (Locked 2026-04-27)
+## MUST READ Before Any Frontend Work
 
-> These decisions are final. Do not revisit unless explicitly requested.
+1. `FRONTEND-DECISIONS.md` — ALL locked frontend decisions (20 rules)
+2. `PHASE2-PROGRESS.md` — Backend status + frontend vertical slice plan
+3. `CONVEX-ARCHITECTURE.md` — Convex patterns, caching, realtime, timeline, AI context
+4. `.kiro/code-architecture-v.md` — Full architecture bible (36 modules)
 
-| Decision | Locked Value |
+---
+
+## Key Decisions (Summary — Full Detail in FRONTEND-DECISIONS.md)
+
+| Decision | Value |
 |---|---|
-| First industry | Dubai Real Estate |
-| Pipeline stages on | **Deals ONLY** (not leads). Leads have simple status: new/qualified/converted. |
-| Architecture | Hybrid: Structured DB (EAV) + AI input layer (WhatsApp voice → auto-fill fieldValues) |
-| WhatsApp phase | Phase 3 — ships WITH AI, not Phase 5 |
-| WhatsApp provider | 360dialog (Gulf BSP). Apply for UAE number NOW — takes 1–2 weeks. |
-| Voice transcription | OpenAI Whisper API (best Arabic + code-switching accuracy) |
-| Schema additions (Phase 2) | `aiContext` on leads/contacts/deals. `quickCode` on leads/contacts. `showInStages` on fieldDefinitions. `entityDocuments` new table. |
-| Stage-aware fields | Approach B — backend. Convex query filters `fieldDefinitions` by `showInStages` before returning to client. |
-| RBAC | Dynamic — `orgMembers.roleId` references `orgRoles` table (not hardcoded string). Refactor in Phase 1. |
-| Export layer | Agent-facing output layer (NOT platform export). Ejari PDF, property summary, CSV of any filtered view. Phase 2+. |
-| Industry templates | Base is generic. Industry-specific fieldDefs + pipeline stages seeded via config files in `features/industry-templates/`. First: Dubai RE. |
+| Entity labels | NEVER hardcoded — always from `orgSettings.entityLabels` (DB) |
+| Route slugs | NEVER hardcoded — always from `orgSettings.entityLabels[slot].slug` (DB) |
+| Person detail page | ONE page for lead + contact — `/people/[personCode]` |
+| Notes | Inline in Unified Timeline — NOT a separate tab |
+| AI capabilities | Everything the user has permission to do |
+| Staleness colors | Configurable per stage (`stage.staleColor`, `stage.warningColor`) |
+| Client portal | Permission gates on every section from day one |
+| Platform timeline | `/settings/activity-log` — org-wide, admin only |
+| Per-person timeline | `/people/[personCode]` → Timeline tab — scoped to personCode |
 
 ---
 
-## What's Next (Phase 1 — in build order)
+## App Route Structure (Current + Planned)
 
-1. **IMMEDIATE**: Apply for WhatsApp Business API via 360dialog (do this today — 1–2 week approval)
-2. **BACKFIX**: Update `PLAN_FEATURES` in `constants.ts` (CRM plan features) — needed before any Phase 2 mutations
-3. **SHELL-01**: `core/shell/config/navigation.ts` — single source of truth for nav
-4. **SHELL-02**: `app/[locale]/dashboard/layout.tsx` — auth guard
-5. **SHELL-03**: `app/[locale]/dashboard/[orgSlug]/layout.tsx` — org resolver
-6. **SHELL-04–09**: DashboardLayout, AppSidebar, TopNav, NotificationBell, WorkspaceSwitcher, ModuleGuard
-7. **ONBOARD-01–03**: 3-step onboarding wizard (org name → industry → complete). Industry picker seeds Dubai RE as default option.
-8. **SHELL-11**: Quick Win Dashboard page (metric cards + Get Started card)
-9. **SHELL-12**: Auth redirect → onboarding if not completed
-10. **RBAC-REFACTOR-01–10**: Dynamic roles (`orgRoles` table, `roleId` on `orgMembers`)
+```
+app/[locale]/
+  (auth)/          ← signin, signup, forgot-password, verify-email, join  ✅
+  (private)/       ← auth guard (client-side useConvexAuth)               ✅
+    layout.tsx     ← redirects to /signin if not authenticated
+    onboarding/    ← 3-step wizard
+    [orgSlug]/     ← org resolver + DashboardLayout + OnboardingGuard     ✅
+      page.tsx     ← dashboard home  →  /{locale}/{orgSlug}
+      profile/     ← person detail + list  ✅ stub
+        page.tsx   ← all profiles (leads + contacts combined)
+        [personCode]/page.tsx  ← unified profile page (P-001)
+      [entitySlug]/page.tsx    ← dynamic: leads, contacts, deals, companies + renamed  ✅ stub
+      companies/[id]/page.tsx  ← company detail  ✅ stub
+      deals/[id]/page.tsx      ← deal detail  ✅ stub
+      notifications/page.tsx   ← all notifications  ✅ stub
+      settings/    ← all settings pages (stubs → Slice 6)
+```
 
-Full todo list with IDs: `todos.md`
-Full build checklist: `checklist.md`
-Module rules: `core/shell/MODULE.md`
+**URL pattern**: `/{locale}/{orgSlug}/...` — orgSlug directly after locale, no "dashboard" segment.
+**No separate /leads or /contacts directories** — `[entitySlug]` handles all entity list views.
+
+## Key Decisions Locked This Session
+
+- Profile page at `/profile/[personCode]` (not /people/)
+- `[entitySlug]` dynamic route handles ALL entity lists (leads, contacts, deals, companies + renamed)
+- No separate /leads and /contacts directories
+- Profile page tabs: Overview | Messages | Timeline | Notes | Deals | Reminders | Files
+- Overview tab = right sidebar content (no separate panel — space taken by AI chat panel)
+- Notes = separate tab (editable, AI briefing at top)
+- Messages = chat bubbles (human + AI on-behalf), stored in notes with isActivityChat: true
+- Timeline = system log (activityLogs + reminders), AI scans this, feed UI with colored icons
+- Staleness: same thresholds/colors for leads AND deals — configured per pipeline stage
+- PersonCodeBadge = always a clickable link to /profile/[personCode]
+- PersonCard = compact popover version of Overview tab (for deal cards etc.)
+- Reserved slugs validated in orgs.create: platform, api, admin, billing, auth, onboarding, profile, settings, notifications, signin, signup, pricing, portal
 
 ---
 
-## Known Issues
+## Backend State (100% Complete)
 
-| Issue | Status |
-|---|---|
-| `pnpm lint-check` fails — `biome lint --check .` invalid for Biome v2 | pending fix |
-| Auth redirect (`P0-AUTH-REDIRECT`) blocked on shell being built | blocked → Phase 1 |
-| Pre-existing next-intl TS error in `.next/dev/types/validator.ts` | not our code |
+All tables: leads, contacts, companies, deals, notes, reminders, tags, entityTags,
+fieldDefinitions, fieldValues, savedViews, pipelines, entityCodeCounters.
+
+All mutations follow canonical pattern (steps 1-6). Step 7 (AI context rebuild) = TODO comment.
+
+---
+
+## Frontend — Next Steps (Exact Order)
+
+```bash
+# Install first:
+pnpm add @dnd-kit/core @dnd-kit/sortable @tanstack/react-table canvas-confetti
+pnpm add -D @types/canvas-confetti
+```
+
+```
+Slice 0: Shared primitives (DataTable, KanbanBoard, scaffolds, shared components)
+Slice 1: Leads list + Contacts list (separate list views)
+Slice 2: PersonDetailPage (unified person hub — /people/[personCode])
+Slice 3: Companies list + detail
+Slice 4: Deals kanban + detail
+Slice 5: Unified Timeline component
+Slice 6: Settings pages
+Slice 7: Dashboard home (real metrics)
+```
+
+Full file-by-file breakdown: `PHASE2-PROGRESS.md`
+
+---
+
+## Verification
+
+```
+pnpm tsc --noEmit  →  ✅ 0 errors
+Tests              →  ✅ 70 passing, 1 skipped
+```

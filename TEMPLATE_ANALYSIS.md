@@ -1,19 +1,65 @@
 # Template Analysis & Component Placement Map
 
-> Written: 2026-05-07  
-> Purpose: Map all usable components from 4 template repos into Orbitly's module structure.  
+> Written: 2026-05-07 | Updated: 2026-05-08
+> Purpose: Map all usable components from 4 template repos into Orbitly's module structure.
 > Decision: Copy source → adapt to RTL + design system → place in correct module. Never import from template paths.
+>
+> **Before building any UI component, scan the relevant template path below first.**
+> See also: `BUILD-ORDER.md` — session protocol and canonical build pattern.
 
 ---
 
-## Templates Scanned
+## Templates — Local Absolute Paths
 
-| Repo | Path | Strength |
+| Repo | Local Path | Strength |
 |---|---|---|
-| `next-shadcn-admin-dashboard` | `/Clones/Orbitly/next-shadcn-admin-dashboard` | 5 industry dashboards (CRM, Analytics, Finance, Productivity, Default), data tables, charts |
-| `shadcn-dashboard-2` | `/Clones/Orbitly/shadcn-dashboard-2` | Kanban (dnd-kit), notifications store, chat UI, form fields system, kbar command palette |
-| `shadboard/full-kit` | `/Clones/Orbitly/shadboard/full-kit` | Notification bell dropdown, fullscreen toggle, language switcher, calendar app, email app, settings pages, design system showcase |
-| `shadcnstore/nextjs-version` | `/Clones/Orbitly/shadcnstore/nextjs-version` | Calendar with sidebar, chat, dashboard-2 (metrics/charts), FAQ, error pages |
+| `next-shadcn-admin-dashboard` | `/Users/shaikumarfarooq/Clones/Orbitly/next-shadcn-admin-dashboard` | 5 industry dashboards (CRM, Analytics, Finance, Productivity, Default), data tables, charts |
+| `shadcn-dashboard-2` | `/Users/shaikumarfarooq/Clones/Orbitly/shadcn-dashboard-2` | Kanban (dnd-kit), notifications store, chat UI, form fields system, kbar command palette |
+| `shadboard/full-kit` | `/Users/shaikumarfarooq/Clones/Orbitly/shadboard/full-kit` | Notification bell dropdown, fullscreen toggle, language switcher, calendar app, email app, settings pages, design system showcase |
+| `shadcnstore/nextjs-version` | `/Users/shaikumarfarooq/Clones/Orbitly/shadcnstore/nextjs-version` | Calendar with sidebar, chat, dashboard-2 (metrics/charts), FAQ, error pages |
+
+### Key component paths per template
+
+**next-shadcn-admin-dashboard:**
+```
+/Users/shaikumarfarooq/Clones/Orbitly/next-shadcn-admin-dashboard/src/app/(main)/dashboard/_components/
+  sidebar/app-sidebar.tsx          ← sidebar structure
+  sidebar/layout-controls.tsx      ← layout controls
+  sidebar/theme-switcher.tsx       ← theme toggle
+```
+
+**shadcn-dashboard-2:**
+```
+/Users/shaikumarfarooq/Clones/Orbitly/shadcn-dashboard-2/src/components/layout/
+  header.tsx                       ← top nav pattern (SidebarTrigger + search + theme + notifications)
+  app-sidebar.tsx                  ← sidebar with footer user menu
+/Users/shaikumarfarooq/Clones/Orbitly/shadcn-dashboard-2/src/features/
+  kanban/components/               ← dnd-kit kanban board
+  notifications/components/        ← notification center
+  chat/components/                 ← chat UI
+```
+
+**shadboard/full-kit:**
+```
+/Users/shaikumarfarooq/Clones/Orbitly/shadboard/full-kit/src/components/layout/
+  vertical-layout/vertical-layout-header.tsx   ← header with fullscreen + language + mode
+  full-screen-toggle.tsx                       ← fullscreen toggle component
+  notification-dropdown.tsx                    ← notification bell + popover
+/Users/shaikumarfarooq/Clones/Orbitly/shadboard/full-kit/src/components/
+  language-dropdown.tsx                        ← language switcher
+  mode-dropdown.tsx                            ← theme mode dropdown
+```
+
+**shadcnstore/nextjs-version:**
+```
+/Users/shaikumarfarooq/Clones/Orbitly/shadcnstore/nextjs-version/src/components/
+  app-sidebar.tsx                  ← sidebar with notification badge
+  site-header.tsx                  ← header pattern
+/Users/shaikumarfarooq/Clones/Orbitly/shadcnstore/nextjs-version/src/app/(dashboard)/
+  calendar/                        ← full calendar app
+  chat/                            ← chat app
+  dashboard-2/                     ← metrics + charts
+```
 
 ---
 

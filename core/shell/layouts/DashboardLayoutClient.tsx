@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef, Suspense } from "react";
+import { useState, useCallback, useRef, Suspense, useEffect } from "react";
 import { GripVertical } from "lucide-react";
 import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
 import { AIChatPanel, AIChatPanelContent } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
@@ -16,16 +16,6 @@ const CHAT_MIN_WIDTH = 280;
 const CHAT_MAX_WIDTH = 600;
 const CHAT_DEFAULT_WIDTH = 360;
 
-/**
- * DashboardLayoutClient - Client-side layout with resizable sidebar and AI chat panel
- * Handles responsive behavior, drag-to-resize, and state persistence via cookies
- * @param children - Page content
- * @param orgSlug - Organization slug
- * @param variant - Sidebar visual variant (inset, sidebar, floating)
- * @param collapsible - Sidebar collapse mode (icon, offcanvas)
- * @param initialSidebarOpen - Initial sidebar open state from cookie
- * @param initialChatOpen - Initial chat panel open state from cookie
- */
 export function DashboardLayoutClient({
 	children,
 	orgSlug,
@@ -46,14 +36,24 @@ export function DashboardLayoutClient({
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
 	const [isDragging, setIsDragging] = useState(false);
+	const [isRTL, setIsRTL] = useState(false);
 	const startX = useRef(0);
 	const startWidth = useRef(0);
 
-	const toggleChat = () => {
+	// Detect RTL from <html dir> — updates when locale switches
+	useEffect(() => {
+		const check = () => setIsRTL(document.documentElement.dir === "rtl");
+		check();
+		const observer = new MutationObserver(check);
+		observer.observe(document.documentElement, { attributes: true, attributeFilter: ["dir"] });
+		return () => observer.disconnect();
+	}, []);
+
+	const toggleChat = useCallback(() => {
 		const newState = !chatOpen;
 		setChatOpen(newState);
 		document.cookie = `chat_panel_state=${newState}; path=/; max-age=31536000`;
-	};
+	}, [chatOpen]);
 
 	const onMouseDown = useCallback((e: React.MouseEvent) => {
 		e.preventDefault();
@@ -61,28 +61,17 @@ export function DashboardLayoutClient({
 		startWidth.current = chatWidth;
 		setIsDragging(true);
 
-		// Disable transitions on all sidebar elements AND the main content during drag
-		const allElements = document.querySelectorAll('[data-sidebar="sidebar"], .sidebar-container, [data-side="right"], [data-sidebar="inset"]');
-		allElements.forEach((el) => {
-			const element = el as HTMLElement;
-			element.style.transition = 'none';
-		});
-
 		const onMouseMove = (e: MouseEvent) => {
-			const delta = startX.current - e.clientX;
+			// In RTL the grip is on the left edge of the panel — delta is reversed
+			const delta = isRTL
+				? e.clientX - startX.current
+				: startX.current - e.clientX;
 			const newWidth = Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, startWidth.current + delta));
 			setChatWidth(newWidth);
 		};
 
 		const onMouseUp = () => {
 			setIsDragging(false);
-			
-			// Re-enable transitions on all elements
-			allElements.forEach((el) => {
-				const element = el as HTMLElement;
-				element.style.transition = '';
-			});
-			
 			document.removeEventListener("mousemove", onMouseMove);
 			document.removeEventListener("mouseup", onMouseUp);
 			document.body.style.cursor = "";
@@ -93,64 +82,85 @@ export function DashboardLayoutClient({
 		document.body.style.userSelect = "none";
 		document.addEventListener("mousemove", onMouseMove);
 		document.addEventListener("mouseup", onMouseUp);
-	}, [chatWidth]);
+	}, [chatWidth, isRTL]);
+
+	// In RTL: sidebar is on the right, AI panel slides in from the left
+	const insetMarginStyle = !isTablet && chatOpen
+		? (isRTL ? { marginLeft: chatWidth } : { marginRight: chatWidth })
+		: {};
+
+	const chatPanelPositionStyle = isRTL
+		? { left: chatOpen ? 0 : -chatWidth }
+		: { right: chatOpen ? 0 : -chatWidth };
+
+	const gripPositionStyle = isRTL
+		? { left: chatWidth - 6 }
+		: { right: chatWidth - 6 };
 
 	return (
 		<div className="flex h-screen w-full overflow-hidden">
-			{/* Left Sidebar */}
-			<SidebarProvider
-				defaultOpen={initialSidebarOpen}
-			>
+			<SidebarProvider defaultOpen={initialSidebarOpen}>
 				<Suspense fallback={<SidebarSkeleton />}>
-					<AppSidebar variant={variant} collapsible={collapsible} orgSlug={orgSlug} />
+					<AppSidebar
+						variant={variant}
+						collapsible={collapsible}
+						orgSlug={orgSlug}
+						side={isRTL ? "right" : "left"}
+					/>
 				</Suspense>
 				<SidebarInset
 					className="flex-1 flex flex-col overflow-hidden"
 					style={{
-						marginRight: (!isTablet && chatOpen) ? chatWidth : 0,
+						...insetMarginStyle,
 						transition: isDragging ? "none" : "margin 200ms ease",
 					}}
 				>
-					<TopNav onToggleChat={toggleChat} onToggleSearch={() => setSearchOpen(true)} />
+					<TopNav
+						onToggleChat={toggleChat}
+						onToggleSearch={() => setSearchOpen(true)}
+					/>
 					<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 					<main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
 				</SidebarInset>
 			</SidebarProvider>
 
-			{/* Right AI Chat Panel — desktop only, slides in/out smoothly */}
+			{/* AI Chat Panel — desktop only */}
 			{!isTablet && (
-				<div 
-					className="fixed top-0 h-full pointer-events-none z-40 transition-[right] duration-200 ease-linear"
-					style={{ right: chatOpen ? 0 : -chatWidth }}
+				<div
+					className="fixed top-0 h-full pointer-events-none z-40 transition-[left,right] duration-200 ease-linear"
+					style={chatPanelPositionStyle}
 				>
 					<SidebarProvider
 						open={chatOpen}
-						onOpenChange={(v) => { setChatOpen(v); document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`; }}
+						onOpenChange={(v) => {
+							setChatOpen(v);
+							document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`;
+						}}
+						disableKeyboardShortcut
 						style={{ "--sidebar-width": `${chatWidth}px`, "--sidebar-width-icon": `${chatWidth}px` } as React.CSSProperties}
 						className="!w-0 !min-h-0"
 					>
-						{/* Grip handle — icon only on hover */}
 						{chatOpen && (
 							<div
 								className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none"
-								style={{ right: chatWidth - 6 }}
+								style={gripPositionStyle}
 								onMouseDown={onMouseDown}
 							>
 								<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
 							</div>
 						)}
 						<div className="pointer-events-auto">
-							<AIChatPanel />
+							<AIChatPanel side={isRTL ? "left" : "right"} />
 						</div>
 					</SidebarProvider>
 				</div>
 			)}
 
-			{/* Tablet + Mobile Sheet (< 1024px) */}
+			{/* Tablet + Mobile Sheet */}
 			{isTablet && (
 				<Sheet open={chatOpen} onOpenChange={setChatOpen}>
 					<SheetContent
-						side="right"
+						side={isRTL ? "left" : "right"}
 						className="!w-[85vw] !max-w-[85vw] p-0 [&>button]:hidden"
 					>
 						<SheetHeader className="sr-only">

@@ -16,14 +16,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 
 /**
- * AIChatPanel - Right sidebar AI assistant panel for desktop
+ * AIChatPanel - Right sidebar AI assistant panel for desktop (left in RTL)
  * Uses Sidebar primitives and adapts to user's sidebar variant preference
  */
-export function AIChatPanel() {
+export function AIChatPanel({ side = "right" }: { side?: "left" | "right" }) {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
 
 	return (
-		<Sidebar side="right" variant={sidebar_variant} collapsible="offcanvas">
+		<Sidebar side={side} variant={sidebar_variant} collapsible="offcanvas">
 			<SidebarHeader>
 				<SidebarMenu>
 					<SidebarMenuItem>

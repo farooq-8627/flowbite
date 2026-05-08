@@ -99,7 +99,8 @@ export function buildNavigation(
 	modules: ModuleConfig[] = DEFAULT_MODULES,
 	locale: string = "en",
 ): NavGroup[] {
-	const base = `/${orgSlug}/dashboard`;
+	// Dashboard is at /[orgSlug]/ — no /dashboard segment
+	const base = `/${orgSlug}`;
 
 	const crmItems: NavItem[] = modules
 		.filter((m) => m.enabled)

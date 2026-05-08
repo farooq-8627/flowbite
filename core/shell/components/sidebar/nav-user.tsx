@@ -55,8 +55,8 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 			<SidebarMenuItem>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton className="h-12 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
-							<Avatar className="size-6 rounded-[--radius] grayscale">
+						<SidebarMenuButton className="h-12 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:p-1!">
+							<Avatar className="size-6 rounded-[--radius]">
 								<AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
 								<AvatarFallback className="rounded-[--radius] text-xs">
 									{getInitials(name)}

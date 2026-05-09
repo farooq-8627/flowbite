@@ -6,7 +6,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole, hasMinRole } from "../../../_shared/permissions";
+import { requireRole, hasPermission } from "../../../_shared/permissions";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -27,7 +27,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "reminders.create");
+		requireRole(member.permissions, "reminders.create");
 
 		const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
 		const now = Date.now();
@@ -81,7 +81,7 @@ export const complete = orgMutation({
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		const now = Date.now();
@@ -104,7 +104,7 @@ export const update = orgMutation({
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		const { orgId: _o, reminderId: _r, ...updates } = args;
@@ -122,7 +122,7 @@ export const remove = orgMutation({
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		await ctx.db.delete(args.reminderId);

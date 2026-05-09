@@ -32,7 +32,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.manage");
+		requireRole(member.permissions, "pipelines.manage");
 
 		if (args.isDefault) {
 			const existing = await ctx.db
@@ -84,7 +84,7 @@ export const addStage = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.manage");
+		requireRole(member.permissions, "pipelines.manage");
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -121,7 +121,7 @@ export const removeStage = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageId: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.manage");
+		requireRole(member.permissions, "pipelines.manage");
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -146,7 +146,7 @@ export const reorderStages = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageIds: v.array(v.string()) },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.manage");
+		requireRole(member.permissions, "pipelines.manage");
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -166,7 +166,7 @@ export const deletePipeline = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.manage");
+		requireRole(member.permissions, "pipelines.manage");
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

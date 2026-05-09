@@ -42,6 +42,31 @@ export default defineSchema({
 		lastActiveAt: v.optional(v.number()),
 		dismissedCards: v.optional(v.array(v.string())),
 		preferredLanguage: v.optional(v.string()),
+		notificationPreferences: v.optional(v.object({
+			// Group: CRM
+			lead_assigned: v.optional(v.boolean()),
+			lead_converted: v.optional(v.boolean()),
+			contact_assigned: v.optional(v.boolean()),
+			deal_assigned: v.optional(v.boolean()),
+			deal_stage_changed: v.optional(v.boolean()),
+			deal_won: v.optional(v.boolean()),
+			deal_stale: v.optional(v.boolean()),
+			// Group: Reminders
+			reminder_due: v.optional(v.boolean()),
+			reminder_overdue: v.optional(v.boolean()),
+			// Group: AI
+			ai_action_completed: v.optional(v.boolean()),
+			ai_workspace_setup: v.optional(v.boolean()),
+			// Group: Team
+			member_invited: v.optional(v.boolean()),
+			member_joined: v.optional(v.boolean()),
+			role_changed: v.optional(v.boolean()),
+			// Group: System
+			billing_trial_ending: v.optional(v.boolean()),
+			billing_suspended: v.optional(v.boolean()),
+			csv_import_complete: v.optional(v.boolean()),
+			csv_import_failed: v.optional(v.boolean()),
+		})),
 		platformRole: v.optional(v.literal("super_admin")),
 		...timestamps,
 		...softDelete,
@@ -83,6 +108,7 @@ export default defineSchema({
 				defaultCurrency: v.optional(v.string()),
 				timezone: v.optional(v.string()),
 				leadStaleAfterDays: v.optional(v.number()), // staleness for leads (no pipeline stages)
+				badgeCountsVisible: v.optional(v.boolean()), // show/hide nav badge counts
 				codePrefixes: v.optional(v.object({
 					person: v.optional(v.string()),
 					deal: v.optional(v.string()),
@@ -95,6 +121,14 @@ export default defineSchema({
 					hidden: v.optional(v.boolean()),
 					order: v.optional(v.number()),
 				}))),
+				reminderDefaults: v.optional(v.object({
+					followUpWindowHours: v.optional(v.number()),   // auto-suggest follow-up after N hours
+					staleAlertDays: v.optional(v.number()),        // mark deal as stale after N days
+					morningBriefingEnabled: v.optional(v.boolean()),
+					morningBriefingTime: v.optional(v.string()),   // "09:00"
+					rentAlertDays: v.optional(v.number()),         // 95-day renewal alert (Dubai RE)
+					rentAlertEnabled: v.optional(v.boolean()),
+				})),
 			}),
 		),
 		...timestamps,
@@ -120,18 +154,12 @@ export default defineSchema({
 
 	// ── orgMembers ───────────────────────────────────────────────────────────
 	// Maps users → orgs with role. One row per user-org pair.
-	// RBAC refactor complete: roleId is the source of truth.
-	// role string kept for test compatibility — will be removed in Phase 1 RBAC cleanup.
+	// roleId is the sole source of truth. Role name is resolved at runtime by
+	// requireOrgMember() / getOrgMember() — never stored on this document.
 	orgMembers: defineTable({
 		...orgScoped,
 		userId: v.id("users"),
-		roleId: v.optional(v.id("orgRoles")), // FK to orgRoles — primary source of truth
-		role: v.optional(v.union(             // legacy string — kept for test compat only
-			v.literal("owner"),
-			v.literal("admin"),
-			v.literal("member"),
-			v.literal("viewer"),
-		)),
+		roleId: v.id("orgRoles"), // FK to orgRoles — sole source of truth
 		permissions: v.optional(v.array(v.string())),
 		invitedBy: v.optional(v.id("users")),
 		joinedAt: v.number(),
@@ -282,6 +310,13 @@ export default defineSchema({
 		defaultPipelineName: v.string(),
 		defaultStages: v.array(v.any()), // [{ id, name, order, color, isFinal, finalType, staleAfterDays }]
 		defaultFieldDefinitions: v.optional(v.array(v.any())),
+		defaultReminderSettings: v.optional(v.object({
+			followUpWindowHours: v.optional(v.number()),
+			staleAlertDays: v.optional(v.number()),
+			morningBriefingEnabled: v.optional(v.boolean()),
+			rentAlertEnabled: v.optional(v.boolean()),
+			rentAlertDays: v.optional(v.number()),
+		})),
 		dashboardMetrics: v.optional(v.array(v.string())),
 		aiPersona: v.optional(v.string()),
 		navHiddenSlots: v.optional(v.array(v.string())),

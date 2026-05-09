@@ -32,7 +32,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.create");
+		requireRole(member.permissions, "deals.create");
 
 		// Validate pipeline belongs to org
 		const pipeline = await ctx.db.get(args.pipelineId);
@@ -106,7 +106,7 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.update");
+		requireRole(member.permissions, "deals.update");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
@@ -138,7 +138,7 @@ export const moveToStage = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.changeStage");
+		requireRole(member.permissions, "deals.changeStage");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
@@ -196,7 +196,7 @@ export const closeAsDone = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.close");
+		requireRole(member.permissions, "deals.close");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
@@ -241,7 +241,7 @@ export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), dealId: v.id("deals") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.delete");
+		requireRole(member.permissions, "deals.delete");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

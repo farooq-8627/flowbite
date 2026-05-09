@@ -4,7 +4,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole, hasMinRole } from "../../../_shared/permissions";
+import { requireRole, hasPermission } from "../../../_shared/permissions";
 import { logActivity } from "../../../activityLogs/helpers";
 import { ERRORS } from "../../../_shared/errors";
 
@@ -20,7 +20,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "notes.create");
+		requireRole(member.permissions, "notes.create");
 
 		const now = Date.now();
 		const noteId = await ctx.db.insert("notes", {
@@ -63,7 +63,7 @@ export const update = orgMutation({
 		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		// Own note or admin
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 		if (note.authorId !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		await ctx.db.patch(args.noteId, { content: args.content, updatedAt: Date.now() });
@@ -74,7 +74,7 @@ export const togglePin = orgMutation({
 	args: { orgId: v.id("orgs"), noteId: v.id("notes") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "notes.create");
+		requireRole(member.permissions, "notes.create");
 
 		const note = await ctx.db.get(args.noteId);
 		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -91,7 +91,7 @@ export const remove = orgMutation({
 		const note = await ctx.db.get(args.noteId);
 		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 		if (note.authorId !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		await ctx.db.delete(args.noteId);

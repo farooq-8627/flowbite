@@ -22,9 +22,9 @@ export const create = orgMutation({
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 
 		if (args.scope === "org") {
-			requireRole(member.role ?? "viewer", "savedViews.createOrg");
+			requireRole(member.permissions, "savedViews.createOrg");
 		} else {
-			requireRole(member.role ?? "viewer", "savedViews.createPersonal");
+			requireRole(member.permissions, "savedViews.createPersonal");
 		}
 
 		// Validate filters is valid JSON
@@ -73,7 +73,7 @@ export const update = orgMutation({
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
 		if (view.scope === "org") {
-			requireRole(member.role ?? "viewer", "savedViews.createOrg");
+			requireRole(member.permissions, "savedViews.createOrg");
 		}
 
 		if (args.filters) {
@@ -115,7 +115,7 @@ export const remove = orgMutation({
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
 		if (view.scope === "org") {
-			requireRole(member.role ?? "viewer", "savedViews.delete");
+			requireRole(member.permissions, "savedViews.delete");
 		}
 
 		await ctx.db.delete(args.viewId);

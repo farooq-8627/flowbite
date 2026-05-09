@@ -205,48 +205,36 @@ export const PERMISSIONS: Record<string, readonly OrgRole[]> = {
 // ─── Core permission checks ───────────────────────────────────────────────────
 
 /**
- * Returns true if the given org role is allowed to perform the action.
+ * Returns true if the member's permissions array includes the required permission.
  *
- * HOW IT WORKS:
- *   Looks up the permission key in the PERMISSIONS map and checks if the role
- *   is in the allowed list. Returns false for unknown permission keys.
+ * DB-BACKED: Checks against the permissions[] resolved from orgRoles table.
+ * Custom roles work without code changes — just add permissions to the role doc.
  *
  * USAGE:
  *   ```ts
- *   if (hasPermission(member.role, "connections.create")) {
+ *   if (hasPermission(member.permissions, "connections.create")) {
  *     // show create button
  *   }
  *   ```
  */
-export function hasPermission(role: OrgRole, permission: string): boolean {
-	const allowed = PERMISSIONS[permission];
-	if (!allowed) return false;
-	return (allowed as readonly string[]).includes(role);
+export function hasPermission(permissions: string[], permission: string): boolean {
+	return permissions.includes(permission);
 }
 
 /**
- * Throws ConvexError(FORBIDDEN) if the role is NOT allowed to perform the action.
+ * Throws ConvexError(FORBIDDEN) if the member's permissions don't include the required one.
  *
- * HOW IT WORKS:
- *   Call this at the start of any protected mutation/query handler, immediately
- *   after getting the member from `requireOrgMember`. If the role is insufficient,
- *   execution stops with a FORBIDDEN error — no further code runs.
+ * DB-BACKED: Checks against the permissions[] resolved from orgRoles table.
+ * Custom roles work without code changes — just add permissions to the role doc.
  *
- * WHY THROW RATHER THAN RETURN:
- *   Throwing early is the correct pattern for auth guards. It prevents accidentally
- *   continuing past a failed permission check (no forgotten `if (!allowed) return`).
- *q
  * USAGE:
  *   ```ts
  *   const { member } = await requireOrgMember(ctx, args.orgId);
- *   requireRole(member.role, "members.remove");  // throws if not owner/admin
+ *   requireRole(member.permissions, "members.remove");  // throws if permission missing
  *   ```
- *
- * Sources:
- * - https://github.com/get-convex/convex-saas/blob/main/convex/utils.ts
  */
-export function requireRole(role: OrgRole, permission: string): void {
-	if (!hasPermission(role, permission)) {
+export function requireRole(permissions: string[], permission: string): void {
+	if (!permissions.includes(permission)) {
 		throw new ConvexError(ERRORS.FORBIDDEN);
 	}
 }
@@ -321,7 +309,7 @@ export function requirePlanFeature(plan: string, featureKey: string): void {
 
 /**
  * DB-backed permission check. Loads the member's role from `orgRoles` and
- * checks `role.permissions[]`. Falls back to legacy PERMISSIONS map if no roleId.
+ * checks `role.permissions[]`.
  *
  * Throws ConvexError(FORBIDDEN) if the user does not have the permission.
  *
@@ -343,24 +331,14 @@ export async function requirePermission(ctx: { db: any }, orgId: string, userId:
 		throw new ConvexError(ERRORS.FORBIDDEN);
 	}
 
-	// If member has a roleId, use DB role permissions
-	if (member.roleId) {
-		const role = await ctx.db.get(member.roleId);
-		if (role && Array.isArray(role.permissions)) {
-			if (!role.permissions.includes(permission)) {
-				throw new ConvexError(ERRORS.FORBIDDEN);
-			}
-			return;
-		}
+	// Resolve permissions from roleId (sole source of truth)
+	const role = await ctx.db.get(member.roleId);
+	if (!role || !Array.isArray(role.permissions)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
 	}
-
-	// Fallback: legacy string role + PERMISSIONS map
-	if (member.role) {
-		requireRole(member.role as OrgRole, permission);
-		return;
+	if (!role.permissions.includes(permission)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
 	}
-
-	throw new ConvexError(ERRORS.FORBIDDEN);
 }
 
 /**

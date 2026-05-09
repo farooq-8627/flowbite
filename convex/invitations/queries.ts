@@ -7,7 +7,6 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { orgQuery } from "../_functions/authenticated";
 import { requireRole } from "../_shared/permissions";
-import type { OrgRole } from "../_shared/validators";
 import { getOrgMember } from "../orgs/helpers";
 
 /**
@@ -48,7 +47,7 @@ export const listPending = orgQuery({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) return [];
 
-		requireRole(member.role as OrgRole, "members.invite");
+		requireRole(member.permissions, "members.invite");
 
 		return await ctx.db
 			.query("invitations")
@@ -68,7 +67,7 @@ export const listAll = orgQuery({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) return [];
 
-		requireRole(member.role as OrgRole, "members.invite");
+		requireRole(member.permissions, "members.invite");
 
 		return await ctx.db
 			.query("invitations")

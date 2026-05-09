@@ -68,7 +68,6 @@ async function seedOrg(t: ReturnType<typeof convexTest>, userId: string) {
 		await ctx.db.insert("orgMembers", {
 			orgId: id,
 			userId,
-			role: "owner",
 			roleId: ownerRoleId,
 			joinedAt: now,
 		});
@@ -92,7 +91,6 @@ async function seedViewerMember(t: ReturnType<typeof convexTest>, orgId: string,
 		await ctx.db.insert("orgMembers", {
 			orgId,
 			userId,
-			role: "viewer",
 			roleId: viewerRoleId,
 			joinedAt: now,
 		});

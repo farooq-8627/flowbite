@@ -402,3 +402,13 @@ When `features/project-management/` is built in Phase 8, the SAME `KanbanBoard` 
 // onCardMove: (taskId, from, to) => tasks.moveStatus({ taskId, toStatus: to })
 // taskCode shown in card badge (T-001, T-002...)
 ```
+
+---
+
+## Rules
+- [ ] R-KAN-01: KanbanBoard is entity-agnostic — zero entity knowledge inside the component
+- [ ] R-KAN-02: Column titles come from pipeline stages (from Settings) — never hardcoded
+- [ ] R-KAN-03: Entity labels in kanban headers/empty states MUST use dynamic labels from `orgs.entityLabels`
+- [ ] R-KAN-04: Stale/warning colors come from pipeline stage config — never hardcoded
+- [ ] R-KAN-05: RTL-safe classes only (ms-*, me-*, ps-*, pe-*)
+- [ ] R-KAN-06: rounded-[--radius] only — never rounded-md/lg

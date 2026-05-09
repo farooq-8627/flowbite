@@ -14,7 +14,7 @@ export const list = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.view");
+		requireRole(member.permissions, "companies.view");
 
 		const cap = args.limit ?? 100;
 
@@ -39,7 +39,7 @@ export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), companyId: v.id("companies") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.view");
+		requireRole(member.permissions, "companies.view");
 
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) return null;
@@ -51,7 +51,7 @@ export const getByCompanyCode = orgQuery({
 	args: { orgId: v.id("orgs"), companyCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.view");
+		requireRole(member.permissions, "companies.view");
 
 		return ctx.db
 			.query("companies")

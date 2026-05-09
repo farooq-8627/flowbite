@@ -16,8 +16,7 @@ import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
 import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
-import { requireRole, requireMinRole } from "../_shared/permissions";
-import type { OrgRole } from "../_shared/validators";
+import { requireRole } from "../_shared/permissions";
 import { invitationRoleValidator } from "../_shared/validators";
 import { logActivity } from "../activityLogs/helpers";
 import { sendNotification } from "../notifications/helpers";
@@ -425,7 +424,7 @@ export const update = orgMutation({
 		if (!member || member.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
-		requireMinRole(member.role as OrgRole, "admin");
+		requireRole(member.permissions, "org.editSettings");
 
 		const { orgId, ...updates } = args;
 
@@ -478,7 +477,7 @@ export const removeMember = orgMutation({
 		if (!actorMember || actorMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.FORBIDDEN);
 
-		requireRole(actorMember.role as OrgRole, "members.remove");
+		requireRole(actorMember.permissions, "members.remove");
 
 		const targetMember = await getOrgMember(ctx, args.orgId, args.userId);
 		if (!targetMember || targetMember.deletedAt !== undefined)
@@ -546,7 +545,7 @@ export const updateMemberRole = orgMutation({
 		if (!actorMember || actorMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.FORBIDDEN);
 
-		requireRole(actorMember.role as OrgRole, "members.changeRole");
+		requireRole(actorMember.permissions, "members.changeRole");
 
 		const targetMember = await getOrgMember(ctx, args.orgId, args.userId);
 		if (!targetMember || targetMember.deletedAt !== undefined)
@@ -597,7 +596,7 @@ export const deleteOrg = orgMutation({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
 
-		requireRole(member.role as OrgRole, "org.delete");
+		requireRole(member.permissions, "org.delete");
 
 		await ctx.db.patch(args.orgId, { deletedAt: now, updatedAt: now });
 

@@ -18,7 +18,7 @@ import { authenticatedMutation, orgMutation } from "../_functions/authenticated"
 import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions";
-import { invitationRoleValidator, type OrgRole } from "../_shared/validators";
+import { invitationRoleValidator } from "../_shared/validators";
 import { logActivity } from "../activityLogs/helpers";
 import { sendNotification } from "../notifications/helpers";
 import { getOrgMember } from "../orgs/helpers";
@@ -39,7 +39,7 @@ export const create = orgMutation({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
 
-		requireRole(member.role as OrgRole, "members.invite");
+		requireRole(member.permissions, "members.invite");
 
 		// Check for existing pending invitation to same email
 		const existing = await ctx.db
@@ -136,8 +136,9 @@ export const accept = authenticatedMutation({
 					q.eq("orgId", invitation.orgId).eq("name", capitalize(invitation.role)),
 				)
 				.first();
+			if (!roleDoc) throw new ConvexError("Role not found in this organization.");
 			await ctx.db.patch(existingMember._id, {
-				roleId: roleDoc?._id,
+				roleId: roleDoc._id,
 				deletedAt: undefined,
 				updatedAt: now,
 				joinedAt: now,
@@ -251,7 +252,7 @@ export const cancel = orgMutation({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
 
-		requireRole(member.role as OrgRole, "members.invite");
+		requireRole(member.permissions, "members.invite");
 
 		const invitation = await ctx.db.get(args.invitationId);
 		if (!invitation || invitation.orgId !== args.orgId)

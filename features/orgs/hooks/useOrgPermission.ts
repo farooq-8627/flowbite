@@ -8,7 +8,6 @@ import type { Id } from "@/convex/_generated/dataModel";
  * useOrgPermission — checks if the current user has a specific permission in an org.
  *
  * Loads the user's membership (roleId) then the role's permissions[] from DB.
- * Falls back to the legacy `role` string + PERMISSIONS map if no roleId set.
  *
  * Returns:
  *   - `true`  — user has the permission
@@ -34,28 +33,10 @@ export function useOrgPermission(
 	// Not a member
 	if (membership === null) return false;
 
-	// DB-backed: check role.permissions[]
-	if (role !== undefined && role !== null) {
-		return role.permissions.includes(permission);
-	}
+	// Role still loading
+	if (role === undefined) return null;
+	// Role not found (shouldn't happen)
+	if (role === null) return false;
 
-	// Legacy fallback: role string → static PERMISSIONS map
-	if (membership.role) {
-		return LEGACY_PERMISSIONS[permission]?.includes(membership.role) ?? false;
-	}
-
-	return false;
+	return role.permissions.includes(permission);
 }
-
-// Minimal legacy fallback — mirrors the server-side PERMISSIONS map for common checks
-const LEGACY_PERMISSIONS: Record<string, string[]> = {
-	"members.view":   ["owner", "admin", "member", "viewer"],
-	"members.invite": ["owner", "admin"],
-	"members.remove": ["owner", "admin"],
-	"leads.view":     ["owner", "admin", "member", "viewer"],
-	"leads.create":   ["owner", "admin", "member"],
-	"deals.view":     ["owner", "admin", "member", "viewer"],
-	"deals.create":   ["owner", "admin", "member"],
-	"org.viewSettings": ["owner", "admin"],
-	"org.editSettings": ["owner", "admin"],
-};

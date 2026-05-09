@@ -4,7 +4,7 @@
  */
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole, hasMinRole } from "../../../_shared/permissions";
+import { requireRole, hasPermission } from "../../../_shared/permissions";
 
 export const listForEntity = orgQuery({
 	args: {
@@ -14,9 +14,9 @@ export const listForEntity = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "notes.view");
+		requireRole(member.permissions, "notes.view");
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 
 		const notes = await ctx.db
 			.query("notes")
@@ -43,9 +43,9 @@ export const listForPerson = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "notes.view");
+		requireRole(member.permissions, "notes.view");
 
-		const isAdmin = hasMinRole(member.role ?? "viewer", "admin");
+		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
 
 		const notes = await ctx.db
 			.query("notes")

@@ -73,6 +73,9 @@
 - Status transitions: pending → completed, pending → overdue (via cron), no reverse
 - `source` field must accurately reflect origin — never override after creation
 - Overdue status is set by a scheduled job, not by client mutations
+- Reminder defaults (follow-up window, stale alert, morning briefing) read from `orgs.settings.reminderDefaults`
+- Industry-specific reminders (rent alert) shown/hidden based on `orgs.industry`
+- Reminder notification text MUST use dynamic entity labels from `orgs.entityLabels`
 
 ---
 

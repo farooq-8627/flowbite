@@ -29,13 +29,14 @@ export async function getOrgBySlug(ctx: QueryCtx, slug: string): Promise<Doc<"or
 }
 
 /**
- * Returns the org membership for a user. Returns null if not a member.
+ * Returns the org membership for a user with role and permissions resolved from roleId.
+ * Returns null if not a member.
  */
 export async function getOrgMember(
 	ctx: QueryCtx,
 	orgId: Id<"orgs">,
 	userId: Id<"users">,
-): Promise<Doc<"orgMembers"> | null> {
+): Promise<(Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] }) | null> {
 	const member = await ctx.db
 		.query("orgMembers")
 		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
@@ -43,15 +44,12 @@ export async function getOrgMember(
 
 	if (!member) return null;
 
-	// Resolve role from roleId when role string is absent
-	if (member.roleId && !member.role) {
-		const orgRole = await ctx.db.get(member.roleId);
-		if (orgRole) {
-			return { ...member, role: orgRole.name.toLowerCase() as Doc<"orgMembers">["role"] };
-		}
-	}
+	// Resolve role + permissions from roleId (sole source of truth)
+	const orgRole = await ctx.db.get(member.roleId);
+	if (!orgRole) return null;
+	const role = orgRole.name.toLowerCase() as "owner" | "admin" | "member" | "viewer";
 
-	return member;
+	return { ...member, role, permissions: orgRole.permissions };
 }
 
 /**

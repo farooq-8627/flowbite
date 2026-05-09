@@ -15,8 +15,7 @@ import { ConvexError, v } from "convex/values";
 import { authenticatedMutation } from "../_functions/authenticated";
 import { ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
-import { requireMinRole } from "../_shared/permissions";
-import type { OrgRole } from "../_shared/validators";
+import { requireRole } from "../_shared/permissions";
 import { logActivity } from "../activityLogs/helpers";
 import { getOrgMember } from "../orgs/helpers";
 
@@ -37,7 +36,7 @@ export const create = authenticatedMutation({
 
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
-		requireMinRole(member.role as OrgRole, "owner");
+		requireRole(member.permissions, "members.changeRole");
 
 		// Ensure name is unique within org
 		const existing = await ctx.db
@@ -105,7 +104,7 @@ export const update = authenticatedMutation({
 
 		const member = await getOrgMember(ctx, role.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
-		requireMinRole(member.role as OrgRole, "owner");
+		requireRole(member.permissions, "members.changeRole");
 
 		// System roles: only permissions and color can be updated, not name
 		if (role.isSystem && args.name && args.name !== role.name) {
@@ -152,11 +151,18 @@ export const remove = authenticatedMutation({
 
 		const member = await getOrgMember(ctx, role.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
-		requireMinRole(member.role as OrgRole, "owner");
+		requireRole(member.permissions, "members.changeRole");
 
 		if (role.isSystem) throw new ConvexError("Cannot delete a system role.");
 
-		// Clear roleId from all members who have this role
+		// Reassign affected members to the org's default role
+		const defaultRole = await ctx.db
+			.query("orgRoles")
+			.withIndex("by_orgId", (q) => q.eq("orgId", role.orgId))
+			.filter((q) => q.eq(q.field("isDefault"), true))
+			.first();
+		if (!defaultRole) throw new ConvexError("No default role found. Cannot delete role.");
+
 		const affectedMembers = await ctx.db
 			.query("orgMembers")
 			.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", role.orgId))
@@ -164,7 +170,7 @@ export const remove = authenticatedMutation({
 
 		for (const m of affectedMembers) {
 			if (m.roleId === args.roleId) {
-				await ctx.db.patch(m._id, { roleId: undefined, updatedAt: now });
+				await ctx.db.patch(m._id, { roleId: defaultRole._id, updatedAt: now });
 			}
 		}
 

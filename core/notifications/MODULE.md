@@ -224,6 +224,8 @@ When `sendNotification()` is called, check user preference before inserting.
 - [ ] R-NOTIF-05: Mark-read is user-scoped — one user's read state never affects another's
 - [ ] R-NOTIF-06: Notification dropdown shows first 5-8 items — "View all" links to full page
 - [ ] R-NOTIF-07: Phase 2: check user notification preferences before inserting
+- [ ] R-NOTIF-08: Notification text MUST use dynamic entity labels from `orgs.entityLabels` — never hardcode "Lead", "Deal", "Contact"
+- [ ] R-NOTIF-09: Notification preferences UI uses group-wise toggles with "Toggle All" per group (CRM, Reminders, AI, Team, System)
 
 ## Avoids
 - ❌ Never store email content in notifications — ephemeral alerts only

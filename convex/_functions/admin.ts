@@ -21,7 +21,6 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ERRORS } from "../_shared/errors";
 import { requireMinRole } from "../_shared/permissions";
-import type { OrgRole } from "../_shared/validators";
 
 export type AdminCtx = {
 	user: Doc<"users">;
@@ -62,13 +61,6 @@ export const adminQuery = customQuery(
 	customCtx(async (ctx) => resolveUser(ctx)),
 );
 
-/**
- * Admin-scoped public mutation. Injects `ctx.user` and `ctx.userId`.
- */
-export const adminMutation = customMutation(
-	mutation,
-	customCtx(async (ctx) => resolveUser(ctx)),
-);
 
 /**
  * Helper: resolves org membership AND requires admin+ role.
@@ -77,7 +69,7 @@ export const adminMutation = customMutation(
 export async function requireAdminMember(
 	ctx: QueryCtx | MutationCtx,
 	orgId: Id<"orgs">,
-): Promise<{ org: Doc<"orgs">; member: Doc<"orgMembers"> }> {
+): Promise<{ org: Doc<"orgs">; member: Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] } }> {
 	const userId = await getAuthUserId(ctx);
 	if (userId === null) throw new ConvexError(ERRORS.UNAUTHORIZED);
 
@@ -92,7 +84,12 @@ export async function requireAdminMember(
 	if (!member || member.deletedAt !== undefined)
 		throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
-	requireMinRole(member.role as OrgRole, "admin");
+	// Resolve role + permissions from roleId (sole source of truth)
+	const orgRole = await ctx.db.get(member.roleId);
+	if (!orgRole) throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+	const role = orgRole.name.toLowerCase() as "owner" | "admin" | "member" | "viewer";
 
-	return { org, member };
+	requireMinRole(role, "admin");
+
+	return { org, member: { ...member, role, permissions: orgRole.permissions } };
 }

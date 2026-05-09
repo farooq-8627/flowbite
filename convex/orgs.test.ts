@@ -355,12 +355,8 @@ describe("orgs.mutations.update", () => {
 
 		// Add Bob as a viewer
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bobId,
-				role: "viewer",
-				joinedAt: Date.now(),
-			});
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, orgId, bobId, "viewer");
 		});
 
 		await expect(
@@ -397,12 +393,8 @@ describe("orgs.mutations.removeMember", () => {
 
 		// Add Bob as member
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bobId,
-				role: "member",
-				joinedAt: now,
-			});
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, orgId, bobId, "member");
 		});
 
 		await asAlice.mutation(api.orgs.mutations.removeMember, { orgId, userId: bobId });
@@ -471,14 +463,10 @@ describe("orgs.mutations.updateMemberRole", () => {
 			return role!._id;
 		});
 
-		// Seed Bob as a member (with role string for legacy compat)
+		// Seed Bob as a member
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bobId,
-				role: "member",
-				joinedAt: now,
-			});
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, orgId, bobId, "member");
 		});
 
 		await asAlice.mutation(api.orgs.mutations.updateMemberRole, {
@@ -510,26 +498,24 @@ describe("orgs.mutations.updateMemberRole", () => {
 
 		// Bob is admin, Charlie is member
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bobId,
-				role: "admin",
-				joinedAt: now,
-			});
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: charlieId,
-				role: "member",
-				joinedAt: now,
-			});
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, orgId, bobId, "admin");
+			await seedOrgMember(ctx, orgId, charlieId, "member");
 		});
 
 		// Bob (admin) tries to promote Charlie — must fail (owner only)
+		const adminRoleId = await t.run(async (ctx) => {
+			const role = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Admin"))
+				.first();
+			return role!._id;
+		});
 		await expect(
 			asBob.mutation(api.orgs.mutations.updateMemberRole, {
 				orgId,
 				userId: charlieId,
-				role: "admin",
+				roleId: adminRoleId,
 			}),
 		).rejects.toThrow();
 	});
@@ -559,12 +545,8 @@ describe("orgs.mutations.deleteOrg", () => {
 
 		// Add Bob as admin — still cannot delete
 		await t.run(async (ctx) => {
-			await ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bobId,
-				role: "admin",
-				joinedAt: now,
-			});
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, orgId, bobId, "admin");
 		});
 
 		await expect(asBob.mutation(api.orgs.mutations.deleteOrg, { orgId })).rejects.toThrow();

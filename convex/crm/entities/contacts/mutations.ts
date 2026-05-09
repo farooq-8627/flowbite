@@ -32,7 +32,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "contacts.create");
+		requireRole(member.permissions, "contacts.create");
 
 		// Email dedup via index — O(log n)
 		if (args.email) {
@@ -105,7 +105,7 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "contacts.update");
+		requireRole(member.permissions, "contacts.update");
 
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
@@ -136,7 +136,7 @@ export const updateAiContext = orgMutation({
 	args: { orgId: v.id("orgs"), contactId: v.id("contacts"), aiContext: v.any() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "contacts.update");
+		requireRole(member.permissions, "contacts.update");
 
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact || contact.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -149,7 +149,7 @@ export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), contactId: v.id("contacts") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "contacts.delete");
+		requireRole(member.permissions, "contacts.delete");
 
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact || contact.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

@@ -10,7 +10,7 @@ export const listByOrg = orgQuery({
 	args: { orgId: v.id("orgs") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.view");
+		requireRole(member.permissions, "pipelines.view");
 
 		return ctx.db
 			.query("pipelines")
@@ -23,7 +23,7 @@ export const getDefault = orgQuery({
 	args: { orgId: v.id("orgs"), entityType: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.view");
+		requireRole(member.permissions, "pipelines.view");
 
 		return ctx.db
 			.query("pipelines")
@@ -39,7 +39,7 @@ export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "pipelines.view");
+		requireRole(member.permissions, "pipelines.view");
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) return null;

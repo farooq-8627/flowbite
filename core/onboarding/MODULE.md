@@ -185,3 +185,38 @@ core/onboarding/
 - Tour re-runs if `product_tour_v1` is not in `dismissedCards`
 - Custom `TourCard` component must use our design tokens (rounded-[--radius], theme colors)
 - RTL support: Onborda supports `dir="rtl"` — test with Arabic locale
+
+---
+
+## Onboarding Email Sequence (P2)
+
+After signup, send a drip email sequence teaching features. Reduces churn by keeping users engaged during the "aha moment" window.
+
+**Implementation**: Trigger.dev scheduled jobs. Emails sent via Resend (already in tech stack).
+
+```typescript
+// Trigger.dev job: triggered after org creation
+export const onboardingEmailSequence = task({
+  id: "onboarding-email-sequence",
+  run: async ({ userId, orgId, email, name }) => {
+    // Day 0: Welcome + "Add your first lead" CTA
+    await sendEmail({ to: email, template: "welcome", data: { name } });
+
+    // Day 1: "Did you know? AI can set up your workspace in 2 minutes"
+    await wait.for({ days: 1 });
+    await sendEmail({ to: email, template: "ai-setup-tip", data: { name } });
+
+    // Day 3: "Your team is waiting — invite them"
+    await wait.for({ days: 2 });
+    await sendEmail({ to: email, template: "invite-team", data: { name, orgId } });
+
+    // Day 7: "Here's what top teams do in week 1"
+    await wait.for({ days: 4 });
+    await sendEmail({ to: email, template: "week-one-tips", data: { name } });
+  },
+});
+```
+
+**Trigger point**: `convex/orgs/mutations.ts` → `create` handler → `ctx.scheduler.runAfter(0, internal.jobs.startOnboardingSequence, { userId, orgId })`
+
+**Unsubscribe**: Respect `users.notificationPreferences.onboarding_emails` toggle.

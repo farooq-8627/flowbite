@@ -25,7 +25,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "fieldDefinitions.manage");
+		requireRole(member.permissions, "fieldDefinitions.manage");
 
 		const existing = await ctx.db
 			.query("fieldDefinitions")
@@ -67,7 +67,7 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "fieldDefinitions.manage");
+		requireRole(member.permissions, "fieldDefinitions.manage");
 
 		const field = await ctx.db.get(args.fieldId);
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -85,7 +85,7 @@ export const reorder = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "fieldDefinitions.manage");
+		requireRole(member.permissions, "fieldDefinitions.manage");
 
 		await Promise.all(
 			args.fieldIds.map((id, index) =>
@@ -99,7 +99,7 @@ export const remove = orgMutation({
 	args: { orgId: v.id("orgs"), fieldId: v.id("fieldDefinitions") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "fieldDefinitions.manage");
+		requireRole(member.permissions, "fieldDefinitions.manage");
 
 		const field = await ctx.db.get(args.fieldId);
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

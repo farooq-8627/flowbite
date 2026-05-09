@@ -21,7 +21,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.create");
+		requireRole(member.permissions, "companies.create");
 
 		const companyCode = await generateEntityCode(ctx, args.orgId, "company");
 		const now = Date.now();
@@ -75,7 +75,7 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.update");
+		requireRole(member.permissions, "companies.update");
 
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
@@ -103,7 +103,7 @@ export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), companyId: v.id("companies") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "companies.delete");
+		requireRole(member.permissions, "companies.delete");
 
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

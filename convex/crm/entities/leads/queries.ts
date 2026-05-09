@@ -17,7 +17,7 @@ export const list = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "leads.view");
+		requireRole(member.permissions, "leads.view");
 
 		const cap = args.limit ?? 100;
 
@@ -50,7 +50,7 @@ export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), leadId: v.id("leads") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "leads.view");
+		requireRole(member.permissions, "leads.view");
 
 		const lead = await ctx.db.get(args.leadId);
 		if (!lead || lead.orgId !== args.orgId || lead.deletedAt !== undefined) return null;
@@ -62,7 +62,7 @@ export const getByPersonCode = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "leads.view");
+		requireRole(member.permissions, "leads.view");
 
 		return ctx.db
 			.query("leads")

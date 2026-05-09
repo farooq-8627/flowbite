@@ -272,15 +272,12 @@ describe("invitations.mutations.accept", () => {
 
 		// Create a soft-deleted member for Bob
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
-		const memberId = await t.run(async (ctx) =>
-			ctx.db.insert("orgMembers", {
-				orgId,
-				userId: bob.userId,
-				role: "member",
-				joinedAt: Date.now(),
-				deletedAt: Date.now(),
-			}),
-		);
+		const memberId = await t.run(async (ctx) => {
+			const { seedOrgMember } = await import("./_test/helpers");
+			const { memberId: mId } = await seedOrgMember(ctx, orgId, bob.userId, "member");
+			await ctx.db.patch(mId, { deletedAt: Date.now() });
+			return mId;
+		});
 
 		// Invite and accept
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
@@ -291,7 +288,10 @@ describe("invitations.mutations.accept", () => {
 		await bob.asUser.mutation(api.invitations.mutations.accept, { token });
 
 		// Verify reactivated with new role
-		const member = await t.run(async (ctx) => ctx.db.get(memberId));
+		const member = await t.run(async (ctx) => {
+			const m = await ctx.db.get(memberId);
+			return m as { deletedAt?: number; roleId: unknown } | null;
+		});
 		expect(member!.deletedAt).toBeUndefined();
 		expect(member!.roleId).toBeTruthy();
 	});

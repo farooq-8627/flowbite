@@ -15,7 +15,7 @@ export const list = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.view");
+		requireRole(member.permissions, "deals.view");
 
 		const cap = args.limit ?? 200;
 
@@ -46,7 +46,7 @@ export const listGroupedByStage = orgQuery({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.view");
+		requireRole(member.permissions, "deals.view");
 
 		const [pipeline, deals] = await Promise.all([
 			ctx.db.get(args.pipelineId),
@@ -86,7 +86,7 @@ export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), dealId: v.id("deals") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.view");
+		requireRole(member.permissions, "deals.view");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) return null;
@@ -98,7 +98,7 @@ export const getByDealCode = orgQuery({
 	args: { orgId: v.id("orgs"), dealCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "deals.view");
+		requireRole(member.permissions, "deals.view");
 
 		return ctx.db
 			.query("deals")

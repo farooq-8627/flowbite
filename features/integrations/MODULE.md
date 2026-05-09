@@ -14,6 +14,94 @@ This module connects Orbitly to the external tools teams already use. It does NO
 
 ---
 
+## Priority Order
+
+| Integration | Priority | Why |
+|---|---|---|
+| **Zapier/Make** | P2 | Covers 80% of integration needs before building custom ones. Webhook in + webhook out. |
+| **Email (Gmail/Outlook)** | P1 | CRM without email tracking is incomplete. Log sent/received emails against contacts. |
+| **WhatsApp Business API** | P1 | Gulf market primary channel. Already planned in AI module. |
+| **Usage Analytics Dashboard** | P2 | Show managers their team's activity. Reduces churn. |
+| **Google Calendar** | P2 | Sync reminders/follow-ups to calendar. |
+| **Slack** | P3 | Notifications to Slack channels. |
+
+---
+
+## Email Integration (P1)
+
+Minimum viable: log sent emails against contacts. No full email client needed.
+
+```
+What it does:
+1. User connects Gmail/Outlook via OAuth
+2. BCC orbitly@inbound.orbitly.app on any email to a contact
+3. Trigger.dev webhook receives the email
+4. Matches sender/recipient to orgMembers + contacts by email address
+5. Creates a note on the contact: type="email", content=email body, subject=subject
+6. Activity log entry: "Email sent to John Smith"
+
+No email sending from Orbitly (Phase 1). Just logging.
+```
+
+```typescript
+// convex/integrations/email/mutations.ts
+export const logInboundEmail = internalMutation({
+  args: { from: v.string(), to: v.string(), subject: v.string(), body: v.string(), orgId: v.id("orgs") },
+  handler: async (ctx, args) => {
+    // Find contact by email
+    const contact = await ctx.db.query("contacts")
+      .withIndex("by_orgId_and_email", q => q.eq("orgId", args.orgId).eq("email", args.to))
+      .first();
+    if (!contact) return; // unknown contact — ignore
+
+    // Create note
+    await ctx.db.insert("notes", {
+      orgId: args.orgId,
+      entityType: "contact",
+      entityId: contact._id,
+      content: args.body,
+      type: "email",
+      metadata: { subject: args.subject, from: args.from },
+      source: "email",
+      createdAt: Date.now(),
+    });
+  },
+});
+```
+
+---
+
+## Zapier/Make Integration (P2)
+
+Expose webhook endpoints + outbound webhooks. Covers 80% of integration needs.
+
+```
+Inbound (Zapier → Orbitly):
+  POST /{orgId}/webhooks/inbound?secret={webhookSecret}
+  Body: { trigger: "lead.created", data: { name, email, phone, source } }
+  → Calls leads.create with source: "zapier"
+
+Outbound (Orbitly → Zapier):
+  When lead created → POST to registered webhook URL
+  When deal stage changed → POST to registered webhook URL
+  When reminder due → POST to registered webhook URL
+```
+
+```typescript
+// convex/integrations/webhooks/schema additions
+webhookEndpoints: defineTable({
+  orgId: v.id("orgs"),
+  name: v.string(),
+  url: v.string(),           // outbound: where to POST
+  secret: v.string(),        // inbound: validates incoming requests
+  triggers: v.array(v.string()), // ["lead.created", "deal.stageChanged"]
+  isActive: v.boolean(),
+  ...softDelete,
+})
+```
+
+---
+
 ## Folder Structure
 
 ```

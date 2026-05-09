@@ -577,30 +577,50 @@ core/ai/
 
 ---
 
-## API Route — Thin Proxy
+## Server Action — Thin Proxy (NOT /api/chat route)
+
+> **⚠️ Architecture**: Vercel AI SDK v5+ uses **Server Actions** instead of `/api/chat` route handlers. `useChat()` accepts an `action` prop. Simpler, more secure (no manual auth header), native App Router streaming.
 
 ```typescript
-// app/api/ai/chat/route.ts
-// THIS FILE HAS ZERO AI LOGIC — only auth validation + forwarding
+// core/ai/actions/chat.ts  ← Server Action, NOT app/api/ai/chat/route.ts
+"use server";
 
-export async function POST(req: Request) {
-  // Auth from server session ONLY — never trust body
-  const session = await auth.getSession();
-  if (!session?.userId) return new Response("Unauthorized", { status: 401 });
+import { createStreamableValue } from "ai/rsc";
+import { auth } from "@/lib/auth";
+import { fetchMutation } from "convex/nextjs";
+import { internal } from "@/convex/_generated/api";
 
-  const { messages, conversationId, currentRoute, entityContext } = await req.json();
+export async function sendChatMessage(
+  messages: CoreMessage[],
+  opts: { conversationId?: string; currentRoute?: string; entityContext?: EntityContext }
+) {
+  const session = await auth(); // server session — never trust client body
+  if (!session?.userId || !session?.orgId) throw new Error("Unauthorized");
 
-  // Forward to Convex internalAction — all logic lives there
-  const stream = await convex.action(internal.ai.processChat, {
-    userId:        session.userId,
-    orgId:         session.orgId,
-    messages,
-    conversationId,
-    currentRoute,
-    entityContext,   // { entityType, entityId } — AI loads aiContext from this
+  const stream = createStreamableValue();
+  void (async () => {
+    const result = await fetchMutation(internal.ai.processChat, {
+      userId: session.userId, orgId: session.orgId,
+      messages, ...opts,
+    });
+    stream.done(result);
+  })();
+  return { output: stream.value };
+}
+```
+
+```typescript
+// core/ai/hooks/useAIChat.ts
+import { useChat } from "ai/react";
+import { sendChatMessage } from "../actions/chat";
+
+export function useAIChat() {
+  const pathname = usePathname();
+  const params   = useParams();
+  return useChat({
+    action: sendChatMessage,  // Server Action, not /api/chat
+    body: { currentRoute: pathname, entityContext: resolveEntityContext(pathname, params) },
   });
-
-  return new Response(stream, { headers: { "Content-Type": "text/event-stream" } });
 }
 ```
 
@@ -629,7 +649,104 @@ The mutations don't care — they log correctly either way.
 
 ---
 
-## Rules
+## ToolLoopAgent — No Manual While Loop
+
+> **⚠️ Architecture**: AI SDK v5+ provides `ToolLoopAgent` which handles the tool call → result → next call loop automatically. Do NOT write a manual `while (hasToolCalls)` loop.
+
+```typescript
+// convex/ai/processChat.ts (internalAction, "use node")
+import { ToolLoopAgent } from "ai"; // AI SDK v5+
+
+export const processChat = internalAction({
+  handler: async (ctx, args) => {
+    const tools = await getToolsForRole(ctx, args.userId, args.orgId);
+    const systemPrompt = await buildSystemPrompt(ctx, args);
+
+    // ToolLoopAgent handles the loop automatically:
+    // 1. Claude responds with tool calls
+    // 2. Tools execute
+    // 3. Results fed back to Claude
+    // 4. Repeat until no more tool calls
+    // 5. Final text response streamed back
+    const agent = new ToolLoopAgent({
+      model: anthropic("claude-3-5-sonnet-20241022"),
+      system: systemPrompt,
+      tools,
+      maxSteps: 10, // safety limit
+    });
+
+    return agent.stream(args.messages);
+  },
+});
+```
+
+> **Why ToolLoopAgent over manual loop:**
+> - No `while (response.finishReason === "tool_calls")` boilerplate
+> - Handles edge cases (max steps, errors) automatically
+> - Cleaner code, less surface area for bugs
+
+---
+
+## AI Field Suggestions (Industry-Based)
+
+When a user creates a new entity or opens a form, AI suggests relevant custom fields based on the org's industry. This is a lightweight, non-blocking feature.
+
+**How it works:**
+1. User opens "Add Lead" form (or Settings → CRM → Fields)
+2. Frontend calls `api.ai.suggestFields` with `{ entityType, industry, existingFields }`
+3. Convex internalAction calls Claude haiku (cheap) with industry context
+4. Returns 3-5 suggested field names + types
+5. User sees "AI Suggestions" section with one-click "Add" buttons
+
+```typescript
+// convex/ai/tools/workspace.ts
+export const suggestFields = internalAction({
+  args: {
+    entityType:     v.string(),
+    industry:       v.string(),
+    existingFields: v.array(v.string()), // field names already added
+  },
+  handler: async (ctx, args) => {
+    const prompt = `You are helping set up a CRM for a ${args.industry} business.
+      They are adding custom fields for their ${args.entityType} records.
+      They already have: ${args.existingFields.join(", ")}.
+      Suggest 3-5 additional fields that would be most useful for this industry.
+      Return JSON array: [{ name: string, type: "text"|"number"|"date"|"select"|"boolean", options?: string[] }]
+      Only suggest fields not already in the existing list.`;
+
+    const response = await callClaudeHaiku(prompt);
+    return JSON.parse(response) as FieldSuggestion[];
+  },
+});
+```
+
+```tsx
+// In Settings → CRM → Fields (and in EntityFormDialog)
+function AISuggestedFields({ entityType, industry, existingFields, onAdd }) {
+  const suggestions = useAction(api.ai.suggestFields, { entityType, industry, existingFields });
+
+  if (!suggestions?.length) return null;
+  return (
+    <div className="rounded-[--radius] border border-dashed border-primary/30 p-3 space-y-2">
+      <p className="text-xs text-muted-foreground">✨ AI suggestions for {industry}</p>
+      {suggestions.map(s => (
+        <div key={s.name} className="flex items-center justify-between">
+          <span className="text-sm">{s.name} <Badge variant="outline">{s.type}</Badge></span>
+          <Button size="sm" variant="ghost" onClick={() => onAdd(s)}>+ Add</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+**Industries with pre-built suggestion sets** (no Claude call needed — static data):
+- `real_estate` → RERA Number, Lease Expiry, Property Type, Bedrooms, View Type, Furnishing
+- `automotive` → Make, Model, Year, Mileage, VIN, Color, Fuel Type
+- `recruitment` → Position, Salary Range, Notice Period, Visa Status, Skills
+- `insurance` → Policy Type, Premium, Expiry Date, Coverage Amount, Claim History
+
+For other industries → Claude haiku call (< 1 second, < $0.001 per call).
 - [ ] R-AI-01: API route derives userId + orgId from server session — NEVER from request body
 - [ ] R-AI-02: Tool availability filtered by role BEFORE Claude call — viewer never sees destructive tools
 - [ ] R-AI-03: System prompt built from DB only — no raw user input in system prompt (injection risk)
@@ -642,6 +759,8 @@ The mutations don't care — they log correctly either way.
 - [ ] R-AI-10: AI tools are in convex/ai/tools/ ONLY — never scattered into entity modules
 - [ ] R-AI-11: entityAIContext rebuild ALWAYS via ctx.scheduler.runAfter — never synchronous
 - [ ] R-AI-12: DEBUG_AI=true env var enables full prompt + tool logging in dev only
+- [ ] R-AI-13: AI system prompt MUST use dynamic entity labels from `orgs.entityLabels` — never hardcode "Lead", "Deal", "Contact" in prompts
+- [ ] R-AI-14: AI business context (orgs.aiContext) managed in Settings → AI group by admin+ only
 
 ## Avoids
 - ❌ Never accept orgId/userId as AI tool arguments — derive from ctx

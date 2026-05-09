@@ -301,7 +301,8 @@ describe("users.mutations.setDefaultOrg", () => {
 				createdAt: now,
 				updatedAt: now,
 			});
-			await ctx.db.insert("orgMembers", { orgId: id, userId, role: "owner", joinedAt: now });
+			const { seedOrgMember } = await import("./_test/helpers");
+			await seedOrgMember(ctx, id, userId, "owner");
 			return id;
 		});
 

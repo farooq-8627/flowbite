@@ -14,7 +14,7 @@ export const create = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "tags.manage");
+		requireRole(member.permissions, "tags.manage");
 
 		const existing = await ctx.db
 			.query("tags")
@@ -39,7 +39,7 @@ export const remove = orgMutation({
 	args: { orgId: v.id("orgs"), tagId: v.id("tags") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "tags.manage");
+		requireRole(member.permissions, "tags.manage");
 
 		const tag = await ctx.db.get(args.tagId);
 		if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -63,7 +63,7 @@ export const attachToEntity = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "tags.attach");
+		requireRole(member.permissions, "tags.attach");
 
 		const tag = await ctx.db.get(args.tagId);
 		if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -96,7 +96,7 @@ export const detachFromEntity = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "tags.attach");
+		requireRole(member.permissions, "tags.attach");
 
 		const entityTag = await ctx.db
 			.query("entityTags")

@@ -38,8 +38,7 @@ export const getForPerson = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		const canViewInternal =
-			["owner", "admin"].includes(member.role ?? "");
+		const canViewInternal = member.permissions.includes("notes.viewInternal");
 
 		const cap = args.limit ?? 50;
 
@@ -107,7 +106,7 @@ export const getForOrg = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.role ?? "viewer", "activityLogs.viewOrg");
+		requireRole(member.permissions, "activityLogs.viewOrg");
 
 		const cap = args.limit ?? 100;
 

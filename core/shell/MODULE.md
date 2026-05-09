@@ -31,6 +31,67 @@
 
 ---
 
+## Missing Features (P0/P1 — Add to Shell)
+
+### Quick-Add Global "+" Button (P0)
+
+Every production CRM has a global create button accessible from any page. Add to TopNav.
+
+```tsx
+// core/shell/components/QuickAddButton.tsx
+// Keyboard shortcut: C (from anywhere)
+// Opens a command-palette-style modal with entity type selection
+
+export function QuickAddButton() {
+  return (
+    <PermissionGate permission="leads.create">
+      <Button size="sm" variant="outline" onClick={() => openQuickAdd()}>
+        <Plus className="size-4" />
+        <span className="sr-only">Quick add</span>
+      </Button>
+    </PermissionGate>
+  );
+}
+
+// QuickAddModal: shows entity type cards (Lead, Contact, Deal, Note)
+// Selecting one opens the EntityFormDialog for that type
+// Keyboard: C → opens modal, 1/2/3/4 → selects entity type
+```
+
+**Where it lives**: TopNav (always visible). Keyboard shortcut `C` from any page.
+**Permission**: Checks `leads.create` — if user can create at least one entity type, show the button.
+
+### Mobile PWA (P1)
+
+Gulf market is mobile-first. Agents are in the field. Add PWA manifest + service worker.
+
+```
+// public/manifest.json — add to project
+{
+  "name": "Orbitly CRM",
+  "short_name": "Orbitly",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "icons": [...]
+}
+
+// app/layout.tsx — add metadata
+export const metadata = {
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "default" },
+};
+```
+
+**Key mobile considerations:**
+- Bottom navigation bar on mobile (instead of left sidebar)
+- Touch-friendly tap targets (min 44px)
+- Offline: show cached data, queue mutations for when online
+- Push notifications via Web Push API (for reminders)
+
+---
+
 ## The Navigation Config — Single Source of Truth
 
 `core/shell/config/navigation.ts` drives EVERYTHING:

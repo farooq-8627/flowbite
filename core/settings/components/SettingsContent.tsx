@@ -68,7 +68,7 @@ export function SettingsContent({ activeGroup, org, orgId, permissions, query }:
 	}, [hits]);
 
 	return (
-		<main className="flex-1 overflow-y-auto p-6 bg-sidebar rounded-[var(--radius)]">
+		<main className="flex-1 overflow-y-auto p-4 md:p-6 bg-sidebar rounded-[var(--radius)]">
 			<div className="max-w-full space-y-6">
 				{isSearching ? (
 					hits.length === 0 ? (

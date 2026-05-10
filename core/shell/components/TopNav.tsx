@@ -58,8 +58,8 @@ export function TopNav({
 
         {/* Center: route-specific slot — absolutely centered so it never shifts left/right */}
         {slot && (
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto flex w-full max-w-2xl items-center gap-2 rounded-[var(--radius)] bg-muted/60 px-3 py-1.5">
+          <div className="pointer-events-none absolute inset-0 hidden items-center justify-center xl:flex">
+            <div className="pointer-events-auto flex w-fit items-center gap-2 rounded-[var(--radius)] bg-muted/60 px-3 py-1.5">
               {slot}
             </div>
           </div>

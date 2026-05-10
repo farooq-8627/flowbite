@@ -1,12 +1,12 @@
 {
 	"$schema": "https://ui.shadcn.com/schema.json",
-	"style": "radix-sera",
+	"style": "new-york",
 	"rsc": true,
 	"tsx": true,
 	"tailwind": {
 		"config": "",
 		"css": "app/[locale]/globals.css",
-		"baseColor": "taupe",
+		"baseColor": "neutral",
 		"cssVariables": true,
 		"prefix": ""
 	},
@@ -18,7 +18,5 @@
 		"ui": "@/components/ui",
 		"lib": "@/lib",
 		"hooks": "@/hooks"
-	},
-	"menuColor": "default",
-	"menuAccent": "subtle"
+	}
 }

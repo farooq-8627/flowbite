@@ -6,6 +6,7 @@
  * on the server to prevent flash-of-unstyled-content (FOUC).
  */
 
+import type { FontKey } from "../fonts/registry";
 import type { ContentLayout, NavbarStyle, SidebarCollapsible, SidebarVariant } from "./layout";
 import type { ThemeMode, ThemePreset } from "./theme";
 
@@ -43,7 +44,7 @@ export interface PreferenceTypeMap {
 	theme_preset: ThemePreset;
 	theme_mode: ThemeMode;
 	radius: string;
-	font: string;
+	font: FontKey;
 }
 
 // --- Defaults ---
@@ -57,7 +58,7 @@ export const PREFERENCE_DEFAULTS: PreferenceTypeMap = {
 	theme_preset: "tangerine",
 	theme_mode: "system",
 	radius: "0.5",
-	font: "geist",
+	font: "nunito-sans",
 } as const;
 
 // --- Persistence Config ---

@@ -11,6 +11,7 @@
  */
 
 import { create } from "zustand";
+import type { FontKey } from "@/lib/fonts/registry";
 import { getAllPreferences, setPreference } from "@/lib/preferences/preferences-storage";
 import type {
 	ContentLayout,
@@ -35,7 +36,7 @@ interface PreferencesState {
 	resolvedThemeMode: ThemeMode | null;
 	// Styling
 	radius: string;
-	font: string;
+	font: FontKey;
 	// Hydration flag
 	_hydrated: boolean;
 	// Sync flag - indicates if preferences are synced with storage
@@ -52,7 +53,7 @@ interface PreferencesActions {
 	setThemePreset: (value: ThemePreset) => void;
 	setThemeMode: (value: ThemeMode) => void;
 	setRadius: (value: string) => void;
-	setFont: (value: string) => void;
+	setFont: (value: FontKey) => void;
 	/** Initialize from cookies — call once on client mount */
 	hydrate: () => void;
 }

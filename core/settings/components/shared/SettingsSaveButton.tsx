@@ -7,19 +7,23 @@ type Props = {
 	onReset?: () => void;
 };
 
+/**
+ * Shadboard-style save button row.
+ * w-fit, left-aligned, disabled when pristine — matches shadboard ButtonLoading pattern.
+ */
 export function SettingsSaveButton({ isSubmitting, isDirty, onReset }: Props) {
 	const isDisabled = isSubmitting || !isDirty;
 	return (
-		<div className="flex justify-end gap-2 pt-4">
-			{onReset && (
-				<Button type="button" variant="outline" disabled={isDisabled} onClick={onReset}>
-					Reset
-				</Button>
-			)}
-			<Button type="submit" disabled={isDisabled}>
+		<div className="flex items-center gap-2 mt-2">
+			<Button type="submit" size="default" className="w-fit" disabled={isDisabled}>
 				{isSubmitting && <Loader2 className="me-2 size-4 animate-spin" />}
 				Save
 			</Button>
+			{onReset && (
+				<Button type="button" variant="secondary" size="default" className="w-fit" disabled={isDisabled} onClick={onReset}>
+					Reset
+				</Button>
+			)}
 		</div>
 	);
 }

@@ -11,18 +11,20 @@ import { PreferencesInitializer } from "@/components/providers/PreferencesInitia
 import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
-import { ALL_FONT_CLASSES } from "@/lib/fonts/registry";
+import { fontVars } from "@/lib/fonts/registry";
 import { ThemeBootScript } from "@/components/scripts/theme-boot";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
 
 /**
  * Root layout with all providers in correct nesting order.
  *
- * Font strategy:
- * - ALL font instances' `.variable` classes go on <body> → registers CSS variables
- * - ThemeBootScript in <head> reads cookie and sets `data-font` on <html> BEFORE hydration
- * - CSS in globals.css maps `[data-font="X"]` → `--font-sans: var(--font-X)`
- * - Result: zero FOUC for fonts
+ * Font strategy (matches next-shadcn-admin-dashboard reference):
+ * - `fontVars` (all next/font `.variable` classes) goes on <body> → registers
+ *   CSS variables like --font-nunito-sans, --font-inter on the body element.
+ * - ThemeBootScript in <head> reads cookie and sets `data-font` on <html> BEFORE hydration.
+ * - CSS in globals.css uses `html[data-font="X"] body { --app-font: var(--font-X) }`
+ *   — override lands on <body> (where variables live), not <html>.
+ * - Result: zero FOUC + instant font switching on preference change.
  *
  * Provider order (outermost → innermost):
  * 1. ConvexAuthNextjsServerProvider — server-side auth token handling
@@ -56,9 +58,6 @@ export default async function RootLayout({
 		notFound();
 	}
 	setRequestLocale(locale);
-
-	// Font variable classes — registers CSS custom properties without activating any font
-	const fontVars = ALL_FONT_CLASSES.map((f) => f.variable).join(" ");
 
 	return (
 		<ConvexAuthNextjsServerProvider>

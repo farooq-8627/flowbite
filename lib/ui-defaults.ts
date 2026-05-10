@@ -28,7 +28,7 @@ export const DEFAULT_THEME_PRESET: ThemePreset = "tangerine";
 
 // --- Font Defaults ---
 
-export const DEFAULT_FONT: FontKey = "geist";
+export const DEFAULT_FONT: FontKey = "nunito-sans";
 
 // --- Locale Defaults ---
 

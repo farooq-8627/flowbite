@@ -111,7 +111,7 @@ export function DataTableDateFilter<TData>({ column, title, multiple }: DataTabl
         <Button variant="outline" size="sm" className="border-dashed">
           {hasValue ? (
             <button type="button" aria-label={`Clear ${title} filter`} onClick={onReset}
-              className="focus-visible:ring-ring rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none">
+              className="focus-visible:ring-ring rounded-[var(--radius)] opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none">
               <XCircle className="size-4" />
             </button>
           ) : (
@@ -122,11 +122,11 @@ export function DataTableDateFilter<TData>({ column, title, multiple }: DataTabl
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
         {multiple ? (
-          <Calendar initialFocus mode="range"
+          <Calendar mode="range"
             selected={getIsDateRange(selectedDates) ? selectedDates : { from: undefined, to: undefined }}
             onSelect={onSelect} />
         ) : (
-          <Calendar initialFocus mode="single"
+          <Calendar mode="single"
             selected={!getIsDateRange(selectedDates) ? selectedDates[0] : undefined}
             onSelect={onSelect} />
         )}

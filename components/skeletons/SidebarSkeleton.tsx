@@ -25,20 +25,20 @@ export function SidebarSkeleton() {
 		<div className="flex h-full flex-col gap-4 p-4">
 			{/* Header */}
 			<div className="flex items-center gap-2">
-				<Skeleton className="h-8 w-8 rounded-md" />
+				<Skeleton className="h-8 w-8 rounded-[var(--radius)]" />
 				<Skeleton className="h-4 w-32" />
 			</div>
 
 			{/* Account Switcher */}
-			<Skeleton className="h-10 w-full rounded-md" />
+			<Skeleton className="h-10 w-full rounded-[var(--radius)]" />
 
 			{/* Nav Items */}
 			<div className="flex flex-col gap-2">
-				<Skeleton className="h-8 w-full rounded-md" />
-				<Skeleton className="h-8 w-3/4 rounded-md" />
-				<Skeleton className="h-8 w-2/3 rounded-md" />
-				<Skeleton className="h-8 w-full rounded-md" />
-				<Skeleton className="h-8 w-4/5 rounded-md" />
+				<Skeleton className="h-8 w-full rounded-[var(--radius)]" />
+				<Skeleton className="h-8 w-3/4 rounded-[var(--radius)]" />
+				<Skeleton className="h-8 w-2/3 rounded-[var(--radius)]" />
+				<Skeleton className="h-8 w-full rounded-[var(--radius)]" />
+				<Skeleton className="h-8 w-4/5 rounded-[var(--radius)]" />
 			</div>
 
 			{/* Spacer */}
@@ -46,8 +46,8 @@ export function SidebarSkeleton() {
 
 			{/* Footer */}
 			<div className="flex flex-col gap-2">
-				<Skeleton className="h-20 w-full rounded-md" />
-				<Skeleton className="h-10 w-full rounded-md" />
+				<Skeleton className="h-20 w-full rounded-[var(--radius)]" />
+				<Skeleton className="h-10 w-full rounded-[var(--radius)]" />
 			</div>
 		</div>
 	);

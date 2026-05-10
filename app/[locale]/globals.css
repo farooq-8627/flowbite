@@ -21,9 +21,9 @@
 @theme inline {
 	--color-background: var(--background);
 	--color-foreground: var(--foreground);
-	--font-sans: var(--font-geist);
+	--font-sans: var(--app-font);
 	--font-mono: var(--font-geist-mono);
-	--font-heading: var(--font-geist);
+	--font-heading: var(--app-font);
 	--radius-sm: calc(var(--radius) - 4px);
 	--radius-md: calc(var(--radius) - 2px);
 	--radius-lg: var(--radius);
@@ -63,6 +63,7 @@
 }
 
 :root {
+	--app-font: var(--font-nunito-sans);
 	--card: oklch(1 0 0);
 	--card-foreground: oklch(0.147 0.004 49.3);
 	--popover: oklch(1 0 0);
@@ -137,36 +138,46 @@
 	}
 	body {
 		@apply bg-background text-foreground;
+		/* Fallback chain: picks active font via --app-font, falls through to system fonts */
+		font-family: var(--app-font), system-ui, -apple-system, "Segoe UI", sans-serif;
 	}
 	html {
 		@apply font-sans;
 	}
 }
 
-/* Font switching via data-font attribute on <html> */
-[data-font="geist"] { --font-sans: var(--font-geist); --font-heading: var(--font-geist); }
-[data-font="inter"] { --font-sans: var(--font-inter); --font-heading: var(--font-inter); }
-[data-font="outfit"] { --font-sans: var(--font-outfit); --font-heading: var(--font-outfit); }
-[data-font="dm-sans"] { --font-sans: var(--font-dm-sans); --font-heading: var(--font-dm-sans); }
-[data-font="plus-jakarta-sans"] { --font-sans: var(--font-plus-jakarta-sans); --font-heading: var(--font-plus-jakarta-sans); }
-[data-font="montserrat"] { --font-sans: var(--font-montserrat); --font-heading: var(--font-montserrat); }
-[data-font="raleway"] { --font-sans: var(--font-raleway); --font-heading: var(--font-raleway); }
-[data-font="nunito"] { --font-sans: var(--font-nunito); --font-heading: var(--font-nunito); }
-[data-font="lato"] { --font-sans: var(--font-lato); --font-heading: var(--font-lato); }
-[data-font="roboto"] { --font-sans: var(--font-roboto); --font-heading: var(--font-roboto); }
-[data-font="open-sans"] { --font-sans: var(--font-open-sans); --font-heading: var(--font-open-sans); }
-[data-font="ibm-plex-sans"] { --font-sans: var(--font-ibm-plex-sans); --font-heading: var(--font-ibm-plex-sans); }
-[data-font="josefin-sans"] { --font-sans: var(--font-josefin-sans); --font-heading: var(--font-josefin-sans); }
-[data-font="playfair-display"] { --font-sans: var(--font-playfair-display); --font-heading: var(--font-playfair-display); }
-[data-font="merriweather"] { --font-sans: var(--font-merriweather); --font-heading: var(--font-merriweather); }
-[data-font="libre-baskerville"] { --font-sans: var(--font-libre-baskerville); --font-heading: var(--font-libre-baskerville); }
-[data-font="source-code-pro"] { --font-sans: var(--font-source-code-pro); --font-heading: var(--font-source-code-pro); }
-[data-font="geist-mono"] { --font-sans: var(--font-geist-mono); --font-heading: var(--font-geist-mono); }
-
-/* Apply font to body */
-body {
-	font-family: var(--font-sans), sans-serif;
-}
+/*
+ * Font switching.
+ *
+ * IMPORTANT: The override targets `html[data-font="X"] body` rather than just
+ * `[data-font="X"]`. This is because the font CSS variables (--font-geist,
+ * --font-nunito-sans, etc.) are registered on <body> (via `fontVars` className
+ * from next/font/google). CSS custom properties cascade parent→child, so the
+ * <html> element cannot read variables defined on its <body> child.
+ * By applying the override on <body>, `var(--font-X)` resolves correctly.
+ */
+html[data-font="nunito-sans"] body { --app-font: var(--font-nunito-sans); }
+html[data-font="geist"] body { --app-font: var(--font-geist); }
+html[data-font="inter"] body { --app-font: var(--font-inter); }
+html[data-font="noto-sans"] body { --app-font: var(--font-noto-sans); }
+html[data-font="figtree"] body { --app-font: var(--font-figtree); }
+html[data-font="public-sans"] body { --app-font: var(--font-public-sans); }
+html[data-font="dm-sans"] body { --app-font: var(--font-dm-sans); }
+html[data-font="plus-jakarta-sans"] body { --app-font: var(--font-plus-jakarta-sans); }
+html[data-font="outfit"] body { --app-font: var(--font-outfit); }
+html[data-font="montserrat"] body { --app-font: var(--font-montserrat); }
+html[data-font="raleway"] body { --app-font: var(--font-raleway); }
+html[data-font="nunito"] body { --app-font: var(--font-nunito); }
+html[data-font="roboto"] body { --app-font: var(--font-roboto); }
+html[data-font="ibm-plex-sans"] body { --app-font: var(--font-ibm-plex-sans); }
+html[data-font="playfair-display"] body { --app-font: var(--font-playfair-display); }
+html[data-font="merriweather"] body { --app-font: var(--font-merriweather); }
+html[data-font="lora"] body { --app-font: var(--font-lora); }
+html[data-font="noto-serif"] body { --app-font: var(--font-noto-serif); }
+html[data-font="roboto-slab"] body { --app-font: var(--font-roboto-slab); }
+html[data-font="geist-mono"] body { --app-font: var(--font-geist-mono); }
+html[data-font="jetbrains-mono"] body { --app-font: var(--font-jetbrains-mono); }
+html[data-font="source-code-pro"] body { --app-font: var(--font-source-code-pro); }
 
 /* Radius overrides — apply --radius to all UI components that hardcode rounded-none */
 :root [data-slot="dropdown-menu-content"],

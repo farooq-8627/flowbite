@@ -58,7 +58,7 @@ export function DataTableSliderFilter<TData>({ column, title }: DataTableSliderF
         <Button variant="outline" size="sm" className="border-dashed">
           {columnFilterValue ? (
             <button type="button" aria-label={`Clear ${title} filter`} onClick={onReset}
-              className="focus-visible:ring-ring rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none">
+              className="focus-visible:ring-ring rounded-[var(--radius)] opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none">
               <XCircle className="size-4" />
             </button>
           ) : (

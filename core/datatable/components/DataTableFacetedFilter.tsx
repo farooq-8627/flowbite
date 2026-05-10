@@ -73,7 +73,7 @@ export function DataTableFacetedFilter<TData, TValue>({
               type="button"
               aria-label={`Clear ${title} filter`}
               onClick={onReset}
-              className="focus-visible:ring-ring rounded-sm opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
+              className="focus-visible:ring-ring rounded-[var(--radius)] opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
             >
               <XCircle className="size-4" />
             </button>
@@ -84,19 +84,19 @@ export function DataTableFacetedFilter<TData, TValue>({
           {selectedValues.size > 0 && (
             <>
               <Separator orientation="vertical" className="mx-0.5 data-[orientation=vertical]:h-4" />
-              <Badge variant="secondary" className="rounded-sm px-1 font-normal lg:hidden">
+              <Badge variant="secondary" className="rounded-[var(--radius)] px-1 font-normal lg:hidden">
                 {selectedValues.size}
               </Badge>
               <div className="hidden items-center gap-1 lg:flex">
                 {selectedValues.size > 2 ? (
-                  <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+                  <Badge variant="secondary" className="rounded-[var(--radius)] px-1 font-normal">
                     {selectedValues.size} selected
                   </Badge>
                 ) : (
                   options
                     .filter((o) => selectedValues.has(o.value))
                     .map((o) => (
-                      <Badge key={o.value} variant="secondary" className="rounded-sm px-1 font-normal">
+                      <Badge key={o.value} variant="secondary" className="rounded-[var(--radius)] px-1 font-normal">
                         {o.label}
                       </Badge>
                     ))
@@ -118,7 +118,7 @@ export function DataTableFacetedFilter<TData, TValue>({
                   <CommandItem key={option.value} onSelect={() => onItemSelect(option, isSelected)}>
                     <div
                       className={cn(
-                        "border-primary flex size-4 items-center justify-center rounded-sm border",
+                        "border-primary flex size-4 items-center justify-center rounded-[var(--radius)] border",
                         isSelected ? "bg-primary" : "opacity-50 [&_svg]:invisible",
                       )}
                     >

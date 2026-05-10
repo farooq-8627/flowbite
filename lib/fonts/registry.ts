@@ -1,143 +1,174 @@
 /**
- * Font registry — 18 Google Fonts available for dynamic font switching.
- * Source: arhamkhnz/next-shadcn-admin-dashboard (adapted for Orbitly)
+ * Font registry — Google Fonts available for dynamic font switching.
  *
- * Each font exports a Next.js `next/font/google` instance with a CSS variable.
- * The active font is applied via `data-font` attribute on <html>,
- * and global CSS maps the variable to font-family.
+ * Architecture (matches next-shadcn-admin-dashboard reference):
+ * 1. Each font exports a next/font/google instance with a CSS variable.
+ * 2. `fontVars` is a space-separated string of all `.variable` class names.
+ *    It MUST be applied to <body> in the root layout → this registers
+ *    every CSS variable (e.g., --font-geist, --font-nunito-sans) on body.
+ * 3. The active font is applied via `data-font` attribute on <html>.
+ * 4. CSS in globals.css uses `html[data-font="X"] body { --app-font: var(--font-X) }`
+ *    — the override lands on <body>, where the variables actually live.
+ *    This is critical: CSS variables cascade parent→child, so the override
+ *    MUST be on the element (body) that holds the variables.
  */
 
 import {
 	DM_Sans,
+	Figtree,
 	Geist,
 	Geist_Mono,
 	IBM_Plex_Sans,
 	Inter,
-	Josefin_Sans,
-	Lato,
-	Libre_Baskerville,
+	JetBrains_Mono,
+	Lora,
 	Merriweather,
 	Montserrat,
+	Noto_Sans,
+	Noto_Serif,
 	Nunito,
-	Open_Sans,
+	Nunito_Sans,
 	Outfit,
 	Playfair_Display,
 	Plus_Jakarta_Sans,
+	Public_Sans,
 	Raleway,
 	Roboto,
+	Roboto_Slab,
 	Source_Code_Pro,
 } from "next/font/google";
 
 // --- Font Instances ---
 
-export const geist = Geist({
+const nunitoSans = Nunito_Sans({
+	subsets: ["latin"],
+	variable: "--font-nunito-sans",
+	display: "swap",
+});
+
+const geist = Geist({
 	subsets: ["latin"],
 	variable: "--font-geist",
 	display: "swap",
 });
 
-export const geistMono = Geist_Mono({
+const geistMono = Geist_Mono({
 	subsets: ["latin"],
 	variable: "--font-geist-mono",
 	display: "swap",
 });
 
-export const inter = Inter({
+const inter = Inter({
 	subsets: ["latin"],
 	variable: "--font-inter",
 	display: "swap",
 });
 
-export const outfit = Outfit({
+const notoSans = Noto_Sans({
+	subsets: ["latin"],
+	variable: "--font-noto-sans",
+	display: "swap",
+});
+
+const outfit = Outfit({
 	subsets: ["latin"],
 	variable: "--font-outfit",
 	display: "swap",
 });
 
-export const dmSans = DM_Sans({
+const dmSans = DM_Sans({
 	subsets: ["latin"],
 	variable: "--font-dm-sans",
 	display: "swap",
 });
 
-export const plusJakartaSans = Plus_Jakarta_Sans({
+const plusJakartaSans = Plus_Jakarta_Sans({
 	subsets: ["latin"],
 	variable: "--font-plus-jakarta-sans",
 	display: "swap",
 });
 
-export const montserrat = Montserrat({
+const publicSans = Public_Sans({
+	subsets: ["latin"],
+	variable: "--font-public-sans",
+	display: "swap",
+});
+
+const figtree = Figtree({
+	subsets: ["latin"],
+	variable: "--font-figtree",
+	display: "swap",
+});
+
+const montserrat = Montserrat({
 	subsets: ["latin"],
 	variable: "--font-montserrat",
 	display: "swap",
 });
 
-export const raleway = Raleway({
+const raleway = Raleway({
 	subsets: ["latin"],
 	variable: "--font-raleway",
 	display: "swap",
 });
 
-export const nunito = Nunito({
+const nunito = Nunito({
 	subsets: ["latin"],
 	variable: "--font-nunito",
 	display: "swap",
 });
 
-export const lato = Lato({
-	weight: ["100", "300", "400", "700", "900"],
-	subsets: ["latin"],
-	variable: "--font-lato",
-	display: "swap",
-});
-
-export const roboto = Roboto({
-	weight: ["100", "300", "400", "500", "700", "900"],
+const roboto = Roboto({
 	subsets: ["latin"],
 	variable: "--font-roboto",
 	display: "swap",
 });
 
-export const openSans = Open_Sans({
-	subsets: ["latin"],
-	variable: "--font-open-sans",
-	display: "swap",
-});
-
-export const ibmPlexSans = IBM_Plex_Sans({
+const ibmPlexSans = IBM_Plex_Sans({
 	weight: ["100", "200", "300", "400", "500", "600", "700"],
 	subsets: ["latin"],
 	variable: "--font-ibm-plex-sans",
 	display: "swap",
 });
 
-export const josefinSans = Josefin_Sans({
-	subsets: ["latin"],
-	variable: "--font-josefin-sans",
-	display: "swap",
-});
-
-export const playfairDisplay = Playfair_Display({
+const playfairDisplay = Playfair_Display({
 	subsets: ["latin"],
 	variable: "--font-playfair-display",
 	display: "swap",
 });
 
-export const merriweather = Merriweather({
+const merriweather = Merriweather({
 	weight: ["300", "400", "700", "900"],
 	subsets: ["latin"],
 	variable: "--font-merriweather",
 	display: "swap",
 });
 
-export const libreBaskerville = Libre_Baskerville({
-	weight: ["400", "700"],
+const lora = Lora({
 	subsets: ["latin"],
-	variable: "--font-libre-baskerville",
+	variable: "--font-lora",
 	display: "swap",
 });
 
-export const sourceCodePro = Source_Code_Pro({
+const notoSerif = Noto_Serif({
+	subsets: ["latin"],
+	variable: "--font-noto-serif",
+	display: "swap",
+});
+
+const robotoSlab = Roboto_Slab({
+	subsets: ["latin"],
+	variable: "--font-roboto-slab",
+	display: "swap",
+});
+
+const jetBrainsMono = JetBrains_Mono({
+	subsets: ["latin"],
+	variable: "--font-jetbrains-mono",
+	display: "swap",
+});
+
+const sourceCodePro = Source_Code_Pro({
 	subsets: ["latin"],
 	variable: "--font-source-code-pro",
 	display: "swap",
@@ -150,111 +181,66 @@ export interface FontEntry {
 	label: string;
 	variable: string;
 	category: "sans-serif" | "serif" | "monospace";
+	font: { variable: string };
 }
-
-export const FONT_REGISTRY: FontEntry[] = [
-	{ key: "geist", label: "Geist", variable: "--font-geist", category: "sans-serif" },
-	{ key: "inter", label: "Inter", variable: "--font-inter", category: "sans-serif" },
-	{ key: "outfit", label: "Outfit", variable: "--font-outfit", category: "sans-serif" },
-	{ key: "dm-sans", label: "DM Sans", variable: "--font-dm-sans", category: "sans-serif" },
-	{
-		key: "plus-jakarta-sans",
-		label: "Plus Jakarta Sans",
-		variable: "--font-plus-jakarta-sans",
-		category: "sans-serif",
-	},
-	{
-		key: "montserrat",
-		label: "Montserrat",
-		variable: "--font-montserrat",
-		category: "sans-serif",
-	},
-	{ key: "raleway", label: "Raleway", variable: "--font-raleway", category: "sans-serif" },
-	{ key: "nunito", label: "Nunito", variable: "--font-nunito", category: "sans-serif" },
-	{ key: "lato", label: "Lato", variable: "--font-lato", category: "sans-serif" },
-	{ key: "roboto", label: "Roboto", variable: "--font-roboto", category: "sans-serif" },
-	{ key: "open-sans", label: "Open Sans", variable: "--font-open-sans", category: "sans-serif" },
-	{
-		key: "ibm-plex-sans",
-		label: "IBM Plex Sans",
-		variable: "--font-ibm-plex-sans",
-		category: "sans-serif",
-	},
-	{
-		key: "josefin-sans",
-		label: "Josefin Sans",
-		variable: "--font-josefin-sans",
-		category: "sans-serif",
-	},
-	{
-		key: "playfair-display",
-		label: "Playfair Display",
-		variable: "--font-playfair-display",
-		category: "serif",
-	},
-	{
-		key: "merriweather",
-		label: "Merriweather",
-		variable: "--font-merriweather",
-		category: "serif",
-	},
-	{
-		key: "libre-baskerville",
-		label: "Libre Baskerville",
-		variable: "--font-libre-baskerville",
-		category: "serif",
-	},
-	{
-		key: "source-code-pro",
-		label: "Source Code Pro",
-		variable: "--font-source-code-pro",
-		category: "monospace",
-	},
-	{
-		key: "geist-mono",
-		label: "Geist Mono",
-		variable: "--font-geist-mono",
-		category: "monospace",
-	},
-];
-
-/** Font key type */
-export type FontKey = (typeof FONT_REGISTRY)[number]["key"];
-
-/** Font options for select dropdowns */
-export const fontOptions = FONT_REGISTRY.map((f) => ({ key: f.key, label: f.label }));
 
 /**
- * All font instances — spread their className onto <html> in the root layout.
- * This registers the CSS variables without activating them.
+ * All fonts in display order. Default (nunito-sans) comes first.
+ * Each entry includes the next/font instance so fontVars can be built automatically.
  */
-export const ALL_FONT_CLASSES = [
-	geist,
-	geistMono,
-	inter,
-	outfit,
-	dmSans,
-	plusJakartaSans,
-	montserrat,
-	raleway,
-	nunito,
-	lato,
-	roboto,
-	openSans,
-	ibmPlexSans,
-	josefinSans,
-	playfairDisplay,
-	merriweather,
-	libreBaskerville,
-	sourceCodePro,
-];
+export const FONT_REGISTRY = [
+	{ key: "nunito-sans", label: "Nunito Sans", variable: "--font-nunito-sans", category: "sans-serif", font: nunitoSans },
+	{ key: "geist", label: "Geist", variable: "--font-geist", category: "sans-serif", font: geist },
+	{ key: "inter", label: "Inter", variable: "--font-inter", category: "sans-serif", font: inter },
+	{ key: "noto-sans", label: "Noto Sans", variable: "--font-noto-sans", category: "sans-serif", font: notoSans },
+	{ key: "figtree", label: "Figtree", variable: "--font-figtree", category: "sans-serif", font: figtree },
+	{ key: "public-sans", label: "Public Sans", variable: "--font-public-sans", category: "sans-serif", font: publicSans },
+	{ key: "dm-sans", label: "DM Sans", variable: "--font-dm-sans", category: "sans-serif", font: dmSans },
+	{ key: "plus-jakarta-sans", label: "Plus Jakarta Sans", variable: "--font-plus-jakarta-sans", category: "sans-serif", font: plusJakartaSans },
+	{ key: "outfit", label: "Outfit", variable: "--font-outfit", category: "sans-serif", font: outfit },
+	{ key: "montserrat", label: "Montserrat", variable: "--font-montserrat", category: "sans-serif", font: montserrat },
+	{ key: "raleway", label: "Raleway", variable: "--font-raleway", category: "sans-serif", font: raleway },
+	{ key: "nunito", label: "Nunito", variable: "--font-nunito", category: "sans-serif", font: nunito },
+	{ key: "roboto", label: "Roboto", variable: "--font-roboto", category: "sans-serif", font: roboto },
+	{ key: "ibm-plex-sans", label: "IBM Plex Sans", variable: "--font-ibm-plex-sans", category: "sans-serif", font: ibmPlexSans },
+	{ key: "playfair-display", label: "Playfair Display", variable: "--font-playfair-display", category: "serif", font: playfairDisplay },
+	{ key: "merriweather", label: "Merriweather", variable: "--font-merriweather", category: "serif", font: merriweather },
+	{ key: "lora", label: "Lora", variable: "--font-lora", category: "serif", font: lora },
+	{ key: "noto-serif", label: "Noto Serif", variable: "--font-noto-serif", category: "serif", font: notoSerif },
+	{ key: "roboto-slab", label: "Roboto Slab", variable: "--font-roboto-slab", category: "serif", font: robotoSlab },
+	{ key: "geist-mono", label: "Geist Mono", variable: "--font-geist-mono", category: "monospace", font: geistMono },
+	{ key: "jetbrains-mono", label: "JetBrains Mono", variable: "--font-jetbrains-mono", category: "monospace", font: jetBrainsMono },
+	{ key: "source-code-pro", label: "Source Code Pro", variable: "--font-source-code-pro", category: "monospace", font: sourceCodePro },
+] as const satisfies readonly FontEntry[];
 
-/** Get the CSS variable for a given font key */
+/** Font key type — union of every `key` in the registry */
+export type FontKey = (typeof FONT_REGISTRY)[number]["key"];
+
+/** All valid font keys (for runtime validation) */
+export const FONT_KEYS = FONT_REGISTRY.map((f) => f.key) as readonly FontKey[];
+
+/** Font options for select dropdowns */
+export const fontOptions = FONT_REGISTRY.map((f) => ({
+	key: f.key,
+	label: f.label,
+	category: f.category,
+}));
+
+/**
+ * Space-separated string of every font's `.variable` className.
+ * MUST be applied to <body> in the root layout so all font CSS variables
+ * are defined on the body element. The CSS selector
+ * `html[data-font="X"] body { --app-font: var(--font-X) }` then reads
+ * these variables from body (where they live) when setting --app-font.
+ */
+export const fontVars = FONT_REGISTRY.map((f) => f.font.variable).join(" ");
+
+/** Get the CSS variable name for a given font key (fallback: --font-nunito-sans) */
 export function getFontVariable(key: string): string {
-	return FONT_REGISTRY.find((f) => f.key === key)?.variable ?? "--font-geist";
+	return FONT_REGISTRY.find((f) => f.key === key)?.variable ?? "--font-nunito-sans";
 }
 
-/** Get the combined className string for all fonts (for root layout) */
-export function getAllFontClassNames(): string {
-	return ALL_FONT_CLASSES.map((f) => f.className).join(" ");
+/** Validate that a string is a known font key */
+export function isValidFontKey(value: string): value is FontKey {
+	return (FONT_KEYS as readonly string[]).includes(value);
 }

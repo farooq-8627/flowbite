@@ -414,8 +414,31 @@ export const update = orgMutation({
 			v.object({
 				defaultCurrency: v.optional(v.string()),
 				timezone: v.optional(v.string()),
+				leadStaleAfterDays: v.optional(v.number()),
+				badgeCountsVisible: v.optional(v.boolean()),
+				codePrefixes: v.optional(v.object({
+					person: v.optional(v.string()),
+					deal: v.optional(v.string()),
+					company: v.optional(v.string()),
+					followup: v.optional(v.string()),
+				})),
+				modules: v.optional(v.array(v.object({
+					slot: v.string(),
+					label: v.optional(v.string()),
+					hidden: v.optional(v.boolean()),
+					order: v.optional(v.number()),
+				}))),
+				reminderDefaults: v.optional(v.object({
+					followUpWindowHours: v.optional(v.number()),
+					staleAlertDays: v.optional(v.number()),
+					morningBriefingEnabled: v.optional(v.boolean()),
+					morningBriefingTime: v.optional(v.string()),
+					rentAlertDays: v.optional(v.number()),
+					rentAlertEnabled: v.optional(v.boolean()),
+				})),
 			}),
 		),
+		aiContext: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -426,29 +449,47 @@ export const update = orgMutation({
 
 		requireRole(member.permissions, "org.editSettings");
 
-		const { orgId, ...updates } = args;
+		const { orgId, settings: newSettings, ...directUpdates } = args;
 
-		if (updates.slug) {
-			const existing = await getOrgBySlug(ctx, updates.slug);
+		if (directUpdates.slug) {
+			const existing = await getOrgBySlug(ctx, directUpdates.slug);
 			if (existing && existing._id !== orgId) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
 		}
 
 		// Validate entity label slugs against reserved route segments
-		if (updates.entityLabels) {
+		if (directUpdates.entityLabels) {
 			const RESERVED_ROUTE_SEGMENTS = [
 				"profile", "settings", "notifications", "companies", "deals",
 				"join", "dashboard", "app", "help", "support", "docs", "status",
 				"platform", "api", "admin", "billing", "auth", "onboarding",
 				"signin", "signup", "pricing", "portal",
 			];
-			for (const [, label] of Object.entries(updates.entityLabels)) {
+			for (const [, label] of Object.entries(directUpdates.entityLabels)) {
 				if (label?.slug && RESERVED_ROUTE_SEGMENTS.includes(label.slug)) {
 					throw new ConvexError(`Entity slug "${label.slug}" conflicts with a reserved route. Choose a different slug.`);
 				}
 			}
 		}
 
-		await ctx.db.patch(orgId, { ...updates, updatedAt: now });
+		// Merge settings (shallow merge at top level, deep merge for nested objects)
+		const patchData: Record<string, unknown> = { ...directUpdates, updatedAt: now };
+		if (newSettings) {
+			const org = await ctx.db.get(orgId);
+			const existing = org?.settings ?? {};
+			patchData.settings = {
+				...existing,
+				...newSettings,
+				// Deep merge nested objects
+				...(newSettings.codePrefixes && {
+					codePrefixes: { ...(existing as any).codePrefixes, ...newSettings.codePrefixes },
+				}),
+				...(newSettings.reminderDefaults && {
+					reminderDefaults: { ...(existing as any).reminderDefaults, ...newSettings.reminderDefaults },
+				}),
+			};
+		}
+
+		await ctx.db.patch(orgId, patchData);
 
 		await logActivity(ctx, {
 			orgId,

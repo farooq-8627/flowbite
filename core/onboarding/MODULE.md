@@ -33,7 +33,7 @@ core/onboarding/
 | O9 | Industry step | Grid of industry cards. Selecting seeds DEFAULT pipeline for that industry (pipeline seeding pending). |
 | O10 | No field templates at onboarding | Keep it fast. Field setup happens via AI Workspace Setup after dashboard loads. |
 | O11 | Right panel changes per step | Each step passes its own `panel` props to `AuthShellLayout`. Step 1=workspace icon, Step 2=briefcase, Step 3=rocket. |
-| O12 | Border-radius | All `rounded-*` use `rounded-[--radius]`. Never hardcode. |
+| O12 | Border-radius | All `rounded-*` use `rounded-[var(--radius)]`. Never hardcode. |
 | O13 | RTL-safe classes | `start-0`, `border-e`, `text-start` etc. No `left-*`, `right-*`, `border-l`, `border-r`. |
 | O14 | No hardcoded app strings | `APP_CONFIG.name`, `APP_CONFIG.description`, `APP_CONFIG.url` everywhere. |
 
@@ -183,7 +183,7 @@ core/onboarding/
 - Tour runs AFTER onboarding wizard (not during)
 - Tour is skippable — never block the user
 - Tour re-runs if `product_tour_v1` is not in `dismissedCards`
-- Custom `TourCard` component must use our design tokens (rounded-[--radius], theme colors)
+- Custom `TourCard` component must use our design tokens (rounded-[var(--radius)], theme colors)
 - RTL support: Onborda supports `dir="rtl"` — test with Arabic locale
 
 ---

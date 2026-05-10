@@ -38,7 +38,7 @@ export function KanbanColumnHeader({
           type="button"
           aria-label="Move column"
           className={cn(
-            "flex h-8 w-8 items-center justify-center rounded-[--radius]",
+            "flex h-8 w-8 items-center justify-center rounded-[var(--radius)]",
             "text-secondary-foreground/50 cursor-grab hover:bg-accent",
           )}
         >

@@ -110,6 +110,43 @@ export const deleteAccount = authenticatedMutation({
 	},
 });
 
+/**
+ * Update notification preferences for the current user.
+ * Any authenticated user can update their own preferences (no role check needed).
+ * Merges with existing preferences — only provided keys are updated.
+ */
+export const updateNotificationPreferences = authenticatedMutation({
+	args: {
+		preferences: v.object({
+			lead_assigned: v.optional(v.boolean()),
+			lead_converted: v.optional(v.boolean()),
+			contact_assigned: v.optional(v.boolean()),
+			deal_assigned: v.optional(v.boolean()),
+			deal_stage_changed: v.optional(v.boolean()),
+			deal_won: v.optional(v.boolean()),
+			deal_stale: v.optional(v.boolean()),
+			reminder_due: v.optional(v.boolean()),
+			reminder_overdue: v.optional(v.boolean()),
+			ai_action_completed: v.optional(v.boolean()),
+			ai_workspace_setup: v.optional(v.boolean()),
+			member_invited: v.optional(v.boolean()),
+			member_joined: v.optional(v.boolean()),
+			role_changed: v.optional(v.boolean()),
+			billing_trial_ending: v.optional(v.boolean()),
+			billing_suspended: v.optional(v.boolean()),
+			csv_import_complete: v.optional(v.boolean()),
+			csv_import_failed: v.optional(v.boolean()),
+		}),
+	},
+	handler: async (ctx, args) => {
+		const existing = ctx.user.notificationPreferences ?? {};
+		await ctx.db.patch(ctx.userId, {
+			notificationPreferences: { ...existing, ...args.preferences },
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 // ─── Internal mutations ───────────────────────────────────────────────────────
 
 /**

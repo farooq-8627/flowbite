@@ -41,7 +41,7 @@ All border-radius values must use the CSS variable `--radius` (set by the theme 
 
 | ❌ Banned | ✅ Use instead |
 |---|---|
-| `rounded-md`, `rounded-lg`, `rounded-xl` | `rounded-[--radius]` |
+| `rounded-md`, `rounded-lg`, `rounded-xl` | `rounded-[var(--radius)]` |
 | `rounded-full` | OK only for avatars/pills/dots |
 | `border-radius: 8px` in CSS | `border-radius: var(--radius)` |
 

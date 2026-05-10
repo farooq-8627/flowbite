@@ -126,7 +126,7 @@ function WorkspaceStep({
           <FieldLabel htmlFor="org-slug">URL Slug</FieldLabel>
           <div
             className={cn(
-              "flex items-center rounded-[--radius] border bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
+              "flex items-center rounded-[var(--radius)] border bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
               slugTaken && "border-destructive",
             )}
           >
@@ -211,7 +211,7 @@ function IndustryStep({
                 type="button"
                 onClick={() => setIndustry(item.id)}
                 className={cn(
-                  "rounded-[--radius] border px-3 py-2 text-start text-sm transition-colors",
+                  "rounded-[var(--radius)] border px-3 py-2 text-start text-sm transition-colors",
                   industry === item.id
                     ? "border-primary bg-primary/10 font-medium text-primary"
                     : "border-border bg-background hover:bg-muted",
@@ -275,7 +275,7 @@ function CompleteStep({
     setLoading(true);
     try {
       const { slug } = await markComplete({ orgId });
-      router.push(`/${slug}/dashboard`);
+      router.push(`/${slug}`);
     } catch (err) {
       toast.mutationError(err, "Failed to complete setup. Please try again.");
       setLoading(false);
@@ -298,7 +298,7 @@ function CompleteStep({
 
       <div className="w-full space-y-2">
         {["Workspace created", "Industry configured", "Default pipeline ready"].map((label) => (
-          <div key={label} className="flex items-center gap-3 rounded-[--radius] border border-border bg-muted/40 px-4 py-2.5">
+          <div key={label} className="flex items-center gap-3 rounded-[var(--radius)] border border-border bg-muted/40 px-4 py-2.5">
             <span className="font-bold text-primary">✓</span>
             <span className="text-sm">{label}</span>
           </div>

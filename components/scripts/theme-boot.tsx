@@ -14,6 +14,7 @@ export function ThemeBootScript() {
     navbar_style: PREFERENCE_DEFAULTS.navbar_style,
     sidebar_variant: PREFERENCE_DEFAULTS.sidebar_variant,
     sidebar_collapsible: PREFERENCE_DEFAULTS.sidebar_collapsible,
+    radius: PREFERENCE_DEFAULTS.radius,
   });
 
   const prefix = JSON.stringify(COOKIE_PREFIX);
@@ -37,6 +38,7 @@ export function ThemeBootScript() {
     root.setAttribute("data-navbar-style",g("navbar_style"));
     root.setAttribute("data-sidebar-variant",g("sidebar_variant"));
     root.setAttribute("data-sidebar-collapsible",g("sidebar_collapsible"));
+    root.style.setProperty("--radius",g("radius")+"rem");
   }catch(e){console.warn("ThemeBootScript:",e)}
 })();`;
 

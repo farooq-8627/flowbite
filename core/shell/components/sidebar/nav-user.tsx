@@ -34,7 +34,7 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 			<SidebarMenu>
 				<SidebarMenuItem>
 					<div className="flex h-10 items-center gap-2 px-2">
-						<Skeleton className="size-7 rounded-[--radius]" />
+						<Skeleton className="size-7 rounded-[var(--radius)]" />
 						<div className="flex-1 space-y-1">
 							<Skeleton className="h-3 w-20" />
 							<Skeleton className="h-2.5 w-28" />
@@ -55,10 +55,10 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 			<SidebarMenuItem>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton className="h-12 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:p-1!">
-							<Avatar className="size-6 rounded-[--radius]">
+						<SidebarMenuButton className="h-12 cursor-pointer data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground group-data-[collapsible=icon]:p-1!">
+							<Avatar className="size-6 rounded-[var(--radius)]">
 								<AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
-								<AvatarFallback className="rounded-[--radius] text-xs">
+								<AvatarFallback className="rounded-[var(--radius)] text-xs">
 									{getInitials(name)}
 								</AvatarFallback>
 							</Avatar>
@@ -69,16 +69,16 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 						</SidebarMenuButton>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent
-						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-[--radius]"
+						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-[var(--radius)]"
 						side={isMobile ? "bottom" : "right"}
 						align="end"
 						sideOffset={4}
 					>
 						<DropdownMenuLabel className="p-0 font-normal">
 							<div className="flex items-center gap-2 px-2 py-2 text-sm">
-								<Avatar className="size-7 rounded-[--radius]">
+								<Avatar className="size-7 rounded-[var(--radius)]">
 									<AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
-									<AvatarFallback className="rounded-[--radius] text-xs">
+									<AvatarFallback className="rounded-[var(--radius)] text-xs">
 										{getInitials(name)}
 									</AvatarFallback>
 								</Avatar>
@@ -100,7 +100,7 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 							</DropdownMenuItem>
 							{orgSlug && (
 								<DropdownMenuItem asChild>
-									<Link prefetch={false} href={`/${orgSlug}/dashboard/settings`}>
+									<Link prefetch={false} href={`/${orgSlug}/settings`}>
 										<Settings className="size-4 shrink-0" />
 										Settings
 									</Link>

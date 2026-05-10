@@ -115,7 +115,7 @@ function ThemeToggleButton() {
       <TooltipTrigger asChild>
         <button
           type="button" onClick={toggle} aria-label={label}
-          className="flex size-7 shrink-0 items-center justify-center rounded-[--radius] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius)] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
         >
           <Icon className="size-4" />
         </button>
@@ -160,7 +160,7 @@ function FullscreenToggleButton() {
       <TooltipTrigger asChild>
         <button
           type="button" onClick={toggle} aria-label={label}
-          className="flex size-7 shrink-0 items-center justify-center rounded-[--radius] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius)] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
         >
           <Icon className="size-4" />
         </button>
@@ -193,19 +193,14 @@ function LanguageDropdownButton() {
 
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button" aria-label="Switch language"
-              className="flex size-7 shrink-0 items-center justify-center rounded-[--radius] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-            >
-              <Languages className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="right">Language</TooltipContent>
-      </Tooltip>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button" aria-label="Switch language"
+          className="flex size-7 shrink-0 items-center justify-center rounded-[var(--radius)] cursor-pointer text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+        >
+          <Languages className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
 
       <DropdownMenuContent side="right" align="end" className="min-w-36">
         {LOCALES.map((l) => (

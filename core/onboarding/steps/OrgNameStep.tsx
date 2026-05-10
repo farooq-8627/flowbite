@@ -67,7 +67,7 @@ export function OrgNameStep() {
 
           <Field className="gap-1.5">
             <FieldLabel htmlFor="org-slug">URL Slug</FieldLabel>
-            <div className="flex items-center rounded-[--radius] border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+            <div className="flex items-center rounded-[var(--radius)] border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
               <span className="select-none border-r border-input px-3 py-2 text-muted-foreground text-sm">orbitly.app/</span>
               <input
                 id="org-slug"

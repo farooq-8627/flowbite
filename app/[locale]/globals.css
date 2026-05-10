@@ -180,8 +180,7 @@ body {
 :root [data-slot="command-dialog-content"],
 :root [data-slot="navigation-menu-viewport"],
 :root [data-slot="combobox-content"],
-:root [data-slot="menubar-content"],
-:root [data-slot="sheet-content"] {
+:root [data-slot="menubar-content"] {
 	border-radius: var(--radius) !important;
 }
 

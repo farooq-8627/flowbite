@@ -565,7 +565,7 @@ From analyzing production CRMs (HubSpot, Pipedrive, Close.com, Folk):
 | **next-cloudinary** | Decided Convex `_storage` for files | Remove from tech-stack.md if not using. |
 | **PostHog** | Good choice but not installed/configured yet | Install and add tracking events before launch |
 | **No rate limiting on frontend** | Users can spam mutations | Add debounce on all save buttons (use `use-debounced-callback`) |
-| **`adminMutation` naming** | Name implies security gate but it only injects user | ✅ Documented in SETTINGS_CODE_ARCHITECTURE.md — always call `requireRole()` explicitly inside handler |
+| **`adminMutation` naming** | Name implies security gate but it only injects user | ✅ **Deleted** — unused, misleading. All mutations use `orgMutation` + explicit `requireRole()` |
 | **`/api/chat` route for AI** | AI SDK v5+ uses Server Actions | ✅ Updated in `core/ai/MODULE.md` — use Server Action with `action` prop |
 | **Manual tool loop** | AI SDK v5+ provides `ToolLoopAgent` | ✅ Updated in `core/ai/MODULE.md` — use `ToolLoopAgent` |
 | **Appearance gated to admin+** | Per-user cookies, no org impact | ✅ Fixed — all users get Appearance settings |

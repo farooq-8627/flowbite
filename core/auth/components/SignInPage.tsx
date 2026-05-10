@@ -135,7 +135,7 @@ export function SignInPage() {
               </Field>
             </FieldGroup>
 
-            <Button className="w-full rounded-[--radius]" type="submit" disabled={loading || !!oauthLoading}>
+            <Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading || !!oauthLoading}>
               {loading ? "Signing in…" : "Login"}
             </Button>
           </form>

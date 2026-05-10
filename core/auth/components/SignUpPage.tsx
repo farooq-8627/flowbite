@@ -136,7 +136,7 @@ export function SignUpPage() {
               </Field>
             </FieldGroup>
 
-            <Button className="w-full rounded-[--radius]" type="submit" disabled={loading || !!oauthLoading}>
+            <Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading || !!oauthLoading}>
               {loading ? "Creating account…" : "Register"}
             </Button>
           </form>
@@ -152,7 +152,7 @@ export function SignUpPage() {
             </button>
 
             {joinExisting && (
-              <div className="mt-3 space-y-3 rounded-[--radius] border border-border bg-muted/40 p-4">
+              <div className="mt-3 space-y-3 rounded-[var(--radius)] border border-border bg-muted/40 p-4">
                 <p className="text-muted-foreground text-xs">
                   Enter the Org ID shared by your admin. A confirmation request will be sent to them.
                 </p>
@@ -160,7 +160,7 @@ export function SignUpPage() {
                   <FieldLabel htmlFor="org-id">Org ID</FieldLabel>
                   <Input id="org-id" name="orgId" placeholder="org_xxxxxxxx" autoComplete="off" />
                 </Field>
-                <Button variant="outline" className="w-full rounded-[--radius]" type="button" disabled>
+                <Button variant="outline" className="w-full rounded-[var(--radius)]" type="button" disabled>
                   Request to Join (coming soon)
                 </Button>
               </div>

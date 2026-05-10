@@ -111,7 +111,7 @@ export function VerifyEmailPage() {
 					</FieldGroup>
 
 					<Button
-						className="w-full rounded-[--radius]"
+						className="w-full rounded-[var(--radius)]"
 						type="submit"
 						disabled={loading || code.length < 6}
 					>

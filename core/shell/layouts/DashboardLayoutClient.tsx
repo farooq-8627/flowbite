@@ -7,9 +7,10 @@ import { AIChatPanel, AIChatPanelContent } from "@/core/shell/components/ai-chat
 import { TopNav } from "@/core/shell/components/TopNav";
 import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { AppSheet } from "@/components/ui/app-sheet";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
 import { useIsTablet } from "@/hooks/use-tablet";
+import { NavSlotProvider } from "@/core/shell/context/nav-slot-context";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 
 const CHAT_MIN_WIDTH = 280;
@@ -109,18 +110,20 @@ export function DashboardLayoutClient({
 					/>
 				</Suspense>
 				<SidebarInset
-					className="flex-1 flex flex-col overflow-hidden"
+					className="flex-1 flex flex-col"
 					style={{
 						...insetMarginStyle,
 						transition: isDragging ? "none" : "margin 200ms ease",
 					}}
 				>
-					<TopNav
-						onToggleChat={toggleChat}
-						onToggleSearch={() => setSearchOpen(true)}
-					/>
-					<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-					<main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
+					<NavSlotProvider>
+						<TopNav
+							onToggleChat={toggleChat}
+							onToggleSearch={() => setSearchOpen(true)}
+						/>
+						<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+						<main className="flex-1 overflow-hidden sm:p-2">{children}</main>
+					</NavSlotProvider>
 				</SidebarInset>
 			</SidebarProvider>
 
@@ -158,18 +161,14 @@ export function DashboardLayoutClient({
 
 			{/* Tablet + Mobile Sheet */}
 			{isTablet && (
-				<Sheet open={chatOpen} onOpenChange={setChatOpen}>
-					<SheetContent
-						side={isRTL ? "left" : "right"}
-						className="!w-[85vw] !max-w-[85vw] p-0 [&>button]:hidden"
-					>
-						<SheetHeader className="sr-only">
-							<SheetTitle>AI Assistant</SheetTitle>
-							<SheetDescription>AI chat panel</SheetDescription>
-						</SheetHeader>
-						<AIChatPanelContent />
-					</SheetContent>
-				</Sheet>
+				<AppSheet
+					open={chatOpen}
+					onOpenChange={setChatOpen}
+					title="AI Assistant"
+					side={isRTL ? "left" : "right"}
+				>
+					<AIChatPanelContent />
+				</AppSheet>
 			)}
 		</div>
 	);

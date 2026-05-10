@@ -134,7 +134,7 @@ export function ResetPasswordPage() {
 						</Field>
 					</FieldGroup>
 
-					<Button className="w-full rounded-[--radius]" type="submit" disabled={loading}>
+					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading}>
 						{loading ? "Resetting…" : "Reset password"}
 					</Button>
 				</form>

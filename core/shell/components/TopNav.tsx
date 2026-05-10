@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { Bell, Bot, Search, CheckCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useShortcut, matchesShortcut } from "@/stores/shortcuts/shortcuts-store";
+import { AutoBreadcrumb } from "./AutoBreadcrumb";
+import { useNavSlotNode } from "@/core/shell/context/nav-slot-context";
 
 /**
  * TopNav — Icon-only top navigation bar.
@@ -23,15 +24,14 @@ export function TopNav({
   onToggleChat,
   onToggleSearch,
   onToggleNotifications,
-  children,
 }: {
   onToggleChat?: () => void;
   onToggleSearch?: () => void;
   onToggleNotifications?: () => void;
-  children?: React.ReactNode;
 }) {
   const scAI    = useShortcut("toggleAIPanel");
   const scSearch = useShortcut("search");
+  const slot = useNavSlotNode();
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -49,15 +49,27 @@ export function TopNav({
         "[html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:bg-background/80 [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
       )}
     >
-      <div className="flex w-full items-center justify-between px-4 lg:px-6">
-        {/* Left */}
-        <div className="flex items-center gap-2">
+      <div className="relative flex w-full items-center px-4 lg:px-6">
+        {/* Left: trigger + breadcrumb */}
+        <div className="flex shrink-0 items-center gap-2">
           <SidebarTriggerWithTooltip />
-          {children}
+          <AutoBreadcrumb />
         </div>
 
+        {/* Center: route-specific slot — absolutely centered so it never shifts left/right */}
+        {slot && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="pointer-events-auto flex max-w-xl items-center gap-1.5 rounded-[var(--radius)] bg-muted/60 px-2 py-1">
+              {slot}
+            </div>
+          </div>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
         {/* Right */}
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

@@ -57,7 +57,7 @@ export function KanbanCardHeader({ itemId, badge, badgeColor, onEdit, onDelete }
         <button
           type="button"
           aria-label="Move card"
-          className="flex h-8 w-8 items-center justify-center rounded-[--radius] text-secondary-foreground/50 cursor-grab hover:bg-accent"
+          className="flex h-8 w-8 items-center justify-center rounded-[var(--radius)] text-secondary-foreground/50 cursor-grab hover:bg-accent"
         >
           <GripVertical className="size-4" />
         </button>

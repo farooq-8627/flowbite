@@ -40,7 +40,7 @@
 - No inline `useState<string | null>` error state in any step
 
 ### Border Radius
-- All `rounded-lg`, `rounded-md` replaced with `rounded-[--radius]`
+- All `rounded-lg`, `rounded-md` replaced with `rounded-[var(--radius)]`
 - Team size pills use `rounded-full` (intentional — pill shape)
 
 ### Product Tour (Onborda)

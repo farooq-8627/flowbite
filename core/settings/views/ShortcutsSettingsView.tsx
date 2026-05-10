@@ -39,7 +39,7 @@ export function ShortcutsSettingsView() {
         </Button>
       </div>
 
-      <div className="divide-y rounded-[--radius] border">
+      <div className="divide-y rounded-[var(--radius)] border">
         {SHORTCUT_ORDER.map((id) => {
           const s = shortcuts[id];
           return (

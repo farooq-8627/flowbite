@@ -34,7 +34,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					? "You're already a member of this workspace."
 					: `Welcome to ${invitation?.orgName ?? "the workspace"}!`,
 			);
-			router.push(`/${invitation?.orgSlug}/dashboard`);
+			router.push(`/${invitation?.orgSlug}`);
 		} catch (err) {
 			toast.mutationError(err as Error, "Failed to accept invitation.");
 			setAccepting(false);
@@ -137,7 +137,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 							This invitation has already been accepted.
 						</p>
 					</div>
-					<Button className="w-full" onClick={() => router.push(`/${invitation.orgSlug}/dashboard`)}>
+					<Button className="w-full" onClick={() => router.push(`/${invitation.orgSlug}`)}>
 						Go to workspace
 					</Button>
 				</div>
@@ -158,7 +158,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 		>
 			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[380px]">
 				<div className="space-y-2 text-center">
-					<div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[--radius] bg-primary/10">
+					<div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[var(--radius)] bg-primary/10">
 						<Building2 className="size-7 text-primary" />
 					</div>
 					<h1 className="font-medium text-2xl">You&apos;re invited</h1>
@@ -169,7 +169,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					</p>
 				</div>
 
-				<div className="rounded-[--radius] border bg-muted/40 px-4 py-3 text-sm">
+				<div className="rounded-[var(--radius)] border bg-muted/40 px-4 py-3 text-sm">
 					<div className="flex items-center justify-between">
 						<span className="text-muted-foreground">Invited email</span>
 						<span className="font-medium">{invitation.email}</span>
@@ -186,7 +186,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 
 				<div className="space-y-3">
 					<Button
-						className="w-full rounded-[--radius]"
+						className="w-full rounded-[var(--radius)]"
 						onClick={handleAccept}
 						disabled={accepting}
 					>
@@ -194,7 +194,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					</Button>
 					<Button
 						variant="outline"
-						className="w-full rounded-[--radius]"
+						className="w-full rounded-[var(--radius)]"
 						onClick={() => router.push("/signin")}
 						disabled={accepting}
 					>

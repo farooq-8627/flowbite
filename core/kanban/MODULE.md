@@ -411,4 +411,4 @@ When `features/project-management/` is built in Phase 8, the SAME `KanbanBoard` 
 - [ ] R-KAN-03: Entity labels in kanban headers/empty states MUST use dynamic labels from `orgs.entityLabels`
 - [ ] R-KAN-04: Stale/warning colors come from pipeline stage config — never hardcoded
 - [ ] R-KAN-05: RTL-safe classes only (ms-*, me-*, ps-*, pe-*)
-- [ ] R-KAN-06: rounded-[--radius] only — never rounded-md/lg
+- [ ] R-KAN-06: rounded-[var(--radius)] only — never rounded-md/lg

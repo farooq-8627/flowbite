@@ -34,7 +34,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 			<SidebarMenu>
 				<SidebarMenuItem>
 					<div className="flex h-10 items-center gap-2 px-2">
-						<Skeleton className="size-5 rounded-[--radius]" />
+						<Skeleton className="size-5 rounded-[var(--radius)]" />
 						<Skeleton className="h-3 w-24 flex-1" />
 					</div>
 				</SidebarMenuItem>
@@ -49,7 +49,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 			<SidebarMenuItem>
 				<DropdownMenu>
 					<DropdownMenuTrigger asChild>
-						<SidebarMenuButton className="h-10 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
+						<SidebarMenuButton className="h-10 cursor-pointer data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
 							<Command className="size-4 shrink-0 text-primary" />
 							<span className="flex-1 truncate text-sm font-medium">{displayName}</span>
 							<ChevronsUpDown className="ms-auto size-4 shrink-0 opacity-50" />
@@ -57,7 +57,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 					</DropdownMenuTrigger>
 
 					<DropdownMenuContent
-						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-[--radius]"
+						className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-[var(--radius)]"
 						side="bottom"
 						align="start"
 						sideOffset={2}
@@ -80,7 +80,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 									.filter(({ org }) => org.slug !== currentOrgSlug)
 									.map(({ org }) => (
 										<DropdownMenuItem key={org._id} asChild>
-											<Link prefetch={false} href={`/${org.slug}/dashboard`}>
+											<Link prefetch={false} href={`/${org.slug}`}>
 												<Command className="size-4 shrink-0 opacity-50" />
 												<span className="flex-1 truncate">{org.name}</span>
 												<Check className="ms-auto size-4 shrink-0 opacity-0" />

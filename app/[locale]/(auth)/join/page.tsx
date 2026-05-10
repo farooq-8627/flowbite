@@ -55,7 +55,7 @@ export default function JoinPage() {
 							/>
 						</Field>
 					</FieldGroup>
-					<Button className="w-full rounded-[--radius]" type="submit" disabled={!token.trim()}>
+					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={!token.trim()}>
 						Continue
 					</Button>
 				</form>

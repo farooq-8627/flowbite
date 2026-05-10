@@ -99,7 +99,7 @@ convex/orgs/
 Use `ms-*`, `me-*`, `ps-*`, `pe-*`, `start-*`, `end-*`. Never `ml-*`, `mr-*`, `pl-*`, `pr-*`.
 
 ### R-SET-04: Dynamic border-radius
-Use `rounded-[--radius]`. Never `rounded-md`, `rounded-lg`.
+Use `rounded-[var(--radius)]`. Never `rounded-md`, `rounded-lg`.
 
 ### R-SET-05: Per-section save (not global)
 Each section has its own save button. Mutations are granular per section.
@@ -257,7 +257,7 @@ export function SettingsNav({ activeGroup, onGroupChange, permissions }: Props) 
             key={group.id}
             onClick={() => onGroupChange(group.id)}
             className={cn(
-              "flex w-full items-center gap-2 rounded-[--radius] px-3 py-2 text-sm",
+              "flex w-full items-center gap-2 rounded-[var(--radius)] px-3 py-2 text-sm",
               activeGroup === group.id
                 ? "bg-accent text-accent-foreground font-medium"
                 : "text-muted-foreground hover:bg-muted"
@@ -287,7 +287,7 @@ type Props = {
 
 export function SettingsSection({ title, description, children }: Props) {
   return (
-    <Card className="rounded-[--radius]">
+    <Card className="rounded-[var(--radius)]">
       <CardHeader>
         <CardTitle className="text-lg">{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
@@ -521,7 +521,7 @@ Build in this order:
 Rules:
 - NEVER hardcode entity names. Use useEntityLabels() hook.
 - RTL-safe classes only (ms-*, me-*, ps-*, pe-*).
-- rounded-[--radius] only. Never rounded-md/lg.
+- rounded-[var(--radius)] only. Never rounded-md/lg.
 - PermissionGate wraps every section.
 - Per-section save buttons.
 - Entity labels: singular + plural on same line, slug on 2nd line.
@@ -875,7 +875,7 @@ After building each phase, verify:
 - ❌ Never create sub-routes under /settings — single page with group navigation
 - ❌ Never put keyboard shortcuts editing in settings — shortcuts are code-only (reference page is fine)
 - ❌ Never use directional CSS (`ml-*`, `mr-*`, `pl-*`, `pr-*`, `left-*`, `right-*`)
-- ❌ Never hardcode border-radius (`rounded-md`, `rounded-lg`) — use `rounded-[--radius]`
+- ❌ Never hardcode border-radius (`rounded-md`, `rounded-lg`) — use `rounded-[var(--radius)]`
 - ❌ Never write the app name in UI — use `APP_CONFIG.name`
 - ❌ Never put logic in `app/` page files — thin wrappers only
 - ❌ Never use Cloudinary — use Convex `_storage` for all file uploads

@@ -26,7 +26,7 @@ export function DataTable<TData>({ table, actionBar, children }: DataTableProps<
       {/* Toolbar slot */}
       {children}
       <div className="relative flex flex-1">
-        <div className="absolute inset-0 flex overflow-hidden rounded-[--radius] border">
+        <div className="absolute inset-0 flex overflow-hidden rounded-[var(--radius)] border">
           <ScrollArea className="h-full w-full">
             <Table>
               <TableHeader className="bg-muted sticky top-0 z-10">

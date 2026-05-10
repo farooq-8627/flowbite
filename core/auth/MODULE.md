@@ -29,7 +29,7 @@ core/auth/
 | A9 | Right panel is prop-driven | `AuthShellPanelProps` — each page passes its own panel content. Right side changes per page without touching the layout. |
 | A10 | No hardcoded app strings | All app name/description/URL come from `APP_CONFIG`. Never hardcode "Orbitly" in JSX. |
 | A11 | RTL-safe classes | All classes use logical properties (`ms-*`, `pe-*`, `start-*`, `border-e`). `dir="rtl"` on `<html>` for Arabic. |
-| A12 | Border-radius | All `rounded-*` use `rounded-[--radius]`. Never `rounded-md`, `rounded-lg`, etc. |
+| A12 | Border-radius | All `rounded-*` use `rounded-[var(--radius)]`. Never `rounded-md`, `rounded-lg`, etc. |
 
 ## Post-Login Redirect Flow
 

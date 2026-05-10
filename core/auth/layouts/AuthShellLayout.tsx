@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-
 import { Separator } from "@/components/ui/separator";
+import { APP_CONFIG } from "@/config/app-config";
 
 export interface AuthShellPanelProps {
   /** Icon shown top-left of the right panel */
@@ -25,23 +25,21 @@ interface AuthShellLayoutProps {
 /**
  * Shared split-screen layout for auth pages and onboarding.
  * Left: form area. Right: branded panel (customisable via props).
- *
- * Source: adapted from next-shadcn-admin-dashboard src/app/(main)/auth/v2/layout.tsx
  */
 export function AuthShellLayout({ children, panel }: AuthShellLayoutProps) {
   return (
     <main>
       <div className="grid h-dvh justify-center p-2 lg:grid-cols-2">
         {/* Right: branded panel */}
-        <div className="relative order-2 hidden h-full rounded-[calc(var(--radius)*3)] bg-primary lg:flex">
+        <div className="relative order-2 hidden h-full rounded-[var(--radius)] bg-primary lg:flex">
           {panel?.rightPanel ? (
             panel.rightPanel
           ) : (
             <>
               <div className="absolute top-10 space-y-1 px-10 text-primary-foreground">
                 {panel?.icon && <div className="mb-1">{panel.icon}</div>}
-                <h1 className="font-medium text-2xl">{panel?.title ?? "Orbitly"}</h1>
-                <p className="text-sm opacity-80">{panel?.tagline ?? "AI-Powered CRM for Gulf Businesses"}</p>
+                <h1 className="font-medium text-2xl">{panel?.title ?? APP_CONFIG.name}</h1>
+                <p className="text-sm opacity-80">{panel?.tagline ?? APP_CONFIG.description}</p>
               </div>
 
               <div className="absolute bottom-10 flex w-full justify-between px-10">

@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 
 /**
  * Root page — redirects authenticated users to their org dashboard.
- * - Has org + onboarding complete → /dashboard/[slug]
+ * - Has org + onboarding complete → /[slug]
  * - Has org but onboarding incomplete → /onboarding
  * - No org → /onboarding
  * - Not authenticated → /signin
@@ -43,7 +43,7 @@ export default function Home() {
 
     const slug = defaultOrg?.org.slug ?? myOrgs[0]?.org.slug;
     if (slug) {
-      router.replace(`/${slug}/dashboard`);
+      router.replace(`/${slug}`);
     } else {
       router.replace("/onboarding");
     }

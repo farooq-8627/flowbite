@@ -67,7 +67,7 @@ export function IndustryStep() {
                   type="button"
                   onClick={() => setIndustry(item.id)}
                   className={cn(
-                    "rounded-[--radius] border px-3 py-2 text-start text-sm transition-colors",
+                    "rounded-[var(--radius)] border px-3 py-2 text-start text-sm transition-colors",
                     industry === item.id
                       ? "border-primary bg-primary/10 text-primary font-medium"
                       : "border-border bg-background hover:bg-muted",

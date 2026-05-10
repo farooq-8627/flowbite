@@ -104,7 +104,7 @@ export function KanbanBoard<T extends { id: string }>({
         getItemValue={(item: T) => item.id}
         modifiers={[restrictToBoard]}
       >
-        <ScrollArea className="w-full rounded-[--radius] pb-4">
+        <ScrollArea className="w-full rounded-[var(--radius)] pb-4">
           <KanbanBoardPrimitive className="flex items-start">
             {columns.map((col, index) => {
               const items = itemsByColumnId[col.id] ?? [];

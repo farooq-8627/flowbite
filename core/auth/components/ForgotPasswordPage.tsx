@@ -83,7 +83,7 @@ export function ForgotPasswordPage() {
 							/>
 						</Field>
 					</FieldGroup>
-					<Button className="w-full rounded-[--radius]" type="submit" disabled={loading}>
+					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading}>
 						{loading ? "Sending…" : "Send reset code"}
 					</Button>
 				</form>

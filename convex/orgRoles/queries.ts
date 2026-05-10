@@ -28,6 +28,21 @@ export const list = authenticatedQuery({
 });
 
 /**
+ * Get the current user's permissions for an org.
+ * Returns a flat string[] of permission keys resolved from their role.
+ * Used by the settings page to filter visible groups/sections.
+ */
+export const getMyPermissions = authenticatedQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined) return [];
+		const role = await ctx.db.get(member.roleId);
+		return role?.permissions ?? [];
+	},
+});
+
+/**
  * Get a single role by ID.
  * Any org member can view.
  */

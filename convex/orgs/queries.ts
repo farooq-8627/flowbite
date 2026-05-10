@@ -38,6 +38,38 @@ export const checkSlug = authenticatedQuery({
 });
 
 /**
+ * Get full org settings for the settings page.
+ * Returns all fields needed by the settings UI in a single query.
+ * Requires org membership (any role can read settings — RBAC is enforced per-section in UI).
+ */
+export const getFullSettings = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", ctx.userId),
+			)
+			.first();
+		if (!member || member.deletedAt !== undefined) return null;
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return null;
+		return {
+			_id: org._id,
+			name: org.name,
+			slug: org.slug,
+			logoStorageId: org.logoStorageId,
+			industry: org.industry,
+			plan: org.plan,
+			aiContext: org.aiContext,
+			entityLabels: org.entityLabels,
+			settings: org.settings,
+		};
+	},
+});
+
+/**
  * List all orgs the current user is an active member of.
  *
  * HOW IT WORKS:

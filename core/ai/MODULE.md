@@ -727,7 +727,7 @@ function AISuggestedFields({ entityType, industry, existingFields, onAdd }) {
 
   if (!suggestions?.length) return null;
   return (
-    <div className="rounded-[--radius] border border-dashed border-primary/30 p-3 space-y-2">
+    <div className="rounded-[var(--radius)] border border-dashed border-primary/30 p-3 space-y-2">
       <p className="text-xs text-muted-foreground">✨ AI suggestions for {industry}</p>
       {suggestions.map(s => (
         <div key={s.name} className="flex items-center justify-between">

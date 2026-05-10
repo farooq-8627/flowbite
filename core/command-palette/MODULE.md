@@ -465,5 +465,5 @@ companies: defineTable({ ... })
 - [ ] R-CMD-01: Entity group labels in command palette MUST use dynamic labels from `orgs.entityLabels` — never hardcode "Leads", "Contacts"
 - [ ] R-CMD-02: Search results show entity type using dynamic labels (e.g., "Inquiry" not "Lead")
 - [ ] R-CMD-03: RTL-safe classes only (ms-*, me-*, ps-*, pe-*)
-- [ ] R-CMD-04: rounded-[--radius] only — never rounded-md/lg
+- [ ] R-CMD-04: rounded-[var(--radius)] only — never rounded-md/lg
 - [ ] R-CMD-05: Command palette respects RBAC — hide commands user lacks permission for

@@ -47,7 +47,7 @@ export function DataTableSkeleton({
         {/* ms-auto is RTL-safe equivalent of ml-auto */}
         {withViewOptions && <Skeleton className="ms-auto hidden h-7 w-[4.5rem] lg:flex" />}
       </div>
-      <div className="flex-1 rounded-[--radius] border">
+      <div className="flex-1 rounded-[var(--radius)] border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

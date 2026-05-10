@@ -153,10 +153,12 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 
 	if (!currentOrg || !stats || user === undefined) {
 		return (
-			<div className="space-y-6">
-				<Skeleton className="h-8 w-48" />
-				<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-					{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
+			<div className="h-full overflow-y-auto p-4 md:p-6">
+				<div className="space-y-6">
+					<Skeleton className="h-8 w-48" />
+					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+						{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
+					</div>
 				</div>
 			</div>
 		);
@@ -165,17 +167,20 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 	const dismissedCards = user?.dismissedCards ?? [];
 
 	return (
-		<div className="space-y-6">
-			<div>
-				<h1 className="text-2xl font-semibold tracking-tight">
-					Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
-				</h1>
-				<p className="text-sm text-muted-foreground">{currentOrg.org.name} workspace</p>
-			</div>
+		<div className="h-full overflow-y-auto p-4 md:p-6">
+			<div className="space-y-6">
+				<div>
+					<h1 className="text-2xl font-semibold tracking-tight">
+						Welcome back{user?.name ? `, ${user.name.split(" ")[0]}` : ""}
+					</h1>
+					<p className="text-sm text-muted-foreground">{currentOrg.org.name} workspace</p>
+				</div>
 
-			<GetStartedCard dismissedCards={dismissedCards} />
-			<MetricCards memberCount={stats.memberCount} />
-			<RecentActivity activity={stats.recentActivity} />
+				<GetStartedCard dismissedCards={dismissedCards} />
+				<MetricCards memberCount={stats.memberCount} />
+				<RecentActivity activity={stats.recentActivity} />
+				
+			</div>
 		</div>
 	);
 }

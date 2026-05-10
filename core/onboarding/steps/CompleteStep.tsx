@@ -18,9 +18,9 @@ export function CompleteStep() {
 
   const handleLaunch = () => {
     setLoading(true);
-    // TODO: call markOnboardingComplete mutation, then redirect to /dashboard/[orgSlug]
-    // For now, redirect to dashboard root
-    router.push("/dashboard");
+    // TODO: call markOnboardingComplete mutation, then redirect to /{orgSlug}
+    // Slug must be passed as a prop once this component is wired up.
+    router.push("/onboarding");
   };
 
   return (
@@ -57,7 +57,7 @@ export function CompleteStep() {
           ].map((item) => (
             <div
               key={item.label}
-              className="flex items-center gap-3 rounded-[--radius] border border-border bg-muted/40 px-4 py-2.5"
+              className="flex items-center gap-3 rounded-[var(--radius)] border border-border bg-muted/40 px-4 py-2.5"
             >
               <span className="text-primary font-bold">{item.icon}</span>
               <span className="text-sm">{item.label}</span>

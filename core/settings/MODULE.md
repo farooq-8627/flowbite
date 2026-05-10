@@ -35,7 +35,7 @@
 - R-SET-01: Never hardcode entity names — use `useEntityLabels()`
 - R-SET-02: Every admin-only section wraps in `<PermissionGate>`
 - R-SET-03: RTL-safe classes only (`ms-*`, `me-*`, `ps-*`, `pe-*`)
-- R-SET-04: `rounded-[--radius]` only — never `rounded-md/lg`
+- R-SET-04: `rounded-[var(--radius)]` only — never `rounded-md/lg`
 - R-SET-05: Per-section save buttons — no global save
 - R-SET-06: Lazy load group data with Convex `skip` pattern
 - R-SET-07: `APP_CONFIG.name` — never hardcode app name

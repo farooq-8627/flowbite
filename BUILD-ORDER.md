@@ -112,7 +112,7 @@ These are in `AGENTS.md` but repeated here for visibility:
 
 ```
 RTL:        Never ml-*, mr-*, pl-*, pr-* → use ms-*, me-*, ps-*, pe-*
-Radius:     Never rounded-md/lg/xl → use rounded-[--radius]
+Radius:     Never rounded-md/lg/xl → use rounded-[var(--radius)]
 Strings:    Never "Orbitly" in JSX → use APP_CONFIG.name
 Labels:     Never "Lead", "Contact" hardcoded → use useEntityLabels(orgId)
 Slugs:      Never "/leads" hardcoded → use labels[slot].slug

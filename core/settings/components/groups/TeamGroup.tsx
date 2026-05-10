@@ -3,13 +3,14 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { toast } from "sonner";
-import { Mail, MoreHorizontal, Trash2, Plus, Shield } from "lucide-react";
+import { Mail, MoreHorizontal, Trash2, Plus, Shield, Pencil } from "lucide-react";
 import { z } from "zod/v4";
 import { api } from "@/convex/_generated/api";
 import type { Id, Doc } from "@/convex/_generated/dataModel";
 
 import { SettingsSection } from "../shared/SettingsSection";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
+import { RoleEditorDialog, CreateRoleDialog } from "./team/RoleEditor";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -409,12 +410,32 @@ function InvitationsSection({ orgId, canManage }: { orgId: Id<"orgs">; canManage
 
 function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 	const roles = useQuery(api.orgRoles.queries.list, { orgId });
+	const remove = useMutation(api.orgRoles.mutations.remove);
+
+	const [editing, setEditing] = useState<Role | null>(null);
+	const [creating, setCreating] = useState(false);
+
+	const handleDelete = async (role: Role) => {
+		if (role.isSystem) return;
+		if (!confirm(`Delete role "${role.name}"? Members with this role will be reassigned to the default role.`)) return;
+		try {
+			await remove({ roleId: role._id });
+			toast.success(`Deleted role "${role.name}"`);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Failed to delete role");
+		}
+	};
 
 	return (
 		<SettingsSection
 			id="team.roles"
 			title="Roles"
-			description="System and custom roles for this workspace. Custom role editing is coming soon."
+			description="System and custom roles for this workspace. Click a role to edit its permissions."
+			action={
+				<Button size="sm" onClick={() => setCreating(true)}>
+					<Plus className="size-4" /> New role
+				</Button>
+			}
 		>
 			<Table>
 				<TableHeader>
@@ -423,6 +444,7 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 						<TableHead>Description</TableHead>
 						<TableHead className="text-end">Type</TableHead>
 						<TableHead className="text-end">Permissions</TableHead>
+						<TableHead className="w-10" />
 					</TableRow>
 				</TableHeader>
 				<TableBody>
@@ -433,21 +455,26 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 								<TableCell><Skeleton className="h-4 w-48" /></TableCell>
 								<TableCell className="text-end"><Skeleton className="ms-auto h-5 w-16" /></TableCell>
 								<TableCell className="text-end"><Skeleton className="ms-auto h-4 w-12" /></TableCell>
+								<TableCell />
 							</TableRow>
 						))
 					) : (
 						roles.map((r) => (
 							<TableRow key={r._id}>
 								<TableCell>
-									<div className="flex items-center gap-2">
+									<button
+										type="button"
+										onClick={() => setEditing(r)}
+										className="flex items-center gap-2 text-sm font-medium hover:underline"
+									>
 										{r.color && (
 											<span
 												className="inline-block size-2.5 rounded-full"
 												style={{ backgroundColor: r.color }}
 											/>
 										)}
-										<span className="text-sm font-medium">{r.name}</span>
-									</div>
+										{r.name}
+									</button>
 								</TableCell>
 								<TableCell className="text-xs text-muted-foreground">
 									{r.description ?? "—"}
@@ -460,11 +487,48 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 								<TableCell className="text-end text-xs text-muted-foreground tabular-nums">
 									{r.permissions.length}
 								</TableCell>
+								<TableCell>
+									<div className="flex justify-end gap-0.5">
+										<Button
+											variant="ghost"
+											size="icon"
+											className="size-7"
+											onClick={() => setEditing(r)}
+											aria-label="Edit role"
+										>
+											<Pencil className="size-3.5" />
+										</Button>
+										{!r.isSystem && (
+											<Button
+												variant="ghost"
+												size="icon"
+												className="size-7 text-muted-foreground hover:text-destructive"
+												onClick={() => handleDelete(r)}
+												aria-label="Delete role"
+											>
+												<Trash2 className="size-3.5" />
+											</Button>
+										)}
+									</div>
+								</TableCell>
 							</TableRow>
 						))
 					)}
 				</TableBody>
 			</Table>
+
+			{editing && (
+				<RoleEditorDialog
+					role={editing}
+					open={!!editing}
+					onOpenChange={(v) => !v && setEditing(null)}
+				/>
+			)}
+			<CreateRoleDialog
+				orgId={orgId}
+				open={creating}
+				onOpenChange={setCreating}
+			/>
 		</SettingsSection>
 	);
 }

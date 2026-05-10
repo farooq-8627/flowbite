@@ -117,6 +117,36 @@ export const addStage = orgMutation({
 	},
 });
 
+export const updateStage = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		pipelineId: v.id("pipelines"),
+		stageId: v.string(),
+		name: v.optional(v.string()),
+		color: v.optional(v.string()),
+		staleAfterDays: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "pipelines.manage");
+
+		const pipeline = await ctx.db.get(args.pipelineId);
+		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		const stages = pipeline.stages.map((s) => {
+			if (s.id !== args.stageId) return s;
+			return {
+				...s,
+				name: args.name ?? s.name,
+				color: args.color ?? s.color,
+				staleAfterDays: args.staleAfterDays ?? s.staleAfterDays,
+			};
+		});
+
+		await ctx.db.patch(args.pipelineId, { stages, updatedAt: Date.now() });
+	},
+});
+
 export const removeStage = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageId: v.string() },
 	handler: async (ctx, args) => {

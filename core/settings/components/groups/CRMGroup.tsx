@@ -20,7 +20,6 @@ import { FieldEditor } from "./crm/FieldEditor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
 	Form,
@@ -54,9 +53,7 @@ function PipelinesSection({ orgId }: { orgId: Id<"orgs"> }) {
 			description="Deal stage workflows. Drag stages to reorder. Click a stage to rename. Click the color dot to recolor."
 		>
 			<div className="flex flex-col gap-4 py-2">
-				{pipelines === undefined ? (
-					Array.from({ length: 2 }).map((_, i) => <Skeleton key={i} className="h-32 w-full" />)
-				) : pipelines.length === 0 ? (
+				{pipelines === undefined ? null : pipelines.length === 0 ? (
 					<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">
 						No pipelines yet.
 					</div>
@@ -142,9 +139,7 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 		>
 			<div className="flex flex-col gap-4 py-2">
 				<div className="flex flex-wrap gap-2">
-					{tags === undefined ? (
-						Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 w-20" />)
-					) : tags.length === 0 ? (
+					{tags === undefined ? null : tags.length === 0 ? (
 						<span className="text-xs text-muted-foreground">No tags yet.</span>
 					) : (
 						tags.map((t) => (

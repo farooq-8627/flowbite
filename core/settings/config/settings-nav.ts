@@ -22,7 +22,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		id: "workspace",
 		label: "Workspace",
 		icon: Settings,
-		permission: "org.settings",
+		permission: "org.viewSettings",
 		subGroups: [
 			{ id: "workspace.general",  label: "General",       icon: Building2,  description: "Organization name, logo, and basic info" },
 			{ id: "workspace.roles",    label: "Roles",         icon: Shield,     description: "Manage roles and permission sets" },
@@ -33,7 +33,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		id: "team",
 		label: "Team",
 		icon: Users,
-		permission: "org.inviteMembers",
+		permission: "members.view",
 		subGroups: [
 			{ id: "team.members",     label: "Members",      icon: Users,    description: "Invite and manage workspace members" },
 			{ id: "team.invitations", label: "Invitations",  icon: Mail,     description: "Pending and sent invitations" },
@@ -43,7 +43,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		id: "crm",
 		label: "CRM",
 		icon: Target,
-		permission: "pipelines.manage",
+		permission: "pipelines.view",
 		subGroups: [
 			{ id: "crm.pipelines",  label: "Pipelines",     icon: Workflow,    description: "Deal stages and pipeline configuration" },
 			{ id: "crm.fields",     label: "Custom Fields",  icon: LayoutList,  description: "Add custom fields to leads, deals, and companies" },
@@ -54,7 +54,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		id: "ai",
 		label: "AI",
 		icon: Bot,
-		permission: "org.settings",
+		permission: "ai.viewHistory",
 		subGroups: [
 			{ id: "ai.context",    label: "AI Context",    icon: Brain,     description: "Business context fed to the AI assistant" },
 			{ id: "ai.features",   label: "AI Features",   icon: Sparkles,  description: "Enable or disable AI-powered features" },
@@ -100,7 +100,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		id: "data",
 		label: "Data & Security",
 		icon: Database,
-		permission: "org.settings",
+		permission: "org.viewSettings",
 		subGroups: [
 			{ id: "data.export",   label: "Export",    icon: Database,  description: "Export your CRM data as CSV or JSON" },
 			{ id: "data.security", label: "Security",  icon: Lock,      description: "Two-factor auth and session management" },

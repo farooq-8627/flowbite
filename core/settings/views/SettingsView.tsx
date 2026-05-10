@@ -39,8 +39,8 @@ function SettingsToolbar({
 	className?: string;
 }) {
 	return (
-		<div className={cn("flex gap-2 overflow-hidden flex-col sm:flex-row", className)}>
-			<div className="flex flex-row items-center">
+		<div className={cn("flex w-full items-center gap-2 flex-col sm:flex-row", className)}>
+			<div className="flex flex-row items-center gap-1 w-full sm:w-auto shrink-0">
 				{onOpenSheet && (
 					<Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onOpenSheet}>
 						<Menu className="size-4" />
@@ -49,11 +49,11 @@ function SettingsToolbar({
 				<SettingsSearch
 					permissions={permissions}
 					onNavigate={onNavigate}
-					className="w-full sm:w-52 shrink-0"
+					className="w-full sm:w-56 shrink-0"
 				/>
 			</div>
 			{sections.length > 0 && (
-				<div className="flex flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
+				<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
 					{sections.map((sub) => (
 						<button
 							key={sub.id}
@@ -182,7 +182,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 	};
 
 	if (!orgId || settings === undefined || permissions === undefined) {
-		return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+		return null;
 	}
 	if (!settings) {
 		return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Organization not found.</div>;
@@ -196,9 +196,6 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					onGroupChange={handleGroupChange}
 					permissions={permissions}
 					filteredGroups={visibleGroups}
-					sections={sectionsForGroup}
-					activeSectionId={resolvedSectionId}
-					onSectionChange={handlePickSection}
 				/>
 			</div>
 
@@ -218,9 +215,6 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					onGroupChange={handleGroupChange}
 					permissions={permissions}
 					filteredGroups={visibleGroups}
-					sections={sectionsForGroup}
-					activeSectionId={resolvedSectionId}
-					onSectionChange={handlePickSection}
 				/>
 			</AppSheet>
 

@@ -92,14 +92,14 @@ export function SettingsSearch({
 
 	return (
 		<div ref={containerRef} className={cn("relative", className)}>
-			<Search className="pointer-events-none absolute start-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
+			<Search className="pointer-events-none absolute start-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
 			<Input
 				value={query}
 				onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
 				onFocus={() => setOpen(true)}
 				onKeyDown={handleKey}
 				placeholder={placeholder}
-				className={cn("h-6 ps-6 text-xs", inputClassName)}
+				className={cn("h-7 ps-8 text-xs", inputClassName)}
 				aria-label="Search settings"
 				aria-expanded={showDropdown}
 				aria-controls="settings-search-results"

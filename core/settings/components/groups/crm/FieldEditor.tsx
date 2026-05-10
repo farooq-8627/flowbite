@@ -12,7 +12,6 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -469,11 +468,7 @@ export function FieldEditor({
 				<CreateFieldDialog orgId={orgId} entityType={resolvedEntity} />
 			</div>
 
-			{fields === undefined ? (
-				<div className="grid gap-2">
-					{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-				</div>
-			) : fields.length === 0 ? (
+			{fields === undefined ? null : fields.length === 0 ? (
 				<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">
 					No custom fields yet — click <b>Add field</b> to create one.
 				</div>

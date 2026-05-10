@@ -70,9 +70,10 @@ export function scrollToSection(sectionId: string) {
 	const el = document.getElementById(sectionId);
 	if (!el) return;
 	el.scrollIntoView({ behavior: "smooth", block: "start" });
-	// Visual pulse to help the user locate the card after navigation.
-	el.classList.add("ring-2", "ring-ring", "ring-offset-2", "transition");
+	// Inset ring + brief background tint — renders inside the card so there's
+	// no clipping risk from overflow or neighboring cards.
+	el.classList.add("ring-2", "ring-inset", "ring-primary/50", "transition");
 	window.setTimeout(() => {
-		el.classList.remove("ring-2", "ring-ring", "ring-offset-2");
+		el.classList.remove("ring-2", "ring-inset", "ring-primary/50");
 	}, 1400);
 }

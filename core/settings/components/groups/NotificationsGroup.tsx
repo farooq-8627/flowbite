@@ -7,7 +7,6 @@ import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsRow } from "../shared/SettingsRow";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
 
@@ -139,23 +138,7 @@ export function NotificationsGroup({ org }: { org: OrgSettings }) {
 	const labels = resolveEntityLabels(org.entityLabels);
 
 	if (!user) {
-		return (
-			<div className="grid gap-6">
-				{NOTIF_GROUPS.map((g) => (
-					<SettingsSection key={g.id} title={g.title} description={g.description}>
-						{g.items.map((item) => (
-							<SettingsRow
-								key={String(item.key)}
-								label={<Skeleton className="h-4 w-32" />}
-								description={<Skeleton className="h-3 w-64" />}
-							>
-								<Skeleton className="h-5 w-9" />
-							</SettingsRow>
-						))}
-					</SettingsSection>
-				))}
-			</div>
-		);
+		return null;
 	}
 
 	const prefs = user.notificationPreferences ?? {};

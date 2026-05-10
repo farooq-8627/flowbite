@@ -17,19 +17,26 @@ type Props = {
 };
 
 /**
- * Shadboard-style settings card.
- * Structure: Card > CardHeader (title + description + optional action) > CardContent
- * Save button goes INSIDE CardContent, w-fit, left-aligned — same as shadboard ButtonLoading pattern.
+ * Settings section card.
+ * Structure:
+ *   Card (shadcn default: rounded-xl border py-6 shadow-sm)
+ *   ├─ CardHeader (title + description + optional action)
+ *   └─ CardContent (divided rows via <SettingsRow>)
+ *
+ * Each row inside uses horizontal layout (label + description on the left,
+ * form control on the right) — matches shadboard settings pattern.
  */
 export function SettingsSection({ id, title, description, action, children }: Props) {
 	return (
 		<Card id={id}>
 			<CardHeader>
-				<CardTitle>{title}</CardTitle>
+				<CardTitle className="text-base">{title}</CardTitle>
 				{description && <CardDescription>{description}</CardDescription>}
 				{action && <CardAction>{action}</CardAction>}
 			</CardHeader>
-			<CardContent>{children}</CardContent>
+			<CardContent className="flex flex-col divide-y divide-border">
+				{children}
+			</CardContent>
 		</Card>
 	);
 }

@@ -1,29 +1,46 @@
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 type Props = {
 	isSubmitting: boolean;
 	isDirty: boolean;
 	onReset?: () => void;
+	/** Optional override for the submit button label */
+	submitLabel?: string;
+	/** Classes for the outer row */
+	className?: string;
 };
 
 /**
- * Shadboard-style save button row.
- * w-fit, left-aligned, disabled when pristine — matches shadboard ButtonLoading pattern.
+ * Save/Reset row for a settings section.
+ * Right-aligned, disabled when pristine. Matches shadboard settings pattern.
  */
-export function SettingsSaveButton({ isSubmitting, isDirty, onReset }: Props) {
+export function SettingsSaveButton({
+	isSubmitting,
+	isDirty,
+	onReset,
+	submitLabel = "Save changes",
+	className,
+}: Props) {
 	const isDisabled = isSubmitting || !isDirty;
 	return (
-		<div className="flex items-center gap-2 mt-2">
-			<Button type="submit" size="default" className="w-fit" disabled={isDisabled}>
-				{isSubmitting && <Loader2 className="me-2 size-4 animate-spin" />}
-				Save
-			</Button>
+		<div className={cn("flex justify-end gap-2 pt-4", className)}>
 			{onReset && (
-				<Button type="button" variant="secondary" size="default" className="w-fit" disabled={isDisabled} onClick={onReset}>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={isDisabled}
+					onClick={onReset}
+				>
 					Reset
 				</Button>
 			)}
+			<Button type="submit" size="sm" disabled={isDisabled}>
+				{isSubmitting && <Loader2 className="me-2 size-4 animate-spin" />}
+				{submitLabel}
+			</Button>
 		</div>
 	);
 }

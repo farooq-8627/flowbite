@@ -11,6 +11,7 @@ import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsFormRow } from "../shared/SettingsFormRow";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
+import { FloatingLabelInput } from "../shared/FloatingLabelInput";
 import { Form, FormField, FormControl, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -230,28 +231,27 @@ function EntityLabelsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs
 							label={ENTITY_DISPLAY[key]}
 							description={`Singular + plural names and URL slug for "${ENTITY_DISPLAY[key]}".`}
 							alignStart
-							controlClassName="sm:max-w-md sm:min-w-[340px]"
+							controlClassName="sm:max-w-none sm:min-w-[480px] sm:flex-1"
 							vertical={false}
 						>
-							<div className="grid grid-cols-2 gap-2">
-								<SettingsFormRowInline
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-3">
+								<EntityLabelField
 									control={form.control}
 									name={`${key}.singular`}
+									floatingLabel="Singular"
 									placeholder={ENTITY_DISPLAY[key]}
-									aria-label={`${ENTITY_DISPLAY[key]} singular`}
 								/>
-								<SettingsFormRowInline
+								<EntityLabelField
 									control={form.control}
 									name={`${key}.plural`}
+									floatingLabel="Plural"
 									placeholder={`${ENTITY_DISPLAY[key]}s`}
-									aria-label={`${ENTITY_DISPLAY[key]} plural`}
 								/>
-								<SettingsFormRowInline
+								<EntityLabelField
 									control={form.control}
 									name={`${key}.slug`}
+									floatingLabel="Slug"
 									placeholder={`${ENTITY_DISPLAY[key].toLowerCase()}s`}
-									aria-label={`${ENTITY_DISPLAY[key]} URL slug`}
-									className="col-span-2"
 								/>
 							</div>
 						</SettingsRow>
@@ -267,29 +267,32 @@ function EntityLabelsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs
 	);
 }
 
-/** A tiny inline FormField wrapper for inputs that share a row. */
-function SettingsFormRowInline({
+/** Form-bound wrapper around FloatingLabelInput used by the Entity Labels editor. */
+function EntityLabelField({
 	control,
 	name,
+	floatingLabel,
 	placeholder,
-	className,
-	"aria-label": ariaLabel,
 }: {
 	// biome-ignore lint/suspicious/noExplicitAny: bound to useForm<any>
 	control: any;
 	name: string;
+	floatingLabel: string;
 	placeholder?: string;
-	className?: string;
-	"aria-label"?: string;
 }) {
 	return (
 		<FormField
 			control={control}
 			name={name}
 			render={({ field }) => (
-				<FormItem className={`space-y-1 ${className ?? ""}`}>
+				<FormItem className="space-y-1">
 					<FormControl>
-						<Input placeholder={placeholder} aria-label={ariaLabel} {...field} />
+						<FloatingLabelInput
+							label={floatingLabel}
+							placeholder={placeholder}
+							aria-label={floatingLabel}
+							{...field}
+						/>
 					</FormControl>
 					<FormMessage className="text-[10px]" />
 				</FormItem>

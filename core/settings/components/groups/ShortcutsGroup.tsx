@@ -87,7 +87,7 @@ export function ShortcutsGroup() {
 					description={section.description}
 				>
 					{section.shortcuts.map((s) => (
-						<SettingsRow key={s.description} label={s.description}>
+						<SettingsRow key={s.description} label={s.description} compact>
 							<KeyCombo keys={s.keys} />
 						</SettingsRow>
 					))}

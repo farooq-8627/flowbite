@@ -31,8 +31,8 @@ export function SettingsNav({
 	});
 
 	return (
-		<aside className="flex w-52 shrink-0 flex-col overflow-y-auto">
-			<nav className="pe-2 space-y-0.5">
+		<aside className="flex w-full shrink-0 flex-col overflow-y-auto">
+			<nav className="space-y-0.5">
 				{groups.map((group) => {
 					const isActive = activeGroup === group.id;
 					return (

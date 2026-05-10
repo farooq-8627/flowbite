@@ -103,6 +103,7 @@ function NotifGroupCard({
 			id={`notifications.${group.id}`}
 			title={group.title}
 			description={group.description}
+			noDividers
 			action={
 				<Button
 					type="button"
@@ -119,13 +120,12 @@ function NotifGroupCard({
 					key={String(item.key)}
 					label={item.label(labels)}
 					description={item.description}
+					compact
 				>
-					<div className="flex justify-end">
-						<Switch
-							checked={prefs[item.key] !== false}
-							onCheckedChange={(v) => onToggle(item.key, v)}
-						/>
-					</div>
+					<Switch
+						checked={prefs[item.key] !== false}
+						onCheckedChange={(v) => onToggle(item.key, v)}
+					/>
 				</SettingsRow>
 			))}
 		</SettingsSection>

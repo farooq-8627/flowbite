@@ -85,6 +85,7 @@ export function AppearanceGroup() {
 				id="appearance.theme"
 				title="Theme"
 				description="Choose your color scheme and preset."
+				noDividers
 			>
 				<SettingsRow
 					label="Theme mode"
@@ -151,6 +152,7 @@ export function AppearanceGroup() {
 				id="appearance.layout"
 				title="Layout"
 				description="Font, border radius, and sidebar behavior."
+				noDividers
 				action={
 					<Button
 						type="button"

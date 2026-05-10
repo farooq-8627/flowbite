@@ -51,7 +51,7 @@ function SettingsToolbar({
 				<SettingsSearch
 					value={query}
 					onChange={onQueryChange}
-					className="w-full sm:w-56 shrink-0"
+					className="w-fit sm:w-56 shrink-0"
 				/>
 			</div>
 			{!isSearching && sections.length > 0 && (
@@ -191,7 +191,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 
 	return (
 		<div className="flex h-full overflow-hidden">
-			<div className="hidden xl:flex">
+			<div className="hidden w-52 shrink-0 pe-2 xl:flex">
 				<SettingsNav
 					activeGroup={resolvedGroup}
 					onGroupChange={handleGroupChange}
@@ -205,8 +205,8 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 				onOpenChange={setSheetOpen}
 				title="Settings"
 				side="left"
-				width="13rem"
-				className="p-2 pt-4"
+				width="16rem"
+				className="p-3 pt-4"
 			>
 				<div className="flex h-11 shrink-0 items-center px-2">
 					<span className="text-2xl font-semibold">Settings</span>

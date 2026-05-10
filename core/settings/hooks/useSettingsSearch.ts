@@ -39,7 +39,7 @@ const FUSE_OPTIONS: IFuseOptions<SettingsSearchHit> = {
  *   3. Builds a Fuse instance (memoised per `permissions`).
  *   4. On query, returns up to `limit` hits — or the full enriched list when the query is blank.
  */
-export function useSettingsSearch(query: string, permissions: string[] | undefined, limit = 8) {
+export function useSettingsSearch(query: string, permissions: string[] | undefined, limit = 20) {
 	const { fuse, allHits } = useMemo(() => {
 		const groupLabelById = new Map<string, string>(
 			SETTINGS_GROUPS.map((g: SettingsGroup) => [g.id, g.label]),

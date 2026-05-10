@@ -6,6 +6,7 @@ import {
 	CardTitle,
 	CardAction,
 } from "@/components/ui/card";
+import { useSearchFilter } from "../../context/search-filter";
 
 type Props = {
 	id?: string;
@@ -18,15 +19,15 @@ type Props = {
 
 /**
  * Settings section card.
- * Structure:
- *   Card (shadcn default: rounded-xl border py-6 shadow-sm)
- *   ├─ CardHeader (title + description + optional action)
- *   └─ CardContent (divided rows via <SettingsRow>)
  *
- * Each row inside uses horizontal layout (label + description on the left,
- * form control on the right) — matches shadboard settings pattern.
+ * If a search-filter context is active and this section's id isn't in the
+ * matching set, the card returns null — inline search filtering without a
+ * separate results screen.
  */
 export function SettingsSection({ id, title, description, action, children }: Props) {
+	const { matchingIds } = useSearchFilter();
+	if (matchingIds && id && !matchingIds.has(id)) return null;
+
 	return (
 		<Card id={id} className="scroll-mt-6">
 			<CardHeader>

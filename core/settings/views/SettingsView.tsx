@@ -26,16 +26,18 @@ function SettingsToolbar({
 	activeSectionId,
 	onPickSection,
 	onOpenSheet,
-	permissions,
-	onNavigate,
+	query,
+	onQueryChange,
+	isSearching,
 	className,
 }: {
 	sections: SettingsSectionEntry[];
 	activeSectionId: string | null;
 	onPickSection: (id: string) => void;
 	onOpenSheet?: () => void;
-	permissions: string[] | undefined;
-	onNavigate: (groupId: SettingsGroupId, sectionId: string) => void;
+	query: string;
+	onQueryChange: (value: string) => void;
+	isSearching: boolean;
 	className?: string;
 }) {
 	return (
@@ -47,12 +49,12 @@ function SettingsToolbar({
 					</Button>
 				)}
 				<SettingsSearch
-					permissions={permissions}
-					onNavigate={onNavigate}
+					value={query}
+					onChange={onQueryChange}
 					className="w-full sm:w-56 shrink-0"
 				/>
 			</div>
-			{sections.length > 0 && (
+			{!isSearching && sections.length > 0 && (
 				<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
 					{sections.map((sub) => (
 						<button
@@ -88,7 +90,10 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 	const { activeGroup, setActiveGroup } = useActiveGroup();
 	const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
+	const [query, setQuery] = useState("");
 	const { setSlot, clearSlot } = useNavSlot();
+
+	const isSearching = query.trim().length > 0;
 
 	// ── Derived ──────────────────────────────────────────────────────────────
 
@@ -119,7 +124,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 
 	// ── Scrollspy — highlight the section currently visible in the viewport. ──
 	useEffect(() => {
-		if (sectionsForGroup.length === 0) return;
+		if (isSearching || sectionsForGroup.length === 0) return;
 		const els = sectionsForGroup
 			.map((s) => document.getElementById(s.id))
 			.filter((el): el is HTMLElement => el !== null);
@@ -127,7 +132,6 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 
 		const observer = new IntersectionObserver(
 			(entries) => {
-				// Pick the entry closest to the top that is still in view.
 				const visible = entries
 					.filter((e) => e.isIntersecting)
 					.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
@@ -137,18 +141,13 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 		);
 		els.forEach((el) => observer.observe(el));
 		return () => observer.disconnect();
-	}, [sectionsForGroup, resolvedGroup]);
+	}, [sectionsForGroup, resolvedGroup, isSearching]);
 
 	// ── Side effects ─────────────────────────────────────────────────────────
 
 	useEffect(() => {
 		if (resolvedGroup !== activeGroup) setActiveGroup(resolvedGroup);
 	}, [resolvedGroup, activeGroup, setActiveGroup]);
-
-	const handleNavigate = (groupId: SettingsGroupId, sectionId: string) => {
-		if (groupId !== resolvedGroup) setActiveGroup(groupId);
-		setActiveSectionId(sectionId);
-	};
 
 	const handlePickSection = (id: string) => {
 		setActiveSectionId(id);
@@ -162,13 +161,14 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 				sections={sectionsForGroup}
 				activeSectionId={resolvedSectionId}
 				onPickSection={handlePickSection}
-				permissions={permissions}
-				onNavigate={handleNavigate}
+				query={query}
+				onQueryChange={setQuery}
+				isSearching={isSearching}
 				className="hidden xl:flex w-full"
 			/>,
 		);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [sectionsForGroup, resolvedSectionId, permissions]);
+	}, [sectionsForGroup, resolvedSectionId, query, isSearching]);
 
 	useEffect(() => () => clearSlot(), [clearSlot]);
 
@@ -177,6 +177,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 	const handleGroupChange = (g: SettingsGroupId) => {
 		setActiveGroup(g);
 		setActiveSectionId(null);
+		setQuery("");
 		setSheetOpen(false);
 		window.scrollTo({ top: 0, behavior: "auto" });
 	};
@@ -224,8 +225,9 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					activeSectionId={resolvedSectionId}
 					onPickSection={handlePickSection}
 					onOpenSheet={() => setSheetOpen(true)}
-					permissions={permissions}
-					onNavigate={handleNavigate}
+					query={query}
+					onQueryChange={setQuery}
+					isSearching={isSearching}
 					className="xl:hidden px-3 py-2 flex-wrap"
 				/>
 				<SettingsContent
@@ -234,6 +236,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					org={settings}
 					orgId={orgId}
 					permissions={permissions}
+					query={query}
 				/>
 			</div>
 		</div>

@@ -28,7 +28,7 @@ type Props = {
  */
 export function SettingsSection({ id, title, description, action, children }: Props) {
 	return (
-		<Card id={id}>
+		<Card id={id} className="scroll-mt-6">
 			<CardHeader>
 				<CardTitle className="text-base">{title}</CardTitle>
 				{description && <CardDescription>{description}</CardDescription>}

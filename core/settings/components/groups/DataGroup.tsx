@@ -194,7 +194,7 @@ export function DataGroup({
 			{canExport && <ExportSection labels={labels} />}
 
 			{isOwner && (
-				<DangerZone>
+				<DangerZone id="data.danger">
 					<SettingsRow
 						label="Transfer ownership"
 						description="Transfer this workspace to another owner. You will lose owner privileges."

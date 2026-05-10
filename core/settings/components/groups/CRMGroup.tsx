@@ -14,11 +14,12 @@ import { useSettingsForm } from "../../hooks/useSettingsForm";
 import { SettingsSection } from "../shared/SettingsSection";
 import { SettingsFormRow } from "../shared/SettingsFormRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
+import { PipelineEditor } from "./crm/PipelineEditor";
+import { FieldEditor } from "./crm/FieldEditor";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
 	Form,
@@ -49,56 +50,19 @@ function PipelinesSection({ orgId }: { orgId: Id<"orgs"> }) {
 		<SettingsSection
 			id="crm.pipelines"
 			title="Pipelines"
-			description="Deal stage workflows. Inline stage editing is coming soon — for now, manage pipelines inside deal boards."
+			description="Deal stage workflows. Drag stages to reorder. Click a stage to rename. Click the color dot to recolor."
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>Pipeline</TableHead>
-						<TableHead>Stages</TableHead>
-						<TableHead className="text-end">Default</TableHead>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{pipelines === undefined ? (
-						Array.from({ length: 2 }).map((_, i) => (
-							<TableRow key={i}>
-								<TableCell><Skeleton className="h-5 w-32" /></TableCell>
-								<TableCell><Skeleton className="h-4 w-48" /></TableCell>
-								<TableCell className="text-end"><Skeleton className="ms-auto h-5 w-16" /></TableCell>
-							</TableRow>
-						))
-					) : pipelines.length === 0 ? (
-						<TableRow>
-							<TableCell colSpan={3} className="py-6 text-center text-sm text-muted-foreground">
-								No pipelines yet.
-							</TableCell>
-						</TableRow>
-					) : (
-						pipelines.map((p) => (
-							<TableRow key={p._id}>
-								<TableCell className="font-medium text-sm">{p.name}</TableCell>
-								<TableCell>
-									<div className="flex flex-wrap gap-1">
-										{p.stages.map((s) => (
-											<Badge
-												key={s.id}
-												variant="secondary"
-												style={s.color ? { backgroundColor: `${s.color}20`, color: s.color } : undefined}
-											>
-												{s.name}
-											</Badge>
-										))}
-									</div>
-								</TableCell>
-								<TableCell className="text-end">
-									{p.isDefault && <Badge>Default</Badge>}
-								</TableCell>
-							</TableRow>
-						))
-					)}
-				</TableBody>
-			</Table>
+			<div className="flex flex-col gap-4 py-2">
+				{pipelines === undefined ? null : pipelines.length === 0 ? (
+					<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">
+						No pipelines yet.
+					</div>
+				) : (
+					pipelines.map((p) => (
+						<PipelineEditor key={p._id} pipeline={p} orgId={orgId} />
+					))
+				)}
+			</div>
 		</SettingsSection>
 	);
 }
@@ -119,7 +83,7 @@ function FieldsSection({
 		<SettingsSection
 			id="crm.fields"
 			title="Custom Fields"
-			description="Add custom fields to records. Inline field editing is coming soon — use the entity detail page to create fields for now."
+			description="Add, edit, or remove custom fields on your CRM records. Supports text, number, date, select, and more."
 		>
 			<Tabs value={active} onValueChange={(v) => setActive(v as EntityTab)}>
 				<TabsList className="grid w-full grid-cols-4">
@@ -130,63 +94,11 @@ function FieldsSection({
 				</TabsList>
 				{(["leads", "contacts", "deals", "companies"] as const).map((entity) => (
 					<TabsContent key={entity} value={entity} className="mt-4">
-						<FieldsTable orgId={orgId} entityType={entity} />
+						<FieldEditor orgId={orgId} entityType={entity} />
 					</TabsContent>
 				))}
 			</Tabs>
 		</SettingsSection>
-	);
-}
-
-function FieldsTable({ orgId, entityType }: { orgId: Id<"orgs">; entityType: EntityTab }) {
-	const fields = useQuery(api.crm.fields.fieldDefinitions.queries.listByEntity, {
-		orgId,
-		entityType,
-	});
-
-	if (fields === undefined) {
-		return (
-			<div className="grid gap-2">
-				{Array.from({ length: 3 }).map((_, i) => (
-					<Skeleton key={i} className="h-10 w-full" />
-				))}
-			</div>
-		);
-	}
-
-	if (fields.length === 0) {
-		return (
-			<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">
-				No custom fields for {entityType}.
-			</div>
-		);
-	}
-
-	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead>Label</TableHead>
-					<TableHead>Type</TableHead>
-					<TableHead>Group</TableHead>
-					<TableHead className="text-end">Required</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{fields.map((f) => (
-					<TableRow key={f._id}>
-						<TableCell className="font-medium text-sm">{f.label}</TableCell>
-						<TableCell>
-							<Badge variant="secondary" className="capitalize">{f.type}</Badge>
-						</TableCell>
-						<TableCell className="text-xs text-muted-foreground">{f.groupName ?? "—"}</TableCell>
-						<TableCell className="text-end text-xs">
-							{f.required ? "Required" : "Optional"}
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
 	);
 }
 
@@ -227,9 +139,7 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 		>
 			<div className="flex flex-col gap-4 py-2">
 				<div className="flex flex-wrap gap-2">
-					{tags === undefined ? (
-						Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-6 w-20" />)
-					) : tags.length === 0 ? (
+					{tags === undefined ? null : tags.length === 0 ? (
 						<span className="text-xs text-muted-foreground">No tags yet.</span>
 					) : (
 						tags.map((t) => (

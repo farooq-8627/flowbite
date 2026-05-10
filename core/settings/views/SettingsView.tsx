@@ -2,14 +2,19 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Search, Menu } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { SettingsNav } from "../components/SettingsNav";
 import { SettingsContent } from "../components/SettingsContent";
+import { SettingsSearch } from "../components/SettingsSearch";
 import { useActiveGroup } from "../hooks/useActiveGroup";
-import { SETTINGS_GROUPS, type SettingsGroupId, type SettingsSubGroup } from "../config/settings-nav";
+import { scrollToSection } from "../hooks/useSettingsSearch";
+import { SETTINGS_GROUPS, type SettingsGroupId } from "../config/settings-nav";
+import {
+	getVisibleSections,
+	type SettingsSectionEntry,
+} from "../config/settings-sections";
 import { useState, useMemo, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useNavSlot } from "@/core/shell/context/nav-slot-context";
@@ -17,50 +22,50 @@ import { useNavSlot } from "@/core/shell/context/nav-slot-context";
 // ─── Shared toolbar ───────────────────────────────────────────────────────────
 
 function SettingsToolbar({
-	search, onSearch, subGroups, activeSubGroup, onSubGroup, onOpenSheet, className, searchClassName,
+	sections,
+	activeSectionId,
+	onPickSection,
+	onOpenSheet,
+	permissions,
+	onNavigate,
+	className,
 }: {
-	search: string;
-	onSearch: (v: string) => void;
-	subGroups: SettingsSubGroup[];
-	activeSubGroup: string | null;
-	onSubGroup: (id: string) => void;
+	sections: SettingsSectionEntry[];
+	activeSectionId: string | null;
+	onPickSection: (id: string) => void;
 	onOpenSheet?: () => void;
+	permissions: string[] | undefined;
+	onNavigate: (groupId: SettingsGroupId, sectionId: string) => void;
 	className?: string;
-	searchClassName?: string;
 }) {
 	return (
-		<div className={cn("flex gap-2 overflow-hidden flex-col sm:flex-row", className)}>
-			<div className="flex flex-row">
-			{onOpenSheet && (
-				<Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onOpenSheet}>
-					<Menu className="size-4" />
-				</Button>
-			)}
-			<div className="relative shrink-0 w-full sm:w-44">
-				<Search className="pointer-events-none absolute start-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground" />
-				<Input
-					value={search}
-					onChange={(e) => onSearch(e.target.value)}
-					placeholder="Search…"
-					className={cn("h-6 ps-6 text-xs", searchClassName)}
+		<div className={cn("flex w-full items-center gap-2 flex-col sm:flex-row", className)}>
+			<div className="flex flex-row items-center gap-1 w-full sm:w-auto shrink-0">
+				{onOpenSheet && (
+					<Button variant="ghost" size="icon" className="size-7 shrink-0" onClick={onOpenSheet}>
+						<Menu className="size-4" />
+					</Button>
+				)}
+				<SettingsSearch
+					permissions={permissions}
+					onNavigate={onNavigate}
+					className="w-full sm:w-56 shrink-0"
 				/>
 			</div>
-			</div>
-			{subGroups.length > 0 && (
-				<div className="flex flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
-					{subGroups.map((sub) => (
+			{sections.length > 0 && (
+				<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
+					{sections.map((sub) => (
 						<button
 							key={sub.id}
 							type="button"
-							onClick={() => onSubGroup(sub.id)}
+							onClick={() => onPickSection(sub.id)}
 							className={cn(
-								"flex shrink-0 items-center gap-1.5 rounded-[var(--radius)] px-2.5 py-1 text-xs transition-colors",
-								activeSubGroup === sub.id
+								"shrink-0 rounded-[var(--radius)] px-2.5 py-1 text-xs transition-colors",
+								activeSectionId === sub.id
 									? "bg-accent text-accent-foreground font-medium"
 									: "text-muted-foreground hover:bg-muted hover:text-foreground",
 							)}
 						>
-							<sub.icon className="size-3.5 shrink-0" />
 							{sub.label}
 						</button>
 					))}
@@ -81,12 +86,11 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 	const permissions = useQuery(api.orgRoles.queries.getMyPermissions, orgId ? { orgId } : "skip");
 
 	const { activeGroup, setActiveGroup } = useActiveGroup();
-	const [search, setSearch] = useState("");
-	const [activeSubGroup, setActiveSubGroup] = useState<string | null>(null);
+	const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
 	const { setSlot, clearSlot } = useNavSlot();
 
-	// ── Derived (no useEffect needed) ────────────────────────────────────────
+	// ── Derived ──────────────────────────────────────────────────────────────
 
 	const visibleGroups = useMemo(() => {
 		if (!permissions) return [];
@@ -97,56 +101,74 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 		});
 	}, [permissions]);
 
-	const filteredGroups = useMemo(() => {
-		const q = search.trim().toLowerCase();
-		if (!q) return visibleGroups;
-		return visibleGroups.map((g) => {
-			const groupMatches = g.label.toLowerCase().includes(q);
-			const matchedSubs = g.subGroups.filter(
-				(s) => s.label.toLowerCase().includes(q) || s.description.toLowerCase().includes(q),
-			);
-			if (groupMatches || matchedSubs.length > 0) {
-				return { ...g, subGroups: groupMatches ? g.subGroups : matchedSubs };
-			}
-			return null;
-		}).filter(Boolean) as typeof visibleGroups;
-	}, [visibleGroups, search]);
-
-	// Derive active group — fall back to first visible if current is filtered out
 	const resolvedGroup: SettingsGroupId =
-		filteredGroups.some((g) => g.id === activeGroup)
+		visibleGroups.some((g) => g.id === activeGroup)
 			? activeGroup
-			: (filteredGroups[0]?.id as SettingsGroupId) ?? activeGroup;
+			: (visibleGroups[0]?.id as SettingsGroupId) ?? activeGroup;
 
-	const subGroups = filteredGroups.find((g) => g.id === resolvedGroup)?.subGroups ?? [];
+	// Sub-sections for the currently active group, filtered by permissions.
+	const sectionsForGroup = useMemo(() => {
+		if (!permissions) return [];
+		return getVisibleSections(permissions, resolvedGroup);
+	}, [permissions, resolvedGroup]);
 
-	// Derive active sub-group — fall back to first if current is gone
-	const resolvedSubGroup: string | null =
-		subGroups.some((s) => s.id === activeSubGroup)
-			? activeSubGroup
-			: subGroups[0]?.id ?? null;
+	const resolvedSectionId: string | null =
+		sectionsForGroup.some((s) => s.id === activeSectionId)
+			? activeSectionId
+			: sectionsForGroup[0]?.id ?? null;
 
-	// ── Side effects (genuinely external) ────────────────────────────────────
+	// ── Scrollspy — highlight the section currently visible in the viewport. ──
+	useEffect(() => {
+		if (sectionsForGroup.length === 0) return;
+		const els = sectionsForGroup
+			.map((s) => document.getElementById(s.id))
+			.filter((el): el is HTMLElement => el !== null);
+		if (els.length === 0) return;
 
-	// Sync URL when resolved group differs from stored group
+		const observer = new IntersectionObserver(
+			(entries) => {
+				// Pick the entry closest to the top that is still in view.
+				const visible = entries
+					.filter((e) => e.isIntersecting)
+					.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+				if (visible) setActiveSectionId(visible.target.id);
+			},
+			{ rootMargin: "-10% 0px -70% 0px", threshold: 0 },
+		);
+		els.forEach((el) => observer.observe(el));
+		return () => observer.disconnect();
+	}, [sectionsForGroup, resolvedGroup]);
+
+	// ── Side effects ─────────────────────────────────────────────────────────
+
 	useEffect(() => {
 		if (resolvedGroup !== activeGroup) setActiveGroup(resolvedGroup);
 	}, [resolvedGroup, activeGroup, setActiveGroup]);
 
-	// Inject into TopNav slot
+	const handleNavigate = (groupId: SettingsGroupId, sectionId: string) => {
+		if (groupId !== resolvedGroup) setActiveGroup(groupId);
+		setActiveSectionId(sectionId);
+	};
+
+	const handlePickSection = (id: string) => {
+		setActiveSectionId(id);
+		scrollToSection(id);
+	};
+
+	// Inject toolbar into the topnav slot.
 	useEffect(() => {
 		setSlot(
 			<SettingsToolbar
-				search={search}
-				onSearch={setSearch}
-				subGroups={subGroups}
-				activeSubGroup={resolvedSubGroup}
-				onSubGroup={setActiveSubGroup}
+				sections={sectionsForGroup}
+				activeSectionId={resolvedSectionId}
+				onPickSection={handlePickSection}
+				permissions={permissions}
+				onNavigate={handleNavigate}
 				className="hidden xl:flex w-full"
 			/>,
 		);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [search, subGroups, resolvedSubGroup]);
+	}, [sectionsForGroup, resolvedSectionId, permissions]);
 
 	useEffect(() => () => clearSlot(), [clearSlot]);
 
@@ -154,12 +176,13 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 
 	const handleGroupChange = (g: SettingsGroupId) => {
 		setActiveGroup(g);
-		setActiveSubGroup(null);
+		setActiveSectionId(null);
 		setSheetOpen(false);
+		window.scrollTo({ top: 0, behavior: "auto" });
 	};
 
 	if (!orgId || settings === undefined || permissions === undefined) {
-		return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+		return null;
 	}
 	if (!settings) {
 		return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Organization not found.</div>;
@@ -172,7 +195,7 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					activeGroup={resolvedGroup}
 					onGroupChange={handleGroupChange}
 					permissions={permissions}
-					filteredGroups={filteredGroups}
+					filteredGroups={visibleGroups}
 				/>
 			</div>
 
@@ -191,24 +214,23 @@ function SettingsViewInner({ orgSlug }: { orgSlug: string }) {
 					activeGroup={resolvedGroup}
 					onGroupChange={handleGroupChange}
 					permissions={permissions}
-					filteredGroups={filteredGroups}
+					filteredGroups={visibleGroups}
 				/>
 			</AppSheet>
 
 			<div className="flex flex-1 flex-col overflow-hidden">
 				<SettingsToolbar
-					search={search}
-					onSearch={setSearch}
-					subGroups={subGroups}
-					activeSubGroup={resolvedSubGroup}
-					onSubGroup={setActiveSubGroup}
+					sections={sectionsForGroup}
+					activeSectionId={resolvedSectionId}
+					onPickSection={handlePickSection}
 					onOpenSheet={() => setSheetOpen(true)}
+					permissions={permissions}
+					onNavigate={handleNavigate}
 					className="xl:hidden px-3 py-2 flex-wrap"
-					searchClassName="h-7"
 				/>
 				<SettingsContent
 					activeGroup={resolvedGroup}
-					activeSubGroup={resolvedSubGroup}
+					activeSubGroup={resolvedSectionId}
 					org={settings}
 					orgId={orgId}
 					permissions={permissions}

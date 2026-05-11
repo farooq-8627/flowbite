@@ -40,7 +40,7 @@ export function SettingsSection({
 
 	return (
 		<Card id={id} className="scroll-mt-6 gap-4 py-4 sm:gap-6 sm:py-6">
-			<CardHeader className="gap-1">
+			<CardHeader className="gap-0">
 				<CardTitle className="text-sm sm:text-base">{title}</CardTitle>
 				{description && (
 					<CardDescription className="text-xs sm:text-sm">
@@ -52,7 +52,7 @@ export function SettingsSection({
 			<CardContent
 				className={cn(
 					"flex flex-col",
-					!noDividers && "divide-y divide-border",
+					// !noDividers && "divide-y divide-border",
 				)}
 			>
 				{children}

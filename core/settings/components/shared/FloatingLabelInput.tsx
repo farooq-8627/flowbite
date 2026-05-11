@@ -36,7 +36,7 @@ export function FloatingLabelInput({
 		<div className={cn("group relative w-full", wrapperClassName)}>
 			<Label
 				htmlFor={inputId}
-				className="pointer-events-none absolute top-0 start-2 z-10 block -translate-y-1/2 bg-background px-1 text-[10px] font-medium text-muted-foreground"
+				className="pointer-events-none absolute top-0 start-2 z-10 block -translate-y-1/2 bg-card px-1 text-[10px] font-medium text-muted-foreground"
 			>
 				{label}
 			</Label>

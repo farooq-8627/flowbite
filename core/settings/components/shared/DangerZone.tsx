@@ -29,7 +29,7 @@ export function DangerZone({
 				<CardTitle className="text-base text-destructive">{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
 			</CardHeader>
-			<CardContent className="flex flex-col divide-y divide-border">
+			<CardContent className="flex flex-col ">
 				{children}
 			</CardContent>
 		</Card>

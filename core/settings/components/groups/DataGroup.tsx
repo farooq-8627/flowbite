@@ -1,30 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { useMutation } from "convex/react";
+import { AlertTriangle, Download, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { toast } from "sonner";
-import { Download, Trash2, AlertTriangle } from "lucide-react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import type { OrgSettings } from "../../types";
-import { resolveEntityLabels } from "../../types";
-
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsRow } from "../shared/SettingsRow";
-import { DangerZone } from "../shared/DangerZone";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import {
 	Dialog,
 	DialogContent,
@@ -34,14 +16,28 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import type { OrgSettings } from "../../types";
+import { resolveEntityLabels } from "../../types";
+import { DangerZone } from "../shared/DangerZone";
+import { SettingsRow } from "../shared/SettingsRow";
+import { SettingsSection } from "../shared/SettingsSection";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Export (placeholder — real export job is coming)
 // ────────────────────────────────────────────────────────────────────────────
 
-function ExportSection({
-	labels,
-}: { labels: ReturnType<typeof resolveEntityLabels> }) {
+function ExportSection({ labels }: { labels: ReturnType<typeof resolveEntityLabels> }) {
 	const [entity, setEntity] = useState<"leads" | "contacts" | "deals" | "companies">("leads");
 	const [format, setFormat] = useState<"csv" | "json">("csv");
 
@@ -51,10 +47,7 @@ function ExportSection({
 			title="Export data"
 			description="Download your CRM records. Large exports run as a background job."
 		>
-			<SettingsRow
-				label="Entity"
-				description="Which records to include in the export."
-			>
+			<SettingsRow label="Entity" description="Which records to include in the export.">
 				<Select value={entity} onValueChange={(v) => setEntity(v as typeof entity)}>
 					<SelectTrigger className="w-full">
 						<SelectValue />
@@ -67,10 +60,7 @@ function ExportSection({
 					</SelectContent>
 				</Select>
 			</SettingsRow>
-			<SettingsRow
-				label="Format"
-				description="File format of the exported data."
-			>
+			<SettingsRow label="Format" description="File format of the exported data.">
 				<Select value={format} onValueChange={(v) => setFormat(v as typeof format)}>
 					<SelectTrigger className="w-full">
 						<SelectValue />
@@ -98,15 +88,25 @@ function ExportSection({
 // Delete workspace dialog
 // ────────────────────────────────────────────────────────────────────────────
 
-function DeleteWorkspaceDialog({
-	org,
-	orgId,
-}: { org: OrgSettings; orgId: Id<"orgs"> }) {
+function DeleteWorkspaceDialog({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const [open, setOpen] = useState(false);
 	const [confirm, setConfirm] = useState("");
 	const [deleting, setDeleting] = useState(false);
 	const deleteOrg = useMutation(api.orgs.mutations.deleteOrg);
 	const router = useRouter();
+
+	// Labels come from the resolved entityLabels so the warning copy matches
+	// what the admin actually calls these records (e.g. "inquiries, clients,
+	// opportunities, venues") — no hardcoded CRM terminology.
+	const labels = resolveEntityLabels(org.entityLabels);
+	const entityList = [
+		labels.lead.plural,
+		labels.contact.plural,
+		labels.deal.plural,
+		labels.company.plural,
+	]
+		.map((s) => s.toLowerCase())
+		.join(", ");
 
 	const canDelete = confirm === org.name && !deleting;
 
@@ -124,7 +124,13 @@ function DeleteWorkspaceDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setConfirm(""); }}>
+		<Dialog
+			open={open}
+			onOpenChange={(v) => {
+				setOpen(v);
+				if (!v) setConfirm("");
+			}}
+		>
 			<DialogTrigger asChild>
 				<Button variant="destructive" size="sm">
 					<Trash2 className="size-4" /> Delete workspace
@@ -137,9 +143,8 @@ function DeleteWorkspaceDialog({
 						Delete this workspace?
 					</DialogTitle>
 					<DialogDescription>
-						This will schedule <b>{org.name}</b> and all of its data
-						(leads, contacts, deals, members, files) for permanent deletion.
-						This cannot be undone.
+						This will schedule <b>{org.name}</b> and all of its data ({entityList},
+						members, files) for permanent deletion. This cannot be undone.
 					</DialogDescription>
 				</DialogHeader>
 				<div className="grid gap-2 py-2">
@@ -186,7 +191,8 @@ export function DataGroup({
 	permissions: string[];
 }) {
 	const labels = resolveEntityLabels(org.entityLabels);
-	const canExport = permissions.includes("org.settings") || permissions.includes("org.editSettings");
+	const canExport =
+		permissions.includes("org.settings") || permissions.includes("org.editSettings");
 	const isOwner = permissions.includes("org.delete");
 
 	return (
@@ -208,7 +214,8 @@ export function DataGroup({
 						label="Delete workspace"
 						description={
 							<span>
-								Permanently remove <b>{org.name}</b> and all associated data. This cannot be undone.
+								Permanently remove <b>{org.name}</b> and all associated data. This
+								cannot be undone.
 							</span>
 						}
 						controlClassName="sm:min-w-auto"
@@ -220,7 +227,9 @@ export function DataGroup({
 
 			{!canExport && !isOwner && (
 				<div className="rounded-[var(--radius)] border border-dashed py-12 text-center text-sm text-muted-foreground">
-					<Badge variant="secondary" className="mb-2">Restricted</Badge>
+					<Badge variant="secondary" className="mb-2">
+						Restricted
+					</Badge>
 					<p>You don't have access to data exports or workspace management.</p>
 				</div>
 			)}

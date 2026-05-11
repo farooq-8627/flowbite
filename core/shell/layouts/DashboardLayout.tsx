@@ -1,8 +1,8 @@
-import type { ReactNode } from "react";
 import { cookies } from "next/headers";
-import { DashboardLayoutClient } from "./DashboardLayoutClient";
+import type { ReactNode } from "react";
 import { SIDEBAR_COLLAPSIBLE_MODES, SIDEBAR_VARIANTS } from "@/lib/preferences/layout";
 import { getPreference } from "@/lib/preferences/preferences-storage";
+import { DashboardLayoutClient } from "./DashboardLayoutClient";
 
 /**
  * DashboardLayout - Server component that loads initial preferences and renders client layout

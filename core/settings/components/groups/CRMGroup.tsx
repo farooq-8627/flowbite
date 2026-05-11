@@ -1,30 +1,15 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { Plus, Trash2, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Form,
-	FormControl,
-	FormField,
-	FormItem,
-	FormLabel,
-	FormMessage,
-} from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -193,7 +178,12 @@ function TagsSection({
 						placeholder="Enter tag name"
 						value={newTag}
 						onChange={(e) => setNewTag(e.target.value)}
-						onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleCreate())}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") {
+								e.preventDefault();
+								handleCreate();
+							}
+						}}
 						className="sm:max-w-xs"
 					/>
 					<div className="flex items-center gap-1">

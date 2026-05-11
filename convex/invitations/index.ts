@@ -1,2 +1,2 @@
-export { listPending, listAll } from "./queries";
-export { create, accept, decline, cancel } from "./mutations";
+export { accept, cancel, create, decline } from "./mutations";
+export { listAll, listPending } from "./queries";

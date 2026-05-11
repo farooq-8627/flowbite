@@ -5,14 +5,14 @@
  * This ensures consistency and makes it easy to update defaults in one place.
  */
 
+import type { FontKey } from "./fonts/registry";
 import type {
-	SidebarVariant,
-	SidebarCollapsible,
 	ContentLayout,
 	NavbarStyle,
+	SidebarCollapsible,
+	SidebarVariant,
 } from "./preferences/layout";
 import type { ThemeMode, ThemePreset } from "./preferences/theme";
-import type { FontKey } from "./fonts/registry";
 
 // --- Layout Defaults ---
 

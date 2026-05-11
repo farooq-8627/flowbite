@@ -13,12 +13,13 @@
  * - https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/customFunctions.ts
  * - convex/_functions/authenticated.ts (same pattern)
  */
-import { ConvexError } from "convex/values";
-import { customCtx, customMutation, customQuery } from "convex-helpers/server/customFunctions";
-import { mutation, query } from "../_generated/server";
-import type { QueryCtx, MutationCtx } from "../_generated/server";
-import type { Doc, Id } from "../_generated/dataModel";
+
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { ConvexError } from "convex/values";
+import { customCtx, customQuery } from "convex-helpers/server/customFunctions";
+import type { Doc, Id } from "../_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { query } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 import { requireMinRole } from "../_shared/permissions";
 
@@ -61,7 +62,6 @@ export const adminQuery = customQuery(
 	customCtx(async (ctx) => resolveUser(ctx)),
 );
 
-
 /**
  * Helper: resolves org membership AND requires admin+ role.
  * Throws FORBIDDEN if user is member/viewer.
@@ -69,7 +69,13 @@ export const adminQuery = customQuery(
 export async function requireAdminMember(
 	ctx: QueryCtx | MutationCtx,
 	orgId: Id<"orgs">,
-): Promise<{ org: Doc<"orgs">; member: Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] } }> {
+): Promise<{
+	org: Doc<"orgs">;
+	member: Doc<"orgMembers"> & {
+		role: "owner" | "admin" | "member" | "viewer";
+		permissions: string[];
+	};
+}> {
 	const userId = await getAuthUserId(ctx);
 	if (userId === null) throw new ConvexError(ERRORS.UNAUTHORIZED);
 

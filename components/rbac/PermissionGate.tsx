@@ -28,8 +28,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 
 interface PermissionGateProps {
 	/** Org ID to check permission against */
@@ -42,7 +42,12 @@ interface PermissionGateProps {
 	fallback?: ReactNode;
 }
 
-export function PermissionGate({ orgId, permission, children, fallback = null }: PermissionGateProps) {
+export function PermissionGate({
+	orgId,
+	permission,
+	children,
+	fallback = null,
+}: PermissionGateProps) {
 	const allowed = useOrgPermission(orgId, permission);
 
 	if (!allowed) return <>{fallback}</>;

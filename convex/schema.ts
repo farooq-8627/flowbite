@@ -16,12 +16,14 @@ const timestamps = { createdAt: v.number(), updatedAt: v.number() };
 const softDelete = { deletedAt: v.optional(v.number()) };
 
 // Typed aiContext — replaces v.any() for AI-written fields
-const aiContextValidator = v.optional(v.object({
-	summary: v.optional(v.string()),
-	keyFacts: v.optional(v.array(v.string())),
-	lastUpdatedAt: v.optional(v.number()),
-	rawNotes: v.optional(v.string()),
-}));
+const aiContextValidator = v.optional(
+	v.object({
+		summary: v.optional(v.string()),
+		keyFacts: v.optional(v.array(v.string())),
+		lastUpdatedAt: v.optional(v.number()),
+		rawNotes: v.optional(v.string()),
+	}),
+);
 
 export default defineSchema({
 	// ── Convex Auth managed tables (DO NOT TOUCH) ────────────────────────────
@@ -42,31 +44,33 @@ export default defineSchema({
 		lastActiveAt: v.optional(v.number()),
 		dismissedCards: v.optional(v.array(v.string())),
 		preferredLanguage: v.optional(v.string()),
-		notificationPreferences: v.optional(v.object({
-			// Group: CRM
-			lead_assigned: v.optional(v.boolean()),
-			lead_converted: v.optional(v.boolean()),
-			contact_assigned: v.optional(v.boolean()),
-			deal_assigned: v.optional(v.boolean()),
-			deal_stage_changed: v.optional(v.boolean()),
-			deal_won: v.optional(v.boolean()),
-			deal_stale: v.optional(v.boolean()),
-			// Group: Reminders
-			reminder_due: v.optional(v.boolean()),
-			reminder_overdue: v.optional(v.boolean()),
-			// Group: AI
-			ai_action_completed: v.optional(v.boolean()),
-			ai_workspace_setup: v.optional(v.boolean()),
-			// Group: Team
-			member_invited: v.optional(v.boolean()),
-			member_joined: v.optional(v.boolean()),
-			role_changed: v.optional(v.boolean()),
-			// Group: System
-			billing_trial_ending: v.optional(v.boolean()),
-			billing_suspended: v.optional(v.boolean()),
-			csv_import_complete: v.optional(v.boolean()),
-			csv_import_failed: v.optional(v.boolean()),
-		})),
+		notificationPreferences: v.optional(
+			v.object({
+				// Group: CRM
+				lead_assigned: v.optional(v.boolean()),
+				lead_converted: v.optional(v.boolean()),
+				contact_assigned: v.optional(v.boolean()),
+				deal_assigned: v.optional(v.boolean()),
+				deal_stage_changed: v.optional(v.boolean()),
+				deal_won: v.optional(v.boolean()),
+				deal_stale: v.optional(v.boolean()),
+				// Group: Reminders
+				reminder_due: v.optional(v.boolean()),
+				reminder_overdue: v.optional(v.boolean()),
+				// Group: AI
+				ai_action_completed: v.optional(v.boolean()),
+				ai_workspace_setup: v.optional(v.boolean()),
+				// Group: Team
+				member_invited: v.optional(v.boolean()),
+				member_joined: v.optional(v.boolean()),
+				role_changed: v.optional(v.boolean()),
+				// Group: System
+				billing_trial_ending: v.optional(v.boolean()),
+				billing_suspended: v.optional(v.boolean()),
+				csv_import_complete: v.optional(v.boolean()),
+				csv_import_failed: v.optional(v.boolean()),
+			}),
+		),
 		platformRole: v.optional(v.literal("super_admin")),
 		...timestamps,
 		...softDelete,
@@ -97,10 +101,18 @@ export default defineSchema({
 			v.object({
 				// Each slot: singular label, plural label, URL slug
 				// Defaults: lead/leads/leads, contact/contacts/contacts, deal/deals/deals, company/companies/companies
-				lead: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
-				contact: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
-				deal: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
-				company: v.optional(v.object({ singular: v.string(), plural: v.string(), slug: v.string() })),
+				lead: v.optional(
+					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				),
+				contact: v.optional(
+					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				),
+				deal: v.optional(
+					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				),
+				company: v.optional(
+					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				),
 			}),
 		),
 		settings: v.optional(
@@ -109,26 +121,34 @@ export default defineSchema({
 				timezone: v.optional(v.string()),
 				leadStaleAfterDays: v.optional(v.number()), // staleness for leads (no pipeline stages)
 				badgeCountsVisible: v.optional(v.boolean()), // show/hide nav badge counts
-				codePrefixes: v.optional(v.object({
-					person: v.optional(v.string()),
-					deal: v.optional(v.string()),
-					company: v.optional(v.string()),
-					followup: v.optional(v.string()),
-				})),
-				modules: v.optional(v.array(v.object({
-					slot: v.string(),
-					label: v.optional(v.string()),
-					hidden: v.optional(v.boolean()),
-					order: v.optional(v.number()),
-				}))),
-				reminderDefaults: v.optional(v.object({
-					followUpWindowHours: v.optional(v.number()),   // auto-suggest follow-up after N hours
-					staleAlertDays: v.optional(v.number()),        // mark deal as stale after N days
-					morningBriefingEnabled: v.optional(v.boolean()),
-					morningBriefingTime: v.optional(v.string()),   // "09:00"
-					rentAlertDays: v.optional(v.number()),         // 95-day renewal alert (Dubai RE)
-					rentAlertEnabled: v.optional(v.boolean()),
-				})),
+				codePrefixes: v.optional(
+					v.object({
+						person: v.optional(v.string()),
+						deal: v.optional(v.string()),
+						company: v.optional(v.string()),
+						followup: v.optional(v.string()),
+					}),
+				),
+				modules: v.optional(
+					v.array(
+						v.object({
+							slot: v.string(),
+							label: v.optional(v.string()),
+							hidden: v.optional(v.boolean()),
+							order: v.optional(v.number()),
+						}),
+					),
+				),
+				reminderDefaults: v.optional(
+					v.object({
+						followUpWindowHours: v.optional(v.number()), // auto-suggest follow-up after N hours
+						staleAlertDays: v.optional(v.number()), // mark deal as stale after N days
+						morningBriefingEnabled: v.optional(v.boolean()),
+						morningBriefingTime: v.optional(v.string()), // "09:00"
+						rentAlertDays: v.optional(v.number()), // 95-day renewal alert (Dubai RE)
+						rentAlertEnabled: v.optional(v.boolean()),
+					}),
+				),
 			}),
 		),
 		...timestamps,
@@ -249,18 +269,22 @@ export default defineSchema({
 		name: v.string(),
 		entityType: v.string(), // "deal" only for now
 		isDefault: v.boolean(),
-		stages: v.array(v.object({
-			id: v.string(),
-			name: v.string(),
-			order: v.number(),
-			color: v.optional(v.string()),
-			isFinal: v.optional(v.boolean()),
-			finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
-			staleAfterDays: v.optional(v.number()),
-			staleColor: v.optional(v.string()),        // hex color for stale indicator
-			warningAfterDays: v.optional(v.number()),  // days before stale to show warning
-			warningColor: v.optional(v.string()),      // hex color for warning indicator
-		})),
+		stages: v.array(
+			v.object({
+				id: v.string(),
+				name: v.string(),
+				order: v.number(),
+				color: v.optional(v.string()),
+				isFinal: v.optional(v.boolean()),
+				finalType: v.optional(
+					v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+				),
+				staleAfterDays: v.optional(v.number()),
+				staleColor: v.optional(v.string()), // hex color for stale indicator
+				warningAfterDays: v.optional(v.number()), // days before stale to show warning
+				warningColor: v.optional(v.string()), // hex color for warning indicator
+			}),
+		),
 		...timestamps,
 	})
 		.index("by_org", ["orgId"])
@@ -310,13 +334,15 @@ export default defineSchema({
 		defaultPipelineName: v.string(),
 		defaultStages: v.array(v.any()), // [{ id, name, order, color, isFinal, finalType, staleAfterDays }]
 		defaultFieldDefinitions: v.optional(v.array(v.any())),
-		defaultReminderSettings: v.optional(v.object({
-			followUpWindowHours: v.optional(v.number()),
-			staleAlertDays: v.optional(v.number()),
-			morningBriefingEnabled: v.optional(v.boolean()),
-			rentAlertEnabled: v.optional(v.boolean()),
-			rentAlertDays: v.optional(v.number()),
-		})),
+		defaultReminderSettings: v.optional(
+			v.object({
+				followUpWindowHours: v.optional(v.number()),
+				staleAlertDays: v.optional(v.number()),
+				morningBriefingEnabled: v.optional(v.boolean()),
+				rentAlertEnabled: v.optional(v.boolean()),
+				rentAlertDays: v.optional(v.number()),
+			}),
+		),
 		dashboardMetrics: v.optional(v.array(v.string())),
 		aiPersona: v.optional(v.string()),
 		navHiddenSlots: v.optional(v.array(v.string())),
@@ -596,11 +622,15 @@ export default defineSchema({
 	aiMessages: defineTable({
 		...orgScoped,
 		conversationId: v.id("aiConversations"),
-		role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system"), v.literal("tool")),
+		role: v.union(
+			v.literal("user"),
+			v.literal("assistant"),
+			v.literal("system"),
+			v.literal("tool"),
+		),
 		content: v.string(),
 		toolCalls: v.optional(v.any()), // Phase 3: structured tool call results
 		tokenCount: v.optional(v.number()),
 		createdAt: v.number(),
-	})
-		.index("by_conversation", ["conversationId", "createdAt"]),
+	}).index("by_conversation", ["conversationId", "createdAt"]),
 });

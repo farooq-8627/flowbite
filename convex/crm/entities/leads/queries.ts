@@ -3,8 +3,7 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import { orgQuery } from "../../../_functions/authenticated";
-import { requireOrgMember } from "../../../_functions/authenticated";
+import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
 import { requireRole } from "../../../_shared/permissions";
 
 export const list = orgQuery({
@@ -22,17 +21,21 @@ export const list = orgQuery({
 		const cap = args.limit ?? 100;
 
 		// Use the most selective index available for the given filters
-		let q;
+		// Initialize with the broad `by_org` index so `q`'s type is inferred
+		// and then re-narrow with a more specific index when filters apply.
+		let q = ctx.db.query("leads").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
 		if (args.status) {
-			q = ctx.db.query("leads").withIndex("by_org_and_status", (qi) =>
-				qi.eq("orgId", args.orgId).eq("status", args.status!),
-			);
+			q = ctx.db
+				.query("leads")
+				.withIndex("by_org_and_status", (qi) =>
+					qi.eq("orgId", args.orgId).eq("status", args.status!),
+				);
 		} else if (args.assignedTo) {
-			q = ctx.db.query("leads").withIndex("by_org_and_assignee", (qi) =>
-				qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
-			);
-		} else {
-			q = ctx.db.query("leads").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
+			q = ctx.db
+				.query("leads")
+				.withIndex("by_org_and_assignee", (qi) =>
+					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+				);
 		}
 
 		// Over-fetch to account for soft-deleted + secondary filters, then trim

@@ -1,7 +1,29 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never create a new context file.
-> Last Updated: 2026-05-08
+> Last Updated: 2026-05-12
+
+---
+
+## Most recent session (2026-05-12) — Dynamic Labels + Hide Toggles + Biome Cleanup
+
+- **Dynamic entity labels everywhere.** `useEntityLabels()` now drives every user-visible
+  label referring to a CRM entity across the entire app — settings, sidebar, role editor,
+  permissions catalog, notifications, dashboard metric cards, profile sections, shortcuts,
+  delete-workspace dialog, settings section descriptions + search keywords.
+- **Module Visibility UI shipped.** New `ModuleVisibilitySection` in
+  `core/settings/components/groups/WorkspaceGroup.tsx` renders a Switch per entity slot and
+  patches `orgs.settings.modules[].hidden`. Sidebar already honored this flag — so toggling
+  it instantly hides the entity from the left rail.
+- **Key factory functions.** `getPermissionModules(labels)` in
+  `core/settings/config/permissions-catalog.ts` and `getSettingsSections(labels)` in
+  `core/settings/config/settings-sections.ts` — callers resolve labels via
+  `useEntityLabels(orgId)` in `SettingsView.tsx`.
+- **Biome project-wide clean.** `pnpm typecheck` + `pnpm exec biome check .` +
+  `pnpm exec biome lint .` all return 0 errors / 0 warnings / 0 infos across 354 files.
+  Overrides in `biome.json` are targeted, each with a scope comment in source.
+- **See** `core/settings/STATE.md`, `core/shell/STATE.md`, `core/shared/STATE.md`,
+  `core/profile/STATE.md` for full decision tables.
 
 ---
 

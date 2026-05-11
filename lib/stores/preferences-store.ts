@@ -12,15 +12,15 @@
 
 import { create } from "zustand";
 import type { FontKey } from "@/lib/fonts/registry";
-import { getAllPreferences, setPreference } from "@/lib/preferences/preferences-storage";
 import type {
 	ContentLayout,
 	NavbarStyle,
 	SidebarCollapsible,
 	SidebarVariant,
 } from "@/lib/preferences/layout";
-import type { ThemeMode, ThemePreset } from "@/lib/preferences/theme";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
+import { getAllPreferences, setPreference } from "@/lib/preferences/preferences-storage";
+import type { ThemeMode, ThemePreset } from "@/lib/preferences/theme";
 
 // --- State Shape ---
 

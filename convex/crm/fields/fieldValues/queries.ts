@@ -11,7 +11,10 @@ export const getForEntity = orgQuery({
 		return ctx.db
 			.query("fieldValues")
 			.withIndex("by_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType).eq("entityId", args.entityId),
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
 			)
 			.collect();
 	},

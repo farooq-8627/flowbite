@@ -1,28 +1,43 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useMutation, useQuery } from "convex/react";
+import { CheckCircle2, Clock, Users, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Users, CheckCircle2, X, Target, Handshake, Building2, Zap, Clock } from "lucide-react";
+import { api } from "@/convex/_generated/api";
+import { type EntityLabels, useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 
 // ─── Get Started Card ─────────────────────────────────────────────────────────
 
-const CHECKLIST = [
-	{ id: "invite_team", label: "Invite your team" },
-	{ id: "add_first_lead", label: "Add your first lead" },
-	{ id: "setup_pipeline", label: "Review your pipeline stages" },
-	{ id: "add_company", label: "Add a company" },
-];
+/**
+ * Checklist items are a function of labels so "Add your first lead" becomes
+ * "Add your first inquiry" when an admin renames the lead entity. Ids stay
+ * stable (they key into `user.dismissedCards`).
+ */
+function buildChecklist(labels: EntityLabels) {
+	return [
+		{ id: "invite_team", label: "Invite your team" },
+		{ id: "add_first_lead", label: `Add your first ${labels.lead.singular.toLowerCase()}` },
+		{ id: "setup_pipeline", label: "Review your pipeline stages" },
+		{ id: "add_company", label: `Add a ${labels.company.singular.toLowerCase()}` },
+	];
+}
 
-function GetStartedCard({ dismissedCards }: { dismissedCards: string[] }) {
+function GetStartedCard({
+	dismissedCards,
+	labels,
+}: {
+	dismissedCards: string[];
+	labels: EntityLabels;
+}) {
 	const updateProfile = useMutation(api.users.mutations.updateProfile);
 	if (dismissedCards.includes("get_started_v1")) return null;
 
-	const completed = CHECKLIST.filter((item) => dismissedCards.includes(item.id));
-	const progress = Math.round((completed.length / CHECKLIST.length) * 100);
+	const checklist = buildChecklist(labels);
+	const completed = checklist.filter((item) => dismissedCards.includes(item.id));
+	const progress = Math.round((completed.length / checklist.length) * 100);
 
 	return (
 		<Card className="border-primary/20 bg-primary/5">
@@ -30,30 +45,45 @@ function GetStartedCard({ dismissedCards }: { dismissedCards: string[] }) {
 				<div className="flex items-start justify-between">
 					<div>
 						<CardTitle className="text-base">Get Started</CardTitle>
-						<CardDescription>Complete these steps to set up your workspace</CardDescription>
+						<CardDescription>
+							Complete these steps to set up your workspace
+						</CardDescription>
 					</div>
 					<Button
 						variant="ghost"
 						size="icon"
 						className="size-7 shrink-0"
-						onClick={() => updateProfile({ dismissedCards: [...dismissedCards, "get_started_v1"] })}
+						onClick={() =>
+							updateProfile({ dismissedCards: [...dismissedCards, "get_started_v1"] })
+						}
 					>
 						<X className="size-4" />
 					</Button>
 				</div>
 				<div className="mt-2 h-1.5 w-full rounded-full bg-muted">
-					<div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+					<div
+						className="h-1.5 rounded-full bg-primary transition-all"
+						style={{ width: `${progress}%` }}
+					/>
 				</div>
-				<p className="text-xs text-muted-foreground">{completed.length}/{CHECKLIST.length} completed</p>
+				<p className="text-xs text-muted-foreground">
+					{completed.length}/{checklist.length} completed
+				</p>
 			</CardHeader>
 			<CardContent>
 				<ul className="space-y-2">
-					{CHECKLIST.map((item) => {
+					{checklist.map((item) => {
 						const done = dismissedCards.includes(item.id);
 						return (
 							<li key={item.id} className="flex items-center gap-3">
-								<CheckCircle2 className={`size-4 shrink-0 ${done ? "text-primary" : "text-muted-foreground/40"}`} />
-								<span className={`text-sm ${done ? "line-through text-muted-foreground" : ""}`}>{item.label}</span>
+								<CheckCircle2
+									className={`size-4 shrink-0 ${done ? "text-primary" : "text-muted-foreground/40"}`}
+								/>
+								<span
+									className={`text-sm ${done ? "line-through text-muted-foreground" : ""}`}
+								>
+									{item.label}
+								</span>
 							</li>
 						);
 					})}
@@ -65,22 +95,30 @@ function GetStartedCard({ dismissedCards }: { dismissedCards: string[] }) {
 
 // ─── Metric Cards ─────────────────────────────────────────────────────────────
 
-const METRIC_CARDS = [
-	{ label: "Team Members", badge: "Active", badgeVariant: "secondary" as const },
-	{ label: "Leads", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Open Deals", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Pipeline Value", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Contacts", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Companies", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Tasks Due", badge: "Phase 2", badgeVariant: "outline" as const },
-	{ label: "Emails Sent", badge: "Phase 2", badgeVariant: "outline" as const },
-];
+/**
+ * Metric cards labels follow entity-label renames too. The "Team Members"
+ * and "Pipeline Value" cards stay generic; the four CRM-entity cards are
+ * rewritten to the admin's plural labels (Leads → Inquiries, etc.).
+ */
+function buildMetricCards(labels: EntityLabels) {
+	return [
+		{ label: "Team Members", badge: "Active", badgeVariant: "secondary" as const },
+		{ label: labels.lead.plural, badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: `Open ${labels.deal.plural}`, badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: "Pipeline Value", badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: labels.contact.plural, badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: labels.company.plural, badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: "Tasks Due", badge: "Phase 2", badgeVariant: "outline" as const },
+		{ label: "Emails Sent", badge: "Phase 2", badgeVariant: "outline" as const },
+	];
+}
 
-function MetricCards({ memberCount }: { memberCount: number }) {
+function MetricCards({ memberCount, labels }: { memberCount: number; labels: EntityLabels }) {
+	const cards = buildMetricCards(labels);
 	return (
 		<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-			{METRIC_CARDS.map((card, i) => (
-				<Card key={i}>
+			{cards.map((card) => (
+				<Card key={card.label}>
 					<CardHeader className="pb-2">
 						<CardDescription>{card.label}</CardDescription>
 					</CardHeader>
@@ -95,7 +133,9 @@ function MetricCards({ memberCount }: { memberCount: number }) {
 							</Badge>
 						</div>
 						<p className="mt-1 text-xs text-muted-foreground">
-							{card.label === "Team Members" ? "Workspace members" : "Available after CRM setup"}
+							{card.label === "Team Members"
+								? "Workspace members"
+								: "Available after CRM setup"}
 						</p>
 					</CardContent>
 				</Card>
@@ -122,14 +162,24 @@ function RecentActivity({ activity }: { activity: ActivityItem[] }) {
 					</div>
 				) : (
 					<ul className="space-y-3">
-						{activity.map((item, i) => (
-							<li key={i} className="flex items-start gap-3">
+						{activity.map((item) => (
+							// Activity items don't expose a stable `_id` in this shape, so
+							// we build a composite key from the timestamp + action which is
+							// unique per-entry in practice.
+							<li
+								key={`${item.createdAt}-${item.action}`}
+								className="flex items-start gap-3"
+							>
 								<div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-muted">
 									<Clock className="size-3 text-muted-foreground" />
 								</div>
 								<div className="min-w-0 flex-1">
-									<p className="truncate text-sm">{item.description ?? item.action}</p>
-									<p className="text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleDateString()}</p>
+									<p className="truncate text-sm">
+										{item.description ?? item.action}
+									</p>
+									<p className="text-xs text-muted-foreground">
+										{new Date(item.createdAt).toLocaleDateString()}
+									</p>
 								</div>
 							</li>
 						))}
@@ -150,6 +200,9 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 		api.orgs.queries.getDashboardStats,
 		currentOrg ? { orgId: currentOrg.org._id } : "skip",
 	);
+	// Auto-resolves orgId from the URL — same hook used by the sidebar — so
+	// renaming "Lead" → "Inquiry" flows into the checklist and metric cards.
+	const labels = useEntityLabels();
 
 	if (!currentOrg || !stats || user === undefined) {
 		return (
@@ -157,7 +210,9 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 				<div className="space-y-6">
 					<Skeleton className="h-8 w-48" />
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-						{[...Array(4)].map((_, i) => <Skeleton key={i} className="h-28" />)}
+						{["sk-1", "sk-2", "sk-3", "sk-4"].map((k) => (
+							<Skeleton key={k} className="h-28" />
+						))}
 					</div>
 				</div>
 			</div>
@@ -176,10 +231,9 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 					<p className="text-sm text-muted-foreground">{currentOrg.org.name} workspace</p>
 				</div>
 
-				<GetStartedCard dismissedCards={dismissedCards} />
-				<MetricCards memberCount={stats.memberCount} />
+				<GetStartedCard dismissedCards={dismissedCards} labels={labels} />
+				<MetricCards memberCount={stats.memberCount} labels={labels} />
 				<RecentActivity activity={stats.recentActivity} />
-				
 			</div>
 		</div>
 	);

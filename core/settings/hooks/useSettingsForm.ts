@@ -1,8 +1,7 @@
 "use client";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { useForm, type UseFormReturn } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import type { ZodType } from "zod/v4";
 
@@ -11,6 +10,13 @@ import type { ZodType } from "zod/v4";
  * - Wires react-hook-form + zod
  * - Resets dirty state after successful save
  * - Shows toast on success/error
+ *
+ * WHY THE `any` GENERICS:
+ *   `react-hook-form`'s `UseFormReturn` and `useForm` are not generic over the
+ *   zod-resolved output type in a way that survives a thin wrapper like this.
+ *   Casting `schema as any` is required by `zodResolver`'s typings when the
+ *   schema is passed as a generic. These are well-understood, narrow `any`s —
+ *   the outer function is still fully typed by `<T extends Record<string, unknown>>`.
  *
  * Usage:
  *   const { form, isSubmitting, isDirty, handleSubmit } = useSettingsForm({
@@ -24,21 +30,21 @@ export function useSettingsForm<T extends Record<string, unknown>>({
 	values,
 	onSubmit,
 }: {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: zod's second type parameter is any by design in its v4 type lattice
 	schema: ZodType<T, any>;
 	values: T;
 	onSubmit: (data: T) => Promise<void>;
 }): {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: useForm loses its generic through a generic wrapper — see file header
 	form: UseFormReturn<any>;
 	isSubmitting: boolean;
 	isDirty: boolean;
 	handleSubmit: (e?: React.BaseSyntheticEvent) => Promise<void>;
 	isDisabled: boolean;
 } {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	// biome-ignore lint/suspicious/noExplicitAny: useForm loses its generic through a generic wrapper — see file header
 	const form = useForm<any>({
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// biome-ignore lint/suspicious/noExplicitAny: zodResolver can't narrow the schema parameter through this wrapper
 		resolver: zodResolver(schema as any),
 		values,
 	});

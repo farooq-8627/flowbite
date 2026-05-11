@@ -6,11 +6,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
-import { APP_CONFIG } from "@/config/app-config";
 
 /**
  * ForgotPasswordPage — Sends a password reset code to the user's email.
@@ -48,14 +48,24 @@ export function ForgotPasswordPage() {
 				icon: <Orbit className="size-10" />,
 				title: APP_CONFIG.name,
 				tagline: APP_CONFIG.description,
-				bottomLeft: { heading: "Reset your password", body: "We'll send a code to your email to reset your password." },
-				bottomRight: { heading: "Need help?", body: "Contact support if you can't access your account." },
+				bottomLeft: {
+					heading: "Reset your password",
+					body: "We'll send a code to your email to reset your password.",
+				},
+				bottomRight: {
+					heading: "Need help?",
+					body: "Contact support if you can't access your account.",
+				},
 			}}
 		>
 			<div className="absolute top-5 end-0 flex w-full justify-end px-10">
 				<p className="text-muted-foreground text-sm">
 					Remember your password?{" "}
-					<Link prefetch={false} className="text-foreground font-medium underline underline-offset-4" href="/signin">
+					<Link
+						prefetch={false}
+						className="text-foreground font-medium underline underline-offset-4"
+						href="/signin"
+					>
 						Sign in
 					</Link>
 				</p>
@@ -83,7 +93,11 @@ export function ForgotPasswordPage() {
 							/>
 						</Field>
 					</FieldGroup>
-					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading}>
+					<Button
+						className="w-full rounded-[var(--radius)]"
+						type="submit"
+						disabled={loading}
+					>
 						{loading ? "Sending…" : "Send reset code"}
 					</Button>
 				</form>

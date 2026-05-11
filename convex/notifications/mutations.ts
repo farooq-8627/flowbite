@@ -23,15 +23,11 @@ export const markAllRead = authenticatedMutation({
 		const now = Date.now();
 		const unread = await ctx.db
 			.query("notifications")
-			.withIndex("by_userId_and_read", (q) =>
-				q.eq("userId", ctx.userId).eq("read", false),
-			)
+			.withIndex("by_userId_and_read", (q) => q.eq("userId", ctx.userId).eq("read", false))
 			.take(200);
 
 		await Promise.all(
-			unread.map((n) =>
-				ctx.db.patch(n._id, { read: true, readAt: now, updatedAt: now }),
-			),
+			unread.map((n) => ctx.db.patch(n._id, { read: true, readAt: now, updatedAt: now })),
 		);
 	},
 });

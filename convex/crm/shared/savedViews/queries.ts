@@ -19,9 +19,7 @@ export const listByEntity = orgQuery({
 			)
 			.collect();
 		// Return org-scoped views + user's own personal views
-		return views.filter(
-			(v) => v.scope === "org" || v.createdBy === userId,
-		);
+		return views.filter((v) => v.scope === "org" || v.createdBy === userId);
 	},
 });
 
@@ -31,12 +29,8 @@ export const listPinned = orgQuery({
 		const { userId } = await requireOrgMember(ctx, args.orgId);
 		const views = await ctx.db
 			.query("savedViews")
-			.withIndex("by_org_and_pinned", (q) =>
-				q.eq("orgId", args.orgId).eq("isPinned", true),
-			)
+			.withIndex("by_org_and_pinned", (q) => q.eq("orgId", args.orgId).eq("isPinned", true))
 			.collect();
-		return views.filter(
-			(v) => v.scope === "org" || v.createdBy === userId,
-		);
+		return views.filter((v) => v.scope === "org" || v.createdBy === userId);
 	},
 });

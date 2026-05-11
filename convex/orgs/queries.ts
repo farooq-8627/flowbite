@@ -18,8 +18,8 @@
  * - https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/customFunctions.ts
  */
 import { v } from "convex/values";
-import { internalQuery } from "../_generated/server";
 import { authenticatedQuery, orgQuery, superAdminQuery } from "../_functions/authenticated";
+import { internalQuery } from "../_generated/server";
 import { getOrgById, getUserOrgs } from "./helpers";
 
 /**
@@ -256,10 +256,26 @@ export const getEntityLabels = orgQuery({
 
 		const l = org.entityLabels;
 		return {
-			lead: { singular: l?.lead?.singular ?? "Lead", plural: l?.lead?.plural ?? "Leads", slug: l?.lead?.slug ?? "leads" },
-			contact: { singular: l?.contact?.singular ?? "Contact", plural: l?.contact?.plural ?? "Contacts", slug: l?.contact?.slug ?? "contacts" },
-			deal: { singular: l?.deal?.singular ?? "Deal", plural: l?.deal?.plural ?? "Deals", slug: l?.deal?.slug ?? "deals" },
-			company: { singular: l?.company?.singular ?? "Company", plural: l?.company?.plural ?? "Companies", slug: l?.company?.slug ?? "companies" },
+			lead: {
+				singular: l?.lead?.singular ?? "Lead",
+				plural: l?.lead?.plural ?? "Leads",
+				slug: l?.lead?.slug ?? "leads",
+			},
+			contact: {
+				singular: l?.contact?.singular ?? "Contact",
+				plural: l?.contact?.plural ?? "Contacts",
+				slug: l?.contact?.slug ?? "contacts",
+			},
+			deal: {
+				singular: l?.deal?.singular ?? "Deal",
+				plural: l?.deal?.plural ?? "Deals",
+				slug: l?.deal?.slug ?? "deals",
+			},
+			company: {
+				singular: l?.company?.singular ?? "Company",
+				plural: l?.company?.plural ?? "Companies",
+				slug: l?.company?.slug ?? "companies",
+			},
 		};
 	},
 });
@@ -284,47 +300,41 @@ export const getDashboardStats = orgQuery({
 
 		const now = Date.now();
 
-		const [
-			memberCount,
-			leads,
-			contacts,
-			deals,
-			remindersDueToday,
-			recentActivity,
-		] = await Promise.all([
-			ctx.db
-				.query("orgMembers")
-				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
-				.take(200)
-				.then((m) => m.filter((x) => x.deletedAt === undefined).length),
-			ctx.db
-				.query("leads")
-				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-				.take(1000)
-				.then((rows) => rows.filter((r) => !r.deletedAt && !r.convertedAt)),
-			ctx.db
-				.query("contacts")
-				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-				.take(1000)
-				.then((rows) => rows.filter((r) => !r.deletedAt)),
-			ctx.db
-				.query("deals")
-				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-				.take(1000)
-				.then((rows) => rows.filter((r) => !r.deletedAt)),
-			ctx.db
-				.query("reminders")
-				.withIndex("by_org_and_due", (q) =>
-					q.eq("orgId", args.orgId).lte("dueAt", now + 86_400_000),
-				)
-				.take(100)
-				.then((rows) => rows.filter((r) => r.status === "pending").length),
-			ctx.db
-				.query("activityLogs")
-				.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
-				.order("desc")
-				.take(10),
-		]);
+		const [memberCount, leads, contacts, deals, remindersDueToday, recentActivity] =
+			await Promise.all([
+				ctx.db
+					.query("orgMembers")
+					.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
+					.take(200)
+					.then((m) => m.filter((x) => x.deletedAt === undefined).length),
+				ctx.db
+					.query("leads")
+					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+					.take(1000)
+					.then((rows) => rows.filter((r) => !r.deletedAt && !r.convertedAt)),
+				ctx.db
+					.query("contacts")
+					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+					.take(1000)
+					.then((rows) => rows.filter((r) => !r.deletedAt)),
+				ctx.db
+					.query("deals")
+					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+					.take(1000)
+					.then((rows) => rows.filter((r) => !r.deletedAt)),
+				ctx.db
+					.query("reminders")
+					.withIndex("by_org_and_due", (q) =>
+						q.eq("orgId", args.orgId).lte("dueAt", now + 86_400_000),
+					)
+					.take(100)
+					.then((rows) => rows.filter((r) => r.status === "pending").length),
+				ctx.db
+					.query("activityLogs")
+					.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
+					.order("desc")
+					.take(10),
+			]);
 
 		const openDeals = deals.filter((d) => !d.wonAt && !d.lostAt);
 		const pipelineValue = openDeals.reduce((sum, d) => sum + (d.value ?? 0), 0);

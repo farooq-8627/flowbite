@@ -19,7 +19,9 @@ export async function getDefaultStageId(
 	const pipeline = await ctx.db.get(pipelineId);
 	if (!pipeline || pipeline.stages.length === 0) return undefined;
 	// Stages are ordered by their `order` field
-	const sorted = [...pipeline.stages].sort((a: { order: number }, b: { order: number }) => a.order - b.order);
+	const sorted = [...pipeline.stages].sort(
+		(a: { order: number }, b: { order: number }) => a.order - b.order,
+	);
 	return sorted[0].id;
 }
 
@@ -71,12 +73,54 @@ export const PIPELINE_TEMPLATES: Record<string, PipelineTemplate> = {
 		name: "Sales Pipeline",
 		entityType: "deal",
 		stages: [
-			{ name: "Prospecting", color: "#6366f1", order: 0, probability: 10, isFinal: false, staleAfterDays: 14 },
-			{ name: "Qualified", color: "#8b5cf6", order: 1, probability: 25, isFinal: false, staleAfterDays: 14 },
-			{ name: "Proposal Sent", color: "#a855f7", order: 2, probability: 50, isFinal: false, staleAfterDays: 7 },
-			{ name: "Negotiation", color: "#d946ef", order: 3, probability: 75, isFinal: false, staleAfterDays: 7 },
-			{ name: "Won", color: "#22c55e", order: 4, probability: 100, isFinal: true, finalType: "positive" },
-			{ name: "Lost", color: "#ef4444", order: 5, probability: 0, isFinal: true, finalType: "negative" },
+			{
+				name: "Prospecting",
+				color: "#6366f1",
+				order: 0,
+				probability: 10,
+				isFinal: false,
+				staleAfterDays: 14,
+			},
+			{
+				name: "Qualified",
+				color: "#8b5cf6",
+				order: 1,
+				probability: 25,
+				isFinal: false,
+				staleAfterDays: 14,
+			},
+			{
+				name: "Proposal Sent",
+				color: "#a855f7",
+				order: 2,
+				probability: 50,
+				isFinal: false,
+				staleAfterDays: 7,
+			},
+			{
+				name: "Negotiation",
+				color: "#d946ef",
+				order: 3,
+				probability: 75,
+				isFinal: false,
+				staleAfterDays: 7,
+			},
+			{
+				name: "Won",
+				color: "#22c55e",
+				order: 4,
+				probability: 100,
+				isFinal: true,
+				finalType: "positive",
+			},
+			{
+				name: "Lost",
+				color: "#ef4444",
+				order: 5,
+				probability: 0,
+				isFinal: true,
+				finalType: "negative",
+			},
 		],
 	},
 	freelancer: {
@@ -110,8 +154,6 @@ export const PIPELINE_TEMPLATES: Record<string, PipelineTemplate> = {
  * Called during onboarding when an industry is selected.
  * Returns the stages array ready for ctx.db.insert("pipelines", { stages }).
  */
-export function seedFromTemplate(
-	templateKey: string,
-): PipelineTemplate | undefined {
+export function seedFromTemplate(templateKey: string): PipelineTemplate | undefined {
 	return PIPELINE_TEMPLATES[templateKey];
 }

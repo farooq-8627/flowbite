@@ -13,8 +13,9 @@
  *
  * Architecture: v3 — personCode system
  */
-import type { MutationCtx } from "../_generated/server";
+
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 
 const DEFAULT_PREFIXES: Record<string, string> = {
 	person: "P",
@@ -32,9 +33,7 @@ async function incrementCounter(
 ): Promise<number> {
 	const row = await ctx.db
 		.query("entityCodeCounters")
-		.withIndex("by_org_and_type", (q) =>
-			q.eq("orgId", orgId).eq("entityType", entityType),
-		)
+		.withIndex("by_org_and_type", (q) => q.eq("orgId", orgId).eq("entityType", entityType))
 		.first();
 
 	const next = (row?.count ?? 0) + 1;
@@ -58,13 +57,11 @@ async function incrementCounter(
  *
  * @example "P-001", "IN-042" (if org uses "IN" prefix)
  */
-export async function generatePersonCode(
-	ctx: MutationCtx,
-	orgId: Id<"orgs">,
-): Promise<string> {
+export async function generatePersonCode(ctx: MutationCtx, orgId: Id<"orgs">): Promise<string> {
 	const org = await ctx.db.get(orgId);
-	const prefix = (org?.settings?.codePrefixes as Record<string, string> | undefined)?.person
-		?? DEFAULT_PREFIXES.person;
+	const prefix =
+		(org?.settings?.codePrefixes as Record<string, string> | undefined)?.person ??
+		DEFAULT_PREFIXES.person;
 	const count = await incrementCounter(ctx, orgId, "person");
 	return `${prefix}-${String(count).padStart(3, "0")}`;
 }
@@ -81,8 +78,9 @@ export async function generateEntityCode(
 	entityType: "deal" | "company" | "followup" | "project" | "task",
 ): Promise<string> {
 	const org = await ctx.db.get(orgId);
-	const prefix = (org?.settings?.codePrefixes as Record<string, string> | undefined)?.[entityType]
-		?? DEFAULT_PREFIXES[entityType];
+	const prefix =
+		(org?.settings?.codePrefixes as Record<string, string> | undefined)?.[entityType] ??
+		DEFAULT_PREFIXES[entityType];
 	const count = await incrementCounter(ctx, orgId, entityType);
 	return `${prefix}-${String(count).padStart(3, "0")}`;
 }

@@ -20,11 +20,7 @@ interface PersonCodeBadgeProps {
  *
  * When clickable=false (e.g., already on the profile page): renders as plain badge.
  */
-export function PersonCodeBadge({
-	personCode,
-	clickable = true,
-	className,
-}: PersonCodeBadgeProps) {
+export function PersonCodeBadge({ personCode, clickable = true, className }: PersonCodeBadgeProps) {
 	const params = useParams();
 	const orgSlug = params?.orgSlug as string | undefined;
 	const locale = params?.locale as string | undefined;

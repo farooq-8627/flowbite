@@ -7,12 +7,12 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { internal } from "../../../_generated/api";
+import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
-import { ERRORS } from "../../../_shared/errors";
-import { internal } from "../../../_generated/api";
 
 function normalizePhone(phone: string): string {
 	return phone.replace(/\D/g, "");
@@ -38,10 +38,16 @@ export const create = orgMutation({
 		if (args.email) {
 			const existing = await ctx.db
 				.query("contacts")
-				.withIndex("by_org_and_email", (q) => q.eq("orgId", args.orgId).eq("email", args.email!))
+				.withIndex("by_org_and_email", (q) =>
+					q.eq("orgId", args.orgId).eq("email", args.email!),
+				)
 				.first();
 			if (existing && !existing.deletedAt) {
-				throw new ConvexError({ code: "DUPLICATE", message: "Contact with this email already exists", personCode: existing.personCode });
+				throw new ConvexError({
+					code: "DUPLICATE",
+					message: "Contact with this email already exists",
+					personCode: existing.personCode,
+				});
 			}
 		}
 
@@ -86,7 +92,10 @@ export const create = orgMutation({
 		}
 
 		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId, entityType: "contact", entityId: contactId, personCode,
+			orgId: args.orgId,
+			entityType: "contact",
+			entityId: contactId,
+			personCode,
 		});
 
 		return { contactId, personCode };

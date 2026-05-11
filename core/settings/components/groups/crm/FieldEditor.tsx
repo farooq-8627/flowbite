@@ -1,27 +1,12 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2 } from "lucide-react";
 import { z } from "zod/v4";
-
-import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
@@ -32,13 +17,6 @@ import {
 	DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
 	Form,
 	FormControl,
 	FormField,
@@ -46,22 +24,42 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 
 type FieldDef = Doc<"fieldDefinitions">;
 
 const FIELD_TYPES = [
-	{ value: "text",        label: "Text" },
-	{ value: "number",      label: "Number" },
-	{ value: "date",        label: "Date" },
-	{ value: "boolean",     label: "Yes / No" },
-	{ value: "select",      label: "Single select" },
+	{ value: "text", label: "Text" },
+	{ value: "number", label: "Number" },
+	{ value: "date", label: "Date" },
+	{ value: "boolean", label: "Yes / No" },
+	{ value: "select", label: "Single select" },
 	{ value: "multiselect", label: "Multi select" },
-	{ value: "url",         label: "URL" },
-	{ value: "email",       label: "Email" },
+	{ value: "url", label: "URL" },
+	{ value: "email", label: "Email" },
 ] as const;
 
-type FieldType = typeof FIELD_TYPES[number]["value"];
+type FieldType = (typeof FIELD_TYPES)[number]["value"];
 
 const ENTITY_TYPES: Record<string, string> = {
 	leads: "leads",
@@ -76,12 +74,19 @@ const ENTITY_TYPES: Record<string, string> = {
 
 const createFieldSchema = z.object({
 	label: z.string().min(1, "Label is required"),
-	name: z.string()
+	name: z
+		.string()
 		.min(1, "Key is required")
 		.regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, numbers, and underscores only"),
 	type: z.union([
-		z.literal("text"), z.literal("number"), z.literal("date"), z.literal("boolean"),
-		z.literal("select"), z.literal("multiselect"), z.literal("url"), z.literal("email"),
+		z.literal("text"),
+		z.literal("number"),
+		z.literal("date"),
+		z.literal("boolean"),
+		z.literal("select"),
+		z.literal("multiselect"),
+		z.literal("url"),
+		z.literal("email"),
 	]),
 	groupName: z.string().optional(),
 	required: z.boolean(),
@@ -121,13 +126,7 @@ function labelToName(label: string): string {
 // Create dialog
 // ────────────────────────────────────────────────────────────────────────────
 
-function CreateFieldDialog({
-	orgId,
-	entityType,
-}: {
-	orgId: Id<"orgs">;
-	entityType: string;
-}) {
+function CreateFieldDialog({ orgId, entityType }: { orgId: Id<"orgs">; entityType: string }) {
 	const [open, setOpen] = useState(false);
 	const create = useMutation(api.crm.fields.fieldDefinitions.mutations.create);
 
@@ -160,7 +159,14 @@ function CreateFieldDialog({
 					options: needsOptions ? options : undefined,
 				});
 				toast.success(`Added field "${data.label}"`);
-				form.reset({ label: "", name: "", type: "text", groupName: "", required: false, optionsText: "" });
+				form.reset({
+					label: "",
+					name: "",
+					type: "text",
+					groupName: "",
+					required: false,
+					optionsText: "",
+				});
 				setOpen(false);
 			} catch (err) {
 				toast.error(err instanceof Error ? err.message : "Failed to create field");
@@ -218,7 +224,10 @@ function CreateFieldDialog({
 											className="font-mono text-xs"
 											placeholder="contract_value"
 											{...field}
-											onChange={(e) => { setManualKey(true); field.onChange(e); }}
+											onChange={(e) => {
+												setManualKey(true);
+												field.onChange(e);
+											}}
 										/>
 									</FormControl>
 									<FormMessage />
@@ -233,11 +242,15 @@ function CreateFieldDialog({
 									<FormLabel>Type</FormLabel>
 									<Select onValueChange={field.onChange} value={field.value}>
 										<FormControl>
-											<SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+											<SelectTrigger className="w-full">
+												<SelectValue />
+											</SelectTrigger>
 										</FormControl>
 										<SelectContent>
 											{FIELD_TYPES.map((t) => (
-												<SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+												<SelectItem key={t.value} value={t.value}>
+													{t.label}
+												</SelectItem>
 											))}
 										</SelectContent>
 									</Select>
@@ -290,13 +303,21 @@ function CreateFieldDialog({
 										</p>
 									</div>
 									<FormControl>
-										<Switch checked={field.value} onCheckedChange={field.onChange} />
+										<Switch
+											checked={field.value}
+											onCheckedChange={field.onChange}
+										/>
 									</FormControl>
 								</FormItem>
 							)}
 						/>
 						<DialogFooter>
-							<Button type="button" variant="outline" size="sm" onClick={() => setOpen(false)}>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => setOpen(false)}
+							>
 								Cancel
 							</Button>
 							<Button type="submit" size="sm" disabled={isSubmitting}>
@@ -377,7 +398,9 @@ function EditFieldDialog({
 							<Input value={field.name} disabled className="font-mono text-xs" />
 						</div>
 						<div className="grid gap-1">
-							<Label className="text-xs text-muted-foreground">Type (read-only)</Label>
+							<Label className="text-xs text-muted-foreground">
+								Type (read-only)
+							</Label>
 							<Input value={field.type} disabled className="capitalize" />
 						</div>
 						<FormField
@@ -386,7 +409,9 @@ function EditFieldDialog({
 							render={({ field: f }) => (
 								<FormItem>
 									<FormLabel>Label</FormLabel>
-									<FormControl><Input {...f} /></FormControl>
+									<FormControl>
+										<Input {...f} />
+									</FormControl>
 									<FormMessage />
 								</FormItem>
 							)}
@@ -398,8 +423,12 @@ function EditFieldDialog({
 								render={({ field: f }) => (
 									<FormItem>
 										<FormLabel>Options</FormLabel>
-										<FormControl><Input {...f} /></FormControl>
-										<p className="text-xs text-muted-foreground">Comma- or newline-separated.</p>
+										<FormControl>
+											<Input {...f} />
+										</FormControl>
+										<p className="text-xs text-muted-foreground">
+											Comma- or newline-separated.
+										</p>
 										<FormMessage />
 									</FormItem>
 								)}
@@ -411,7 +440,9 @@ function EditFieldDialog({
 							render={({ field: f }) => (
 								<FormItem>
 									<FormLabel>Group</FormLabel>
-									<FormControl><Input {...f} /></FormControl>
+									<FormControl>
+										<Input {...f} />
+									</FormControl>
 								</FormItem>
 							)}
 						/>
@@ -428,7 +459,12 @@ function EditFieldDialog({
 							)}
 						/>
 						<DialogFooter>
-							<Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => onOpenChange(false)}
+							>
 								Cancel
 							</Button>
 							<Button type="submit" size="sm" disabled={isSubmitting}>
@@ -446,13 +482,7 @@ function EditFieldDialog({
 // Fields table (with edit + delete)
 // ────────────────────────────────────────────────────────────────────────────
 
-export function FieldEditor({
-	orgId,
-	entityType,
-}: {
-	orgId: Id<"orgs">;
-	entityType: string;
-}) {
+export function FieldEditor({ orgId, entityType }: { orgId: Id<"orgs">; entityType: string }) {
 	const resolvedEntity = ENTITY_TYPES[entityType] ?? entityType;
 	const fields = useQuery(api.crm.fields.fieldDefinitions.queries.listByEntity, {
 		orgId,
@@ -488,11 +518,17 @@ export function FieldEditor({
 						{fields.map((f) => (
 							<TableRow key={f._id}>
 								<TableCell className="font-medium text-sm">{f.label}</TableCell>
-								<TableCell className="font-mono text-xs text-muted-foreground">{f.name}</TableCell>
-								<TableCell>
-									<Badge variant="secondary" className="capitalize">{f.type}</Badge>
+								<TableCell className="font-mono text-xs text-muted-foreground">
+									{f.name}
 								</TableCell>
-								<TableCell className="text-xs text-muted-foreground">{f.groupName ?? "—"}</TableCell>
+								<TableCell>
+									<Badge variant="secondary" className="capitalize">
+										{f.type}
+									</Badge>
+								</TableCell>
+								<TableCell className="text-xs text-muted-foreground">
+									{f.groupName ?? "—"}
+								</TableCell>
 								<TableCell className="text-end text-xs">
 									{f.required ? "Required" : "Optional"}
 								</TableCell>
@@ -512,12 +548,21 @@ export function FieldEditor({
 											size="icon"
 											className="size-7 text-muted-foreground hover:text-destructive"
 											onClick={async () => {
-												if (!confirm(`Delete field "${f.label}"? All existing values will be removed.`)) return;
+												if (
+													!confirm(
+														`Delete field "${f.label}"? All existing values will be removed.`,
+													)
+												)
+													return;
 												try {
 													await remove({ orgId, fieldId: f._id });
 													toast.success(`Deleted "${f.label}"`);
 												} catch (err) {
-													toast.error(err instanceof Error ? err.message : "Failed to delete field");
+													toast.error(
+														err instanceof Error
+															? err.message
+															: "Failed to delete field",
+													);
 												}
 											}}
 											aria-label="Delete field"

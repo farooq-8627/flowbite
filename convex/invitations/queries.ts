@@ -4,8 +4,8 @@
  * All queries are org-scoped and require `members.invite` permission to read.
  */
 import { v } from "convex/values";
-import { query } from "../_generated/server";
 import { orgQuery } from "../_functions/authenticated";
+import { query } from "../_generated/server";
 import { requireRole } from "../_shared/permissions";
 import { getOrgMember } from "../orgs/helpers";
 

@@ -7,12 +7,12 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { internal } from "../../../_generated/api";
+import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
-import { ERRORS } from "../../../_shared/errors";
-import { internal } from "../../../_generated/api";
 
 export const create = orgMutation({
 	args: {
@@ -40,7 +40,11 @@ export const create = orgMutation({
 
 		// Validate stage exists in pipeline
 		const stageExists = pipeline.stages.some((s) => s.id === args.currentStageId);
-		if (!stageExists) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found in pipeline" });
+		if (!stageExists)
+			throw new ConvexError({
+				code: "INVALID_STAGE",
+				message: "Stage not found in pipeline",
+			});
 
 		const dealCode = await generateEntityCode(ctx, args.orgId, "deal");
 		const now = Date.now();
@@ -87,7 +91,10 @@ export const create = orgMutation({
 		}
 
 		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId, entityType: "deal", entityId: dealId, personCode: args.personCode,
+			orgId: args.orgId,
+			entityType: "deal",
+			entityId: dealId,
+			personCode: args.personCode,
 		});
 
 		return { dealId, dealCode };
@@ -114,7 +121,9 @@ export const update = orgMutation({
 		}
 
 		const { orgId: _o, dealId: _d, ...updates } = args;
-		const patch = Object.fromEntries(Object.entries(updates).filter(([, val]) => val !== undefined));
+		const patch = Object.fromEntries(
+			Object.entries(updates).filter(([, val]) => val !== undefined),
+		);
 
 		await ctx.db.patch(args.dealId, { ...patch, updatedAt: Date.now() });
 
@@ -149,11 +158,18 @@ export const moveToStage = orgMutation({
 		if (!pipeline) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		const toStage = pipeline.stages.find((s) => s.id === args.stageId);
-		if (!toStage) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found in pipeline" });
+		if (!toStage)
+			throw new ConvexError({
+				code: "INVALID_STAGE",
+				message: "Stage not found in pipeline",
+			});
 
 		const fromStage = pipeline.stages.find((s) => s.id === deal.currentStageId);
 		if (fromStage?.isFinal && toStage.isFinal) {
-			throw new ConvexError({ code: "INVALID_TRANSITION", message: "Cannot move between final stages" });
+			throw new ConvexError({
+				code: "INVALID_TRANSITION",
+				message: "Cannot move between final stages",
+			});
 		}
 
 		const now = Date.now();
@@ -204,7 +220,9 @@ export const closeAsDone = orgMutation({
 		}
 
 		const pipeline = await ctx.db.get(deal.pipelineId);
-		const finalStage = pipeline?.stages.find((s) => s.isFinal && s.finalType === args.finalType);
+		const finalStage = pipeline?.stages.find(
+			(s) => s.isFinal && s.finalType === args.finalType,
+		);
 
 		const now = Date.now();
 		const patch: Record<string, unknown> = {

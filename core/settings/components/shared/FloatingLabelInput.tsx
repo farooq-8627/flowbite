@@ -2,9 +2,9 @@
 
 import type * as React from "react";
 import { useId } from "react";
-import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
 
 type Props = Omit<React.ComponentProps<typeof Input>, "id"> & {
 	label: React.ReactNode;

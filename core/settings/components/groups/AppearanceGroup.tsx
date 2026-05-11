@@ -10,41 +10,30 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
-import { persistPreference } from "@/lib/preferences/preferences-storage";
-import {
-	THEME_PRESET_OPTIONS,
-	type ThemeMode,
-	type ThemePreset,
-} from "@/lib/preferences/theme";
-import { applyFont, applyThemePreset } from "@/lib/preferences/theme-utils";
-import {
-	applySidebarCollapsible,
-	applySidebarVariant,
-} from "@/lib/preferences/layout-utils";
-import type {
-	SidebarCollapsible,
-	SidebarVariant,
-} from "@/lib/preferences/layout";
-import { fontOptions, type FontKey } from "@/lib/fonts/registry";
+import { type FontKey, fontOptions } from "@/lib/fonts/registry";
+import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
+import { applySidebarCollapsible, applySidebarVariant } from "@/lib/preferences/layout-utils";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
-
-import { SettingsSection } from "../shared/SettingsSection";
+import { persistPreference } from "@/lib/preferences/preferences-storage";
+import { THEME_PRESET_OPTIONS, type ThemeMode, type ThemePreset } from "@/lib/preferences/theme";
+import { applyFont, applyThemePreset } from "@/lib/preferences/theme-utils";
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 import { SettingsRow } from "../shared/SettingsRow";
+import { SettingsSection } from "../shared/SettingsSection";
 
 export function AppearanceGroup() {
-	const theme_mode            = usePreferencesStore((s) => s.theme_mode);
-	const setThemeMode          = usePreferencesStore((s) => s.setThemeMode);
-	const resolvedThemeMode     = usePreferencesStore((s) => s.resolvedThemeMode);
-	const theme_preset          = usePreferencesStore((s) => s.theme_preset);
-	const setThemePreset        = usePreferencesStore((s) => s.setThemePreset);
-	const font                  = usePreferencesStore((s) => s.font);
-	const setFont               = usePreferencesStore((s) => s.setFont);
-	const radius                = usePreferencesStore((s) => s.radius);
-	const setRadius             = usePreferencesStore((s) => s.setRadius);
-	const sidebar_variant       = usePreferencesStore((s) => s.sidebar_variant);
-	const setSidebarVariant     = usePreferencesStore((s) => s.setSidebarVariant);
-	const sidebar_collapsible   = usePreferencesStore((s) => s.sidebar_collapsible);
+	const theme_mode = usePreferencesStore((s) => s.theme_mode);
+	const setThemeMode = usePreferencesStore((s) => s.setThemeMode);
+	const resolvedThemeMode = usePreferencesStore((s) => s.resolvedThemeMode);
+	const theme_preset = usePreferencesStore((s) => s.theme_preset);
+	const setThemePreset = usePreferencesStore((s) => s.setThemePreset);
+	const font = usePreferencesStore((s) => s.font);
+	const setFont = usePreferencesStore((s) => s.setFont);
+	const radius = usePreferencesStore((s) => s.radius);
+	const setRadius = usePreferencesStore((s) => s.setRadius);
+	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
+	const setSidebarVariant = usePreferencesStore((s) => s.setSidebarVariant);
+	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
 	const setSidebarCollapsible = usePreferencesStore((s) => s.setSidebarCollapsible);
 
 	const persist =
@@ -61,9 +50,11 @@ export function AppearanceGroup() {
 		};
 
 	const handleRestore = () => {
-		persist<ThemePreset>(setThemePreset, "theme_preset", applyThemePreset)(
-			PREFERENCE_DEFAULTS.theme_preset,
-		);
+		persist<ThemePreset>(
+			setThemePreset,
+			"theme_preset",
+			applyThemePreset,
+		)(PREFERENCE_DEFAULTS.theme_preset);
 		persist<ThemeMode>(setThemeMode, "theme_mode")(PREFERENCE_DEFAULTS.theme_mode);
 		persist<FontKey>(setFont, "font", applyFont)(PREFERENCE_DEFAULTS.font as FontKey);
 		persist<string>(setRadius, "radius")(PREFERENCE_DEFAULTS.radius);
@@ -86,10 +77,7 @@ export function AppearanceGroup() {
 				title="Theme"
 				description="Choose your color scheme and preset."
 			>
-				<SettingsRow
-					label="Theme mode"
-					description="Light, dark, or match your system."
-				>
+				<SettingsRow label="Theme mode" description="Light, dark, or match your system.">
 					<ToggleGroup
 						size="sm"
 						variant="outline"
@@ -152,21 +140,16 @@ export function AppearanceGroup() {
 				title="Layout"
 				description="Font, border radius, and sidebar behavior."
 				action={
-					<Button
-						type="button"
-						variant="outline"
-						size="sm"
-						onClick={handleRestore}
-					>
+					<Button type="button" variant="outline" size="sm" onClick={handleRestore}>
 						Restore defaults
 					</Button>
 				}
 			>
-				<SettingsRow
-					label="Font"
-					description="Used throughout the app and emails."
-				>
-					<Select value={font} onValueChange={persist<FontKey>(setFont, "font", applyFont)}>
+				<SettingsRow label="Font" description="Used throughout the app and emails.">
+					<Select
+						value={font}
+						onValueChange={persist<FontKey>(setFont, "font", applyFont)}
+					>
 						<SelectTrigger className="w-full">
 							<SelectValue placeholder="Select font" />
 						</SelectTrigger>

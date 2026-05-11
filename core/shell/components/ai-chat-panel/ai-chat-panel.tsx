@@ -1,6 +1,9 @@
 "use client";
 
 import { Bot, Send } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Sidebar,
 	SidebarContent,
@@ -10,9 +13,6 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@/components/ui/sidebar";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 
 /**

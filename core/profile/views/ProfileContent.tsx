@@ -1,5 +1,6 @@
 "use client";
 
+import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
 import { ProfileSection } from "./ProfileSection";
 
@@ -44,6 +45,9 @@ export function ProfileContent({ activeGroup, personCode, orgSlug }: Props) {
 // ─── Placeholder groups (Slice 2 replaces these with real content) ────────────
 
 function OverviewGroup({ personCode }: { personCode: string }) {
+	// Labels are reactive — rename "Company" → "Venue" in Settings and the
+	// section title + description update here without a reload.
+	const labels = useEntityLabels();
 	return (
 		<div className="grid gap-6">
 			<ProfileSection
@@ -62,10 +66,10 @@ function OverviewGroup({ personCode }: { personCode: string }) {
 			</ProfileSection>
 			<ProfileSection
 				id="overview.company"
-				title="Company"
-				description="Linked company and role at that company."
+				title={labels.company.singular}
+				description={`Linked ${labels.company.singular.toLowerCase()} and role at that ${labels.company.singular.toLowerCase()}.`}
 			>
-				<PlaceholderRow personCode={personCode} label="Company link" />
+				<PlaceholderRow personCode={personCode} label={`${labels.company.singular} link`} />
 			</ProfileSection>
 			<ProfileSection
 				id="overview.tags"
@@ -138,14 +142,18 @@ function NotesGroup({ personCode }: { personCode: string }) {
 }
 
 function DealsGroup({ personCode }: { personCode: string }) {
+	const labels = useEntityLabels();
 	return (
 		<div className="grid gap-6">
 			<ProfileSection
 				id="deals.list"
-				title="Deals"
-				description="Every deal linked via personCode."
+				title={labels.deal.plural}
+				description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode.`}
 			>
-				<PlaceholderRow personCode={personCode} label="Deals for this person" />
+				<PlaceholderRow
+					personCode={personCode}
+					label={`${labels.deal.plural} for this person`}
+				/>
 			</ProfileSection>
 		</div>
 	);

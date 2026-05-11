@@ -5,11 +5,11 @@ import { Orbit } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
-import { APP_CONFIG } from "@/config/app-config";
 
 /**
  * VerifyEmailPage — OTP email verification using Convex Auth Password provider.
@@ -75,8 +75,14 @@ export function VerifyEmailPage() {
 				icon: <Orbit className="size-10" />,
 				title: APP_CONFIG.name,
 				tagline: APP_CONFIG.description,
-				bottomLeft: { heading: "Check your inbox", body: "We sent a 6-digit code to your email address." },
-				bottomRight: { heading: "Need help?", body: "Contact support if you didn't receive the code." },
+				bottomLeft: {
+					heading: "Check your inbox",
+					body: "We sent a 6-digit code to your email address.",
+				},
+				bottomRight: {
+					heading: "Need help?",
+					body: "Contact support if you didn't receive the code.",
+				},
 			}}
 		>
 			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[350px]">
@@ -84,8 +90,10 @@ export function VerifyEmailPage() {
 					<h1 className="font-medium text-3xl">Verify your email</h1>
 					<p className="text-muted-foreground text-sm">
 						We sent a 6-digit code to{" "}
-						<span className="font-medium text-foreground">{emailFromUrl || "your email"}</span>.
-						Enter it below to continue.
+						<span className="font-medium text-foreground">
+							{emailFromUrl || "your email"}
+						</span>
+						. Enter it below to continue.
 					</p>
 				</div>
 

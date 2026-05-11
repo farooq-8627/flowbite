@@ -1,16 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useMutation } from "convex/react";
-import { toast } from "sonner";
-import { GripVertical, Plus, Trash2, Check, X } from "lucide-react";
 import {
+	closestCenter,
 	DndContext,
+	type DragEndEvent,
 	PointerSensor,
 	useSensor,
 	useSensors,
-	closestCenter,
-	type DragEndEvent,
 } from "@dnd-kit/core";
 import {
 	arrayMove,
@@ -19,22 +15,32 @@ import {
 	verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
-
+import { useMutation } from "convex/react";
+import { Check, GripVertical, Plus, Trash2, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Badge } from "@/components/ui/badge";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
 
 type Pipeline = Doc<"pipelines">;
 type Stage = Pipeline["stages"][number];
 
 const STAGE_COLORS = [
-	"#94a3b8", "#ef4444", "#f97316", "#eab308", "#22c55e",
-	"#14b8a6", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
+	"#94a3b8",
+	"#ef4444",
+	"#f97316",
+	"#eab308",
+	"#22c55e",
+	"#14b8a6",
+	"#06b6d4",
+	"#3b82f6",
+	"#8b5cf6",
+	"#ec4899",
 ];
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -56,9 +62,9 @@ function StageRow({
 	const [editing, setEditing] = useState(false);
 	const [draft, setDraft] = useState(stage.name);
 
-	const {
-		attributes, listeners, setNodeRef, transform, transition, isDragging,
-	} = useSortable({ id: stage.id });
+	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+		id: stage.id,
+	});
 
 	const style = {
 		transform: CSS.Transform.toString(transform),
@@ -93,7 +99,11 @@ function StageRow({
 		try {
 			await removeStage({ orgId, pipelineId, stageId: stage.id });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Cannot remove stage — it may have active deals");
+			toast.error(
+				err instanceof Error
+					? err.message
+					: "Cannot remove stage — it may have active deals",
+			);
 		}
 	};
 
@@ -134,7 +144,8 @@ function StageRow({
 								className="size-5 rounded-full ring-offset-1 transition-all hover:scale-110"
 								style={{
 									backgroundColor: c,
-									outline: stage.color === c ? "2px solid var(--ring)" : undefined,
+									outline:
+										stage.color === c ? "2px solid var(--ring)" : undefined,
 								}}
 								onClick={() => setColor(c)}
 								aria-label={`Color ${c}`}
@@ -150,8 +161,14 @@ function StageRow({
 					value={draft}
 					onChange={(e) => setDraft(e.target.value)}
 					onKeyDown={(e) => {
-						if (e.key === "Enter") { e.preventDefault(); void commitRename(); }
-						if (e.key === "Escape") { setEditing(false); setDraft(stage.name); }
+						if (e.key === "Enter") {
+							e.preventDefault();
+							void commitRename();
+						}
+						if (e.key === "Escape") {
+							setEditing(false);
+							setDraft(stage.name);
+						}
 					}}
 					onBlur={commitRename}
 					className="h-7 flex-1 text-sm"
@@ -174,10 +191,27 @@ function StageRow({
 
 			{editing ? (
 				<div className="flex gap-0.5">
-					<Button type="button" size="icon" variant="ghost" className="size-7" onMouseDown={(e) => e.preventDefault()} onClick={commitRename}>
+					<Button
+						type="button"
+						size="icon"
+						variant="ghost"
+						className="size-7"
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={commitRename}
+					>
 						<Check className="size-3.5" />
 					</Button>
-					<Button type="button" size="icon" variant="ghost" className="size-7" onMouseDown={(e) => e.preventDefault()} onClick={() => { setEditing(false); setDraft(stage.name); }}>
+					<Button
+						type="button"
+						size="icon"
+						variant="ghost"
+						className="size-7"
+						onMouseDown={(e) => e.preventDefault()}
+						onClick={() => {
+							setEditing(false);
+							setDraft(stage.name);
+						}}
+					>
 						<X className="size-3.5" />
 					</Button>
 				</div>
@@ -201,13 +235,7 @@ function StageRow({
 // Pipeline card — stages list + add-stage input
 // ────────────────────────────────────────────────────────────────────────────
 
-export function PipelineEditor({
-	pipeline,
-	orgId,
-}: {
-	pipeline: Pipeline;
-	orgId: Id<"orgs">;
-}) {
+export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId: Id<"orgs"> }) {
 	const reorderStages = useMutation(api.crm.fields.pipelines.mutations.reorderStages);
 	const addStage = useMutation(api.crm.fields.pipelines.mutations.addStage);
 
@@ -267,17 +295,35 @@ export function PipelineEditor({
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-2">
 					<span className="text-sm font-medium">{pipeline.name}</span>
-					{pipeline.isDefault && <Badge variant="secondary" className="text-[10px]">Default</Badge>}
+					{pipeline.isDefault && (
+						<Badge variant="secondary" className="text-[10px]">
+							Default
+						</Badge>
+					)}
 					<span className="text-xs text-muted-foreground">· {pipeline.entityType}</span>
 				</div>
-				<span className="text-xs text-muted-foreground tabular-nums">{stages.length} stages</span>
+				<span className="text-xs text-muted-foreground tabular-nums">
+					{stages.length} stages
+				</span>
 			</div>
 
-			<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-				<SortableContext items={stages.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+			<DndContext
+				sensors={sensors}
+				collisionDetection={closestCenter}
+				onDragEnd={handleDragEnd}
+			>
+				<SortableContext
+					items={stages.map((s) => s.id)}
+					strategy={verticalListSortingStrategy}
+				>
 					<div className="flex flex-col gap-1.5">
 						{stages.map((s) => (
-							<StageRow key={s.id} stage={s} orgId={orgId} pipelineId={pipeline._id} />
+							<StageRow
+								key={s.id}
+								stage={s}
+								orgId={orgId}
+								pipelineId={pipeline._id}
+							/>
 						))}
 					</div>
 				</SortableContext>
@@ -288,7 +334,10 @@ export function PipelineEditor({
 					value={newStageName}
 					onChange={(e) => setNewStageName(e.target.value)}
 					onKeyDown={(e) => {
-						if (e.key === "Enter") { e.preventDefault(); void handleAdd(); }
+						if (e.key === "Enter") {
+							e.preventDefault();
+							void handleAdd();
+						}
 					}}
 					placeholder="New stage name…"
 					className="h-8 flex-1 text-sm"

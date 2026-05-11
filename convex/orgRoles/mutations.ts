@@ -41,9 +41,7 @@ export const create = authenticatedMutation({
 		// Ensure name is unique within org
 		const existing = await ctx.db
 			.query("orgRoles")
-			.withIndex("by_orgId_and_name", (q) =>
-				q.eq("orgId", args.orgId).eq("name", args.name),
-			)
+			.withIndex("by_orgId_and_name", (q) => q.eq("orgId", args.orgId).eq("name", args.name))
 			.first();
 		if (existing) throw new ConvexError("A role with this name already exists.");
 

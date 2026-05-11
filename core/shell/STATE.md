@@ -31,8 +31,11 @@
 
 ## Architecture Notes (this session — 2026-05-12)
 
-- **Sidebar respects `orgSettings.modules[].hidden`.** Freelancers / solo consultants can turn Companies off in Settings → Workspace → Modules (UI pending, backend already supports the flag). The sidebar filters the module out *and* the `/[entitySlug]` route short-circuits to `notFound()` via `EntitySlugView`. Renaming and hiding share the same mechanism — both are driven by `orgSettings.modules[]`.
+- **Sidebar respects `orgSettings.modules[].hidden`.** Freelancers / solo consultants can turn Companies off in Settings → Workspace → Module Visibility (UI **now shipped** in `WorkspaceGroup`). The sidebar filters the module out *and* the `/[entitySlug]` route short-circuits to `notFound()` via `EntitySlugView`. Renaming and hiding share the same mechanism — both are driven by `orgSettings.modules[]`.
 - **`modules[].order` is honored for custom reordering.** AppSidebar merges the per-slot `order` override with each DEFAULT_MODULE so users can drag-reorder (UI pending).
 - **Dynamic labels everywhere.** `AppSidebar` calls `useEntityLabels()` (no args), which auto-detects the active org from the URL and returns DB-backed labels. Renaming "Lead" → "Inquiry" in Settings updates the sidebar instantly via Convex reactivity. Fallback to English defaults while the query is in-flight.
+- **DashboardHomeView also uses dynamic labels.** `GetStartedCard` checklist + `MetricCards` are now functions of labels — "Add your first lead" becomes "Add your first inquiry" after a rename.
 - **`useEntityLabels` is canonical at `core/shared/hooks/useEntityLabels.ts`** — shell path is a thin re-export for back-compat.
 - **Route structure cleanup.** Hardcoded `/deals` and `/companies` folders under `app/[locale]/(private)/[orgSlug]/` have been deleted. Entity list and detail routes are served via the dynamic `/[entitySlug]` and `/[entitySlug]/[id]` segments, so renaming a slug (e.g. "deals" → "opportunities") works without any file-system changes.
+- **TopNav `NotificationBell` unused param renamed.** `onToggleNotifications` → `_onToggleNotifications` to satisfy the lint rule; will be wired up in Phase 2 when the notifications popover becomes controllable from outside.
+- **DashboardLayoutClient drag handle** is now a semantic `<button>` instead of a `<div role="separator">` to satisfy a11y rules. Cookie writes for the chat-panel state are kept as direct `document.cookie` with a focused `biome-ignore` explaining Cookie Store API browser support.

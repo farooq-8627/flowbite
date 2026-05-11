@@ -4,11 +4,11 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
-import { ERRORS } from "../../../_shared/errors";
 
 export const create = orgMutation({
 	args: {
@@ -83,7 +83,9 @@ export const update = orgMutation({
 		}
 
 		const { orgId: _o, companyId: _c, ...updates } = args;
-		const patch = Object.fromEntries(Object.entries(updates).filter(([, val]) => val !== undefined));
+		const patch = Object.fromEntries(
+			Object.entries(updates).filter(([, val]) => val !== undefined),
+		);
 
 		await ctx.db.patch(args.companyId, { ...patch, updatedAt: Date.now() });
 

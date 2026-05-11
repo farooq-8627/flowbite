@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
-
-import { DashboardLayout } from "@/core/shell/layouts/DashboardLayout";
-import { OnboardingGuard } from "@/core/shell/components/OnboardingGuard";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { DashboardError } from "@/components/errors/DashboardError";
+import { OnboardingGuard } from "@/core/shell/components/OnboardingGuard";
+import { DashboardLayout } from "@/core/shell/layouts/DashboardLayout";
 
 export default async function Layout({
 	children,

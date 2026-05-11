@@ -22,7 +22,10 @@ export const getTagsForEntity = orgQuery({
 		const entityTags = await ctx.db
 			.query("entityTags")
 			.withIndex("by_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType).eq("entityId", args.entityId),
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
 			)
 			.collect();
 		const tags = await Promise.all(entityTags.map((et) => ctx.db.get(et.tagId)));

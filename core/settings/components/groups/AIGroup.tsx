@@ -2,17 +2,17 @@
 
 import { useMutation } from "convex/react";
 import { z } from "zod/v4";
+import { Badge } from "@/components/ui/badge";
+import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
+import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { OrgSettings } from "../../types";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
-import { SettingsSection } from "../shared/SettingsSection";
+import type { OrgSettings } from "../../types";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
-import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Textarea } from "@/components/ui/textarea";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
+import { SettingsSection } from "../shared/SettingsSection";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Business Context
@@ -140,10 +140,7 @@ function UsageSection({ org }: { org: OrgSettings }) {
 // Export
 // ────────────────────────────────────────────────────────────────────────────
 
-export function AIGroup({
-	org,
-	orgId,
-}: { org: OrgSettings; orgId: Id<"orgs"> }) {
+export function AIGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	return (
 		<div className="grid gap-6">
 			<BusinessContextSection org={org} orgId={orgId} />

@@ -35,15 +35,15 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError } from "convex/values";
 import { customCtx, customMutation, customQuery } from "convex-helpers/server/customFunctions";
+import type { Doc, Id } from "../_generated/dataModel";
 import {
 	internalMutation,
 	internalQuery,
-	mutation,
-	query,
 	type MutationCtx,
+	mutation,
 	type QueryCtx,
+	query,
 } from "../_generated/server";
-import type { Doc, Id } from "../_generated/dataModel";
 import { ERRORS } from "../_shared/errors";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -55,7 +55,10 @@ export type AuthenticatedCtx = {
 
 export type OrgCtx = AuthenticatedCtx & {
 	org: Doc<"orgs">;
-	member: Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] };
+	member: Doc<"orgMembers"> & {
+		role: "owner" | "admin" | "member" | "viewer";
+		permissions: string[];
+	};
 };
 
 /** SuperAdminCtx — carries the branded `isSuperAdmin: true` flag for type-safe checks. */

@@ -1,7 +1,4 @@
-import type { ControllerRenderProps, FieldValues, Path } from "react-hook-form";
-import type { Control } from "react-hook-form";
-
-import { cn } from "@/lib/utils";
+import type { Control, ControllerRenderProps, FieldValues, Path } from "react-hook-form";
 import {
 	FormControl,
 	FormDescription,
@@ -10,6 +7,7 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form";
+import { cn } from "@/lib/utils";
 
 type Props<TValues extends FieldValues, TName extends Path<TValues>> = {
 	control: Control<TValues>;
@@ -31,10 +29,7 @@ type Props<TValues extends FieldValues, TName extends Path<TValues>> = {
  * Use this for every form-bound row. For plain toggles or non-form controls
  * (e.g. cookie-based appearance settings), use <SettingsRow> directly.
  */
-export function SettingsFormRow<
-	TValues extends FieldValues,
-	TName extends Path<TValues>,
->({
+export function SettingsFormRow<TValues extends FieldValues, TName extends Path<TValues>>({
 	control,
 	name,
 	label,
@@ -75,9 +70,7 @@ export function SettingsFormRow<
 			render={({ field }) => (
 				<FormItem className="flex flex-col gap-3 space-y-0 py-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
 					<div className="min-w-0 flex-1 space-y-0.5">
-						<FormLabel className="text-sm font-medium leading-none">
-							{label}
-						</FormLabel>
+						<FormLabel className="text-sm font-medium leading-none">{label}</FormLabel>
 						{description && (
 							<FormDescription className="text-xs">{description}</FormDescription>
 						)}

@@ -25,9 +25,8 @@
  * - https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/customFunctions.ts
  */
 import { v } from "convex/values";
-import { internalQuery } from "../_generated/server";
 import { authenticatedQuery } from "../_functions/authenticated";
-import { query } from "../_generated/server";
+import { internalQuery, query } from "../_generated/server";
 import { getCurrentUserOrNull } from "./helpers";
 
 /**

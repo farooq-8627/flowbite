@@ -1,14 +1,14 @@
-import { CircleAlertIcon } from 'lucide-react'
+import { CircleAlertIcon } from "lucide-react";
 
-import { Alert, AlertTitle } from '@/components/ui/alert'
+import { Alert, AlertTitle } from "@/components/ui/alert";
 
 const AlertDemo = () => {
-  return (
-    <Alert>
-      <CircleAlertIcon />
-      <AlertTitle>New message!</AlertTitle>
-    </Alert>
-  )
-}
+	return (
+		<Alert>
+			<CircleAlertIcon />
+			<AlertTitle>New message!</AlertTitle>
+		</Alert>
+	);
+};
 
-export default AlertDemo
+export default AlertDemo;

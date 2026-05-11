@@ -5,15 +5,15 @@ import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
-import { routing } from "@/i18n/routing";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { PreferencesInitializer } from "@/components/providers/PreferencesInitializer";
-import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { Toaster } from "@/components/ui/sonner";
-import { fontVars } from "@/lib/fonts/registry";
 import { ThemeBootScript } from "@/components/scripts/theme-boot";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { routing } from "@/i18n/routing";
+import { fontVars } from "@/lib/fonts/registry";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
+import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
 
 /**
  * Root layout with all providers in correct nesting order.

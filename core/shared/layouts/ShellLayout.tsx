@@ -1,18 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { useNavSlot } from "@/core/shell/context/nav-slot-context";
-import { SearchFilterProvider } from "./search-filter-context";
 import { ShellNav } from "./ShellNav";
 import { ShellToolbar } from "./ShellToolbar";
-import { useActiveShellGroup } from "./useActiveShellGroup";
-import {
-	getVisibleShellSections,
-	scrollToShellSection,
-	useShellSearch,
-} from "./useShellSearch";
+import { SearchFilterProvider } from "./search-filter-context";
 import type { ShellGroup, ShellSection } from "./types";
+import { useActiveShellGroup } from "./useActiveShellGroup";
+import { getVisibleShellSections, scrollToShellSection, useShellSearch } from "./useShellSearch";
 
 type ShellLayoutProps = {
 	/** Title shown in the mobile sheet's sr-only label and sheet header. */
@@ -175,9 +171,7 @@ export function ShellLayout({
 			setSheetOpen(false);
 			// Reset scroll on the inner <main> ONLY — never on window, or the outer
 			// dashboard layout shifts.
-			const mainEl = document.querySelector<HTMLElement>(
-				'main[data-shell-scroll="true"]',
-			);
+			const mainEl = document.querySelector<HTMLElement>('main[data-shell-scroll="true"]');
 			mainEl?.scrollTo({ top: 0, behavior: "auto" });
 		},
 		[setActiveGroup],
@@ -272,16 +266,14 @@ export function ShellLayout({
 										No results match “{query}”.
 									</p>
 									<p className="text-xs text-muted-foreground">
-										Try a different word, or clear the search to see
-										everything.
+										Try a different word, or clear the search to see everything.
 									</p>
 								</div>
 							) : (
 								<>
 									<div className="px-1 text-xs text-muted-foreground">
-										{hits.length}{" "}
-										{hits.length === 1 ? "result" : "results"} for “
-										{query}”
+										{hits.length} {hits.length === 1 ? "result" : "results"} for
+										“{query}”
 									</div>
 									<SearchFilterProvider matchingIds={matchingIds}>
 										<div className="space-y-6">

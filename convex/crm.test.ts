@@ -14,8 +14,9 @@
  *   - contacts.create: direct create generates new personCode
  *   - RBAC: viewer cannot create leads/contacts/deals
  */
-import { describe, expect, it } from "vitest";
+
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 
@@ -54,11 +55,26 @@ async function seedOrg(t: ReturnType<typeof convexTest>, userId: string) {
 			orgId: id,
 			name: "Owner",
 			permissions: [
-				"leads.create", "leads.view", "leads.update", "leads.delete", "leads.convert",
-				"contacts.create", "contacts.view", "contacts.update", "contacts.delete",
-				"deals.create", "deals.view", "deals.update", "deals.delete", "deals.changeStage", "deals.close",
-				"notes.view", "notes.viewInternal", "notes.create",
-				"activityLogs.viewOrg", "activityLogs.viewOwn",
+				"leads.create",
+				"leads.view",
+				"leads.update",
+				"leads.delete",
+				"leads.convert",
+				"contacts.create",
+				"contacts.view",
+				"contacts.update",
+				"contacts.delete",
+				"deals.create",
+				"deals.view",
+				"deals.update",
+				"deals.delete",
+				"deals.changeStage",
+				"deals.close",
+				"notes.view",
+				"notes.viewInternal",
+				"notes.create",
+				"activityLogs.viewOrg",
+				"activityLogs.viewOwn",
 			],
 			isSystem: true,
 			isDefault: false,
@@ -107,9 +123,29 @@ async function seedPipeline(t: ReturnType<typeof convexTest>, orgId: string) {
 			isDefault: true,
 			stages: [
 				{ id: "stage_new", name: "New", order: 0, color: "#3b82f6" },
-				{ id: "stage_qualified", name: "Qualified", order: 1, color: "#8b5cf6", staleAfterDays: 7 },
-				{ id: "stage_won", name: "Won", order: 2, color: "#22c55e", isFinal: true, finalType: "positive" },
-				{ id: "stage_lost", name: "Lost", order: 3, color: "#ef4444", isFinal: true, finalType: "negative" },
+				{
+					id: "stage_qualified",
+					name: "Qualified",
+					order: 1,
+					color: "#8b5cf6",
+					staleAfterDays: 7,
+				},
+				{
+					id: "stage_won",
+					name: "Won",
+					order: 2,
+					color: "#22c55e",
+					isFinal: true,
+					finalType: "positive",
+				},
+				{
+					id: "stage_lost",
+					name: "Lost",
+					order: 3,
+					color: "#ef4444",
+					isFinal: true,
+					finalType: "negative",
+				},
 			],
 			createdAt: now,
 			updatedAt: now,
@@ -142,10 +178,14 @@ describe("leads.create", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const r1 = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Alice", source: "manual",
+			orgId,
+			displayName: "Alice",
+			source: "manual",
 		});
 		const r2 = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Bob", source: "manual",
+			orgId,
+			displayName: "Bob",
+			source: "manual",
 		});
 
 		expect(r1.personCode).not.toBe(r2.personCode);
@@ -160,7 +200,9 @@ describe("leads.create", () => {
 
 		await expect(
 			asViewer.mutation(api.crm.entities.leads.mutations.create, {
-				orgId, displayName: "Test", source: "manual",
+				orgId,
+				displayName: "Test",
+				source: "manual",
 			}),
 		).rejects.toThrow();
 	});
@@ -171,12 +213,17 @@ describe("leads.create", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const { leadId } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Jane", source: "manual",
+			orgId,
+			displayName: "Jane",
+			source: "manual",
 		});
 
 		const logs = await t.run(async (ctx) => {
-			return ctx.db.query("activityLogs")
-				.withIndex("by_entityType_and_entityId", (q) => q.eq("entityType", "lead").eq("entityId", leadId))
+			return ctx.db
+				.query("activityLogs")
+				.withIndex("by_entityType_and_entityId", (q) =>
+					q.eq("entityType", "lead").eq("entityId", leadId),
+				)
 				.collect();
 		});
 
@@ -195,12 +242,19 @@ describe("leads.convertToContact", () => {
 		const { userId, asUser } = await seedUser(t);
 		const orgId = await seedOrg(t, userId);
 
-		const { leadId, personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Convert Me", source: "manual", aiContext: { summary: "VIP client", keyFacts: ["High budget"] },
-		});
+		const { leadId, personCode } = await asUser.mutation(
+			api.crm.entities.leads.mutations.create,
+			{
+				orgId,
+				displayName: "Convert Me",
+				source: "manual",
+				aiContext: { summary: "VIP client", keyFacts: ["High budget"] },
+			},
+		);
 
 		const result = await asUser.mutation(api.crm.entities.leads.mutations.convertToContact, {
-			orgId, leadId,
+			orgId,
+			leadId,
 		});
 
 		expect(result.personCode).toBe(personCode);
@@ -216,7 +270,9 @@ describe("leads.convertToContact", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const { leadId } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Convert Me", source: "manual",
+			orgId,
+			displayName: "Convert Me",
+			source: "manual",
 		});
 
 		await asUser.mutation(api.crm.entities.leads.mutations.convertToContact, { orgId, leadId });
@@ -232,7 +288,9 @@ describe("leads.convertToContact", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const { leadId } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
-			orgId, displayName: "Convert Me", source: "manual",
+			orgId,
+			displayName: "Convert Me",
+			source: "manual",
 		});
 
 		await asUser.mutation(api.crm.entities.leads.mutations.convertToContact, { orgId, leadId });
@@ -253,7 +311,11 @@ describe("deals.create", () => {
 		const pipelineId = await seedPipeline(t, orgId);
 
 		const result = await asUser.mutation(api.crm.entities.deals.mutations.create, {
-			orgId, title: "Big Deal", pipelineId, currentStageId: "stage_new", source: "manual",
+			orgId,
+			title: "Big Deal",
+			pipelineId,
+			currentStageId: "stage_new",
+			source: "manual",
 		});
 
 		expect(result.dealId).toBeTruthy();
@@ -268,7 +330,11 @@ describe("deals.create", () => {
 
 		await expect(
 			asUser.mutation(api.crm.entities.deals.mutations.create, {
-				orgId, title: "Bad Deal", pipelineId, currentStageId: "stage_nonexistent", source: "manual",
+				orgId,
+				title: "Bad Deal",
+				pipelineId,
+				currentStageId: "stage_nonexistent",
+				source: "manual",
 			}),
 		).rejects.toThrow();
 	});
@@ -282,11 +348,17 @@ describe("deals.moveToStage", () => {
 		const pipelineId = await seedPipeline(t, orgId);
 
 		const { dealId } = await asUser.mutation(api.crm.entities.deals.mutations.create, {
-			orgId, title: "Deal", pipelineId, currentStageId: "stage_new", source: "manual",
+			orgId,
+			title: "Deal",
+			pipelineId,
+			currentStageId: "stage_new",
+			source: "manual",
 		});
 
 		await asUser.mutation(api.crm.entities.deals.mutations.moveToStage, {
-			orgId, dealId, stageId: "stage_qualified",
+			orgId,
+			dealId,
+			stageId: "stage_qualified",
 		});
 
 		const deal = await t.run(async (ctx) => ctx.db.get(dealId));
@@ -301,12 +373,18 @@ describe("deals.moveToStage", () => {
 		const pipelineId = await seedPipeline(t, orgId);
 
 		const { dealId } = await asUser.mutation(api.crm.entities.deals.mutations.create, {
-			orgId, title: "Deal", pipelineId, currentStageId: "stage_won", source: "manual",
+			orgId,
+			title: "Deal",
+			pipelineId,
+			currentStageId: "stage_won",
+			source: "manual",
 		});
 
 		await expect(
 			asUser.mutation(api.crm.entities.deals.mutations.moveToStage, {
-				orgId, dealId, stageId: "stage_lost",
+				orgId,
+				dealId,
+				stageId: "stage_lost",
 			}),
 		).rejects.toThrow();
 	});
@@ -320,11 +398,18 @@ describe("deals.closeAsDone", () => {
 		const pipelineId = await seedPipeline(t, orgId);
 
 		const { dealId } = await asUser.mutation(api.crm.entities.deals.mutations.create, {
-			orgId, title: "Win", pipelineId, currentStageId: "stage_new", source: "manual",
+			orgId,
+			title: "Win",
+			pipelineId,
+			currentStageId: "stage_new",
+			source: "manual",
 		});
 
 		await asUser.mutation(api.crm.entities.deals.mutations.closeAsDone, {
-			orgId, dealId, finalType: "positive", outcomeReason: "Great fit",
+			orgId,
+			dealId,
+			finalType: "positive",
+			outcomeReason: "Great fit",
 		});
 
 		const deal = await t.run(async (ctx) => ctx.db.get(dealId));
@@ -340,11 +425,17 @@ describe("deals.closeAsDone", () => {
 		const pipelineId = await seedPipeline(t, orgId);
 
 		const { dealId } = await asUser.mutation(api.crm.entities.deals.mutations.create, {
-			orgId, title: "Loss", pipelineId, currentStageId: "stage_new", source: "manual",
+			orgId,
+			title: "Loss",
+			pipelineId,
+			currentStageId: "stage_new",
+			source: "manual",
 		});
 
 		await asUser.mutation(api.crm.entities.deals.mutations.closeAsDone, {
-			orgId, dealId, finalType: "negative",
+			orgId,
+			dealId,
+			finalType: "negative",
 		});
 
 		const deal = await t.run(async (ctx) => ctx.db.get(dealId));
@@ -362,7 +453,8 @@ describe("contacts.create", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const result = await asUser.mutation(api.crm.entities.contacts.mutations.create, {
-			orgId, displayName: "Direct Contact",
+			orgId,
+			displayName: "Direct Contact",
 		});
 
 		expect(result.contactId).toBeTruthy();
@@ -375,7 +467,9 @@ describe("contacts.create", () => {
 		const orgId = await seedOrg(t, userId);
 
 		const result = await asUser.mutation(api.crm.entities.contacts.mutations.create, {
-			orgId, displayName: "Converted", personCode: "P-999",
+			orgId,
+			displayName: "Converted",
+			personCode: "P-999",
 		});
 
 		expect(result.personCode).toBe("P-999");

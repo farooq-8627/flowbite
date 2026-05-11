@@ -84,9 +84,7 @@ export function SettingsRow({
 		>
 			<div className="min-w-0 flex-1 space-y-0.5">
 				<div className="text-sm font-medium leading-none">{label}</div>
-				{description && (
-					<div className="text-xs text-muted-foreground">{description}</div>
-				)}
+				{description && <div className="text-xs text-muted-foreground">{description}</div>}
 			</div>
 			<div
 				className={cn(

@@ -1,16 +1,19 @@
 "use client";
 
-import { useState, useCallback, useRef, Suspense, useEffect } from "react";
 import { GripVertical } from "lucide-react";
-import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
-import { AIChatPanel, AIChatPanelContent } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
-import { TopNav } from "@/core/shell/components/TopNav";
-import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
-import { AppSheet } from "@/components/ui/app-sheet";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
-import { useIsTablet } from "@/hooks/use-tablet";
+import { AppSheet } from "@/components/ui/app-sheet";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import {
+	AIChatPanel,
+	AIChatPanelContent,
+} from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
+import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
+import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
+import { TopNav } from "@/core/shell/components/TopNav";
 import { NavSlotProvider } from "@/core/shell/context/nav-slot-context";
+import { useIsTablet } from "@/hooks/use-tablet";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 
 const CHAT_MIN_WIDTH = 280;
@@ -53,50 +56,56 @@ export function DashboardLayoutClient({
 	const toggleChat = useCallback(() => {
 		const newState = !chatOpen;
 		setChatOpen(newState);
+		// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable in Safari; sync document.cookie assignment is the cross-browser baseline.
 		document.cookie = `chat_panel_state=${newState}; path=/; max-age=31536000`;
 	}, [chatOpen]);
 
-	const onMouseDown = useCallback((e: React.MouseEvent) => {
-		e.preventDefault();
-		startX.current = e.clientX;
-		startWidth.current = chatWidth;
-		setIsDragging(true);
+	const onMouseDown = useCallback(
+		(e: React.MouseEvent) => {
+			e.preventDefault();
+			startX.current = e.clientX;
+			startWidth.current = chatWidth;
+			setIsDragging(true);
 
-		const onMouseMove = (e: MouseEvent) => {
-			// In RTL the grip is on the left edge of the panel — delta is reversed
-			const delta = isRTL
-				? e.clientX - startX.current
-				: startX.current - e.clientX;
-			const newWidth = Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, startWidth.current + delta));
-			setChatWidth(newWidth);
-		};
+			const onMouseMove = (e: MouseEvent) => {
+				// In RTL the grip is on the left edge of the panel — delta is reversed
+				const delta = isRTL ? e.clientX - startX.current : startX.current - e.clientX;
+				const newWidth = Math.min(
+					CHAT_MAX_WIDTH,
+					Math.max(CHAT_MIN_WIDTH, startWidth.current + delta),
+				);
+				setChatWidth(newWidth);
+			};
 
-		const onMouseUp = () => {
-			setIsDragging(false);
-			document.removeEventListener("mousemove", onMouseMove);
-			document.removeEventListener("mouseup", onMouseUp);
-			document.body.style.cursor = "";
-			document.body.style.userSelect = "";
-		};
+			const onMouseUp = () => {
+				setIsDragging(false);
+				document.removeEventListener("mousemove", onMouseMove);
+				document.removeEventListener("mouseup", onMouseUp);
+				document.body.style.cursor = "";
+				document.body.style.userSelect = "";
+			};
 
-		document.body.style.cursor = "col-resize";
-		document.body.style.userSelect = "none";
-		document.addEventListener("mousemove", onMouseMove);
-		document.addEventListener("mouseup", onMouseUp);
-	}, [chatWidth, isRTL]);
+			document.body.style.cursor = "col-resize";
+			document.body.style.userSelect = "none";
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+		},
+		[chatWidth, isRTL],
+	);
 
 	// In RTL: sidebar is on the right, AI panel slides in from the left
-	const insetMarginStyle = !isTablet && chatOpen
-		? (isRTL ? { marginLeft: chatWidth } : { marginRight: chatWidth })
-		: {};
+	const insetMarginStyle =
+		!isTablet && chatOpen
+			? isRTL
+				? { marginLeft: chatWidth }
+				: { marginRight: chatWidth }
+			: {};
 
 	const chatPanelPositionStyle = isRTL
 		? { left: chatOpen ? 0 : -chatWidth }
 		: { right: chatOpen ? 0 : -chatWidth };
 
-	const gripPositionStyle = isRTL
-		? { left: chatWidth - 6 }
-		: { right: chatWidth - 6 };
+	const gripPositionStyle = isRTL ? { left: chatWidth - 6 } : { right: chatWidth - 6 };
 
 	return (
 		<div className="flex h-screen w-full overflow-hidden">
@@ -137,20 +146,33 @@ export function DashboardLayoutClient({
 						open={chatOpen}
 						onOpenChange={(v) => {
 							setChatOpen(v);
+							// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable in Safari; sync document.cookie assignment is the cross-browser baseline.
 							document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`;
 						}}
 						disableKeyboardShortcut
-						style={{ "--sidebar-width": `${chatWidth}px`, "--sidebar-width-icon": `${chatWidth}px` } as React.CSSProperties}
+						style={
+							{
+								"--sidebar-width": `${chatWidth}px`,
+								"--sidebar-width-icon": `${chatWidth}px`,
+							} as React.CSSProperties
+						}
 						className="!w-0 !min-h-0"
 					>
 						{chatOpen && (
-							<div
-								className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none"
+							// Keyboard-only users don't need a resize gesture (the panel
+							// is toggled via the `cmd+/` shortcut), but a button is the
+							// correct semantics for an interactive element that triggers
+							// a mouse-driven resize — keeps screen readers happy and
+							// satisfies useFocusableInteractive + useSemanticElements.
+							<button
+								type="button"
+								className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none bg-transparent border-0 p-0"
 								style={gripPositionStyle}
 								onMouseDown={onMouseDown}
+								aria-label="Resize chat panel"
 							>
 								<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
-							</div>
+							</button>
 						)}
 						<div className="pointer-events-auto">
 							<AIChatPanel side={isRTL ? "left" : "right"} />

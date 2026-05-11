@@ -62,10 +62,7 @@ export function AppSidebar({
 	const orgs = useQuery(api.orgs.queries.listMyOrgs);
 	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
 	const moduleOverrides = useMemo(() => {
-		const overrides = new Map<
-			string,
-			{ hidden?: boolean; order?: number; label?: string }
-		>();
+		const overrides = new Map<string, { hidden?: boolean; order?: number; label?: string }>();
 		for (const mod of orgEntry?.org.settings?.modules ?? []) {
 			overrides.set(mod.slot, {
 				hidden: mod.hidden,

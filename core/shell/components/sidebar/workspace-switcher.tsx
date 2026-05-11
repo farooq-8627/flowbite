@@ -1,12 +1,10 @@
 "use client";
 
-import { Check, ChevronsUpDown, Command, LogOut, Plus, UserPlus } from "lucide-react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
+import { Check, ChevronsUpDown, Command, LogOut, Plus, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api } from "@/convex/_generated/api";
-import { APP_CONFIG } from "@/config/app-config";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -16,12 +14,10 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
+import { APP_CONFIG } from "@/config/app-config";
+import { api } from "@/convex/_generated/api";
 
 export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }) {
 	const { signOut } = useAuthActions();
@@ -51,7 +47,9 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 					<DropdownMenuTrigger asChild>
 						<SidebarMenuButton className="h-10 cursor-pointer data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground">
 							<Command className="size-4 shrink-0 text-primary" />
-							<span className="flex-1 truncate text-sm font-medium">{displayName}</span>
+							<span className="flex-1 truncate text-sm font-medium">
+								{displayName}
+							</span>
 							<ChevronsUpDown className="ms-auto size-4 shrink-0 opacity-50" />
 						</SidebarMenuButton>
 					</DropdownMenuTrigger>
@@ -105,7 +103,9 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 							</DropdownMenuItem>
 						</DropdownMenuGroup>
 						{/* <DropdownMenuSeparator /> */}
-						<DropdownMenuItem onClick={() => void signOut().then(() => router.push("/signin"))}>
+						<DropdownMenuItem
+							onClick={() => void signOut().then(() => router.push("/signin"))}
+						>
 							<LogOut className="size-4 shrink-0" />
 							Log out
 						</DropdownMenuItem>

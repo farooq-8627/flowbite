@@ -110,7 +110,7 @@ export const getForOrg = orgQuery({
 
 		const cap = args.limit ?? 100;
 
-		let q = ctx.db
+		const q = ctx.db
 			.query("activityLogs")
 			.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
 			.order("desc");

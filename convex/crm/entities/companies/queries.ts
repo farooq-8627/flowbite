@@ -18,20 +18,19 @@ export const list = orgQuery({
 
 		const cap = args.limit ?? 100;
 
-		let q;
+		// Init with the broad index so `q`'s type is inferred, then narrow.
+		let q = ctx.db.query("companies").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
 		if (args.assignedTo) {
-			q = ctx.db.query("companies").withIndex("by_org_and_assignee", (qi) =>
-				qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
-			);
-		} else {
-			q = ctx.db.query("companies").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
+			q = ctx.db
+				.query("companies")
+				.withIndex("by_org_and_assignee", (qi) =>
+					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+				);
 		}
 
 		const results = await q.take(cap * 3);
 
-		return results
-			.filter((c) => c.deletedAt === undefined)
-			.slice(0, cap);
+		return results.filter((c) => c.deletedAt === undefined).slice(0, cap);
 	},
 });
 
@@ -42,7 +41,8 @@ export const getById = orgQuery({
 		requireRole(member.permissions, "companies.view");
 
 		const company = await ctx.db.get(args.companyId);
-		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) return null;
+		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined)
+			return null;
 		return company;
 	},
 });

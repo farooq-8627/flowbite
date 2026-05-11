@@ -13,45 +13,42 @@ import { api } from "@/convex/_generated/api";
  * - Not authenticated → /signin
  */
 export default function Home() {
-  const { isAuthenticated, isLoading } = useConvexAuth();
-  const router = useRouter();
-  const currentUser = useQuery(api.users.queries.me);
-  const myOrgs = useQuery(
-    api.orgs.queries.listMyOrgs,
-    isAuthenticated ? {} : "skip",
-  );
+	const { isAuthenticated, isLoading } = useConvexAuth();
+	const router = useRouter();
+	const currentUser = useQuery(api.users.queries.me);
+	const myOrgs = useQuery(api.orgs.queries.listMyOrgs, isAuthenticated ? {} : "skip");
 
-  useEffect(() => {
-    if (isLoading) return;
+	useEffect(() => {
+		if (isLoading) return;
 
-    if (!isAuthenticated) {
-      router.replace("/signin");
-      return;
-    }
+		if (!isAuthenticated) {
+			router.replace("/signin");
+			return;
+		}
 
-    if (!currentUser || myOrgs === undefined) return; // still loading
+		if (!currentUser || myOrgs === undefined) return; // still loading
 
-    if (!currentUser.onboardingCompleted || myOrgs.length === 0) {
-      router.replace("/onboarding");
-      return;
-    }
+		if (!currentUser.onboardingCompleted || myOrgs.length === 0) {
+			router.replace("/onboarding");
+			return;
+		}
 
-    // Redirect to default org, or first org
-    const defaultOrg = currentUser.defaultOrgId
-      ? myOrgs.find((m) => m.orgId === currentUser.defaultOrgId)
-      : myOrgs[0];
+		// Redirect to default org, or first org
+		const defaultOrg = currentUser.defaultOrgId
+			? myOrgs.find((m) => m.orgId === currentUser.defaultOrgId)
+			: myOrgs[0];
 
-    const slug = defaultOrg?.org.slug ?? myOrgs[0]?.org.slug;
-    if (slug) {
-      router.replace(`/${slug}`);
-    } else {
-      router.replace("/onboarding");
-    }
-  }, [isAuthenticated, isLoading, currentUser, myOrgs, router]);
+		const slug = defaultOrg?.org.slug ?? myOrgs[0]?.org.slug;
+		if (slug) {
+			router.replace(`/${slug}`);
+		} else {
+			router.replace("/onboarding");
+		}
+	}, [isAuthenticated, isLoading, currentUser, myOrgs, router]);
 
-  return (
-    <main className="flex min-h-screen items-center justify-center">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-    </main>
-  );
+	return (
+		<main className="flex min-h-screen items-center justify-center">
+			<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+		</main>
+	);
 }

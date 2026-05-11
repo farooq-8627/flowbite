@@ -13,7 +13,9 @@ import { useCallback, useState } from "react";
  * Shared by /settings and /profile/[personCode] — any shell-style view should use
  * this hook.
  */
-export function useActiveShellGroup<TId extends string = string>(defaultGroup: TId): {
+export function useActiveShellGroup<TId extends string = string>(
+	defaultGroup: TId,
+): {
 	activeGroup: TId;
 	setActiveGroup: (group: TId) => void;
 } {

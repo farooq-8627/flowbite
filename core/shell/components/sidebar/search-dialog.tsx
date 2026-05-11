@@ -1,6 +1,5 @@
 "use client";
-import * as React from "react";
-import { LayoutDashboard, Search } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 import {
 	Command,
 	CommandDialog,

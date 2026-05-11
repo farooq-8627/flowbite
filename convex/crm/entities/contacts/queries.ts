@@ -19,17 +19,20 @@ export const list = orgQuery({
 
 		const cap = args.limit ?? 100;
 
-		let q;
+		// Init with the broad index so `q`'s type is inferred, then narrow.
+		let q = ctx.db.query("contacts").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
 		if (args.companyId) {
-			q = ctx.db.query("contacts").withIndex("by_org_and_company", (qi) =>
-				qi.eq("orgId", args.orgId).eq("companyId", args.companyId!),
-			);
+			q = ctx.db
+				.query("contacts")
+				.withIndex("by_org_and_company", (qi) =>
+					qi.eq("orgId", args.orgId).eq("companyId", args.companyId!),
+				);
 		} else if (args.assignedTo) {
-			q = ctx.db.query("contacts").withIndex("by_org_and_assignee", (qi) =>
-				qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
-			);
-		} else {
-			q = ctx.db.query("contacts").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
+			q = ctx.db
+				.query("contacts")
+				.withIndex("by_org_and_assignee", (qi) =>
+					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+				);
 		}
 
 		const results = await q.take(cap * 3);
@@ -49,7 +52,8 @@ export const getById = orgQuery({
 		requireRole(member.permissions, "contacts.view");
 
 		const contact = await ctx.db.get(args.contactId);
-		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) return null;
+		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined)
+			return null;
 		return contact;
 	},
 });

@@ -87,5 +87,3 @@ export function applyNavbarStyle(style: NavbarStyle): void {
 	if (typeof document === "undefined") return;
 	document.documentElement.setAttribute("data-navbar-style", style);
 }
-
-

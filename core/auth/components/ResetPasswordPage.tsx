@@ -5,11 +5,11 @@ import { Orbit } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
-import { APP_CONFIG } from "@/config/app-config";
 
 /**
  * ResetPasswordPage — Enter OTP code + new password to complete reset.
@@ -77,8 +77,14 @@ export function ResetPasswordPage() {
 				icon: <Orbit className="size-10" />,
 				title: APP_CONFIG.name,
 				tagline: APP_CONFIG.description,
-				bottomLeft: { heading: "Set a new password", body: "Enter the code from your email and choose a new password." },
-				bottomRight: { heading: "Need help?", body: "Contact support if you didn't receive the code." },
+				bottomLeft: {
+					heading: "Set a new password",
+					body: "Enter the code from your email and choose a new password.",
+				},
+				bottomRight: {
+					heading: "Need help?",
+					body: "Contact support if you didn't receive the code.",
+				},
 			}}
 		>
 			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[350px]">
@@ -86,7 +92,9 @@ export function ResetPasswordPage() {
 					<h1 className="font-medium text-3xl">Reset password</h1>
 					<p className="text-muted-foreground text-sm">
 						Enter the code sent to{" "}
-						<span className="font-medium text-foreground">{emailFromUrl || "your email"}</span>{" "}
+						<span className="font-medium text-foreground">
+							{emailFromUrl || "your email"}
+						</span>{" "}
 						and choose a new password.
 					</p>
 				</div>
@@ -121,7 +129,9 @@ export function ResetPasswordPage() {
 							/>
 						</Field>
 						<Field className="gap-1.5">
-							<FieldLabel htmlFor="reset-confirm-password">Confirm new password</FieldLabel>
+							<FieldLabel htmlFor="reset-confirm-password">
+								Confirm new password
+							</FieldLabel>
 							<Input
 								id="reset-confirm-password"
 								name="confirmPassword"
@@ -134,7 +144,11 @@ export function ResetPasswordPage() {
 						</Field>
 					</FieldGroup>
 
-					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={loading}>
+					<Button
+						className="w-full rounded-[var(--radius)]"
+						type="submit"
+						disabled={loading}
+					>
 						{loading ? "Resetting…" : "Reset password"}
 					</Button>
 				</form>

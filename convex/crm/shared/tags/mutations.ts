@@ -3,8 +3,8 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole } from "../../../_shared/permissions";
 import { ERRORS } from "../../../_shared/errors";
+import { requireRole } from "../../../_shared/permissions";
 
 export const create = orgMutation({
 	args: {
@@ -18,12 +18,13 @@ export const create = orgMutation({
 
 		const existing = await ctx.db
 			.query("tags")
-			.withIndex("by_org_and_name", (q) =>
-				q.eq("orgId", args.orgId).eq("name", args.name),
-			)
+			.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", args.name))
 			.first();
 		if (existing) {
-			throw new ConvexError({ code: "DUPLICATE", message: "Tag with this name already exists" });
+			throw new ConvexError({
+				code: "DUPLICATE",
+				message: "Tag with this name already exists",
+			});
 		}
 
 		return ctx.db.insert("tags", {
@@ -71,7 +72,10 @@ export const attachToEntity = orgMutation({
 		const existing = await ctx.db
 			.query("entityTags")
 			.withIndex("by_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType).eq("entityId", args.entityId),
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
 			)
 			.filter((q) => q.eq(q.field("tagId"), args.tagId))
 			.first();
@@ -101,7 +105,10 @@ export const detachFromEntity = orgMutation({
 		const entityTag = await ctx.db
 			.query("entityTags")
 			.withIndex("by_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType).eq("entityId", args.entityId),
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
 			)
 			.filter((q) => q.eq(q.field("tagId"), args.tagId))
 			.first();

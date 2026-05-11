@@ -12,8 +12,8 @@
  * - https://labs.convex.dev/auth/config/users
  */
 import { ConvexError, v } from "convex/values";
-import { internalMutation } from "../_generated/server";
 import { authenticatedMutation } from "../_functions/authenticated";
+import { internalMutation } from "../_generated/server";
 import { ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { logActivity } from "../activityLogs/helpers";

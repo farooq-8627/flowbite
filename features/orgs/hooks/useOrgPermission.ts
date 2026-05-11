@@ -18,10 +18,7 @@ export function useOrgPermission(
 	orgId: Id<"orgs"> | undefined,
 	permission: string,
 ): boolean | null {
-	const membership = useQuery(
-		api.orgs.queries.getMyMembership,
-		orgId ? { orgId } : "skip",
-	);
+	const membership = useQuery(api.orgs.queries.getMyMembership, orgId ? { orgId } : "skip");
 
 	const role = useQuery(
 		api.orgRoles.queries.get,

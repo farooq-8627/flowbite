@@ -1,19 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import { useMutation } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
-
-import { api } from "@/convex/_generated/api";
-import type { Doc, Id } from "@/convex/_generated/dataModel";
-
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Dialog,
 	DialogContent,
@@ -30,14 +23,27 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { getPermissionModules } from "../../../config/permissions-catalog";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
-import { PERMISSION_MODULES } from "../../../config/permissions-catalog";
 
 type Role = Doc<"orgRoles">;
 
 const ROLE_COLORS = [
-	"#64748b", "#ef4444", "#f97316", "#eab308",
-	"#22c55e", "#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
+	"#64748b",
+	"#ef4444",
+	"#f97316",
+	"#eab308",
+	"#22c55e",
+	"#14b8a6",
+	"#3b82f6",
+	"#8b5cf6",
+	"#ec4899",
 ];
 
 const roleMetaSchema = z.object({
@@ -61,6 +67,13 @@ function PermissionMatrix({
 	onChange: (next: Set<string>) => void;
 	disabled?: boolean;
 }) {
+	// Labels are reactive via useEntityLabels — rename "Lead" → "Inquiry" in
+	// Settings and this matrix shows "View inquiries", "Create inquiries", etc.
+	// instantly. Permission keys (leads.view, etc.) are the backend contract
+	// and never change.
+	const labels = useEntityLabels();
+	const modules = useMemo(() => getPermissionModules(labels), [labels]);
+
 	const toggleKey = (key: string) => {
 		if (disabled) return;
 		const next = new Set(selected);
@@ -72,15 +85,18 @@ function PermissionMatrix({
 	const toggleModule = (keys: readonly string[], checked: boolean) => {
 		if (disabled) return;
 		const next = new Set(selected);
-		if (checked) keys.forEach((k) => next.add(k));
-		else keys.forEach((k) => next.delete(k));
+		if (checked) {
+			for (const k of keys) next.add(k);
+		} else {
+			for (const k of keys) next.delete(k);
+		}
 		onChange(next);
 	};
 
 	return (
 		<ScrollArea className="h-72 rounded-[var(--radius)] border">
 			<div className="divide-y divide-border">
-				{PERMISSION_MODULES.map((mod) => {
+				{modules.map((mod) => {
 					const moduleKeys = mod.permissions.map((p) => p.key);
 					const allSelected = moduleKeys.every((k) => selected.has(k));
 					const someSelected = moduleKeys.some((k) => selected.has(k));
@@ -91,12 +107,15 @@ function PermissionMatrix({
 								<div className="min-w-0">
 									<div className="text-sm font-medium">{mod.label}</div>
 									{mod.description && (
-										<p className="text-xs text-muted-foreground">{mod.description}</p>
+										<p className="text-xs text-muted-foreground">
+											{mod.description}
+										</p>
 									)}
 								</div>
 								<div className="flex items-center gap-2">
 									<span className="text-[11px] text-muted-foreground tabular-nums">
-										{moduleKeys.filter((k) => selected.has(k)).length} / {moduleKeys.length}
+										{moduleKeys.filter((k) => selected.has(k)).length} /{" "}
+										{moduleKeys.length}
 									</span>
 									<Button
 										type="button"
@@ -106,32 +125,44 @@ function PermissionMatrix({
 										onClick={() => toggleModule(moduleKeys, !allSelected)}
 										disabled={disabled}
 									>
-										{allSelected ? "Deselect all" : someSelected ? "Select all" : "Select all"}
+										{allSelected
+											? "Deselect all"
+											: someSelected
+												? "Select all"
+												: "Select all"}
 									</Button>
 								</div>
 							</div>
 							<div className="grid gap-1.5 sm:grid-cols-2">
-								{mod.permissions.map((p) => (
-									<label
-										key={p.key}
-										className="flex cursor-pointer items-start gap-2 rounded-[var(--radius)] px-2 py-1.5 hover:bg-muted/50"
-									>
-										<Checkbox
-											checked={selected.has(p.key)}
-											onCheckedChange={() => toggleKey(p.key)}
-											disabled={disabled}
-											className="mt-0.5"
-										/>
-										<div className="min-w-0">
-											<div className="text-xs font-medium">{p.label}</div>
-											{p.description && (
-												<div className="text-[11px] leading-tight text-muted-foreground">
-													{p.description}
-												</div>
-											)}
-										</div>
-									</label>
-								))}
+								{mod.permissions.map((p) => {
+									// Each permission row has an explicit id so the <label>
+									// can bind to the Checkbox via htmlFor — keeps screen
+									// readers happy and satisfies biome/a11y.
+									const inputId = `perm-${p.key}`;
+									return (
+										<label
+											key={p.key}
+											htmlFor={inputId}
+											className="flex cursor-pointer items-start gap-2 rounded-[var(--radius)] px-2 py-1.5 hover:bg-muted/50"
+										>
+											<Checkbox
+												id={inputId}
+												checked={selected.has(p.key)}
+												onCheckedChange={() => toggleKey(p.key)}
+												disabled={disabled}
+												className="mt-0.5"
+											/>
+											<div className="min-w-0">
+												<div className="text-xs font-medium">{p.label}</div>
+												{p.description && (
+													<div className="text-[11px] leading-tight text-muted-foreground">
+														{p.description}
+													</div>
+												)}
+											</div>
+										</label>
+									);
+								})}
 							</div>
 						</div>
 					);
@@ -157,10 +188,12 @@ export function RoleEditorDialog({
 	const update = useMutation(api.orgRoles.mutations.update);
 	const [selected, setSelected] = useState<Set<string>>(() => new Set(role.permissions));
 
-	// Keep permission set in sync if the role prop changes (e.g. another user edits it)
-	useMemo(() => {
+	// Keep permission set in sync if the role prop changes (e.g. another user
+	// edits it). useEffect — not useMemo — because we're intentionally doing a
+	// side-effect (setState) rather than memoising a derived value.
+	useEffect(() => {
 		setSelected(new Set(role.permissions));
-	}, [role._id, role.permissions]);
+	}, [role.permissions]);
 
 	const { form, isSubmitting, handleSubmit } = useSettingsForm({
 		schema: roleMetaSchema,
@@ -192,7 +225,11 @@ export function RoleEditorDialog({
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						Edit role: {role.name}
-						{role.isSystem && <Badge variant="secondary" className="text-[10px]">System</Badge>}
+						{role.isSystem && (
+							<Badge variant="secondary" className="text-[10px]">
+								System
+							</Badge>
+						)}
 					</DialogTitle>
 					<DialogDescription>
 						{role.isSystem
@@ -234,7 +271,10 @@ export function RoleEditorDialog({
 														className="size-5 rounded-full ring-offset-1 transition-all hover:scale-110"
 														style={{
 															backgroundColor: c,
-															outline: field.value === c ? "2px solid var(--ring)" : undefined,
+															outline:
+																field.value === c
+																	? "2px solid var(--ring)"
+																	: undefined,
 														}}
 													/>
 												))}
@@ -270,7 +310,12 @@ export function RoleEditorDialog({
 						</div>
 
 						<DialogFooter>
-							<Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => onOpenChange(false)}
+							>
 								Cancel
 							</Button>
 							<Button type="submit" size="sm" disabled={isSubmitting}>
@@ -330,7 +375,8 @@ export function CreateRoleDialog({
 				<DialogHeader>
 					<DialogTitle>Create a custom role</DialogTitle>
 					<DialogDescription>
-						Custom roles sit alongside the built-in Owner, Admin, Member, and Viewer roles.
+						Custom roles sit alongside the built-in Owner, Admin, Member, and Viewer
+						roles.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -367,7 +413,10 @@ export function CreateRoleDialog({
 														className="size-5 rounded-full ring-offset-1 transition-all hover:scale-110"
 														style={{
 															backgroundColor: c,
-															outline: field.value === c ? "2px solid var(--ring)" : undefined,
+															outline:
+																field.value === c
+																	? "2px solid var(--ring)"
+																	: undefined,
 														}}
 													/>
 												))}
@@ -391,7 +440,9 @@ export function CreateRoleDialog({
 						/>
 						<div>
 							<Label className="text-sm">Permissions</Label>
-							<p className="mb-2 text-xs text-muted-foreground">Select which actions this role can perform.</p>
+							<p className="mb-2 text-xs text-muted-foreground">
+								Select which actions this role can perform.
+							</p>
 							<PermissionMatrix selected={selected} onChange={setSelected} />
 							<p className="mt-2 text-[11px] text-muted-foreground tabular-nums">
 								{selected.size} permissions selected
@@ -399,10 +450,19 @@ export function CreateRoleDialog({
 						</div>
 
 						<DialogFooter>
-							<Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => onOpenChange(false)}
+							>
 								Cancel
 							</Button>
-							<Button type="submit" size="sm" disabled={isSubmitting || selected.size === 0}>
+							<Button
+								type="submit"
+								size="sm"
+								disabled={isSubmitting || selected.size === 0}
+							>
 								Create role
 							</Button>
 						</DialogFooter>

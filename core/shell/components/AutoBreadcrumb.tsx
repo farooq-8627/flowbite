@@ -1,11 +1,14 @@
 "use client";
 
-import { usePathname } from "next/navigation";
-import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useParams, usePathname } from "next/navigation";
 import {
-	Breadcrumb, BreadcrumbItem, BreadcrumbLink,
-	BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator,
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { DEFAULT_MODULES } from "@/core/shell/config/navigation";
 
@@ -45,7 +48,7 @@ export function AutoBreadcrumb() {
 
 	const pageCrumbs = segments.map((seg, i) => ({
 		label: labelForSegment(seg),
-		href: base + "/" + segments.slice(0, i + 1).join("/"),
+		href: `${base}/${segments.slice(0, i + 1).join("/")}`,
 		isLast: i === segments.length - 1,
 	}));
 

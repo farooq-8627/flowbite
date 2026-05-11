@@ -112,11 +112,15 @@ export async function runDedup(
 			const [leadByPhone, contactByPhone] = await Promise.all([
 				ctx.db
 					.query("leads")
-					.withIndex("by_org_and_normalizedPhone", (q) => q.eq("orgId", orgId).eq("normalizedPhone", normalized))
+					.withIndex("by_org_and_normalizedPhone", (q) =>
+						q.eq("orgId", orgId).eq("normalizedPhone", normalized),
+					)
 					.first(),
 				ctx.db
 					.query("contacts")
-					.withIndex("by_org_and_normalizedPhone", (q) => q.eq("orgId", orgId).eq("normalizedPhone", normalized))
+					.withIndex("by_org_and_normalizedPhone", (q) =>
+						q.eq("orgId", orgId).eq("normalizedPhone", normalized),
+					)
 					.first(),
 			]);
 
@@ -161,7 +165,11 @@ export async function runDedup(
 		]);
 
 		for (const lead of leads) {
-			if (!lead.deletedAt && !lead.convertedAt && isFuzzyNameMatch(lead.displayName, displayName)) {
+			if (
+				!lead.deletedAt &&
+				!lead.convertedAt &&
+				isFuzzyNameMatch(lead.displayName, displayName)
+			) {
 				duplicates.push({
 					entityType: "lead",
 					entityId: lead._id,

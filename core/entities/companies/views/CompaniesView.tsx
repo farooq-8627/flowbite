@@ -25,13 +25,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	);
 }
 
-export function CompanyDetailView({
-	orgSlug,
-	companyId,
-}: {
-	orgSlug: string;
-	companyId: string;
-}) {
+export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; companyId: string }) {
 	const labels = useEntityLabels();
 	return (
 		<div

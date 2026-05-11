@@ -15,7 +15,7 @@
  * - .github/agents/base/schema.md — schema reference
  */
 import type { Doc, Id } from "../_generated/dataModel";
-import type { OrgRole, OrgPlan } from "./validators";
+import type { OrgPlan, OrgRole } from "./validators";
 
 /** A user document (alias for convenience) */
 export type User = Doc<"users">;
@@ -27,7 +27,7 @@ export type Org = Doc<"orgs">;
 export type OrgMember = Doc<"orgMembers">;
 
 /** Re-export role/plan types for frontend usage */
-export type { OrgRole, OrgPlan };
+export type { OrgPlan, OrgRole };
 
 /** User with their org membership context (used in authenticated function builders) */
 export type UserWithOrgContext = {

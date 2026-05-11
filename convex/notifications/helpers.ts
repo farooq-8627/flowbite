@@ -7,8 +7,9 @@
  * Sources:
  * - https://github.com/get-convex/convex-saas/blob/main/convex/notifications.ts
  */
-import type { MutationCtx } from "../_generated/server";
+
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 
 export type NotificationInput = {
 	orgId: Id<"orgs">;

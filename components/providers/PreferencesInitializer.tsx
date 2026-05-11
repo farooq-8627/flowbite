@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
+import { applyFont, applyThemeMode, applyThemePreset } from "@/lib/preferences/theme-utils";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
-import { applyThemePreset, applyFont, applyThemeMode } from "@/lib/preferences/theme-utils";
 
 export function PreferencesInitializer() {
 	const theme_preset = usePreferencesStore((s) => s.theme_preset);

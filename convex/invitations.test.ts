@@ -21,8 +21,9 @@
  *     - logActivity records are created on mutations
  *     - sendNotification records are created on accept
  */
-import { describe, expect, it } from "vitest";
+
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 

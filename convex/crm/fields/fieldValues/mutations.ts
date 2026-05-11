@@ -51,9 +51,7 @@ export const bulkSet = orgMutation({
 		orgId: v.id("orgs"),
 		entityType: v.string(),
 		entityId: v.string(),
-		values: v.array(
-			v.object({ fieldId: v.id("fieldDefinitions"), value: v.any() }),
-		),
+		values: v.array(v.object({ fieldId: v.id("fieldDefinitions"), value: v.any() })),
 	},
 	handler: async (ctx, args) => {
 		await requireOrgMember(ctx, args.orgId);

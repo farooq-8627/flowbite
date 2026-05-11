@@ -4,7 +4,7 @@
  */
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole, hasPermission } from "../../../_shared/permissions";
+import { hasPermission, requireRole } from "../../../_shared/permissions";
 
 export const listForPerson = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },

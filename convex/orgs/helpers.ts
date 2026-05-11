@@ -5,8 +5,9 @@
  * - https://github.com/get-convex/convex-saas/blob/main/convex/organizations.ts
  * - https://github.com/dbjpanda/convex-tenants/blob/main/example/convex/tenants.ts
  */
-import type { QueryCtx } from "../_generated/server";
+
 import type { Doc, Id } from "../_generated/dataModel";
+import type { QueryCtx } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 
 /**
@@ -36,7 +37,10 @@ export async function getOrgMember(
 	ctx: QueryCtx,
 	orgId: Id<"orgs">,
 	userId: Id<"users">,
-): Promise<(Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] }) | null> {
+): Promise<
+	| (Doc<"orgMembers"> & { role: "owner" | "admin" | "member" | "viewer"; permissions: string[] })
+	| null
+> {
 	const member = await ctx.db
 		.query("orgMembers")
 		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))

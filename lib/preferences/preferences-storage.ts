@@ -88,6 +88,7 @@ export function setPreference<K extends PreferenceKey>(key: K, value: Preference
 
 	const cookieName = `${COOKIE_PREFIX}${key}`;
 	const encodedValue = encodeURIComponent(String(value));
+	// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable across browsers (Safari missing); sync document.cookie is the reliable cross-browser write.
 	document.cookie = `${cookieName}=${encodedValue}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 
@@ -122,7 +123,6 @@ export function parsePreferencesFromCookieHeader(cookieHeader: string): Preferen
 		if (cookie) {
 			const value = decodeURIComponent(cookie.split("=")[1] ?? "");
 			if (value) {
-				// biome-ignore lint: dynamic assignment from cookie parsing
 				(result as Record<string, string>)[key] = value;
 			}
 		}

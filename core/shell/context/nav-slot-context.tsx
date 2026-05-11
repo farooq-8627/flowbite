@@ -1,8 +1,13 @@
 "use client";
 
 import {
-	createContext, useContext, useRef, useState,
-	useCallback, useEffect, type ReactNode,
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useEffect,
+	useRef,
+	useState,
 } from "react";
 
 type NavSlotContextValue = {
@@ -34,12 +39,12 @@ export function NavSlotProvider({ children }: { children: ReactNode }) {
 
 	const setSlot = useCallback((node: ReactNode) => {
 		slotRef.current = node;
-		listenersRef.current.forEach((cb) => cb());
+		for (const cb of listenersRef.current) cb();
 	}, []);
 
 	const clearSlot = useCallback(() => {
 		slotRef.current = null;
-		listenersRef.current.forEach((cb) => cb());
+		for (const cb of listenersRef.current) cb();
 	}, []);
 
 	return (

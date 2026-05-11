@@ -11,8 +11,9 @@
  * Sources:
  * - https://github.com/get-convex/convex-saas/blob/main/convex/activityLogs.ts
  */
-import type { MutationCtx } from "../_generated/server";
+
 import type { Id } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import type { ActorType } from "../_shared/validators";
 
 export type ActivityLogInput = {

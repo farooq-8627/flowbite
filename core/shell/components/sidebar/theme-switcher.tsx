@@ -3,8 +3,8 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
-import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 import { persistPreference } from "@/lib/preferences/preferences-storage";
+import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 const THEME_CYCLE = ["light", "dark", "system"] as const;
 const THEME_ICONS = { light: Moon, dark: Sun, system: Monitor } as const;

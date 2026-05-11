@@ -6,11 +6,11 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole, hasPermission } from "../../../_shared/permissions";
+import { ERRORS } from "../../../_shared/errors";
+import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
-import { ERRORS } from "../../../_shared/errors";
 
 export const create = orgMutation({
 	args: {
@@ -108,7 +108,9 @@ export const update = orgMutation({
 		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		const { orgId: _o, reminderId: _r, ...updates } = args;
-		const patch = Object.fromEntries(Object.entries(updates).filter(([, val]) => val !== undefined));
+		const patch = Object.fromEntries(
+			Object.entries(updates).filter(([, val]) => val !== undefined),
+		);
 
 		await ctx.db.patch(args.reminderId, patch);
 	},

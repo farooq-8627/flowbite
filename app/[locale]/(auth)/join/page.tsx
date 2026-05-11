@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Orbit } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
-import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 import { APP_CONFIG } from "@/config/app-config";
+import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 
 /**
  * JoinPage — Enter an invite token to join a workspace.
@@ -23,8 +23,14 @@ export default function JoinPage() {
 				icon: <Orbit className="size-10" />,
 				title: APP_CONFIG.name,
 				tagline: APP_CONFIG.description,
-				bottomLeft: { heading: "Join your team", body: "Enter the invite link or token from your admin." },
-				bottomRight: { heading: "Need help?", body: "Ask your workspace admin to resend the invitation." },
+				bottomLeft: {
+					heading: "Join your team",
+					body: "Enter the invite link or token from your admin.",
+				},
+				bottomRight: {
+					heading: "Need help?",
+					body: "Ask your workspace admin to resend the invitation.",
+				},
 			}}
 		>
 			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[350px]">
@@ -55,7 +61,11 @@ export default function JoinPage() {
 							/>
 						</Field>
 					</FieldGroup>
-					<Button className="w-full rounded-[var(--radius)]" type="submit" disabled={!token.trim()}>
+					<Button
+						className="w-full rounded-[var(--radius)]"
+						type="submit"
+						disabled={!token.trim()}
+					>
 						Continue
 					</Button>
 				</form>

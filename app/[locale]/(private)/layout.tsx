@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useConvexAuth } from "convex/react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useEffect } from "react";
 
 /**

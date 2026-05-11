@@ -15,32 +15,84 @@
  */
 
 export const RESERVED_SLUGS = new Set([
-  // ── Next.js / system routes ──────────────────────────────────────────────
-  "api", "_next", "_vercel", "static", "public",
+	// ── Next.js / system routes ──────────────────────────────────────────────
+	"api",
+	"_next",
+	"_vercel",
+	"static",
+	"public",
 
-  // ── Auth routes ──────────────────────────────────────────────────────────
-  "login", "logout", "signup", "sign-in", "sign-up", "sign-out", "register",
-  "auth", "oauth", "sso", "saml", "callback", "verify",
+	// ── Auth routes ──────────────────────────────────────────────────────────
+	"login",
+	"logout",
+	"signup",
+	"sign-in",
+	"sign-up",
+	"sign-out",
+	"register",
+	"auth",
+	"oauth",
+	"sso",
+	"saml",
+	"callback",
+	"verify",
 
-  // ── App top-level routes ─────────────────────────────────────────────────
-  "onboarding", "invite", "join", "accept",
-  "settings", "admin", "dashboard", "home",
-  "activity", "notifications", "search",
-  "billing", "pricing", "plans", "upgrade",
-  "help", "support", "docs", "documentation",
-  "status", "health", "healthcheck", "ping",
-  "about", "contact", "privacy", "terms", "legal",
-  "blog", "changelog", "roadmap",
+	// ── App top-level routes ─────────────────────────────────────────────────
+	"onboarding",
+	"invite",
+	"join",
+	"accept",
+	"settings",
+	"admin",
+	"dashboard",
+	"home",
+	"activity",
+	"notifications",
+	"search",
+	"billing",
+	"pricing",
+	"plans",
+	"upgrade",
+	"help",
+	"support",
+	"docs",
+	"documentation",
+	"status",
+	"health",
+	"healthcheck",
+	"ping",
+	"about",
+	"contact",
+	"privacy",
+	"terms",
+	"legal",
+	"blog",
+	"changelog",
+	"roadmap",
 
-  // ── Platform admin ───────────────────────────────────────────────────────
-  "platform", "superadmin", "super-admin", "staff", "internal",
+	// ── Platform admin ───────────────────────────────────────────────────────
+	"platform",
+	"superadmin",
+	"super-admin",
+	"staff",
+	"internal",
 
-  // ── Common confusables ───────────────────────────────────────────────────
-  "null", "undefined", "true", "false", "test", "demo", "example",
-  "localhost", "www", "mail", "email", "smtp",
+	// ── Common confusables ───────────────────────────────────────────────────
+	"null",
+	"undefined",
+	"true",
+	"false",
+	"test",
+	"demo",
+	"example",
+	"localhost",
+	"www",
+	"mail",
+	"email",
+	"smtp",
 
-  // ── Brand name ───────────────────────────────────────────────────────────
-  "orbitly",
+	// ── Brand name ───────────────────────────────────────────────────────────
+	"orbitly",
 ]);
 
 /** Slug format: lowercase alphanumeric + hyphens, no leading/trailing/consecutive hyphens */
@@ -48,20 +100,20 @@ export const SLUG_REGEX = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/;
 export const SLUG_MIN = 3;
 export const SLUG_MAX = 48;
 
-export type SlugValidationResult =
-  | { valid: true }
-  | { valid: false; reason: string };
+export type SlugValidationResult = { valid: true } | { valid: false; reason: string };
 
 export function validateSlug(slug: string): SlugValidationResult {
-  if (!slug || slug.length < SLUG_MIN)
-    return { valid: false, reason: `Minimum ${SLUG_MIN} characters` };
-  if (slug.length > SLUG_MAX)
-    return { valid: false, reason: `Maximum ${SLUG_MAX} characters` };
-  if (!SLUG_REGEX.test(slug))
-    return { valid: false, reason: "Only lowercase letters, numbers, and hyphens. Cannot start or end with a hyphen." };
-  if (slug.includes("--"))
-    return { valid: false, reason: "Consecutive hyphens are not allowed." };
-  if (RESERVED_SLUGS.has(slug.toLowerCase()))
-    return { valid: false, reason: "This name is reserved. Please choose another." };
-  return { valid: true };
+	if (!slug || slug.length < SLUG_MIN)
+		return { valid: false, reason: `Minimum ${SLUG_MIN} characters` };
+	if (slug.length > SLUG_MAX) return { valid: false, reason: `Maximum ${SLUG_MAX} characters` };
+	if (!SLUG_REGEX.test(slug))
+		return {
+			valid: false,
+			reason: "Only lowercase letters, numbers, and hyphens. Cannot start or end with a hyphen.",
+		};
+	if (slug.includes("--"))
+		return { valid: false, reason: "Consecutive hyphens are not allowed." };
+	if (RESERVED_SLUGS.has(slug.toLowerCase()))
+		return { valid: false, reason: "This name is reserved. Please choose another." };
+	return { valid: true };
 }

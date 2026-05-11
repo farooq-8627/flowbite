@@ -37,9 +37,9 @@
  * - .github/agents/base/rbac.md — master RBAC document
  */
 import { ConvexError } from "convex/values";
-import { type OrgRole, ORG_ROLE_RANK } from "./validators";
-import { ERRORS } from "./errors";
 import { PLAN_FEATURES } from "./constants";
+import { ERRORS } from "./errors";
+import { ORG_ROLE_RANK, type OrgRole } from "./validators";
 
 // ─── Permission Map ───────────────────────────────────────────────────────────
 //
@@ -319,11 +319,18 @@ export function requirePlanFeature(plan: string, featureKey: string): void {
  * @param permission - Permission key e.g. "leads.create"
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function requirePermission(ctx: { db: any }, orgId: string, userId: string, permission: string): Promise<void> {
+export async function requirePermission(
+	ctx: { db: any },
+	orgId: string,
+	userId: string,
+	permission: string,
+): Promise<void> {
 	const member = await ctx.db
 		.query("orgMembers")
-		.withIndex("by_orgId_and_userId", (q: { eq: (f: string, v: string) => { eq: (f: string, v: string) => unknown } }) =>
-			q.eq("orgId", orgId).eq("userId", userId),
+		.withIndex(
+			"by_orgId_and_userId",
+			(q: { eq: (f: string, v: string) => { eq: (f: string, v: string) => unknown } }) =>
+				q.eq("orgId", orgId).eq("userId", userId),
 		)
 		.first();
 
@@ -345,7 +352,12 @@ export async function requirePermission(ctx: { db: any }, orgId: string, userId:
  * DB-backed permission check — returns boolean instead of throwing.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function hasPermissionFromDB(ctx: { db: any }, orgId: string, userId: string, permission: string): Promise<boolean> {
+export async function hasPermissionFromDB(
+	ctx: { db: any },
+	orgId: string,
+	userId: string,
+	permission: string,
+): Promise<boolean> {
 	try {
 		await requirePermission(ctx, orgId, userId, permission);
 		return true;

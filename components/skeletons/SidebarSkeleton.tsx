@@ -1,19 +1,19 @@
 /**
  * Sidebar Skeleton Component
  * STATUS: IMPLEMENTED
- * 
+ *
  * Loading state for AppSidebar while data is being fetched.
  * Matches the structure of the actual sidebar for smooth transition.
- * 
+ *
  * Features:
  * - Skeleton placeholders for all sidebar sections
  * - Matches actual sidebar layout
  * - Smooth transition to loaded state
  * - No layout shift
- * 
+ *
  * @see core/shell/components/sidebar/app-sidebar.tsx for actual sidebar
  * @see components/ui/skeleton.tsx for skeleton primitive
- * 
+ *
  * @example
  * {isLoading ? <SidebarSkeleton /> : <AppSidebar />}
  */

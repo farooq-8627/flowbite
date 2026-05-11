@@ -1,8 +1,12 @@
 # Active Todos
 
 > OVERWRITE this file — never append.
-> Updated: 2026-05-08
-> Status: **Phase 2 Backend ✅ 100% COMPLETE — Phase 2 Frontend NEXT**
+> Updated: 2026-05-12
+> Status: **Phase 2 Backend ✅ 100% COMPLETE — Phase 2 Frontend IN PROGRESS**
+>
+> Last session (2026-05-12) landed: dynamic entity-label resolution across the entire
+> settings surface, Module Visibility (hide/show) UI in Workspace settings, and a project-
+> wide biome cleanup (0 errors / 0 warnings / 0 infos across 354 files).
 
 ---
 

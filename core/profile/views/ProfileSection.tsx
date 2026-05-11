@@ -29,14 +29,7 @@ type Props = {
  *     shared `useSearchFilter()` context and returns null if its id is not a
  *     match — inline filtering without a separate "results screen".
  */
-export function ProfileSection({
-	id,
-	title,
-	description,
-	action,
-	children,
-	className,
-}: Props) {
+export function ProfileSection({ id, title, description, action, children, className }: Props) {
 	const { matchingIds } = useSearchFilter();
 	if (matchingIds && id && !matchingIds.has(id)) return null;
 
@@ -45,9 +38,7 @@ export function ProfileSection({
 			<CardHeader className={cn("gap-0", action && "grid-cols-[1fr_auto]")}>
 				<CardTitle className="text-sm sm:text-base">{title}</CardTitle>
 				{description && (
-					<CardDescription className="text-xs sm:text-sm">
-						{description}
-					</CardDescription>
+					<CardDescription className="text-xs sm:text-sm">{description}</CardDescription>
 				)}
 				{action && <CardAction>{action}</CardAction>}
 			</CardHeader>

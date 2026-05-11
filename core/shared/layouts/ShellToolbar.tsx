@@ -44,12 +44,7 @@ export function ShellToolbar({
 	className,
 }: Props) {
 	return (
-		<div
-			className={cn(
-				"flex w-full items-center gap-2 flex-col sm:flex-row",
-				className,
-			)}
-		>
+		<div className={cn("flex w-full items-center gap-2 flex-col sm:flex-row", className)}>
 			<div className="flex flex-row items-center gap-1 w-full sm:w-auto shrink-0">
 				{onOpenSheet && (
 					<Button

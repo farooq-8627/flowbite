@@ -4,9 +4,9 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { logActivity } from "../../../activityLogs/helpers";
-import { ERRORS } from "../../../_shared/errors";
 
 const stageShape = v.object({
 	id: v.string(),
@@ -14,7 +14,9 @@ const stageShape = v.object({
 	order: v.number(),
 	color: v.optional(v.string()),
 	isFinal: v.optional(v.boolean()),
-	finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
+	finalType: v.optional(
+		v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+	),
 	staleAfterDays: v.optional(v.number()),
 });
 
@@ -78,7 +80,9 @@ export const addStage = orgMutation({
 			name: v.string(),
 			color: v.optional(v.string()),
 			isFinal: v.optional(v.boolean()),
-			finalType: v.optional(v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral"))),
+			finalType: v.optional(
+				v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+			),
 			staleAfterDays: v.optional(v.number()),
 		}),
 	},
@@ -162,7 +166,11 @@ export const removeStage = orgMutation({
 				q.eq("orgId", args.orgId).eq("currentStageId", args.stageId),
 			)
 			.first();
-		if (dealsInStage) throw new ConvexError({ code: "STAGE_HAS_DEALS", message: "Cannot remove stage with active deals" });
+		if (dealsInStage)
+			throw new ConvexError({
+				code: "STAGE_HAS_DEALS",
+				message: "Cannot remove stage with active deals",
+			});
 
 		const filtered = pipeline.stages
 			.filter((s) => s.id !== args.stageId)
@@ -184,7 +192,8 @@ export const reorderStages = orgMutation({
 		const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
 		const reordered = args.stageIds.map((id, i) => {
 			const stage = stageMap.get(id);
-			if (!stage) throw new ConvexError({ code: "INVALID_STAGE", message: `Stage ${id} not found` });
+			if (!stage)
+				throw new ConvexError({ code: "INVALID_STAGE", message: `Stage ${id} not found` });
 			return { ...stage, order: i };
 		});
 
@@ -200,7 +209,11 @@ export const deletePipeline = orgMutation({
 
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (pipeline.isDefault) throw new ConvexError({ code: "DEFAULT_PIPELINE", message: "Cannot delete the default pipeline" });
+		if (pipeline.isDefault)
+			throw new ConvexError({
+				code: "DEFAULT_PIPELINE",
+				message: "Cannot delete the default pipeline",
+			});
 
 		for (const stage of pipeline.stages) {
 			const deal = await ctx.db
@@ -209,7 +222,11 @@ export const deletePipeline = orgMutation({
 					q.eq("orgId", args.orgId).eq("currentStageId", stage.id),
 				)
 				.first();
-			if (deal) throw new ConvexError({ code: "PIPELINE_HAS_DEALS", message: `Cannot delete — deals exist in stage "${stage.name}"` });
+			if (deal)
+				throw new ConvexError({
+					code: "PIPELINE_HAS_DEALS",
+					message: `Cannot delete — deals exist in stage "${stage.name}"`,
+				});
 		}
 
 		await ctx.db.delete(args.pipelineId);

@@ -31,13 +31,7 @@ type Slot = "lead" | "contact" | "deal" | "company";
  *   - `entitySlug` is the URL segment (`leads`, `inquiries`, `opportunities`,
  *     etc.).
  */
-export function EntitySlugView({
-	orgSlug,
-	entitySlug,
-}: {
-	orgSlug: string;
-	entitySlug: string;
-}) {
+export function EntitySlugView({ orgSlug, entitySlug }: { orgSlug: string; entitySlug: string }) {
 	const labels = useEntityLabels();
 	const orgs = useQuery(api.orgs.queries.listMyOrgs);
 	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);

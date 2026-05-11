@@ -13,14 +13,14 @@
 
 import type { LucideIcon } from "lucide-react";
 import {
-	LayoutDashboard,
-	UserSearch,
-	Users,
+	Bell,
 	Building2,
 	Handshake,
-	Bell,
-	Settings,
+	LayoutDashboard,
 	Palette,
+	Settings,
+	UserSearch,
+	Users,
 } from "lucide-react";
 
 // --- Entity Types (stable, never changes) ---
@@ -50,10 +50,42 @@ export interface ModuleConfig {
 // --- Default Modules (factory config) ---
 
 export const DEFAULT_MODULES: ModuleConfig[] = [
-	{ slug: "leads", type: "leads", label: "Leads", labelAr: "العملاء المحتملون", icon: "user-search", enabled: true, order: 1 },
-	{ slug: "contacts", type: "contacts", label: "Contacts", labelAr: "جهات الاتصال", icon: "users", enabled: true, order: 2 },
-	{ slug: "companies", type: "companies", label: "Companies", labelAr: "الشركات", icon: "building-2", enabled: true, order: 3 },
-	{ slug: "deals", type: "deals", label: "Deals", labelAr: "الصفقات", icon: "handshake", enabled: true, order: 4 },
+	{
+		slug: "leads",
+		type: "leads",
+		label: "Leads",
+		labelAr: "العملاء المحتملون",
+		icon: "user-search",
+		enabled: true,
+		order: 1,
+	},
+	{
+		slug: "contacts",
+		type: "contacts",
+		label: "Contacts",
+		labelAr: "جهات الاتصال",
+		icon: "users",
+		enabled: true,
+		order: 2,
+	},
+	{
+		slug: "companies",
+		type: "companies",
+		label: "Companies",
+		labelAr: "الشركات",
+		icon: "building-2",
+		enabled: true,
+		order: 3,
+	},
+	{
+		slug: "deals",
+		type: "deals",
+		label: "Deals",
+		labelAr: "الصفقات",
+		icon: "handshake",
+		enabled: true,
+		order: 4,
+	},
 ];
 
 // --- Icon Map (icon string → component) ---
@@ -116,7 +148,11 @@ export function buildNavigation(
 		{
 			id: "overview",
 			items: [
-				{ title: locale === "ar" ? "لوحة التحكم" : "Dashboard", url: base, icon: LayoutDashboard },
+				{
+					title: locale === "ar" ? "لوحة التحكم" : "Dashboard",
+					url: base,
+					icon: LayoutDashboard,
+				},
 			],
 		},
 		{
@@ -145,10 +181,7 @@ export function resolveModuleType(
  * Get the slug for a given entity type (reverse lookup).
  * Used when code needs to link to an entity page.
  */
-export function getModuleSlug(
-	type: EntityType,
-	modules: ModuleConfig[] = DEFAULT_MODULES,
-): string {
+export function getModuleSlug(type: EntityType, modules: ModuleConfig[] = DEFAULT_MODULES): string {
 	const mod = modules.find((m) => m.type === type && m.enabled);
 	return mod?.slug ?? type;
 }

@@ -6,8 +6,8 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole } from "../../../_shared/permissions";
 import { ERRORS } from "../../../_shared/errors";
+import { requireRole } from "../../../_shared/permissions";
 
 export const create = orgMutation({
 	args: {
@@ -73,7 +73,9 @@ export const update = orgMutation({
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		const { orgId: _o, fieldId: _f, ...updates } = args;
-		const patch = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+		const patch = Object.fromEntries(
+			Object.entries(updates).filter(([, v]) => v !== undefined),
+		);
 		await ctx.db.patch(args.fieldId, { ...patch, updatedAt: Date.now() });
 	},
 });

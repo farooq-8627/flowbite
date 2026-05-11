@@ -1,23 +1,22 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import type { Id } from "@/convex/_generated/dataModel";
-import type { OrgSettings } from "../../types";
-
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsRow } from "../shared/SettingsRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import type { Id } from "@/convex/_generated/dataModel";
+import type { OrgSettings } from "../../types";
+import { SettingsRow } from "../shared/SettingsRow";
+import { SettingsSection } from "../shared/SettingsSection";
 
 // Plan limits — swap with real billing-plan data when the billing backend is wired.
 const PLAN_LIMITS: Record<
 	string,
 	{ members: number; aiMessages: number; pipelines: number; fields: number }
 > = {
-	free:     { members: 3,  aiMessages: 100,    pipelines: 1,  fields: 5   },
-	starter:  { members: 10, aiMessages: 500,    pipelines: 3,  fields: 20  },
-	pro:      { members: 25, aiMessages: 2_000,  pipelines: 10, fields: 100 },
+	free: { members: 3, aiMessages: 100, pipelines: 1, fields: 5 },
+	starter: { members: 10, aiMessages: 500, pipelines: 3, fields: 20 },
+	pro: { members: 25, aiMessages: 2_000, pipelines: 10, fields: 100 },
 	business: { members: 100, aiMessages: 10_000, pipelines: 50, fields: 500 },
 };
 
@@ -37,8 +36,12 @@ function UsageBar({
 		<SettingsRow label={label} description={description}>
 			<div className="flex flex-col gap-1.5">
 				<div className="flex items-center justify-end gap-2">
-					<span className="text-sm font-medium tabular-nums">{used.toLocaleString()}</span>
-					<span className="text-sm text-muted-foreground">/ {limit.toLocaleString()}</span>
+					<span className="text-sm font-medium tabular-nums">
+						{used.toLocaleString()}
+					</span>
+					<span className="text-sm text-muted-foreground">
+						/ {limit.toLocaleString()}
+					</span>
 				</div>
 				<Progress value={percent} />
 			</div>
@@ -50,7 +53,10 @@ export function BillingGroup({
 	org,
 	// orgId kept for future billing calls
 	orgId: _orgId,
-}: { org: OrgSettings; orgId: Id<"orgs"> }) {
+}: {
+	org: OrgSettings;
+	orgId: Id<"orgs">;
+}) {
 	const limits = PLAN_LIMITS[org.plan] ?? PLAN_LIMITS.free;
 
 	return (
@@ -75,7 +81,8 @@ export function BillingGroup({
 					controlClassName="sm:min-w-auto"
 				>
 					<span className="text-sm text-muted-foreground">
-						{limits.members} members · {limits.aiMessages.toLocaleString()} AI msgs · {limits.pipelines} pipelines
+						{limits.members} members · {limits.aiMessages.toLocaleString()} AI msgs ·{" "}
+						{limits.pipelines} pipelines
 					</span>
 				</SettingsRow>
 				<SettingsRow
@@ -83,7 +90,9 @@ export function BillingGroup({
 					description="Who receives invoices and billing emails."
 					controlClassName="sm:min-w-auto"
 				>
-					<span className="text-sm text-muted-foreground">Configured in LemonSqueezy.</span>
+					<span className="text-sm text-muted-foreground">
+						Configured in LemonSqueezy.
+					</span>
 				</SettingsRow>
 			</SettingsSection>
 

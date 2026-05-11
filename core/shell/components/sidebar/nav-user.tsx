@@ -1,10 +1,9 @@
 "use client";
 
-import { CircleUser, CreditCard, EllipsisVertical, LogOut, Settings } from "lucide-react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useQuery } from "convex/react";
+import { CircleUser, CreditCard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
-import { api } from "@/convex/_generated/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -21,8 +20,9 @@ import {
 	SidebarMenuItem,
 	useSidebar,
 } from "@/components/ui/sidebar";
-import { getInitials } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { api } from "@/convex/_generated/api";
+import { getInitials } from "@/lib/utils";
 
 export function NavUser({ orgSlug }: { orgSlug?: string }) {
 	const { isMobile } = useSidebar();
@@ -64,7 +64,9 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 							</Avatar>
 							<div className="grid flex-1 leading-tight">
 								<span className="truncate text-sm font-medium">{name}</span>
-								<span className="truncate text-xs text-muted-foreground">{email}</span>
+								<span className="truncate text-xs text-muted-foreground">
+									{email}
+								</span>
 							</div>
 						</SidebarMenuButton>
 					</DropdownMenuTrigger>
@@ -84,7 +86,9 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 								</Avatar>
 								<div className="grid flex-1 leading-tight">
 									<span className="truncate font-medium">{name}</span>
-									<span className="truncate text-xs text-muted-foreground">{email}</span>
+									<span className="truncate text-xs text-muted-foreground">
+										{email}
+									</span>
 								</div>
 							</div>
 						</DropdownMenuLabel>

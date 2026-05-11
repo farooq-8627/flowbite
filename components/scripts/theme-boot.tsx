@@ -3,23 +3,23 @@
  * Reads preferences from cookies and sets data attributes on <html>.
  * Source: arhamkhnz/next-shadcn-admin-dashboard/src/scripts/theme-boot.tsx
  */
-import { PREFERENCE_DEFAULTS, COOKIE_PREFIX } from "@/lib/preferences/preferences-config";
+import { COOKIE_PREFIX, PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
 
 export function ThemeBootScript() {
-  const defaults = JSON.stringify({
-    theme_mode: PREFERENCE_DEFAULTS.theme_mode,
-    theme_preset: PREFERENCE_DEFAULTS.theme_preset,
-    font: PREFERENCE_DEFAULTS.font,
-    content_layout: PREFERENCE_DEFAULTS.content_layout,
-    navbar_style: PREFERENCE_DEFAULTS.navbar_style,
-    sidebar_variant: PREFERENCE_DEFAULTS.sidebar_variant,
-    sidebar_collapsible: PREFERENCE_DEFAULTS.sidebar_collapsible,
-    radius: PREFERENCE_DEFAULTS.radius,
-  });
+	const defaults = JSON.stringify({
+		theme_mode: PREFERENCE_DEFAULTS.theme_mode,
+		theme_preset: PREFERENCE_DEFAULTS.theme_preset,
+		font: PREFERENCE_DEFAULTS.font,
+		content_layout: PREFERENCE_DEFAULTS.content_layout,
+		navbar_style: PREFERENCE_DEFAULTS.navbar_style,
+		sidebar_variant: PREFERENCE_DEFAULTS.sidebar_variant,
+		sidebar_collapsible: PREFERENCE_DEFAULTS.sidebar_collapsible,
+		radius: PREFERENCE_DEFAULTS.radius,
+	});
 
-  const prefix = JSON.stringify(COOKIE_PREFIX);
+	const prefix = JSON.stringify(COOKIE_PREFIX);
 
-  const code = `
+	const code = `
 (function(){
   try{
     var root=document.documentElement;
@@ -42,6 +42,6 @@ export function ThemeBootScript() {
   }catch(e){console.warn("ThemeBootScript:",e)}
 })();`;
 
-  // biome-ignore lint/security/noDangerouslySetInnerHtml: required for pre-hydration boot script
-  return <script dangerouslySetInnerHTML={{ __html: code }} />;
+	// biome-ignore lint/security/noDangerouslySetInnerHtml: required for pre-hydration boot script
+	return <script dangerouslySetInnerHTML={{ __html: code }} />;
 }

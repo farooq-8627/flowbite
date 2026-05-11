@@ -1,29 +1,22 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
+import { Mail, MoreHorizontal, Pencil, Plus, Shield, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { toast } from "sonner";
-import { Mail, MoreHorizontal, Trash2, Plus, Shield, Pencil } from "lucide-react";
 import { z } from "zod/v4";
-import { api } from "@/convex/_generated/api";
-import type { Id, Doc } from "@/convex/_generated/dataModel";
-
-import { SettingsSection } from "../shared/SettingsSection";
-import { useSettingsForm } from "../../hooks/useSettingsForm";
-import { RoleEditorDialog, CreateRoleDialog } from "./team/RoleEditor";
-
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -35,15 +28,6 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-	DialogTrigger,
-} from "@/components/ui/dialog";
-import {
 	Form,
 	FormControl,
 	FormField,
@@ -51,6 +35,7 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
 	Select,
 	SelectContent,
@@ -58,6 +43,19 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@/components/ui/table";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { useSettingsForm } from "../../hooks/useSettingsForm";
+import { SettingsSection } from "../shared/SettingsSection";
+import { CreateRoleDialog, RoleEditorDialog } from "./team/RoleEditor";
 
 type Role = Doc<"orgRoles">;
 
@@ -67,16 +65,32 @@ type Role = Doc<"orgRoles">;
 
 const inviteSchema = z.object({
 	email: z.string().email("Enter a valid email"),
-	role: z.union([
-		z.literal("admin"),
-		z.literal("member"),
-		z.literal("viewer"),
-	]),
+	role: z.union([z.literal("admin"), z.literal("member"), z.literal("viewer")]),
 });
+
+// The backend invitation validator accepts only the three system role names
+// below. We declare it at module scope so the useMemo below can list it as a
+// dependency without reference instability, and filter the DB orgRoles
+// against it at render time — the select item copy comes from the workspace,
+// never hardcoded strings.
+const INVITE_SYSTEM_ROLE_NAMES = ["admin", "member", "viewer"] as const;
 
 function InviteMemberDialog({ orgId }: { orgId: Id<"orgs"> }) {
 	const [open, setOpen] = useState(false);
 	const invite = useMutation(api.invitations.mutations.create);
+
+	// Fetch orgRoles so the select items show the actual role names +
+	// descriptions configured for this workspace — never hardcoded.
+	const roles = useQuery(api.orgRoles.queries.list, { orgId });
+	const inviteRoles = useMemo(() => {
+		const byName = new Map<string, Role>();
+		for (const r of roles ?? []) {
+			byName.set(r.name.toLowerCase(), r);
+		}
+		return INVITE_SYSTEM_ROLE_NAMES.map((key) => ({ key, role: byName.get(key) })).filter(
+			(r): r is { key: (typeof INVITE_SYSTEM_ROLE_NAMES)[number]; role: Role } => !!r.role,
+		);
+	}, [roles]);
 
 	const { form, isSubmitting, handleSubmit } = useSettingsForm({
 		schema: inviteSchema,
@@ -140,15 +154,17 @@ function InviteMemberDialog({ orgId }: { orgId: Id<"orgs"> }) {
 											</SelectTrigger>
 										</FormControl>
 										<SelectContent>
-											<SelectItem value="admin">
-												Admin — full settings access
-											</SelectItem>
-											<SelectItem value="member">
-												Member — standard access
-											</SelectItem>
-											<SelectItem value="viewer">
-												Viewer — read-only
-											</SelectItem>
+											{inviteRoles.map(({ key, role }) => (
+												<SelectItem key={key} value={key}>
+													<span className="font-medium">{role.name}</span>
+													{role.description && (
+														<span className="text-muted-foreground">
+															{" "}
+															— {role.description}
+														</span>
+													)}
+												</SelectItem>
+											))}
 										</SelectContent>
 									</Select>
 									<FormMessage />
@@ -227,101 +243,151 @@ function MembersSection({
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{isLoading ? null : (
-							members.map((m) => {
-								const role = roleById.get(m.roleId);
-								const isMe = m.userId === currentUserId;
-								return (
-									<TableRow key={m._id}>
-										<TableCell>
-											<div className="flex items-center gap-3">
-												<Avatar className="size-8">
-													{m.user.avatarUrl && <AvatarImage src={m.user.avatarUrl} alt="" />}
-													<AvatarFallback className="text-xs">
-														{initials(m.user.name, m.user.email)}
-													</AvatarFallback>
-												</Avatar>
-												<div className="min-w-0">
-													<div className="truncate text-sm font-medium">
-														{m.user.name ?? m.user.email}
-														{isMe && (
-															<span className="ms-1.5 text-xs text-muted-foreground">(you)</span>
+						{isLoading
+							? null
+							: members.map((m) => {
+									const role = roleById.get(m.roleId);
+									const isMe = m.userId === currentUserId;
+									return (
+										<TableRow key={m._id}>
+											<TableCell>
+												<div className="flex items-center gap-3">
+													<Avatar className="size-8">
+														{m.user.avatarUrl && (
+															<AvatarImage
+																src={m.user.avatarUrl}
+																alt=""
+															/>
 														)}
-													</div>
-													<div className="truncate text-xs text-muted-foreground">
-														{m.user.email}
+														<AvatarFallback className="text-xs">
+															{initials(m.user.name, m.user.email)}
+														</AvatarFallback>
+													</Avatar>
+													<div className="min-w-0">
+														<div className="truncate text-sm font-medium">
+															{m.user.name ?? m.user.email}
+															{isMe && (
+																<span className="ms-1.5 text-xs text-muted-foreground">
+																	(you)
+																</span>
+															)}
+														</div>
+														<div className="truncate text-xs text-muted-foreground">
+															{m.user.email}
+														</div>
 													</div>
 												</div>
-											</div>
-										</TableCell>
-										<TableCell>
-											<Badge
-												variant="secondary"
-												style={role?.color ? { backgroundColor: `${role.color}20`, color: role.color } : undefined}
-											>
-												{role?.name ?? "—"}
-											</Badge>
-										</TableCell>
-										<TableCell className="text-end text-xs text-muted-foreground">
-											{new Date(m.joinedAt).toLocaleDateString()}
-										</TableCell>
-										{canManage && (
-											<TableCell>
-												{!isMe && (
-													<DropdownMenu>
-														<DropdownMenuTrigger asChild>
-															<Button variant="ghost" size="icon" className="size-8">
-																<MoreHorizontal className="size-4" />
-															</Button>
-														</DropdownMenuTrigger>
-														<DropdownMenuContent align="end">
-															<DropdownMenuSub>
-																<DropdownMenuSubTrigger>
-																	<Shield className="size-4" /> Change role
-																</DropdownMenuSubTrigger>
-																<DropdownMenuSubContent>
-																	{(roles ?? []).map((r) => (
-																		<DropdownMenuItem
-																			key={r._id}
-																			disabled={m.roleId === r._id}
-																			onClick={async () => {
-																				try {
-																					await changeRole({ orgId, userId: m.userId, roleId: r._id });
-																					toast.success(`Role changed to ${r.name}`);
-																				} catch (err) {
-																					toast.error(err instanceof Error ? err.message : "Failed to change role");
-																				}
-																			}}
-																		>
-																			{r.name}
-																		</DropdownMenuItem>
-																	))}
-																</DropdownMenuSubContent>
-															</DropdownMenuSub>
-															<DropdownMenuSeparator />
-															<DropdownMenuItem
-																variant="destructive"
-																onClick={async () => {
-																	if (!confirm(`Remove ${m.user.name ?? m.user.email} from this workspace?`)) return;
-																	try {
-																		await removeMember({ orgId, userId: m.userId });
-																		toast.success("Member removed");
-																	} catch (err) {
-																		toast.error(err instanceof Error ? err.message : "Failed to remove member");
-																	}
-																}}
-															>
-																<Trash2 className="size-4" /> Remove from workspace
-															</DropdownMenuItem>
-														</DropdownMenuContent>
-													</DropdownMenu>
-												)}
 											</TableCell>
-										)}
-									</TableRow>
-								);
-							})
-						)}
+											<TableCell>
+												<Badge
+													variant="secondary"
+													style={
+														role?.color
+															? {
+																	backgroundColor: `${role.color}20`,
+																	color: role.color,
+																}
+															: undefined
+													}
+												>
+													{role?.name ?? "—"}
+												</Badge>
+											</TableCell>
+											<TableCell className="text-end text-xs text-muted-foreground">
+												{new Date(m.joinedAt).toLocaleDateString()}
+											</TableCell>
+											{canManage && (
+												<TableCell>
+													{!isMe && (
+														<DropdownMenu>
+															<DropdownMenuTrigger asChild>
+																<Button
+																	variant="ghost"
+																	size="icon"
+																	className="size-8"
+																>
+																	<MoreHorizontal className="size-4" />
+																</Button>
+															</DropdownMenuTrigger>
+															<DropdownMenuContent align="end">
+																<DropdownMenuSub>
+																	<DropdownMenuSubTrigger>
+																		<Shield className="size-4" />{" "}
+																		Change role
+																	</DropdownMenuSubTrigger>
+																	<DropdownMenuSubContent>
+																		{(roles ?? []).map((r) => (
+																			<DropdownMenuItem
+																				key={r._id}
+																				disabled={
+																					m.roleId ===
+																					r._id
+																				}
+																				onClick={async () => {
+																					try {
+																						await changeRole(
+																							{
+																								orgId,
+																								userId: m.userId,
+																								roleId: r._id,
+																							},
+																						);
+																						toast.success(
+																							`Role changed to ${r.name}`,
+																						);
+																					} catch (err) {
+																						toast.error(
+																							err instanceof
+																								Error
+																								? err.message
+																								: "Failed to change role",
+																						);
+																					}
+																				}}
+																			>
+																				{r.name}
+																			</DropdownMenuItem>
+																		))}
+																	</DropdownMenuSubContent>
+																</DropdownMenuSub>
+																<DropdownMenuSeparator />
+																<DropdownMenuItem
+																	variant="destructive"
+																	onClick={async () => {
+																		if (
+																			!confirm(
+																				`Remove ${m.user.name ?? m.user.email} from this workspace?`,
+																			)
+																		)
+																			return;
+																		try {
+																			await removeMember({
+																				orgId,
+																				userId: m.userId,
+																			});
+																			toast.success(
+																				"Member removed",
+																			);
+																		} catch (err) {
+																			toast.error(
+																				err instanceof Error
+																					? err.message
+																					: "Failed to remove member",
+																			);
+																		}
+																	}}
+																>
+																	<Trash2 className="size-4" />{" "}
+																	Remove from workspace
+																</DropdownMenuItem>
+															</DropdownMenuContent>
+														</DropdownMenu>
+													)}
+												</TableCell>
+											)}
+										</TableRow>
+									);
+								})}
 					</TableBody>
 				</Table>
 			</div>
@@ -365,7 +431,9 @@ function InvitationsSection({ orgId, canManage }: { orgId: Id<"orgs">; canManage
 								</div>
 							</TableCell>
 							<TableCell>
-								<Badge variant="secondary" className="capitalize">{inv.role}</Badge>
+								<Badge variant="secondary" className="capitalize">
+									{inv.role}
+								</Badge>
 							</TableCell>
 							<TableCell className="text-xs text-muted-foreground">
 								{new Date(inv.expiresAt).toLocaleDateString()}
@@ -379,7 +447,11 @@ function InvitationsSection({ orgId, canManage }: { orgId: Id<"orgs">; canManage
 											await cancel({ orgId, invitationId: inv._id });
 											toast.success("Invitation cancelled");
 										} catch (err) {
-											toast.error(err instanceof Error ? err.message : "Failed to cancel");
+											toast.error(
+												err instanceof Error
+													? err.message
+													: "Failed to cancel",
+											);
 										}
 									}}
 								>
@@ -407,7 +479,12 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 
 	const handleDelete = async (role: Role) => {
 		if (role.isSystem) return;
-		if (!confirm(`Delete role "${role.name}"? Members with this role will be reassigned to the default role.`)) return;
+		if (
+			!confirm(
+				`Delete role "${role.name}"? Members with this role will be reassigned to the default role.`,
+			)
+		)
+			return;
 		try {
 			await remove({ roleId: role._id });
 			toast.success(`Deleted role "${role.name}"`);
@@ -438,62 +515,62 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 					</TableRow>
 				</TableHeader>
 				<TableBody>
-					{roles === undefined ? null : (
-						roles.map((r) => (
-							<TableRow key={r._id}>
-								<TableCell>
-									<button
-										type="button"
-										onClick={() => setEditing(r)}
-										className="flex items-center gap-2 text-sm font-medium hover:underline"
-									>
-										{r.color && (
-											<span
-												className="inline-block size-2.5 rounded-full"
-												style={{ backgroundColor: r.color }}
-											/>
-										)}
-										{r.name}
-									</button>
-								</TableCell>
-								<TableCell className="text-xs text-muted-foreground">
-									{r.description ?? "—"}
-								</TableCell>
-								<TableCell className="text-end">
-									<Badge variant={r.isSystem ? "secondary" : "outline"}>
-										{r.isSystem ? "System" : "Custom"}
-									</Badge>
-								</TableCell>
-								<TableCell className="text-end text-xs text-muted-foreground tabular-nums">
-									{r.permissions.length}
-								</TableCell>
-								<TableCell>
-									<div className="flex justify-end gap-0.5">
-										<Button
-											variant="ghost"
-											size="icon"
-											className="size-7"
+					{roles === undefined
+						? null
+						: roles.map((r) => (
+								<TableRow key={r._id}>
+									<TableCell>
+										<button
+											type="button"
 											onClick={() => setEditing(r)}
-											aria-label="Edit role"
+											className="flex items-center gap-2 text-sm font-medium hover:underline"
 										>
-											<Pencil className="size-3.5" />
-										</Button>
-										{!r.isSystem && (
+											{r.color && (
+												<span
+													className="inline-block size-2.5 rounded-full"
+													style={{ backgroundColor: r.color }}
+												/>
+											)}
+											{r.name}
+										</button>
+									</TableCell>
+									<TableCell className="text-xs text-muted-foreground">
+										{r.description ?? "—"}
+									</TableCell>
+									<TableCell className="text-end">
+										<Badge variant={r.isSystem ? "secondary" : "outline"}>
+											{r.isSystem ? "System" : "Custom"}
+										</Badge>
+									</TableCell>
+									<TableCell className="text-end text-xs text-muted-foreground tabular-nums">
+										{r.permissions.length}
+									</TableCell>
+									<TableCell>
+										<div className="flex justify-end gap-0.5">
 											<Button
 												variant="ghost"
 												size="icon"
-												className="size-7 text-muted-foreground hover:text-destructive"
-												onClick={() => handleDelete(r)}
-												aria-label="Delete role"
+												className="size-7"
+												onClick={() => setEditing(r)}
+												aria-label="Edit role"
 											>
-												<Trash2 className="size-3.5" />
+												<Pencil className="size-3.5" />
 											</Button>
-										)}
-									</div>
-								</TableCell>
-							</TableRow>
-						))
-					)}
+											{!r.isSystem && (
+												<Button
+													variant="ghost"
+													size="icon"
+													className="size-7 text-muted-foreground hover:text-destructive"
+													onClick={() => handleDelete(r)}
+													aria-label="Delete role"
+												>
+													<Trash2 className="size-3.5" />
+												</Button>
+											)}
+										</div>
+									</TableCell>
+								</TableRow>
+							))}
 				</TableBody>
 			</Table>
 
@@ -504,11 +581,7 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 					onOpenChange={(v) => !v && setEditing(null)}
 				/>
 			)}
-			<CreateRoleDialog
-				orgId={orgId}
-				open={creating}
-				onOpenChange={setCreating}
-			/>
+			<CreateRoleDialog orgId={orgId} open={creating} onOpenChange={setCreating} />
 		</SettingsSection>
 	);
 }
@@ -517,13 +590,7 @@ function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
 // Export
 // ────────────────────────────────────────────────────────────────────────────
 
-export function TeamGroup({
-	orgId,
-	permissions,
-}: {
-	orgId: Id<"orgs">;
-	permissions: string[];
-}) {
+export function TeamGroup({ orgId, permissions }: { orgId: Id<"orgs">; permissions: string[] }) {
 	const me = useQuery(api.users.queries.getCurrent);
 	const roles = useQuery(api.orgRoles.queries.list, { orgId });
 

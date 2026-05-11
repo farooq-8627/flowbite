@@ -15,14 +15,11 @@ import { api } from "@/convex/_generated/api";
 export function OnboardingGuard({ children }: { children: React.ReactNode }) {
 	const { isAuthenticated, isLoading } = useConvexAuth();
 	const router = useRouter();
-	const currentUser = useQuery(
-		api.users.queries.me,
-		isAuthenticated ? {} : "skip",
-	);
+	const currentUser = useQuery(api.users.queries.me, isAuthenticated ? {} : "skip");
 
 	useEffect(() => {
 		if (isLoading || currentUser === undefined) return;
-		if (!currentUser || !currentUser.onboardingCompleted) {
+		if (!currentUser?.onboardingCompleted) {
 			router.replace("/onboarding");
 		}
 	}, [isLoading, currentUser, router]);

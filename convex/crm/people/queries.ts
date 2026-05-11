@@ -6,8 +6,7 @@
  * The frontend never needs to know which table — it just gets the person.
  */
 import { v } from "convex/values";
-import { orgQuery } from "../../_functions/authenticated";
-import { requireOrgMember } from "../../_functions/authenticated";
+import { orgQuery, requireOrgMember } from "../../_functions/authenticated";
 
 /**
  * Resolve a personCode to a lead or contact.
@@ -124,13 +123,18 @@ export const searchByCode = orgQuery({
 			// Person — check contacts first, then leads
 			const contact = await ctx.db
 				.query("contacts")
-				.withIndex("by_org_and_personCode", (q) => q.eq("orgId", args.orgId).eq("personCode", code))
+				.withIndex("by_org_and_personCode", (q) =>
+					q.eq("orgId", args.orgId).eq("personCode", code),
+				)
 				.first();
-			if (contact && !contact.deletedAt) return { entity: contact, entityType: "contact" as const };
+			if (contact && !contact.deletedAt)
+				return { entity: contact, entityType: "contact" as const };
 
 			const lead = await ctx.db
 				.query("leads")
-				.withIndex("by_org_and_personCode", (q) => q.eq("orgId", args.orgId).eq("personCode", code))
+				.withIndex("by_org_and_personCode", (q) =>
+					q.eq("orgId", args.orgId).eq("personCode", code),
+				)
 				.first();
 			if (lead && !lead.deletedAt) return { entity: lead, entityType: "lead" as const };
 		}
@@ -138,7 +142,9 @@ export const searchByCode = orgQuery({
 		if (prefix === "D") {
 			const deal = await ctx.db
 				.query("deals")
-				.withIndex("by_org_and_dealCode", (q) => q.eq("orgId", args.orgId).eq("dealCode", code))
+				.withIndex("by_org_and_dealCode", (q) =>
+					q.eq("orgId", args.orgId).eq("dealCode", code),
+				)
 				.first();
 			if (deal && !deal.deletedAt) return { entity: deal, entityType: "deal" as const };
 		}
@@ -146,9 +152,12 @@ export const searchByCode = orgQuery({
 		if (prefix === "CO") {
 			const company = await ctx.db
 				.query("companies")
-				.withIndex("by_org_and_companyCode", (q) => q.eq("orgId", args.orgId).eq("companyCode", code))
+				.withIndex("by_org_and_companyCode", (q) =>
+					q.eq("orgId", args.orgId).eq("companyCode", code),
+				)
 				.first();
-			if (company && !company.deletedAt) return { entity: company, entityType: "company" as const };
+			if (company && !company.deletedAt)
+				return { entity: company, entityType: "company" as const };
 		}
 
 		if (prefix === "FU") {

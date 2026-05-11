@@ -1,15 +1,15 @@
-'use client'
+"use client";
 
-import { toast } from 'sonner'
+import { toast } from "sonner";
 
-import { Button } from '@/components/ui/button'
+import { Button } from "@/components/ui/button";
 
 const SonnerDemo = () => {
-  return (
-    <Button variant='outline' onClick={() => toast('Action completed successfully!')}>
-      Default Toast
-    </Button>
-  )
-}
+	return (
+		<Button variant="outline" onClick={() => toast("Action completed successfully!")}>
+			Default Toast
+		</Button>
+	);
+};
 
-export default SonnerDemo
+export default SonnerDemo;

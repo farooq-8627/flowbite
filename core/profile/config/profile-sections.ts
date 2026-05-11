@@ -110,7 +110,8 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 		id: "timeline.feed",
 		groupId: "timeline",
 		label: "Feed",
-		description: "Unified log — created, updated, stage change, AI action, WhatsApp, reminders.",
+		description:
+			"Unified log — created, updated, stage change, AI action, WhatsApp, reminders.",
 		keywords: ["audit", "activity", "history", "log", "feed"],
 	},
 

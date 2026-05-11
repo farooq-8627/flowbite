@@ -7,7 +7,7 @@ export const listMine = authenticatedQuery({
 		onlyUnread: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
-		let q = ctx.db
+		const q = ctx.db
 			.query("notifications")
 			.withIndex("by_userId_and_createdAt", (q) => q.eq("userId", ctx.userId));
 
@@ -23,9 +23,7 @@ export const getSummary = authenticatedQuery({
 	handler: async (ctx) => {
 		const unread = await ctx.db
 			.query("notifications")
-			.withIndex("by_userId_and_read", (q) =>
-				q.eq("userId", ctx.userId).eq("read", false),
-			)
+			.withIndex("by_userId_and_read", (q) => q.eq("userId", ctx.userId).eq("read", false))
 			.filter((q) => q.eq(q.field("archivedAt"), undefined))
 			.take(100);
 

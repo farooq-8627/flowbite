@@ -24,7 +24,7 @@
  */
 
 import { PostHogProvider as PHProvider, PostHogPageView } from "@posthog/next";
-import { Suspense, type ReactNode } from "react";
+import { type ReactNode, Suspense } from "react";
 
 export function PostHogProvider({ children }: { children: ReactNode }) {
 	const apiKey = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;

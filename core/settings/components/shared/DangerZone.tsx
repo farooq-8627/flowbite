@@ -1,10 +1,4 @@
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Props = {
 	id?: string;
@@ -29,9 +23,7 @@ export function DangerZone({
 				<CardTitle className="text-base text-destructive">{title}</CardTitle>
 				<CardDescription>{description}</CardDescription>
 			</CardHeader>
-			<CardContent className="flex flex-col ">
-				{children}
-			</CardContent>
+			<CardContent className="flex flex-col ">{children}</CardContent>
 		</Card>
 	);
 }

@@ -42,17 +42,17 @@ export type OrgSettings = {
 
 /** Default entity labels — used as fallback when org hasn't customised them */
 export const ENTITY_LABEL_DEFAULTS = {
-	lead:    { singular: "Lead",    plural: "Leads",     slug: "leads"     },
-	contact: { singular: "Contact", plural: "Contacts",  slug: "contacts"  },
-	deal:    { singular: "Deal",    plural: "Deals",     slug: "deals"     },
+	lead: { singular: "Lead", plural: "Leads", slug: "leads" },
+	contact: { singular: "Contact", plural: "Contacts", slug: "contacts" },
+	deal: { singular: "Deal", plural: "Deals", slug: "deals" },
 	company: { singular: "Company", plural: "Companies", slug: "companies" },
 } satisfies Required<OrgEntityLabels>;
 
 export function resolveEntityLabels(raw?: OrgEntityLabels | null): Required<OrgEntityLabels> {
 	return {
-		lead:    { ...ENTITY_LABEL_DEFAULTS.lead,    ...(raw?.lead    ?? {}) },
+		lead: { ...ENTITY_LABEL_DEFAULTS.lead, ...(raw?.lead ?? {}) },
 		contact: { ...ENTITY_LABEL_DEFAULTS.contact, ...(raw?.contact ?? {}) },
-		deal:    { ...ENTITY_LABEL_DEFAULTS.deal,    ...(raw?.deal    ?? {}) },
+		deal: { ...ENTITY_LABEL_DEFAULTS.deal, ...(raw?.deal ?? {}) },
 		company: { ...ENTITY_LABEL_DEFAULTS.company, ...(raw?.company ?? {}) },
 	};
 }

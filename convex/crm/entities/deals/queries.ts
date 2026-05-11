@@ -19,17 +19,20 @@ export const list = orgQuery({
 
 		const cap = args.limit ?? 200;
 
-		let q;
+		// Init with the broad index so `q`'s type is inferred, then narrow.
+		let q = ctx.db.query("deals").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
 		if (args.pipelineId) {
-			q = ctx.db.query("deals").withIndex("by_org_and_pipeline", (qi) =>
-				qi.eq("orgId", args.orgId).eq("pipelineId", args.pipelineId!),
-			);
+			q = ctx.db
+				.query("deals")
+				.withIndex("by_org_and_pipeline", (qi) =>
+					qi.eq("orgId", args.orgId).eq("pipelineId", args.pipelineId!),
+				);
 		} else if (args.assignedTo) {
-			q = ctx.db.query("deals").withIndex("by_org_and_assignee", (qi) =>
-				qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
-			);
-		} else {
-			q = ctx.db.query("deals").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
+			q = ctx.db
+				.query("deals")
+				.withIndex("by_org_and_assignee", (qi) =>
+					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+				);
 		}
 
 		const results = await q.take(cap * 2);
@@ -62,7 +65,10 @@ export const listGroupedByStage = orgQuery({
 
 		const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
 		const now = Date.now();
-		const grouped: Record<string, Array<typeof deals[0] & { daysInStage: number; isStale: boolean }>> = {};
+		const grouped: Record<
+			string,
+			Array<(typeof deals)[0] & { daysInStage: number; isStale: boolean }>
+		> = {};
 
 		for (const stage of pipeline.stages) {
 			grouped[stage.id] = [];
@@ -72,7 +78,8 @@ export const listGroupedByStage = orgQuery({
 			if (deal.deletedAt !== undefined) continue;
 			const stage = stageMap.get(deal.currentStageId);
 			const daysInStage = (now - deal.stageEnteredAt) / 86_400_000;
-			const isStale = stage?.staleAfterDays !== undefined && daysInStage > stage.staleAfterDays;
+			const isStale =
+				stage?.staleAfterDays !== undefined && daysInStage > stage.staleAfterDays;
 			if (grouped[deal.currentStageId]) {
 				grouped[deal.currentStageId].push({ ...deal, daysInStage, isStale });
 			}

@@ -27,8 +27,9 @@
  * - https://github.com/dbjpanda/convex-tenants/blob/main/example/convex/tenants.ts
  * - https://github.com/Develonaut/bnto/blob/main/packages/%40bnto/backend/convex/auth_lifecycle.test.ts
  */
-import { describe, expect, it } from "vitest";
+
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
 import schema from "./schema";
 

@@ -1,12 +1,13 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+	"$schema": "https://biomejs.dev/schemas/2.4.13/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
 	"files": {
-		"ignoreUnknown": false
+		"ignoreUnknown": false,
+		"includes": ["**", "!convex/_generated", "!.next", "!node_modules", "!.trigger", "!skills"]
 	},
 	"formatter": {
 		"enabled": true,
@@ -43,5 +44,95 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["components/ui/**", "components/shadcn-studio/**"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"useSemanticElements": "off",
+						"useFocusableInteractive": "off",
+						"useAriaPropsForRole": "off",
+						"noRedundantRoles": "off",
+						"useValidAnchor": "off",
+						"useKeyWithClickEvents": "off",
+						"noLabelWithoutControl": "off"
+					},
+					"security": {
+						"noDangerouslySetInnerHtml": "off"
+					},
+					"suspicious": {
+						"noArrayIndexKey": "off",
+						"noDoubleEquals": "off",
+						"noExplicitAny": "off",
+						"noDocumentCookie": "off"
+					},
+					"complexity": {
+						"noBannedTypes": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["lib/logger.ts", "lib/performance.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"**/*.test.ts",
+				"**/*.test.tsx",
+				"**/*.spec.ts",
+				"**/*.spec.tsx",
+				"vitest.setup.ts",
+				"convex/_test/**",
+				"e2e/**"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off",
+						"useIterableCallbackReturn": "off"
+					},
+					"correctness": {
+						"noUnusedVariables": "off",
+						"noUnusedFunctionParameters": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["app/**/*.css", "styles/**/*.css"],
+			"linter": {
+				"rules": {
+					"complexity": {
+						"noImportantStyles": "off"
+					},
+					"style": {
+						"noDescendingSpecificity": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"convex/_shared/permissions.ts",
+				"convex/crm/fields/**/helpers.ts",
+				"convex/crm/fields/dedup/helpers.ts"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noExplicitAny": "off"
+					}
+				}
+			}
+		}
+	]
 }

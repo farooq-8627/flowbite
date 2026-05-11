@@ -30,8 +30,9 @@
  * - https://github.com/Develonaut/bnto/blob/main/packages/%40bnto/backend/convex/auth_lifecycle.test.ts
  * - https://github.com/get-convex/convex-saas/blob/main/convex/users.ts
  */
-import { describe, expect, it } from "vitest";
+
 import { convexTest } from "convex-test";
+import { describe, expect, it } from "vitest";
 import { api, internal } from "./_generated/api";
 import schema from "./schema";
 

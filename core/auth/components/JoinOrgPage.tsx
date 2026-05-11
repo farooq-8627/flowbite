@@ -1,14 +1,14 @@
 "use client";
 
-import { useQuery, useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { Building2, CheckCircle, Clock, Orbit, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle, Clock, XCircle, Building2, Orbit } from "lucide-react";
-import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
+import { APP_CONFIG } from "@/config/app-config";
+import { api } from "@/convex/_generated/api";
 import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
-import { APP_CONFIG } from "@/config/app-config";
 
 interface JoinOrgPageProps {
 	token: string;
@@ -49,8 +49,14 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					icon: <Orbit className="size-10" />,
 					title: APP_CONFIG.name,
 					tagline: APP_CONFIG.description,
-					bottomLeft: { heading: "Team collaboration", body: "Work together with your team in one workspace." },
-					bottomRight: { heading: "Need help?", body: "Contact support if you have trouble joining." },
+					bottomLeft: {
+						heading: "Team collaboration",
+						body: "Work together with your team in one workspace.",
+					},
+					bottomRight: {
+						heading: "Need help?",
+						body: "Contact support if you have trouble joining.",
+					},
 				}}
 			>
 				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-4 sm:w-[380px]">
@@ -69,8 +75,14 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					icon: <Orbit className="size-10" />,
 					title: APP_CONFIG.name,
 					tagline: APP_CONFIG.description,
-					bottomLeft: { heading: "Invalid link", body: "This invitation link is not valid." },
-					bottomRight: { heading: "Need help?", body: "Contact the person who invited you for a new link." },
+					bottomLeft: {
+						heading: "Invalid link",
+						body: "This invitation link is not valid.",
+					},
+					bottomRight: {
+						heading: "Need help?",
+						body: "Contact the person who invited you for a new link.",
+					},
 				}}
 			>
 				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
@@ -81,7 +93,11 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 							This invitation link is invalid or has already been used.
 						</p>
 					</div>
-					<Button variant="outline" className="w-full" onClick={() => router.push("/signin")}>
+					<Button
+						variant="outline"
+						className="w-full"
+						onClick={() => router.push("/signin")}
+					>
 						Go to sign in
 					</Button>
 				</div>
@@ -97,8 +113,14 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					icon: <Orbit className="size-10" />,
 					title: APP_CONFIG.name,
 					tagline: APP_CONFIG.description,
-					bottomLeft: { heading: "Expired link", body: "Ask your admin to send a new invitation." },
-					bottomRight: { heading: "Need help?", body: "Contact support if you need assistance." },
+					bottomLeft: {
+						heading: "Expired link",
+						body: "Ask your admin to send a new invitation.",
+					},
+					bottomRight: {
+						heading: "Need help?",
+						body: "Contact support if you need assistance.",
+					},
 				}}
 			>
 				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
@@ -109,7 +131,11 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 							This invitation has expired. Ask your admin to send a new one.
 						</p>
 					</div>
-					<Button variant="outline" className="w-full" onClick={() => router.push("/signin")}>
+					<Button
+						variant="outline"
+						className="w-full"
+						onClick={() => router.push("/signin")}
+					>
 						Go to sign in
 					</Button>
 				</div>
@@ -125,8 +151,14 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					icon: <Orbit className="size-10" />,
 					title: APP_CONFIG.name,
 					tagline: APP_CONFIG.description,
-					bottomLeft: { heading: "Already joined", body: "You're already a member of this workspace." },
-					bottomRight: { heading: "Need help?", body: "Contact support if you have trouble accessing." },
+					bottomLeft: {
+						heading: "Already joined",
+						body: "You're already a member of this workspace.",
+					},
+					bottomRight: {
+						heading: "Need help?",
+						body: "Contact support if you have trouble accessing.",
+					},
 				}}
 			>
 				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
@@ -137,7 +169,10 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 							This invitation has already been accepted.
 						</p>
 					</div>
-					<Button className="w-full" onClick={() => router.push(`/${invitation.orgSlug}`)}>
+					<Button
+						className="w-full"
+						onClick={() => router.push(`/${invitation.orgSlug}`)}
+					>
 						Go to workspace
 					</Button>
 				</div>
@@ -152,8 +187,14 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 				icon: <Orbit className="size-10" />,
 				title: APP_CONFIG.name,
 				tagline: APP_CONFIG.description,
-				bottomLeft: { heading: "Join your team", body: "Collaborate with your team in one workspace." },
-				bottomRight: { heading: "Need help?", body: "Contact support if you have trouble joining." },
+				bottomLeft: {
+					heading: "Join your team",
+					body: "Collaborate with your team in one workspace.",
+				},
+				bottomRight: {
+					heading: "Need help?",
+					body: "Contact support if you have trouble joining.",
+				},
 			}}
 		>
 			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[380px]">
@@ -164,8 +205,12 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					<h1 className="font-medium text-2xl">You&apos;re invited</h1>
 					<p className="text-muted-foreground text-sm">
 						You&apos;ve been invited to join{" "}
-						<span className="font-medium text-foreground">{invitation.orgName}</span>{" "}
-						as a <span className="font-medium text-foreground capitalize">{invitation.role}</span>.
+						<span className="font-medium text-foreground">{invitation.orgName}</span> as
+						a{" "}
+						<span className="font-medium text-foreground capitalize">
+							{invitation.role}
+						</span>
+						.
 					</p>
 				</div>
 
@@ -204,8 +249,8 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 
 				<p className="text-center text-muted-foreground text-xs">
 					Make sure you&apos;re signed in with{" "}
-					<span className="font-medium text-foreground">{invitation.email}</span>{" "}
-					to accept this invitation.
+					<span className="font-medium text-foreground">{invitation.email}</span> to
+					accept this invitation.
 				</p>
 			</div>
 		</AuthShellLayout>

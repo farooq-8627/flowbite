@@ -28,11 +28,15 @@ export function ModuleGuard({ module, children, fallback }: ModuleGuardProps) {
 
 	if (!enabled) {
 		return (
-			<>{fallback ?? (
-				<div className="flex h-[50vh] items-center justify-center">
-					<p className="text-muted-foreground">This module is not available in your workspace.</p>
-				</div>
-			)}</>
+			<>
+				{fallback ?? (
+					<div className="flex h-[50vh] items-center justify-center">
+						<p className="text-muted-foreground">
+							This module is not available in your workspace.
+						</p>
+					</div>
+				)}
+			</>
 		);
 	}
 

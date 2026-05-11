@@ -42,10 +42,7 @@ export function ProfileDetailView({
 	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
 	const orgId = orgEntry?.org._id;
 
-	const permissions = useQuery(
-		api.orgRoles.queries.getMyPermissions,
-		orgId ? { orgId } : "skip",
-	);
+	const permissions = useQuery(api.orgRoles.queries.getMyPermissions, orgId ? { orgId } : "skip");
 
 	const isReady = !!orgId && permissions !== undefined;
 

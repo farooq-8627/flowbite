@@ -23,13 +23,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	);
 }
 
-export function ContactDetailView({
-	orgSlug,
-	contactId,
-}: {
-	orgSlug: string;
-	contactId: string;
-}) {
+export function ContactDetailView({ orgSlug, contactId }: { orgSlug: string; contactId: string }) {
 	const labels = useEntityLabels();
 	return (
 		<div

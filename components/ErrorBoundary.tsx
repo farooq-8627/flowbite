@@ -1,19 +1,19 @@
 /**
  * Error Boundary Component
  * STATUS: IMPLEMENTED
- * 
+ *
  * Catches React errors and prevents full-page crashes.
  * Logs errors to Sentry for monitoring and debugging.
- * 
+ *
  * Features:
  * - Catches rendering errors in child components
  * - Logs to Sentry with context
  * - Shows fallback UI on error
  * - Prevents error propagation
- * 
+ *
  * @see https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
  * @see components/errors/DashboardError.tsx for fallback UI
- * 
+ *
  * @example
  * <ErrorBoundary fallback={<DashboardError />}>
  *   <YourComponent />
@@ -21,8 +21,8 @@
  */
 "use client";
 
-import React from "react";
 import * as Sentry from "@sentry/nextjs";
+import React from "react";
 
 interface Props {
 	children: React.ReactNode;

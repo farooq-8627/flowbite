@@ -3,8 +3,8 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole } from "../../../_shared/permissions";
 import { ERRORS } from "../../../_shared/errors";
+import { requireRole } from "../../../_shared/permissions";
 
 export const create = orgMutation({
 	args: {
@@ -31,7 +31,10 @@ export const create = orgMutation({
 		try {
 			JSON.parse(args.filters);
 		} catch {
-			throw new ConvexError({ code: "INVALID_FILTERS", message: "filters must be valid JSON" });
+			throw new ConvexError({
+				code: "INVALID_FILTERS",
+				message: "filters must be valid JSON",
+			});
 		}
 
 		const now = Date.now();
@@ -77,13 +80,20 @@ export const update = orgMutation({
 		}
 
 		if (args.filters) {
-			try { JSON.parse(args.filters); } catch {
-				throw new ConvexError({ code: "INVALID_FILTERS", message: "filters must be valid JSON" });
+			try {
+				JSON.parse(args.filters);
+			} catch {
+				throw new ConvexError({
+					code: "INVALID_FILTERS",
+					message: "filters must be valid JSON",
+				});
 			}
 		}
 
 		const { orgId: _o, viewId: _v, ...updates } = args;
-		const patch = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+		const patch = Object.fromEntries(
+			Object.entries(updates).filter(([, v]) => v !== undefined),
+		);
 		await ctx.db.patch(args.viewId, { ...patch, updatedAt: Date.now() });
 	},
 });

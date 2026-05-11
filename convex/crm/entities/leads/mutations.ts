@@ -7,12 +7,12 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { internal } from "../../../_generated/api";
+import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
-import { ERRORS } from "../../../_shared/errors";
-import { internal } from "../../../_generated/api";
 
 /** Strip all non-digits from a phone number for index-based dedup */
 function normalizePhone(phone: string): string {
@@ -37,10 +37,16 @@ export const create = orgMutation({
 		if (args.email) {
 			const existing = await ctx.db
 				.query("leads")
-				.withIndex("by_org_and_email", (q) => q.eq("orgId", args.orgId).eq("email", args.email!))
+				.withIndex("by_org_and_email", (q) =>
+					q.eq("orgId", args.orgId).eq("email", args.email!),
+				)
 				.first();
 			if (existing && !existing.deletedAt && !existing.convertedAt) {
-				throw new ConvexError({ code: "DUPLICATE", message: "Lead with this email already exists", personCode: existing.personCode });
+				throw new ConvexError({
+					code: "DUPLICATE",
+					message: "Lead with this email already exists",
+					personCode: existing.personCode,
+				});
 			}
 		}
 
@@ -85,7 +91,10 @@ export const create = orgMutation({
 		}
 
 		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId, entityType: "lead", entityId: leadId, personCode,
+			orgId: args.orgId,
+			entityType: "lead",
+			entityId: leadId,
+			personCode,
 		});
 
 		return { leadId, personCode };
@@ -146,7 +155,10 @@ export const convertToContact = orgMutation({
 			throw new ConvexError(ERRORS.NOT_FOUND);
 		}
 		if (lead.status === "converted") {
-			throw new ConvexError({ code: "ALREADY_CONVERTED", message: "Lead is already converted" });
+			throw new ConvexError({
+				code: "ALREADY_CONVERTED",
+				message: "Lead is already converted",
+			});
 		}
 
 		const now = Date.now();
@@ -185,7 +197,10 @@ export const convertToContact = orgMutation({
 		});
 
 		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId, entityType: "contact", entityId: contactId, personCode: lead.personCode,
+			orgId: args.orgId,
+			entityType: "contact",
+			entityId: contactId,
+			personCode: lead.personCode,
 		});
 
 		return { contactId, personCode: lead.personCode };

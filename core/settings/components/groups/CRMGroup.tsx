@@ -1,26 +1,12 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
+import { Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
-import { Plus, Trash2, X } from "lucide-react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import type { OrgSettings } from "../../types";
-import { resolveEntityLabels } from "../../types";
-
-import { useSettingsForm } from "../../hooks/useSettingsForm";
-import { SettingsSection } from "../shared/SettingsSection";
-import { SettingsFormRow } from "../shared/SettingsFormRow";
-import { SettingsSaveButton } from "../shared/SettingsSaveButton";
-import { PipelineEditor } from "./crm/PipelineEditor";
-import { FieldEditor } from "./crm/FieldEditor";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
 	Form,
 	FormControl,
@@ -29,7 +15,8 @@ import {
 	FormLabel,
 	FormMessage,
 } from "@/components/ui/form";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
 	Table,
 	TableBody,
@@ -38,6 +25,17 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { api } from "@/convex/_generated/api";
+import type { Id } from "@/convex/_generated/dataModel";
+import { useSettingsForm } from "../../hooks/useSettingsForm";
+import type { OrgSettings } from "../../types";
+import { resolveEntityLabels } from "../../types";
+import { SettingsFormRow } from "../shared/SettingsFormRow";
+import { SettingsSaveButton } from "../shared/SettingsSaveButton";
+import { SettingsSection } from "../shared/SettingsSection";
+import { FieldEditor } from "./crm/FieldEditor";
+import { PipelineEditor } from "./crm/PipelineEditor";
 
 // ────────────────────────────────────────────────────────────────────────────
 // Pipelines (read-only overview)
@@ -58,9 +56,7 @@ function PipelinesSection({ orgId }: { orgId: Id<"orgs"> }) {
 						No pipelines yet.
 					</div>
 				) : (
-					pipelines.map((p) => (
-						<PipelineEditor key={p._id} pipeline={p} orgId={orgId} />
-					))
+					pipelines.map((p) => <PipelineEditor key={p._id} pipeline={p} orgId={orgId} />)
 				)}
 			</div>
 		</SettingsSection>
@@ -76,7 +72,10 @@ type EntityTab = "leads" | "contacts" | "deals" | "companies";
 function FieldsSection({
 	orgId,
 	labels,
-}: { orgId: Id<"orgs">; labels: ReturnType<typeof resolveEntityLabels> }) {
+}: {
+	orgId: Id<"orgs">;
+	labels: ReturnType<typeof resolveEntityLabels>;
+}) {
 	const [active, setActive] = useState<EntityTab>("leads");
 
 	return (
@@ -107,11 +106,23 @@ function FieldsSection({
 // ────────────────────────────────────────────────────────────────────────────
 
 const TAG_COLORS = [
-	"#ef4444", "#f97316", "#eab308", "#22c55e",
-	"#14b8a6", "#3b82f6", "#8b5cf6", "#ec4899",
+	"#ef4444",
+	"#f97316",
+	"#eab308",
+	"#22c55e",
+	"#14b8a6",
+	"#3b82f6",
+	"#8b5cf6",
+	"#ec4899",
 ];
 
-function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
+function TagsSection({
+	orgId,
+	labels,
+}: {
+	orgId: Id<"orgs">;
+	labels: ReturnType<typeof resolveEntityLabels>;
+}) {
 	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, { orgId });
 	const create = useMutation(api.crm.shared.tags.mutations.create);
 	const remove = useMutation(api.crm.shared.tags.mutations.remove);
@@ -131,12 +142,12 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 		}
 	};
 
+	// Dynamic description — "leads, contacts, and deals" reflects the org's
+	// renamed labels (e.g. "inquiries, clients, and opportunities").
+	const tagsDescription = `Shared tags for categorizing ${labels.lead.plural.toLowerCase()}, ${labels.contact.plural.toLowerCase()}, and ${labels.deal.plural.toLowerCase()}.`;
+
 	return (
-		<SettingsSection
-			id="crm.tags"
-			title="Tags"
-			description="Shared tags for categorizing leads, contacts, and deals."
-		>
+		<SettingsSection id="crm.tags" title="Tags" description={tagsDescription}>
 			<div className="flex flex-col gap-4 py-2">
 				<div className="flex flex-wrap gap-2">
 					{tags === undefined ? null : tags.length === 0 ? (
@@ -147,7 +158,11 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 								key={t._id}
 								variant="secondary"
 								className="gap-1 ps-2 pe-1 py-0.5"
-								style={t.color ? { backgroundColor: `${t.color}20`, color: t.color } : undefined}
+								style={
+									t.color
+										? { backgroundColor: `${t.color}20`, color: t.color }
+										: undefined
+								}
 							>
 								{t.name}
 								<button
@@ -158,7 +173,11 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 										try {
 											await remove({ orgId, tagId: t._id });
 										} catch (err) {
-											toast.error(err instanceof Error ? err.message : "Failed to remove tag");
+											toast.error(
+												err instanceof Error
+													? err.message
+													: "Failed to remove tag",
+											);
 										}
 									}}
 								>
@@ -207,10 +226,10 @@ function TagsSection({ orgId }: { orgId: Id<"orgs"> }) {
 
 const reminderSchema = z.object({
 	followUpWindowHours: z.coerce.number().int().min(1).max(720),
-	staleAlertDays:      z.coerce.number().int().min(1).max(365),
+	staleAlertDays: z.coerce.number().int().min(1).max(365),
 	morningBriefingEnabled: z.boolean(),
-	rentAlertEnabled:       z.boolean(),
-	rentAlertDays:       z.coerce.number().int().min(1).max(90),
+	rentAlertEnabled: z.boolean(),
+	rentAlertDays: z.coerce.number().int().min(1).max(90),
 });
 
 function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
@@ -220,11 +239,11 @@ function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> 
 	const { form, isSubmitting, isDirty, handleSubmit } = useSettingsForm({
 		schema: reminderSchema,
 		values: {
-			followUpWindowHours:     defaults.followUpWindowHours     ?? 24,
-			staleAlertDays:          defaults.staleAlertDays          ?? 14,
-			morningBriefingEnabled:  defaults.morningBriefingEnabled  ?? true,
-			rentAlertEnabled:        defaults.rentAlertEnabled        ?? false,
-			rentAlertDays:           defaults.rentAlertDays           ?? 30,
+			followUpWindowHours: defaults.followUpWindowHours ?? 24,
+			staleAlertDays: defaults.staleAlertDays ?? 14,
+			morningBriefingEnabled: defaults.morningBriefingEnabled ?? true,
+			rentAlertEnabled: defaults.rentAlertEnabled ?? false,
+			rentAlertDays: defaults.rentAlertDays ?? 30,
 		},
 		onSubmit: async (data) => {
 			await update({
@@ -269,13 +288,18 @@ function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> 
 						render={({ field }) => (
 							<FormItem className="flex items-center justify-between py-4 sm:gap-6">
 								<div className="space-y-0.5">
-									<FormLabel className="text-sm font-medium">Morning briefing</FormLabel>
+									<FormLabel className="text-sm font-medium">
+										Morning briefing
+									</FormLabel>
 									<p className="text-xs text-muted-foreground">
 										Receive a daily digest of today's reminders and due deals.
 									</p>
 								</div>
 								<FormControl>
-									<Switch checked={field.value} onCheckedChange={field.onChange} />
+									<Switch
+										checked={field.value}
+										onCheckedChange={field.onChange}
+									/>
 								</FormControl>
 							</FormItem>
 						)}
@@ -288,13 +312,19 @@ function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> 
 								render={({ field }) => (
 									<FormItem className="flex items-center justify-between py-4 sm:gap-6">
 										<div className="space-y-0.5">
-											<FormLabel className="text-sm font-medium">Rent alert</FormLabel>
+											<FormLabel className="text-sm font-medium">
+												Rent alert
+											</FormLabel>
 											<p className="text-xs text-muted-foreground">
-												Alert when rent payments are approaching their due date.
+												Alert when rent payments are approaching their due
+												date.
 											</p>
 										</div>
 										<FormControl>
-											<Switch checked={field.value} onCheckedChange={field.onChange} />
+											<Switch
+												checked={field.value}
+												onCheckedChange={field.onChange}
+											/>
 										</FormControl>
 									</FormItem>
 								)}
@@ -326,16 +356,13 @@ function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> 
 // Export
 // ────────────────────────────────────────────────────────────────────────────
 
-export function CRMGroup({
-	org,
-	orgId,
-}: { org: OrgSettings; orgId: Id<"orgs"> }) {
+export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const labels = resolveEntityLabels(org.entityLabels);
 	return (
 		<div className="grid gap-6">
 			<PipelinesSection orgId={orgId} />
 			<FieldsSection orgId={orgId} labels={labels} />
-			<TagsSection orgId={orgId} />
+			<TagsSection orgId={orgId} labels={labels} />
 			<RemindersSection org={org} orgId={orgId} />
 		</div>
 	);

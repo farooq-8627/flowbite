@@ -72,6 +72,7 @@ export function BillingGroup({
 				<SettingsRow
 					label="Plan includes"
 					description="Limits reset at the start of each billing cycle."
+					controlClassName="sm:min-w-auto"
 				>
 					<span className="text-sm text-muted-foreground">
 						{limits.members} members · {limits.aiMessages.toLocaleString()} AI msgs · {limits.pipelines} pipelines
@@ -80,6 +81,7 @@ export function BillingGroup({
 				<SettingsRow
 					label="Billing contact"
 					description="Who receives invoices and billing emails."
+					controlClassName="sm:min-w-auto"
 				>
 					<span className="text-sm text-muted-foreground">Configured in LemonSqueezy.</span>
 				</SettingsRow>

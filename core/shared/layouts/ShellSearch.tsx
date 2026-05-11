@@ -1,9 +1,9 @@
 "use client";
 
 import { Search, X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 type Props = {
 	value: string;
@@ -11,20 +11,22 @@ type Props = {
 	placeholder?: string;
 	className?: string;
 	inputClassName?: string;
+	ariaLabel?: string;
 };
 
 /**
- * Simple controlled input used by the settings topnav toolbar.
+ * Simple controlled search input used by any shell's topnav toolbar.
  *
- * No dropdown — filtering happens inline in the main content area
- * (see SearchResultsView). Filtering is driven by the parent via onChange.
+ * No dropdown — filtering happens inline in the main content area via the
+ * SearchFilterProvider / <SettingsSection> mechanism.
  */
-export function SettingsSearch({
+export function ShellSearch({
 	value,
 	onChange,
-	placeholder = "Search settings…",
+	placeholder = "Search…",
 	className,
 	inputClassName,
+	ariaLabel = "Search",
 }: Props) {
 	return (
 		<div className={cn("relative", className)}>
@@ -33,7 +35,7 @@ export function SettingsSearch({
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				placeholder={placeholder}
-				aria-label="Search settings"
+				aria-label={ariaLabel}
 				className={cn("h-7 ps-8 pe-7 text-xs", inputClassName)}
 			/>
 			{value.length > 0 && (

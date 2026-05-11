@@ -103,7 +103,6 @@ function NotifGroupCard({
 			id={`notifications.${group.id}`}
 			title={group.title}
 			description={group.description}
-			noDividers
 			action={
 				<Button
 					type="button"

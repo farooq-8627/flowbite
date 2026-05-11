@@ -1,36 +1,19 @@
-"use client";
-
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-
-/** Default labels — used as fallback when org hasn't configured custom labels */
-const DEFAULTS = {
-	lead: { singular: "Lead", plural: "Leads", slug: "leads" },
-	contact: { singular: "Contact", plural: "Contacts", slug: "contacts" },
-	deal: { singular: "Deal", plural: "Deals", slug: "deals" },
-	company: { singular: "Company", plural: "Companies", slug: "companies" },
-} as const;
-
-export type EntitySlot = keyof typeof DEFAULTS;
-export type EntityLabel = { singular: string; plural: string; slug: string };
-export type EntityLabels = Record<EntitySlot, EntityLabel>;
-
 /**
- * Returns entity labels for the org with fallbacks to defaults.
- * Use this everywhere entity names appear — never hardcode "Lead", "Contact" etc.
+ * DEPRECATED PATH — use `@/core/shared/hooks/useEntityLabels` instead.
  *
- * @example
- * const labels = useEntityLabels(orgId);
- * <h1>{labels.lead.plural}</h1>  // "Leads" or "Inquiries" or whatever org configured
+ * This module is a thin re-export of the canonical hook so existing imports
+ * keep working. The canonical version lives in `core/shared/` because entity
+ * labels are used across ALL modules (shell, entities, settings, AI prompts,
+ * breadcrumbs) — not just the shell.
+ *
+ * New code should import from `@/core/shared/hooks/useEntityLabels`.
  */
-export function useEntityLabels(orgId: Id<"orgs">): EntityLabels {
-	const labels = useQuery(api.orgs.queries.getEntityLabels, { orgId });
 
-	return {
-		lead: labels?.lead ?? DEFAULTS.lead,
-		contact: labels?.contact ?? DEFAULTS.contact,
-		deal: labels?.deal ?? DEFAULTS.deal,
-		company: labels?.company ?? DEFAULTS.company,
-	};
-}
+export {
+	ENTITY_LABEL_DEFAULTS,
+	type EntityLabel,
+	type EntityLabels,
+	type EntitySlot,
+	useEntityLabel,
+	useEntityLabels,
+} from "@/core/shared/hooks/useEntityLabels";

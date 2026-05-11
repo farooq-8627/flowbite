@@ -217,6 +217,63 @@ export default function Page() {
 
 ---
 
+## RULE: Never use `Element.scrollIntoView()` inside nested scroll containers
+
+The dashboard shell nests 3+ scroll containers (body → sidebar-inset `<main>` → view `<main>`).
+`element.scrollIntoView()` walks UP the DOM and recursively scrolls **every scrollable
+ancestor** until the element is in the root viewport. In a nested shell this shifts the
+outer layout — the topnav slides up, the sidebar re-flows, the whole page "jumps."
+
+**Observed symptom** (fixed 2026-05-12): Clicking a sub-group pill in the settings
+topnav toolbar (only reproducible on the CRM tab, because it's the only group long
+enough to make the inner `<main>` actually scroll) caused the entire dashboard layout
+(topnav + settings sidebar + content) to shift up as if the window itself had scrolled.
+
+### The rule
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `element.scrollIntoView()` inside any shell view | Find the explicit scroll container and call `container.scrollTo({top})` |
+| `element.scrollIntoView({block: "start"})` on anchor clicks | Compute offset vs. container, call `container.scrollTo` |
+| `window.scrollTo({top: 0})` in dashboard pages | Target the inner `<main>` with `document.querySelector('main[data-*-scroll]')` |
+
+### The pattern
+
+```ts
+// Reusable — works for any nested scroll container
+function scrollToElementInContainer(el: HTMLElement, offset = 24) {
+  // Walk up to find the nearest scrollable ancestor
+  let container: HTMLElement | null = el.parentElement;
+  while (container && container !== document.body) {
+    const overflowY = getComputedStyle(container).overflowY;
+    if ((overflowY === "auto" || overflowY === "scroll") &&
+        container.scrollHeight > container.clientHeight) break;
+    container = container.parentElement;
+  }
+  if (!container) return;
+
+  const elRect = el.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const top = container.scrollTop + (elRect.top - containerRect.top) - offset;
+  container.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+}
+```
+
+### Mark your scroll containers explicitly
+
+Add `data-*-scroll="true"` on every `<main>` that is a scroll container inside the shell.
+This makes them easy to target with `document.querySelector` without brittle selectors.
+
+```tsx
+// ✅ Correct — explicit marker, precise targeting
+<main data-settings-scroll="true" className="overflow-y-auto">…</main>
+```
+
+**Cross-reference**: `core/settings/hooks/useSettingsSearch.ts::scrollToSection` is the
+reference implementation. Copy the pattern for other nested-scroll views.
+
+---
+
 
 
 > **Before doing ANY work in this project, read all files in `.github/agents/base/` in this order:**

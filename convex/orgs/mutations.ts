@@ -14,6 +14,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import { internalMutation } from "../_generated/server";
 import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions";
@@ -93,7 +94,10 @@ export const createOrg = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny", "notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -116,7 +120,10 @@ export const createOrg = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny", "notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -139,6 +146,9 @@ export const createOrg = authenticatedMutation({
 				"companies.view", "companies.create", "companies.update",
 				"deals.view", "deals.create", "deals.update", "deals.changeStage",
 				"notes.view", "notes.create", "notes.updateOwn", "notes.deleteOwn",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal",
 				"pipelines.view", "fieldDefinitions.view",
 				"ai.use", "ai.viewHistory",
 				"activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -314,7 +324,10 @@ export const create = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny", "notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -336,7 +349,10 @@ export const create = authenticatedMutation({
 				"contacts.view", "contacts.create", "contacts.update", "contacts.delete", "contacts.assign",
 				"companies.view", "companies.create", "companies.update", "companies.delete",
 				"deals.view", "deals.create", "deals.update", "deals.delete", "deals.assign", "deals.changeStage",
-				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny",
+				"notes.view", "notes.viewInternal", "notes.create", "notes.updateOwn", "notes.deleteOwn", "notes.deleteAny", "notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
 				"pipelines.view", "pipelines.manage", "fieldDefinitions.view", "fieldDefinitions.manage",
 				"ai.use", "ai.manageTools", "ai.viewHistory",
 				"activityLogs.viewOrg", "activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -358,6 +374,9 @@ export const create = authenticatedMutation({
 				"companies.view", "companies.create", "companies.update",
 				"deals.view", "deals.create", "deals.update", "deals.changeStage",
 				"notes.view", "notes.create", "notes.updateOwn", "notes.deleteOwn",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal",
 				"pipelines.view", "fieldDefinitions.view",
 				"ai.use", "ai.viewHistory",
 				"activityLogs.viewOwn", "notifications.viewOwn", "notifications.markRead",
@@ -459,7 +478,7 @@ export const update = orgMutation({
 		// Validate entity label slugs against reserved route segments
 		if (directUpdates.entityLabels) {
 			const RESERVED_ROUTE_SEGMENTS = [
-				"profile", "settings", "notifications", "companies", "deals",
+				"profile", "settings", "notifications",
 				"join", "dashboard", "app", "help", "support", "docs", "status",
 				"platform", "api", "admin", "billing", "auth", "onboarding",
 				"signin", "signup", "pricing", "portal",
@@ -712,3 +731,50 @@ function getDefaultStages(industry: string, orgId: string) {
 		staleAfterDays: s.staleAfterDays,
 	}));
 }
+
+/**
+ * One-time migration: Add missing tags/reminders/savedViews/notes.pin permissions
+ * to existing system roles that were seeded before these permissions existed.
+ *
+ * Run via Convex dashboard: `npx convex run orgs/mutations:backfillRolePermissions`
+ */
+export const backfillRolePermissions = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const MISSING_BY_ROLE: Record<string, string[]> = {
+			Owner: [
+				"notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
+			],
+			Admin: [
+				"notes.pin",
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.manage", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal", "savedViews.createOrg", "savedViews.delete",
+			],
+			Member: [
+				"reminders.view", "reminders.create", "reminders.manage",
+				"tags.view", "tags.attach",
+				"savedViews.view", "savedViews.createPersonal",
+			],
+		};
+
+		const allRoles = await ctx.db.query("orgRoles").collect();
+		let patched = 0;
+		for (const role of allRoles) {
+			const toAdd = MISSING_BY_ROLE[role.name];
+			if (!toAdd) continue;
+			const current = new Set(role.permissions);
+			const additions = toAdd.filter((p) => !current.has(p));
+			if (additions.length === 0) continue;
+			await ctx.db.patch(role._id, {
+				permissions: [...role.permissions, ...additions],
+				updatedAt: Date.now(),
+			});
+			patched++;
+		}
+		return { patched };
+	},
+});

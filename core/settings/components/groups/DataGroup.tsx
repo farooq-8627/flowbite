@@ -198,6 +198,7 @@ export function DataGroup({
 					<SettingsRow
 						label="Transfer ownership"
 						description="Transfer this workspace to another owner. You will lose owner privileges."
+						controlClassName="sm:min-w-auto"
 					>
 						<Button variant="outline" size="sm" disabled>
 							Coming soon
@@ -210,6 +211,7 @@ export function DataGroup({
 								Permanently remove <b>{org.name}</b> and all associated data. This cannot be undone.
 							</span>
 						}
+						controlClassName="sm:min-w-auto"
 					>
 						<DeleteWorkspaceDialog org={org} orgId={orgId} />
 					</SettingsRow>

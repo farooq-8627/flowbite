@@ -13,24 +13,35 @@ type Props = {
 	id?: string;
 	title: string;
 	description?: string;
-	/** Optional button/link rendered in the top-right of the card header */
+	/** Optional button/link rendered in the top-right of the card header. */
 	action?: React.ReactNode;
 	children: React.ReactNode;
+	className?: string;
 };
 
 /**
- * Settings section card.
+ * ProfileSection — one card inside the profile shell's content area.
  *
- * If a search-filter context is active and this section's id isn't in the
- * matching set, the card returns null — inline search filtering without a
- * separate results screen.
+ * Behavior mirrors `SettingsSection` exactly:
+ *   - Every card has a stable `id` that MUST match a row in `PROFILE_SECTIONS`
+ *     (so it shows up as a pill in the toolbar + is indexed for search).
+ *   - When the shell's search input has a query, this component reads the
+ *     shared `useSearchFilter()` context and returns null if its id is not a
+ *     match — inline filtering without a separate "results screen".
  */
-export function SettingsSection({ id, title, description, action, children }: Props) {
+export function ProfileSection({
+	id,
+	title,
+	description,
+	action,
+	children,
+	className,
+}: Props) {
 	const { matchingIds } = useSearchFilter();
 	if (matchingIds && id && !matchingIds.has(id)) return null;
 
 	return (
-		<Card id={id} className="scroll-mt-6 gap-4 py-4 sm:gap-6 sm:py-6">
+		<Card id={id} className={cn("scroll-mt-6 gap-4 py-4 sm:gap-6 sm:py-6", className)}>
 			<CardHeader className={cn("gap-0", action && "grid-cols-[1fr_auto]")}>
 				<CardTitle className="text-sm sm:text-base">{title}</CardTitle>
 				{description && (

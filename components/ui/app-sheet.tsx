@@ -12,6 +12,12 @@ import { cn } from "@/lib/utils";
  *
  * The content passed as children is responsible for its own internal layout
  * (header row, scroll area, footer, etc.) — just like AIChatPanelContent does.
+ *
+ * Width is applied via inline `style` rather than a Tailwind `w-…` class
+ * because `SheetContent` ships with its own `w-3/4 sm:max-w-sm` defaults —
+ * tailwind-merge can't reliably collapse arbitrary CSS-var widths with
+ * fraction utilities, so instead we win via CSS specificity (inline style
+ * beats className-level width) and explicitly strip the `max-width` cap.
  */
 export function AppSheet({
 	open,
@@ -27,7 +33,7 @@ export function AppSheet({
 	/** Accessible title (sr-only) */
 	title: string;
 	side?: "left" | "right" | "top" | "bottom";
-	/** CSS width value, e.g. "18rem" or "85vw" */
+	/** CSS width value, e.g. "18rem", "min(85vw, 22rem)", or "24rem" */
 	width?: string;
 	className?: string;
 	children: React.ReactNode;
@@ -36,9 +42,9 @@ export function AppSheet({
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent
 				side={side}
-				style={{ "--sidebar-width": width } as React.CSSProperties}
+				style={{ width, maxWidth: "none" }}
 				className={cn(
-					"w-(--sidebar-width) bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden",
+					"bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden",
 					className,
 				)}
 			>

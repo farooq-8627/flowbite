@@ -22,7 +22,10 @@ import { cn } from "@/lib/utils";
 const SIDEBAR_COOKIE_NAME = "sidebar_state";
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
 const SIDEBAR_WIDTH = "13rem";
-const SIDEBAR_WIDTH_MOBILE = "18rem";
+// 20rem (320px) reads well on phones (still leaves a visible overlay strip on
+// a 375px iPhone) and feels substantial on iPads without covering the whole
+// screen — the sheet renders centrally-justified as an overlay in either case.
+const SIDEBAR_WIDTH_MOBILE = "20rem";
 const SIDEBAR_WIDTH_ICON = "2.5rem";
 const SIDEBAR_KEYBOARD_SHORTCUT = "b";
 

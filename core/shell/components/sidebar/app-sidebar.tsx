@@ -123,8 +123,13 @@ export function AppSidebar({
 // ─── Footer Utilities ─────────────────────────────────────────────────────────
 
 function SidebarFooterUtils() {
-	const { state } = useSidebar();
-	const isExpanded = state === "expanded";
+	const { state, isMobile } = useSidebar();
+	// When the sidebar is rendered as the mobile Sheet the full content is
+	// always visible regardless of the `state` flag (which tracks the
+	// desktop open/closed state). Treat that case as "expanded" so the
+	// three footer icons sit on one row with space-between instead of
+	// stacking vertically the way they do in the desktop icon rail.
+	const isExpanded = isMobile || state === "expanded";
 
 	/**
 	 * Smooth transition fix:

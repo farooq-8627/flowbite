@@ -13,12 +13,18 @@ import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
 import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
 import { TopNav } from "@/core/shell/components/TopNav";
 import { NavSlotProvider } from "@/core/shell/context/nav-slot-context";
-import { useIsTablet } from "@/hooks/use-tablet";
+import { useIsBelowXl } from "@/hooks/use-tablet";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 
 const CHAT_MIN_WIDTH = 280;
 const CHAT_MAX_WIDTH = 600;
 const CHAT_DEFAULT_WIDTH = 360;
+
+/**
+ * Width for the AI chat sheet on phones + iPads. `min(...)` clamps the sheet
+ * at a sensible maximum on iPads while collapsing gracefully on phones.
+ */
+const CHAT_SHEET_WIDTH = "min(90vw, 28rem)";
 
 export function DashboardLayoutClient({
 	children,
@@ -35,7 +41,14 @@ export function DashboardLayoutClient({
 	initialSidebarOpen: boolean;
 	initialChatOpen: boolean;
 }) {
-	const isTablet = useIsTablet();
+	// `isBelowXl` is true for phones + every iPad (portrait, landscape, Pro).
+	// The sidebar itself handles this automatically — `useIsMobile` inside the
+	// shadcn `SidebarProvider` now fires at < 1280px, so the whole sidebar
+	// switches to its built-in mobile Sheet for us. We only need this flag
+	// here to route the AI chat panel the same way, since the chat panel is
+	// owned by this layout.
+	const isBelowXl = useIsBelowXl();
+
 	const [chatOpen, setChatOpen] = useState(initialChatOpen);
 	const [searchOpen, setSearchOpen] = useState(false);
 	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
@@ -93,9 +106,11 @@ export function DashboardLayoutClient({
 		[chatWidth, isRTL],
 	);
 
-	// In RTL: sidebar is on the right, AI panel slides in from the left
+	// In RTL: sidebar is on the right, AI panel slides in from the left.
+	// Only apply the inset margin on laptops — on iPads the chat is a Sheet
+	// and must not shift the main content.
 	const insetMarginStyle =
-		!isTablet && chatOpen
+		!isBelowXl && chatOpen
 			? isRTL
 				? { marginLeft: chatWidth }
 				: { marginRight: chatWidth }
@@ -136,8 +151,8 @@ export function DashboardLayoutClient({
 				</SidebarInset>
 			</SidebarProvider>
 
-			{/* AI Chat Panel — desktop only */}
-			{!isTablet && (
+			{/* Laptop (xl+) — inline AI Chat Panel */}
+			{!isBelowXl && (
 				<div
 					className="fixed top-0 h-full pointer-events-none z-40 transition-[left,right] duration-200 ease-linear"
 					style={chatPanelPositionStyle}
@@ -181,13 +196,14 @@ export function DashboardLayoutClient({
 				</div>
 			)}
 
-			{/* Tablet + Mobile Sheet */}
-			{isTablet && (
+			{/* Phones + iPads (< xl) — AI Chat Sheet */}
+			{isBelowXl && (
 				<AppSheet
 					open={chatOpen}
 					onOpenChange={setChatOpen}
 					title="AI Assistant"
 					side={isRTL ? "left" : "right"}
+					width={CHAT_SHEET_WIDTH}
 				>
 					<AIChatPanelContent />
 				</AppSheet>

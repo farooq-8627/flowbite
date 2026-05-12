@@ -72,6 +72,13 @@ export default defineSchema({
 			}),
 		),
 		platformRole: v.optional(v.literal("super_admin")),
+		preferences: v.optional(
+			v.object({
+				entityDefaultView: v.optional(
+					v.record(v.string(), v.union(v.literal("list"), v.literal("board"))),
+				),
+			}),
+		),
 		...timestamps,
 		...softDelete,
 	})
@@ -136,6 +143,12 @@ export default defineSchema({
 							label: v.optional(v.string()),
 							hidden: v.optional(v.boolean()),
 							order: v.optional(v.number()),
+							defaultView: v.optional(v.union(v.literal("list"), v.literal("board"))),
+							cardFields: v.optional(v.array(v.string())),
+							listColumns: v.optional(v.array(v.string())),
+							boardGroupBy: v.optional(v.string()),
+							defaultFilters: v.optional(v.array(v.string())),
+							meta: v.optional(v.any()),
 						}),
 					),
 				),
@@ -633,4 +646,33 @@ export default defineSchema({
 		tokenCount: v.optional(v.number()),
 		createdAt: v.number(),
 	}).index("by_conversation", ["conversationId", "createdAt"]),
+
+	// ── files ────────────────────────────────────────────────────────────────
+	// Universal attachment table. Works for every entity in the app:
+	//   - `scope`    — namespace the attachment lives in ("lead", "contact",
+	//                  "deal", "company", "user", "org", or any custom slot).
+	//   - `scopeId`  — the record id inside that scope (e.g. a leadId). For the
+	//                  "org" scope this is just the orgId itself. For "user"
+	//                  this is the userId.
+	//   - `fieldKey` — optional hint for dynamic-field attachments so we can
+	//                  route file pickers to the right field (e.g. a custom
+	//                  "contract" file field vs free-form attachments).
+	// storageId is the Convex File Storage id — actual bytes live there.
+	files: defineTable({
+		...orgScoped,
+		storageId: v.id("_storage"),
+		scope: v.string(),
+		scopeId: v.string(),
+		fieldKey: v.optional(v.string()),
+		name: v.string(), // original filename (user-visible)
+		size: v.number(), // bytes
+		mimeType: v.string(), // e.g. "application/pdf"
+		uploadedBy: v.id("users"),
+		...timestamps,
+		...softDelete,
+	})
+		.index("by_org_and_scope", ["orgId", "scope", "scopeId"])
+		.index("by_org_scope_field", ["orgId", "scope", "scopeId", "fieldKey"])
+		.index("by_storageId", ["storageId"])
+		.index("by_uploader", ["orgId", "uploadedBy"]),
 });

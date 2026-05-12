@@ -1,5 +1,24 @@
 "use client";
 
+/**
+ * KanbanBoard — renders the entity board with correct overflow semantics.
+ *
+ * Layout contract:
+ *   - The whole board takes the full height of its parent (the parent should
+ *     give it min-h-0 + flex-1 so the board knows where to stop).
+ *   - Only ONE horizontal scroll container — at the board level.
+ *   - Each column is a flex-col with [header][scrollable body][footer?]:
+ *       - Header: fixed (does not scroll).
+ *       - Body:   scrolls vertically when content overflows.
+ *       - Footer: fixed at the bottom of the column (optional — used for the
+ *                 "+ Add card" button and future bottom-insert slots).
+ *   - No y-scroll on the board or on the page — the cards scroll inside their
+ *     own column, not the whole page.
+ *
+ * Usage inside EntityListPage:
+ *   <div className="flex min-h-0 flex-1"><KanbanBoard ... /></div>
+ */
+
 import { useCallback, useRef } from "react";
 import {
 	Kanban,
@@ -7,14 +26,12 @@ import {
 	KanbanColumn,
 	KanbanOverlay,
 } from "@/components/ui/kanban";
-import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { createRestrictToContainer } from "../utils/restrict-to-container";
 import { KanbanColumnHeader } from "./KanbanColumnHeader";
 import { KanbanAddCardButton, KanbanEmptyColumn } from "./KanbanHelpers";
 
 export interface KanbanColumnConfig {
 	id: string;
-	/** Stage name from DB — never hardcoded */
 	title: string;
 	color?: string;
 	isFinal?: boolean;
@@ -23,27 +40,18 @@ export interface KanbanColumnConfig {
 
 interface KanbanBoardProps<T extends { id: string }> {
 	columns: KanbanColumnConfig[];
-	/** Items grouped by columnId — comes from Convex query */
 	itemsByColumnId: Record<string, T[]>;
-	/** Caller provides the card renderer — board stays generic */
 	renderCard: (item: T, isDragging: boolean) => React.ReactNode;
-	/** Called when user drops a card into a different column */
 	onCardMove: (itemId: string, fromColumnId: string, toColumnId: string) => Promise<void>;
-	/** Optional: show aggregate value in column header (permission-gated by caller) */
 	showColumnValue?: boolean;
 	getItemValue?: (item: T) => number | undefined;
 	currencyCode?: string;
-	/**
-	 * Controls which columns show the "+ Add card" button.
-	 * "first-only" (default) = only first column (leads/deals business rule)
-	 * "all" = every column (tasks board)
-	 * string[] = specific column ids
-	 */
 	addCardAllowedColumns?: "first-only" | "all" | string[];
 	onAddToColumn?: (columnId: string) => void;
 	onEditColumn?: (columnId: string) => void;
 	onDeleteColumn?: (columnId: string) => void;
-	isLoading?: boolean;
+	/** Optional footer rendered at the bottom of every column (below the card list). */
+	renderColumnFooter?: (columnId: string) => React.ReactNode;
 }
 
 export function KanbanBoard<T extends { id: string }>({
@@ -58,6 +66,7 @@ export function KanbanBoard<T extends { id: string }>({
 	onAddToColumn,
 	onEditColumn,
 	onDeleteColumn,
+	renderColumnFooter,
 }: KanbanBoardProps<T>) {
 	const containerRef = useRef<HTMLDivElement>(null);
 
@@ -67,7 +76,6 @@ export function KanbanBoard<T extends { id: string }>({
 		[],
 	);
 
-	// Build the Record<columnId, T[]> shape the primitive expects
 	const columnMap = Object.fromEntries(
 		columns.map((col) => [col.id, itemsByColumnId[col.id] ?? []]),
 	);
@@ -87,16 +95,8 @@ export function KanbanBoard<T extends { id: string }>({
 	}
 
 	return (
-		<div ref={containerRef}>
-			{/*
-			 * The Kanban primitive from shadcn's react-kanban wrapper is generic
-			 * but its column-map typing forces `any` at the call site. Narrowing
-			 * to `T` breaks the assignment in onValueChange because the library
-			 * returns `Record<string, any>` internally. We keep the callsite
-			 * strongly typed above (`onValueChange: Record<string, T[]>`) but
-			 * silence the generic-slot rule here.
-			 */}
-			{/* biome-ignore lint/suspicious/noExplicitAny: Kanban primitive's generic slot requires any */}
+		<div ref={containerRef} className="flex h-full min-h-0 w-full min-w-0">
+			{/* biome-ignore lint/suspicious/noExplicitAny: Kanban primitive generic slot */}
 			<Kanban<any>
 				value={columnMap}
 				onValueChange={async (newColumns: Record<string, T[]>) => {
@@ -112,8 +112,12 @@ export function KanbanBoard<T extends { id: string }>({
 				getItemValue={(item: T) => item.id}
 				modifiers={[restrictToBoard]}
 			>
-				<ScrollArea className="w-full rounded-[var(--radius)] pb-4">
-					<KanbanBoardPrimitive className="flex items-start">
+				{/*
+				 * Outer scroll container: ONLY x-scroll. Height is 100% of parent
+				 * so every column can be `h-full` and scroll its own cards inside.
+				 */}
+				<div className="flex h-full w-full min-w-0 overflow-x-auto overflow-y-hidden">
+					<KanbanBoardPrimitive className="flex h-full items-stretch gap-3 p-1 pe-4">
 						{columns.map((col, index) => {
 							const items = itemsByColumnId[col.id] ?? [];
 							const totalValue =
@@ -128,7 +132,7 @@ export function KanbanBoard<T extends { id: string }>({
 								<KanbanColumn
 									key={col.id}
 									value={col.id}
-									className="w-[280px] shrink-0"
+									className="flex h-full w-[280px] shrink-0 flex-col gap-1 rounded-[var(--radius)] border bg-muted/40 p-1.5"
 								>
 									<KanbanColumnHeader
 										columnId={col.id}
@@ -142,25 +146,31 @@ export function KanbanBoard<T extends { id: string }>({
 										onDeleteColumn={onDeleteColumn}
 									/>
 
-									<div className="flex flex-col gap-1 p-0.5">
+									{/* Scrollable card body — takes remaining column height */}
+									<div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overflow-x-hidden pe-0.5">
 										{items.length === 0 && <KanbanEmptyColumn />}
 										{items.map((item) => renderCard(item, false))}
 									</div>
 
-									{canAddToColumn(col.id, index) && onAddToColumn && (
-										<KanbanAddCardButton
-											columnId={col.id}
-											onAdd={onAddToColumn}
-										/>
-									)}
+									{/* Fixed footer slot (add button + any custom footer) */}
+									{(canAddToColumn(col.id, index) && onAddToColumn) ||
+									renderColumnFooter ? (
+										<div className="flex shrink-0 flex-col gap-1 pt-1">
+											{canAddToColumn(col.id, index) && onAddToColumn && (
+												<KanbanAddCardButton
+													columnId={col.id}
+													onAdd={onAddToColumn}
+												/>
+											)}
+											{renderColumnFooter?.(col.id)}
+										</div>
+									) : null}
 								</KanbanColumn>
 							);
 						})}
 					</KanbanBoardPrimitive>
-					<ScrollBar orientation="horizontal" />
-				</ScrollArea>
+				</div>
 
-				{/* Drag overlay — renders ghost card while dragging */}
 				<KanbanOverlay>
 					{({ value }) => {
 						const item = Object.values(columnMap)

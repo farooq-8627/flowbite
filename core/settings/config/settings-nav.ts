@@ -91,23 +91,43 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 		],
 	},
 	{
+		id: "modules",
+		label: "Modules",
+		icon: LayoutList,
+		permission: "org.viewSettings",
+		subGroups: [
+			{
+				id: "modules.lead",
+				label: "Leads",
+				icon: Target,
+				description: "Display, custom fields, and pipelines for leads",
+			},
+			{
+				id: "modules.contact",
+				label: "Contacts",
+				icon: Users,
+				description: "Display and custom fields for contacts",
+			},
+			{
+				id: "modules.deal",
+				label: "Deals",
+				icon: Workflow,
+				description: "Display, custom fields, and pipelines for deals",
+			},
+			{
+				id: "modules.company",
+				label: "Companies",
+				icon: Building2,
+				description: "Display and custom fields for companies",
+			},
+		],
+	},
+	{
 		id: "crm",
 		label: "CRM",
 		icon: Target,
 		permission: "pipelines.view",
 		subGroups: [
-			{
-				id: "crm.pipelines",
-				label: "Pipelines",
-				icon: Workflow,
-				description: "Deal stages and pipeline configuration",
-			},
-			{
-				id: "crm.fields",
-				label: "Custom Fields",
-				icon: LayoutList,
-				description: "Add custom fields to leads, deals, and companies",
-			},
 			{
 				id: "crm.tags",
 				label: "Tags",
@@ -232,6 +252,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
 export type SettingsGroupId =
 	| "workspace"
 	| "team"
+	| "modules"
 	| "crm"
 	| "ai"
 	| "appearance"

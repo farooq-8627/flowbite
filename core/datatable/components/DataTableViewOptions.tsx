@@ -1,7 +1,7 @@
 "use client";
 
 import type { Table } from "@tanstack/react-table";
-import { Check, ChevronsUpDown, Settings2 } from "lucide-react";
+import { Check, Settings2 } from "lucide-react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,16 +31,14 @@ export function DataTableViewOptions<TData>({ table }: DataTableViewOptionsProps
 	return (
 		<Popover>
 			<PopoverTrigger asChild>
-				{/* ms-auto is RTL-safe equivalent of ml-auto */}
 				<Button
 					aria-label="Toggle columns"
 					variant="outline"
 					size="sm"
-					className="ms-auto hidden h-8 lg:flex"
+					className="h-7 gap-1.5 px-2 text-xs"
 				>
-					<Settings2 className="me-2 size-4" />
-					View
-					<ChevronsUpDown className="ms-auto size-4 opacity-50" />
+					<Settings2 className="size-3.5" />
+					<span className="hidden sm:inline">View</span>
 				</Button>
 			</PopoverTrigger>
 			<PopoverContent align="end" className="w-44 p-0">

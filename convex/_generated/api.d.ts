@@ -48,6 +48,8 @@ import type * as crm_shared_tags_mutations from "../crm/shared/tags/mutations.js
 import type * as crm_shared_tags_queries from "../crm/shared/tags/queries.js";
 import type * as crm_shared_timeline_queries from "../crm/shared/timeline/queries.js";
 import type * as featureFlags_queries from "../featureFlags/queries.js";
+import type * as files_mutations from "../files/mutations.js";
+import type * as files_queries from "../files/queries.js";
 import type * as http from "../http.js";
 import type * as invitations_index from "../invitations/index.js";
 import type * as invitations_mutations from "../invitations/mutations.js";
@@ -112,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   "crm/shared/tags/queries": typeof crm_shared_tags_queries;
   "crm/shared/timeline/queries": typeof crm_shared_timeline_queries;
   "featureFlags/queries": typeof featureFlags_queries;
+  "files/mutations": typeof files_mutations;
+  "files/queries": typeof files_queries;
   http: typeof http;
   "invitations/index": typeof invitations_index;
   "invitations/mutations": typeof invitations_mutations;

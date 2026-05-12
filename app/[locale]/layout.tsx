@@ -4,6 +4,7 @@ import { ConvexAuthNextjsServerProvider } from "@convex-dev/auth/nextjs/server";
 import { notFound } from "next/navigation";
 import { hasLocale, NextIntlClientProvider } from "next-intl";
 import { setRequestLocale } from "next-intl/server";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import { PostHogProvider } from "@/components/providers/PostHogProvider";
 import { PreferencesInitializer } from "@/components/providers/PreferencesInitializer";
@@ -82,10 +83,12 @@ export default async function RootLayout({
 							<PreferencesInitializer />
 							<ConvexClientProvider>
 								<NextIntlClientProvider locale={locale}>
-									<TooltipProvider>
-										{children}
-										<Toaster />
-									</TooltipProvider>
+									<NuqsAdapter>
+										<TooltipProvider>
+											{children}
+											<Toaster />
+										</TooltipProvider>
+									</NuqsAdapter>
 								</NextIntlClientProvider>
 							</ConvexClientProvider>
 						</PreferencesProvider>

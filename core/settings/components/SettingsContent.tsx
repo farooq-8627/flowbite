@@ -6,6 +6,7 @@ import { AppearanceGroup } from "./groups/AppearanceGroup";
 import { BillingGroup } from "./groups/BillingGroup";
 import { CRMGroup } from "./groups/CRMGroup";
 import { DataGroup } from "./groups/DataGroup";
+import { ModulesGroup } from "./groups/modules";
 import { NotificationsGroup } from "./groups/NotificationsGroup";
 import { ShortcutsGroup } from "./groups/ShortcutsGroup";
 import { TeamGroup } from "./groups/TeamGroup";
@@ -36,6 +37,8 @@ export function SettingsContent({ activeGroup, org, orgId, permissions }: Props)
 			return <WorkspaceGroup org={org} orgId={orgId} />;
 		case "team":
 			return <TeamGroup orgId={orgId} permissions={permissions} />;
+		case "modules":
+			return <ModulesGroup org={org} orgId={orgId} />;
 		case "crm":
 			return <CRMGroup org={org} orgId={orgId} />;
 		case "ai":

@@ -3,7 +3,6 @@
 import { useQuery } from "convex/react";
 import { Check, Languages, Maximize, Minimize, Moon, Sun } from "lucide-react";
 import Link from "next/link";
-import { usePathname as useNextPathname } from "next/navigation";
 import { useLocale } from "next-intl";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -49,7 +48,11 @@ export function AppSidebar({
 }: React.ComponentProps<typeof Sidebar> & { orgSlug?: string }) {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
 	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
-	const pathname = useNextPathname();
+	// next-intl's usePathname returns the locale-stripped path (e.g. "/acme/leads")
+	// which matches the URLs produced by buildNavigation(). Using Next's raw
+	// usePathname would prefix the locale ("/en/acme/leads") and break the
+	// active-route comparison below.
+	const pathname = useIntlPathname();
 
 	// Entity labels come from the org's saved config (Convex-reactive).
 	// Rename "Lead" → "Inquiry" in Settings and the sidebar updates instantly.
@@ -304,6 +307,22 @@ function LanguageDropdownButton() {
 // ─── Nav Group Section ────────────────────────────────────────────────────────
 
 function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: string }) {
+	/**
+	 * A nav item matches when it is the current page, OR the current path is
+	 * a descendant of it. The descendant rule only applies to items that
+	 * actually have a sub-path beyond the workspace root — otherwise the
+	 * Dashboard entry (url = `/${orgSlug}`) would light up on every inner
+	 * route because every CRM URL starts with `/${orgSlug}/`.
+	 */
+	function isItemActive(itemUrl: string): boolean {
+		if (itemUrl === pathname) return true;
+		// Count meaningful path segments. `/acme` → 1 segment, `/acme/leads` → 2.
+		// Only items with ≥ 2 segments are allowed to match descendants.
+		const segmentCount = itemUrl.split("/").filter(Boolean).length;
+		if (segmentCount < 2) return false;
+		return pathname.startsWith(`${itemUrl}/`);
+	}
+
 	return (
 		<SidebarGroup className="py-1">
 			{group.label && (
@@ -315,10 +334,7 @@ function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: strin
 						<SidebarMenuItem key={item.url}>
 							<SidebarMenuButton
 								asChild
-								isActive={
-									item.url === pathname ||
-									(item.url.length > 1 && pathname.startsWith(`${item.url}/`))
-								}
+								isActive={isItemActive(item.url)}
 								tooltip={item.title}
 								className="h-8"
 							>

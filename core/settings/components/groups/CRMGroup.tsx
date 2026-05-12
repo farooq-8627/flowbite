@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
@@ -19,73 +18,8 @@ import { resolveEntityLabels } from "../../types";
 import { SettingsFormRow } from "../shared/SettingsFormRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
-import { FieldEditor } from "./crm/FieldEditor";
-import { PipelineEditor } from "./crm/PipelineEditor";
 
 // ────────────────────────────────────────────────────────────────────────────
-// Pipelines (read-only overview)
-// ────────────────────────────────────────────────────────────────────────────
-
-function PipelinesSection({ orgId }: { orgId: Id<"orgs"> }) {
-	const pipelines = useQuery(api.crm.fields.pipelines.queries.listByOrg, { orgId });
-
-	return (
-		<SettingsSection
-			id="crm.pipelines"
-			title="Pipelines"
-			description="Deal stage workflows. Drag stages to reorder. Click a stage to rename. Click the color dot to recolor."
-		>
-			<div className="flex flex-col gap-4 py-2">
-				{pipelines === undefined ? null : pipelines.length === 0 ? (
-					<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">
-						No pipelines yet.
-					</div>
-				) : (
-					pipelines.map((p) => <PipelineEditor key={p._id} pipeline={p} orgId={orgId} />)
-				)}
-			</div>
-		</SettingsSection>
-	);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Custom fields (entity-tabbed, read-only for now)
-// ────────────────────────────────────────────────────────────────────────────
-
-type EntityTab = "leads" | "contacts" | "deals" | "companies";
-
-function FieldsSection({
-	orgId,
-	labels,
-}: {
-	orgId: Id<"orgs">;
-	labels: ReturnType<typeof resolveEntityLabels>;
-}) {
-	const [active, setActive] = useState<EntityTab>("leads");
-
-	return (
-		<SettingsSection
-			id="crm.fields"
-			title="Custom Fields"
-			description="Add, edit, or remove custom fields on your CRM records. Supports text, number, date, select, and more."
-		>
-			<Tabs value={active} onValueChange={(v) => setActive(v as EntityTab)}>
-				<TabsList className="grid w-full grid-cols-4">
-					<TabsTrigger value="leads">{labels.lead.plural}</TabsTrigger>
-					<TabsTrigger value="contacts">{labels.contact.plural}</TabsTrigger>
-					<TabsTrigger value="deals">{labels.deal.plural}</TabsTrigger>
-					<TabsTrigger value="companies">{labels.company.plural}</TabsTrigger>
-				</TabsList>
-				{(["leads", "contacts", "deals", "companies"] as const).map((entity) => (
-					<TabsContent key={entity} value={entity} className="mt-4">
-						<FieldEditor orgId={orgId} entityType={entity} />
-					</TabsContent>
-				))}
-			</Tabs>
-		</SettingsSection>
-	);
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // Tags (manage)
 // ────────────────────────────────────────────────────────────────────────────
@@ -350,8 +284,6 @@ export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }
 	const labels = resolveEntityLabels(org.entityLabels);
 	return (
 		<div className="grid gap-6">
-			<PipelinesSection orgId={orgId} />
-			<FieldsSection orgId={orgId} labels={labels} />
 			<TagsSection orgId={orgId} labels={labels} />
 			<RemindersSection org={org} orgId={orgId} />
 		</div>

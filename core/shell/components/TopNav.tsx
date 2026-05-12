@@ -10,6 +10,7 @@ import { useNavSlotNode } from "@/core/shell/context/nav-slot-context";
 import { cn } from "@/lib/utils";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AutoBreadcrumb } from "./AutoBreadcrumb";
+import { QuickAddMenu } from "./QuickAddMenu";
 
 /**
  * TopNav — Icon-only top navigation bar.
@@ -76,6 +77,7 @@ export function TopNav({
 
 				{/* Right */}
 				<div className="flex shrink-0 items-center gap-1">
+					<QuickAddMenu />
 					<Tooltip>
 						<TooltipTrigger asChild>
 							<Button

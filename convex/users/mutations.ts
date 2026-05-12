@@ -147,6 +147,35 @@ export const updateNotificationPreferences = authenticatedMutation({
 	},
 });
 
+/**
+ * Update app-level preferences for the current user (per-user overrides).
+ *
+ * Currently stores `entityDefaultView` — a per-slot map of "list" | "board"
+ * that overrides the workspace default view in the entity-page view-toggle
+ * precedence chain. See ENTITY_SCAFFOLDS_PLAN.md §4.
+ *
+ * Empty map = clear all per-user overrides (inherit workspace defaults).
+ */
+export const updatePreferences = authenticatedMutation({
+	args: {
+		entityDefaultView: v.optional(
+			v.record(v.string(), v.union(v.literal("list"), v.literal("board"))),
+		),
+	},
+	handler: async (ctx, args) => {
+		const existing = ctx.user.preferences ?? {};
+		await ctx.db.patch(ctx.userId, {
+			preferences: {
+				...existing,
+				...(args.entityDefaultView !== undefined
+					? { entityDefaultView: args.entityDefaultView }
+					: {}),
+			},
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 // ─── Internal mutations ───────────────────────────────────────────────────────
 
 /**

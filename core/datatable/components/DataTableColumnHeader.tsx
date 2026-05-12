@@ -1,18 +1,22 @@
 "use client";
 
+/**
+ * DataTableColumnHeader — clickable header with no dropdown.
+ *
+ * Click cycles: none → asc → desc → none. Arrow appears only on hover OR
+ * when a sort is active. For categorical columns (status, source, etc.) we
+ * use a two-state toggle (asc ↔ desc, since there's no meaningful "unsorted"
+ * ordering for enums beyond the row insertion order).
+ *
+ * Uses a tiny vertical chevron pair (`<` stacked `>`) on hover to hint sort
+ * is available, without a bulky arrow icon taking permanent space.
+ */
+
 import type { Column } from "@tanstack/react-table";
-import { ArrowDown, ArrowDownUp, ArrowUp, EyeOff, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuSeparator,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-interface DataTableColumnHeaderProps<TData, TValue> extends React.ComponentProps<"div"> {
+interface DataTableColumnHeaderProps<TData, TValue> extends React.ComponentProps<"button"> {
 	column: Column<TData, TValue>;
 	title: string;
 }
@@ -23,51 +27,48 @@ export function DataTableColumnHeader<TData, TValue>({
 	className,
 }: DataTableColumnHeaderProps<TData, TValue>) {
 	if (!column.getCanSort()) {
-		return <div className={cn(className)}>{title}</div>;
+		return <span className={cn("text-xs font-semibold", className)}>{title}</span>;
 	}
 
+	const sorted = column.getIsSorted(); // false | "asc" | "desc"
+
 	return (
-		<div className={cn("flex items-center gap-x-2", className)}>
-			<DropdownMenu>
-				{/* -ms-3 is RTL-safe equivalent of -ml-3 */}
-				<DropdownMenuTrigger asChild>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="-ms-3 h-8 data-[state=open]:bg-accent"
-					>
-						<span>{title}</span>
-						{column.getIsSorted() === "desc" ? (
-							<ArrowDown className="ms-2 size-3" />
-						) : column.getIsSorted() === "asc" ? (
-							<ArrowUp className="ms-2 size-3" />
-						) : (
-							<ArrowDownUp className="ms-2 size-3" />
-						)}
-					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="start">
-					<DropdownMenuItem onClick={() => column.toggleSorting(false)}>
-						<ArrowUp className="me-2 size-4 text-muted-foreground/70" />
-						Asc
-					</DropdownMenuItem>
-					<DropdownMenuItem onClick={() => column.toggleSorting(true)}>
-						<ArrowDown className="me-2 size-4 text-muted-foreground/70" />
-						Desc
-					</DropdownMenuItem>
-					{column.getIsSorted() && (
-						<DropdownMenuItem onClick={() => column.clearSorting()}>
-							<X className="me-2 size-4 text-muted-foreground/70" />
-							Reset
-						</DropdownMenuItem>
+		<button
+			type="button"
+			onClick={() => {
+				if (sorted === false)
+					column.toggleSorting(false); // asc
+				else if (sorted === "asc")
+					column.toggleSorting(true); // desc
+				else column.clearSorting(); // back to none
+			}}
+			className={cn(
+				"group/hdr inline-flex cursor-pointer items-center gap-1 text-xs font-semibold hover:text-foreground focus-visible:outline-none",
+				sorted ? "text-foreground" : "text-muted-foreground",
+				className,
+			)}
+		>
+			<span>{title}</span>
+			<span
+				className={cn(
+					"inline-flex flex-col items-center leading-none transition-opacity",
+					sorted ? "opacity-100" : "opacity-0 group-hover/hdr:opacity-60",
+				)}
+				aria-hidden
+			>
+				<ChevronUp
+					className={cn(
+						"size-2.5 -mb-0.5",
+						sorted === "asc" ? "text-foreground" : "text-muted-foreground",
 					)}
-					<DropdownMenuSeparator />
-					<DropdownMenuItem onClick={() => column.toggleVisibility(false)}>
-						<EyeOff className="me-2 size-4 text-muted-foreground/70" />
-						Hide
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
-		</div>
+				/>
+				<ChevronDown
+					className={cn(
+						"size-2.5 -mt-0.5",
+						sorted === "desc" ? "text-foreground" : "text-muted-foreground",
+					)}
+				/>
+			</span>
+		</button>
 	);
 }

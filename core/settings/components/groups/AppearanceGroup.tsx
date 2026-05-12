@@ -1,5 +1,7 @@
 "use client";
 
+import { useQuery } from "convex/react";
+import { useParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
 	Select,
@@ -10,6 +12,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { api } from "@/convex/_generated/api";
 import { type FontKey, fontOptions } from "@/lib/fonts/registry";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 import { applySidebarCollapsible, applySidebarVariant } from "@/lib/preferences/layout-utils";
@@ -20,6 +23,7 @@ import { applyFont, applyThemePreset } from "@/lib/preferences/theme-utils";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSection } from "../shared/SettingsSection";
+import { UserEntityDefaultsSection } from "./appearance/UserEntityDefaultsSection";
 
 export function AppearanceGroup() {
 	const theme_mode = usePreferencesStore((s) => s.theme_mode);
@@ -35,6 +39,15 @@ export function AppearanceGroup() {
 	const setSidebarVariant = usePreferencesStore((s) => s.setSidebarVariant);
 	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
 	const setSidebarCollapsible = usePreferencesStore((s) => s.setSidebarCollapsible);
+
+	// Resolve the current org to drive the per-user default-view overrides.
+	const params = useParams();
+	const orgSlug = params?.orgSlug as string | undefined;
+	const orgs = useQuery(api.orgs.queries.listMyOrgs);
+	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
+	const orgId = orgEntry?.org._id;
+	const currentUser = useQuery(api.users.queries.getCurrent);
+	const userId = currentUser?._id;
 
 	const persist =
 		<K extends string>(
@@ -238,6 +251,24 @@ export function AppearanceGroup() {
 					</ToggleGroup>
 				</SettingsRow>
 			</SettingsSection>
+
+			{orgId && userId && (
+				<SettingsSection
+					id="appearance.default-views"
+					title="Default views"
+					description="Override the workspace default view for each entity. Applies only to your account."
+				>
+					<UserEntityDefaultsSection
+						orgId={orgId}
+						userId={userId}
+						currentPreferences={
+							currentUser?.preferences?.entityDefaultView as
+								| Record<string, "list" | "board">
+								| undefined
+						}
+					/>
+				</SettingsSection>
+			)}
 		</div>
 	);
 }

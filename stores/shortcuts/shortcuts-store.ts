@@ -5,8 +5,10 @@
  * Shortcuts are editable from /[orgSlug]/settings/shortcuts.
  * Tooltips read from this store — updating a shortcut updates all tooltips instantly.
  *
- * Format: modifier is always ⌘ (Mac) / Ctrl (Win/Linux). Key is a single character.
- * All shortcuts use meta: true so they require ⌘/Ctrl — no bare keys that conflict with browser.
+ * Format:
+ *   - `meta`: require ⌘ (Mac) / Ctrl (Win/Linux).
+ *   - `shift`: optional second modifier; combined with `meta` for combos like ⌘⇧L.
+ *   - `key`: single character or F-key name.
  */
 
 import { create } from "zustand";
@@ -17,9 +19,11 @@ export interface ShortcutDef {
 	label: string;
 	/** The key (e.g. "b", ".", "k") */
 	key: string;
-	/** Whether ⌘/Ctrl is required (always true — bare keys conflict with browser) */
+	/** Whether ⌘/Ctrl is required */
 	meta?: boolean;
-	/** Display string shown in tooltips, e.g. "⌘B" */
+	/** Whether Shift is required */
+	shift?: boolean;
+	/** Display string shown in tooltips, e.g. "⌘B" or "⌘⇧L" */
 	display: string;
 }
 
@@ -29,18 +33,31 @@ export type ShortcutId =
 	| "search"
 	| "notifications"
 	| "toggleTheme"
-	| "toggleFullscreen";
+	| "toggleFullscreen"
+	// Entity-page shortcuts (require shift to avoid collisions with core bindings)
+	| "toggleView"
+	| "entitySearch"
+	| "gotoLeads"
+	| "gotoContacts"
+	| "gotoDeals"
+	| "gotoCompanies";
 
 export type ShortcutsMap = Record<ShortcutId, ShortcutDef>;
 
 /**
- * Shortcut key assignments (all require ⌘/Ctrl):
- *  ⌘B  — Toggle Sidebar       (B = "bar")
- *  ⌘.  — Toggle AI Panel      (. = quick access)
- *  ⌘K  — Search               (universal command palette convention)
- *  ⌘N  — Notifications        (N = notifications; ⌘N opens new window only in some apps)
- *  ⌘D  — Toggle Theme         (D = dark/light)
- *  ⌘E  — Toggle Fullscreen    (E = expand; avoids ⌘F=find, ⌘T=tab, ⌘W=close)
+ * Shortcut key assignments:
+ *  ⌘B  — Toggle Sidebar
+ *  ⌘.  — Toggle AI Panel
+ *  ⌘K  — Search (global command palette)
+ *  ⌘A  — Notifications
+ *  ⌘D  — Toggle Theme
+ *  ⌘E  — Toggle Fullscreen
+ *  ⌘⇧V — Toggle view (list/board) on entity page
+ *  ⌘⇧F — Focus entity-page search field
+ *  ⌘⇧L — Go to Leads
+ *  ⌘⇧N — Go to Contacts (N = coNtact, C collides with copy)
+ *  ⌘⇧D — Go to Deals
+ *  ⌘⇧O — Go to Companies (O = orgs/cOmpanies)
  */
 const DEFAULTS: ShortcutsMap = {
 	toggleSidebar: { label: "Toggle Sidebar", key: "b", meta: true, display: "⌘B" },
@@ -49,6 +66,36 @@ const DEFAULTS: ShortcutsMap = {
 	notifications: { label: "Notifications", key: "a", meta: true, display: "⌘A" },
 	toggleTheme: { label: "Toggle Theme", key: "d", meta: true, display: "⌘D" },
 	toggleFullscreen: { label: "Toggle Fullscreen", key: "e", meta: true, display: "⌘E" },
+	toggleView: {
+		label: "Toggle List / Board",
+		key: "v",
+		meta: true,
+		shift: true,
+		display: "⌘⇧V",
+	},
+	entitySearch: {
+		label: "Search entity page",
+		key: "f",
+		meta: true,
+		shift: true,
+		display: "⌘⇧F",
+	},
+	gotoLeads: { label: "Go to Leads", key: "l", meta: true, shift: true, display: "⌘⇧L" },
+	gotoContacts: {
+		label: "Go to Contacts",
+		key: "n",
+		meta: true,
+		shift: true,
+		display: "⌘⇧N",
+	},
+	gotoDeals: { label: "Go to Deals", key: "d", meta: true, shift: true, display: "⌘⇧D" },
+	gotoCompanies: {
+		label: "Go to Companies",
+		key: "o",
+		meta: true,
+		shift: true,
+		display: "⌘⇧O",
+	},
 };
 
 interface ShortcutsStore {
@@ -70,7 +117,10 @@ export const useShortcutsStore = create<ShortcutsStore>()(
 				})),
 			resetAll: () => set({ shortcuts: DEFAULTS }),
 		}),
-		{ name: "orbitly-shortcuts-v2" },
+		{
+			// Bumped version because we added entity shortcuts + the `shift` flag.
+			name: "orbitly-shortcuts-v3",
+		},
 	),
 );
 
@@ -85,5 +135,6 @@ export function useShortcut(id: ShortcutId): ShortcutDef {
  */
 export function matchesShortcut(e: KeyboardEvent, def: ShortcutDef): boolean {
 	const metaMatch = def.meta ? e.metaKey || e.ctrlKey : !e.metaKey && !e.ctrlKey;
-	return metaMatch && e.key === def.key;
+	const shiftMatch = def.shift ? e.shiftKey : !e.shiftKey;
+	return metaMatch && shiftMatch && e.key.toLowerCase() === def.key.toLowerCase();
 }

@@ -1,13 +1,13 @@
 # Entities — State
 
 > Updated: 2026-05-12
-> Status: Backend 100% Complete — Frontend routing + dynamic dispatch now in place; per-entity scaffolds still pending.
+> Status: 75% Complete — All 4 entity views scaffold-driven with list + board. Slice 0 + Slice 1–5 done. Remaining: EntityOverview real content, Settings UI, user-pref default view.
 
 ## ✅ Completed — Backend
 
 | Module | File | Notes |
 |---|---|---|
-| Schema (all CRM tables) | `convex/schema.ts` | leads, contacts, companies, deals, notes, reminders, tags, fieldDefinitions, fieldValues, savedViews, pipelines, entityCodeCounters, activityLogs, orbitLinks |
+| Schema (all CRM tables) | `convex/schema.ts` | leads, contacts, companies, deals + modules[] extended with defaultView/cardFields/listColumns/boardGroupBy/defaultFilters/meta + users.preferences.entityDefaultView |
 | Leads | `convex/crm/entities/leads/` | queries + mutations, canonical pattern complete |
 | Contacts | `convex/crm/entities/contacts/` | personCode inherited from lead on conversion |
 | Companies | `convex/crm/entities/companies/` | queries + mutations |
@@ -15,52 +15,76 @@
 | Pipelines | `convex/crm/fields/pipelines/` | stages + stale config |
 | Dedup engine | `convex/crm/fields/dedup/helpers.ts` | email/phone/name |
 | People resolver | `convex/crm/people/queries.ts::getByPersonCode` | returns lead OR contact |
-| Timeline | `convex/crm/shared/timeline/queries.ts` | getForPerson + getForOrg |
+| Org mutations | `convex/orgs/mutations.ts` | update validator accepts new modules[] shape |
 
-## ✅ Completed — Frontend (routing + dispatch + dynamic labels)
+## ✅ Completed — Infrastructure
+
+| Item | File | Notes |
+|---|---|---|
+| NuqsAdapter | `app/[locale]/layout.tsx` | Wraps app tree — required for nuqs URL state (useViewToggle + useDataTable) |
+| DataTablePagination | `core/datatable/components/DataTablePagination.tsx` | Default pageSizeOptions [10,25,50,100], "Showing A–B of C" format |
+| canvas-confetti | `package.json` | Installed for deal-won celebration |
+
+## ✅ Completed — Frontend Scaffolds + Shared
 
 | Component | File | Notes |
 |---|---|---|
-| PersonCodeBadge | `core/entities/shared/PersonCodeBadge.tsx` | Shared component |
-| useEntityLabels (canonical) | `core/shared/hooks/useEntityLabels.ts` | Auto-detects org from URL when no orgId provided |
-| Dynamic list route | `app/[locale]/(private)/[orgSlug]/[entitySlug]/page.tsx` | ✅ Thin wrapper — delegates to `EntitySlugView` |
-| Dynamic detail route | `app/[locale]/(private)/[orgSlug]/[entitySlug]/[id]/page.tsx` | ✅ Replaces the deleted `/deals/[id]` and `/companies/[id]` folders |
-| EntitySlugView | `core/entities/views/EntitySlugView.tsx` | ✅ Resolves `entitySlug` → slot via `useEntityLabels`, honours `modules[].hidden`, dispatches to the right list view |
-| LeadsView placeholder | `core/entities/leads/views/LeadsView.tsx` | ✅ Uses dynamic labels |
-| ContactsView placeholder | `core/entities/contacts/views/ContactDetailView.tsx` | ✅ Uses dynamic labels (still exports `ContactsView` + `ContactDetailView`) |
-| DealsView placeholder | `core/entities/deals/views/DealDetailView.tsx` | ✅ Uses dynamic labels; advertises `data-default-view="board"` |
-| CompaniesView placeholder | `core/entities/companies/views/CompaniesView.tsx` | ✅ Uses dynamic labels; also exports `CompanyDetailView` |
+| EntityCard | `core/entities/scaffolds/EntityCard.tsx` | Generic card iterating cardFields via FieldValueRenderer |
+| EntityPageLayout | `core/entities/scaffolds/EntityPageLayout.tsx` | Dedicated toolbar with split button + view toggle |
+| EntityFormDrawer | `core/entities/scaffolds/EntityFormDrawer.tsx` | FormDrawer + dedup banner |
+| EntityListPage | `core/entities/scaffolds/EntityListPage.tsx` | Wraps DataTable or KanbanBoard based on view state |
+| FormDrawer | `core/entities/shared/components/FormDrawer.tsx` | Reusable right-side drawer |
+| PersonDisplay | `core/entities/shared/components/PersonDisplay.tsx` | System component for rendering people (D8) |
+| PersonSelect | `core/entities/shared/components/PersonSelect.tsx` | Combobox picker returning PersonRef (D7) |
+| EntityHoverCard | `core/entities/shared/components/EntityHoverCard.tsx` | Hover → quick-view (D9) |
+| EntityOverview | `core/entities/shared/components/EntityOverview.tsx` | Skeleton content (real content Slice 2) |
+| FieldValueRenderer | `core/entities/shared/components/FieldValueRenderer.tsx` | Switch over render kinds → JSX |
+| ViewToggleIcons | `core/entities/shared/components/ViewToggleIcons.tsx` | Two independent icon buttons (D3) |
+| EmptyState | `core/entities/shared/components/EmptyState.tsx` | Shared empty state with CTA |
+| StaleIndicator | `core/entities/shared/components/StaleIndicator.tsx` | Reads stage stale config (never hardcoded colors) |
+| DedupBanner | `core/entities/shared/components/DedupBanner.tsx` | Edit fields + link to existing (D10) |
+| field-catalog | `core/entities/shared/config/field-catalog.ts` | FIELD_CATALOG per entity |
+| defaults | `core/entities/shared/config/defaults.ts` | Fallback defaults for all config (D11) |
+| useViewToggle | `core/entities/shared/hooks/useViewToggle.ts` | URL → workspace → fallback (D6) |
+| useModuleDisplay | `core/entities/shared/hooks/useModuleDisplay.ts` | cardFields/listColumns/boardGroupBy |
+| useDedup | `core/entities/shared/hooks/useDedup.ts` | ConvexError DUPLICATE handler |
+| useBulkActions | `core/entities/shared/hooks/useBulkActions.ts` | Row selection state |
+| usePerson | `core/entities/shared/hooks/usePerson.ts` | Resolves personCode → PersonRef |
+| Shared types | `core/entities/shared/types.ts` | EntitySlot, PersonRef, ViewKind, FieldSpec |
 
-## 🔒 Decisions Locked (2026-05-12 — see `ENTITY_SCAFFOLDS_ARCHITECTURE.md` + this session)
+## ✅ Completed — Per-Entity Views (all 4)
 
-| # | Decision |
-|---|---|
-| 1 | Ship 4 entities in UI (lead, contact, deal, company). Entity5/Entity6 stay empty. |
-| 2 | Folder layout: `core/entities/{scaffolds,shared,(entities)}/`. Parentheses are organizational, not Next.js route groups. |
-| 3 | All 4 entities render through 4 shared scaffolds: `EntityListPage`, `EntityDetailPage`, `EntityFormDialog`, `EntityCard`. |
-| 4 | **Single dynamic list route** `app/.../[entitySlug]/page.tsx` handles all entity list URLs — including renamed slugs (`/inquiries`, `/opportunities`). ✅ Implemented this session. |
-| 5 | **Single dynamic detail route** `app/.../[entitySlug]/[id]/page.tsx` handles companies + deals + any future non-people detail. ✅ Implemented this session. |
-| 6 | Unified person detail at `/profile/[personCode]` — one page for lead+contact — uses the shared shell layout (see `core/profile/`). Profile is NOT an entity. |
-| 7 | Companies / any entity can be turned off per-workspace via `orgSettings.modules[].hidden`. The sidebar hides them and `EntitySlugView` returns `notFound()`. |
-| 8 | Deals default view is **board** (kanban). List is secondary via toolbar toggle. |
-| 9 | Pipeline stale colors NEVER hardcoded — always read from `stage.staleColor`. |
-| 10 | `useEntityLabels()` is the single source of truth for entity names + slugs. |
-
-## ⬜ Pending — Frontend Build Order (vertical slices)
-
-| Slice | Task | Priority |
+| Entity | View File | Features |
 |---|---|---|
-| 0 | Scaffolds + shared components/hooks (see ENTITY_SCAFFOLDS_ARCHITECTURE.md) | HIGH |
-| 1 | Leads list + Contacts list — plug into scaffolds | HIGH |
-| 2 | PersonDetailPage at `/profile/[personCode]` — replace placeholder tabs with real content | HIGH |
-| 3 | Companies list + detail | MEDIUM |
-| 4 | Deals kanban + detail (canvas-confetti on won) | HIGH |
-| 5 | UnifiedTimeline component (consumed by slices 2–4) | HIGH |
+| Leads | `core/entities/leads/views/LeadsView.tsx` | List + board (grouped by status), Add Lead drawer with dedup, Convert Lead drawer (single + bulk), split button (D4) |
+| Contacts | `core/entities/contacts/views/ContactDetailView.tsx` | List + board (grouped by assignedTo), primary = Convert Lead (hidden if no permission per Q-v3.2 option A) |
+| Deals | `core/entities/deals/views/DealDetailView.tsx` | List + board (pipeline stages), moveToStage on drag, confetti on won, value hidden from member role |
+| Companies | `core/entities/companies/views/CompaniesView.tsx` | List + board (grouped by industry, fallback "Uncategorized"), Add Company drawer |
 
-Full spec: `core/entities/ENTITY_SCAFFOLDS_ARCHITECTURE.md`.
+## ✅ Completed — Gap Module Stubs
 
-## Architecture Notes (this session — 2026-05-12)
+| Module | File | Notes |
+|---|---|---|
+| Catalog | `features/catalog/MODULE.md` | Schema sketches for catalogItems + dealLineItems |
+| Documents | `features/documents/MODULE.md` | Schema sketches for documents + documentTemplates |
+| Workflows | `features/workflows/MODULE.md` | Schema sketches for workflows + workflowRuns |
 
-- **Route structure is now fully dynamic.** Hardcoded `/deals` and `/companies` folders under `app/[locale]/(private)/[orgSlug]/` have been deleted. `EntitySlugView` resolves the URL slug against the org's saved labels on every render, honours `modules[].hidden`, and dispatches to the correct placeholder view. When renaming "Deals" → "Opportunities" in Settings, the URL `/opportunities` now works immediately — no file-system changes needed.
-- **Profile is not an entity**, per FRONTEND-DECISIONS.md Rule 1. Moved to its own module `core/profile/`, uses the shared shell layout. The existing `/profile/page.tsx` (combined list) and `/profile/[personCode]/page.tsx` (detail) stay under `profile/` because a named folder wins over the dynamic `[entitySlug]` segment — which is exactly the routing behaviour we rely on.
-- **Dynamic labels in every placeholder.** All four list/detail placeholders now call `useEntityLabels()` for their visible strings. When the real scaffolds land, they'll keep this behaviour.
+## ⬜ Pending
+
+| Task | Priority | Notes |
+|---|---|---|
+| BoardCardFieldsMenu | LOW | Per-session show/hide card fields + "Save as default" |
+| DynamicFieldRenderer | LOW | Renders fieldDefinitions (Phase 2 Slice 6) |
+| Entity detail pages (real content) | MEDIUM | Profile tabs, company tabs, deal detail |
+
+## Architecture Notes (2026-05-12)
+
+- All 4 entities render through the same 4 scaffolds (EntityListPage, EntityPageLayout, EntityCard, EntityFormDrawer). Zero custom layout per entity.
+- View toggle uses nuqs for URL state (`?view=list|board`). NuqsAdapter wraps the app tree in layout.tsx. Precedence: URL → workspace default → fallback constant.
+- Card fields, list columns, and board groupBy are DB-configurable from day 1. Hardcoded constants in `defaults.ts` serve as fallback only.
+- PersonSelect returns full PersonRef (never just an id). Search built-in via Combobox.
+- Contacts page primary action = Convert Lead (hidden if user lacks `leads.convert` permission).
+- Deal kanban uses `listGroupedByStage` query (server-side grouping with daysInStage + isStale).
+- canvas-confetti fires on positive final stage drop.
+- DataTablePagination defaults updated to [10,25,50,100] with "Showing A–B of C" format.
+- All new code uses RTL-safe classes, dynamic radius, no hardcoded entity labels.

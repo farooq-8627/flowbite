@@ -13,6 +13,12 @@ const SHORTCUT_ORDER: ShortcutId[] = [
 	"notifications",
 	"toggleTheme",
 	"toggleFullscreen",
+	"toggleView",
+	"entitySearch",
+	"gotoLeads",
+	"gotoContacts",
+	"gotoDeals",
+	"gotoCompanies",
 ];
 
 export function ShortcutsSettingsView() {
@@ -20,8 +26,14 @@ export function ShortcutsSettingsView() {
 
 	const handleKeyChange = (id: ShortcutId, key: string) => {
 		const isFKey = /^F\d+$/.test(key);
-		const display = isFKey ? key : `⌘${key.toUpperCase()}`;
-		setShortcut(id, { key, display, meta: !isFKey });
+		const current = shortcuts[id];
+		const meta = !isFKey;
+		const shift = current.shift ?? false;
+		const display =
+			(isFKey ? "" : meta ? "⌘" : "") +
+			(shift ? "⇧" : "") +
+			(isFKey ? key : key.toUpperCase());
+		setShortcut(id, { key, display, meta, shift });
 	};
 
 	return (
@@ -51,6 +63,11 @@ export function ShortcutsSettingsView() {
 										⌘
 									</kbd>
 								)}
+								{s.shift && (
+									<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+										⇧
+									</kbd>
+								)}
 								<Input
 									className="h-7 w-16 text-center font-mono text-xs"
 									value={s.key}
@@ -66,7 +83,7 @@ export function ShortcutsSettingsView() {
 
 			<p className="text-xs text-muted-foreground">
 				For F-keys (F10, F11) the ⌘ modifier is not used. For letter keys, ⌘ is always
-				applied.
+				applied. ⇧ applies automatically to entity-page shortcuts.
 			</p>
 		</div>
 	);

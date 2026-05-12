@@ -158,6 +158,27 @@ Full permission matrix: `.gemini/agents/base/rbac.md`
 
 ---
 
+## Industry Adaptability & Roadmap Gaps (2026-05-12)
+
+Full analysis: **`core/entities/INDUSTRY_ADAPTABILITY_ANALYSIS.md`**.
+
+Three named gaps to unlock additional verticals — architect schema now, build modules after Phase 2:
+
+| Gap | Module | Unlocks | Target Phase |
+|---|---|---|---|
+| **G1 — Products/Services Catalog (CPQ-lite)** | `features/catalog/` | Agency, freelance, construction, manufacturing, field service | Phase 2.5 (post-scaffolds) |
+| **G2 — Documents/Contracts/Proposals/Invoices** | `features/documents/` | Agency, legal, photography/events, serious freelance | Phase 2.5 |
+| **G3 — User-facing Workflow/Automation Builder** | `features/workflows/` | Every vertical's "if X then Y" rules | Phase 7 (after AI core) |
+
+These gaps are documented as stub MODULE.md files in their respective `features/` folders.
+
+## Post-Entity-Scaffolds Enhancements (referenced in analysis §5)
+
+For "work OS" positioning (Monday/ClickUp/Notion parity):
+1. Ship `features/project-management/` (already designed, Phase 4)
+2. Add **`timeline` (Gantt)** and **`calendar`** view types to `EntityListPage` (small effort — same data, different visuals)
+3. Doc pages (Notion-style) — big module, defer
+
 ## Detailed Module Specs
 
 Full build-ready specs for all 34 modules: `.gemini/agents/base/deep-plan.md`

@@ -1,6 +1,12 @@
 "use client";
 
-import { GripVertical } from "lucide-react";
+/**
+ * KanbanColumnHeader — thin column header.
+ *
+ * The entire header is the drag handle (via KanbanColumnHandle). No giant
+ * grip button. Layout: [color dot] [title] [count] [value?] [actions?].
+ */
+
 import { Badge } from "@/components/ui/badge";
 import { KanbanColumnHandle } from "@/components/ui/kanban";
 import { cn } from "@/lib/utils";
@@ -11,7 +17,6 @@ interface KanbanColumnHeaderProps {
 	title: string;
 	count: number;
 	color?: string;
-	/** Pipeline value sum — only shown when caller passes showValue=true (permission-gated) */
 	totalValue?: number;
 	showValue?: boolean;
 	currencyCode?: string;
@@ -31,52 +36,49 @@ export function KanbanColumnHeader({
 	onDeleteColumn,
 }: KanbanColumnHeaderProps) {
 	return (
-		<div className="flex items-center gap-x-1.5 p-0">
-			{/* Drag handle for the column — wired to KanbanColumnHandle from dnd-kit primitive */}
-			<KanbanColumnHandle asChild>
-				<button
-					type="button"
-					aria-label="Move column"
-					className={cn(
-						"flex h-8 w-8 items-center justify-center rounded-[var(--radius)]",
-						"text-secondary-foreground/50 cursor-grab hover:bg-accent",
-					)}
-				>
-					<GripVertical className="size-4" />
-				</button>
-			</KanbanColumnHandle>
-
-			{/* Color dot from pipeline stage */}
-			<span
-				className="size-2 rounded-full shrink-0"
-				style={{ backgroundColor: color ?? "#94a3b8" }}
-			/>
-
-			<span className="me-auto text-sm font-medium truncate">{title}</span>
-
-			<Badge variant="secondary" className="text-xs pointer-events-none">
-				{count}
-			</Badge>
-
-			{/* Pipeline value — permission-gated by caller */}
-			{showValue && totalValue !== undefined && (
-				<span className="text-xs text-muted-foreground font-medium">
-					{new Intl.NumberFormat("en-US", {
-						style: "currency",
-						currency: currencyCode,
-						notation: "compact",
-					}).format(totalValue)}
-				</span>
-			)}
-
-			{(onEditColumn || onDeleteColumn) && (
-				<KanbanColumnActions
-					columnId={columnId}
-					columnTitle={title}
-					onEdit={onEditColumn}
-					onDelete={onDeleteColumn}
+		<KanbanColumnHandle asChild>
+			<div
+				className={cn(
+					"flex h-8 shrink-0 cursor-grab items-center gap-2 rounded-[var(--radius)] px-2",
+					"select-none hover:bg-accent/40",
+				)}
+			>
+				<span
+					className="size-2 shrink-0 rounded-full"
+					style={{ backgroundColor: color ?? "#94a3b8" }}
 				/>
-			)}
-		</div>
+				<span className="truncate text-xs font-semibold capitalize">{title}</span>
+				<Badge
+					variant="secondary"
+					className="pointer-events-none h-4 px-1.5 text-[10px] font-normal"
+				>
+					{count}
+				</Badge>
+				{showValue && totalValue !== undefined && (
+					<span className="ms-auto text-[10px] font-medium text-muted-foreground tabular-nums">
+						{new Intl.NumberFormat("en-US", {
+							style: "currency",
+							currency: currencyCode,
+							notation: "compact",
+						}).format(totalValue)}
+					</span>
+				)}
+				{(onEditColumn || onDeleteColumn) && (
+					// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps the actions menu from starting a column drag
+					<div
+						className={cn(showValue ? "" : "ms-auto")}
+						onClick={(e) => e.stopPropagation()}
+						onKeyDown={(e) => e.stopPropagation()}
+					>
+						<KanbanColumnActions
+							columnId={columnId}
+							columnTitle={title}
+							onEdit={onEditColumn}
+							onDelete={onDeleteColumn}
+						/>
+					</div>
+				)}
+			</div>
+		</KanbanColumnHandle>
 	);
 }

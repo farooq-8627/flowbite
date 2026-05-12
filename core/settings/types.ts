@@ -27,7 +27,16 @@ export type OrgSettings = {
 			company?: string;
 			followup?: string;
 		};
-		modules?: Array<{ slot: string; label?: string; hidden?: boolean; order?: number }>;
+		modules?: Array<{
+			slot: string;
+			label?: string;
+			hidden?: boolean;
+			order?: number;
+			defaultView?: "list" | "board";
+			cardFields?: string[];
+			listColumns?: string[];
+			boardGroupBy?: string;
+		}>;
 		badgeCountsVisible?: boolean;
 		reminderDefaults?: {
 			followUpWindowHours?: number;

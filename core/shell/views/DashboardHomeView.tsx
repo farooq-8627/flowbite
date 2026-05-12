@@ -5,7 +5,6 @@ import { CheckCircle2, Clock, Users, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/convex/_generated/api";
 import { type EntityLabels, useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 
@@ -205,18 +204,7 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
 
 	if (!currentOrg || !stats || user === undefined) {
-		return (
-			<div className="h-full overflow-y-auto p-4 md:p-6">
-				<div className="space-y-6">
-					<Skeleton className="h-8 w-48" />
-					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-						{["sk-1", "sk-2", "sk-3", "sk-4"].map((k) => (
-							<Skeleton key={k} className="h-28" />
-						))}
-					</div>
-				</div>
-			</div>
-		);
+		return null;
 	}
 
 	const dismissedCards = user?.dismissedCards ?? [];

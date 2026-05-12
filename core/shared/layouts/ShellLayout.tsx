@@ -212,7 +212,7 @@ export function ShellLayout({
 	if (!permissions) return <>{notFoundState}</>;
 
 	return (
-		<div className="flex h-full overflow-hidden">
+		<div className="flex h-full overflow-hidden sm:p-2">
 			<div className="hidden w-52 shrink-0 pe-2 xl:flex">
 				<ShellNav
 					activeGroupId={resolvedGroupId}
@@ -256,7 +256,7 @@ export function ShellLayout({
 				<main
 					data-shell-scroll="true"
 					data-settings-scroll="true"
-					className="flex-1 overflow-y-auto p-4 md:p-6 rounded-[var(--radius)]"
+					className="flex-1 overflow-y-auto rounded-[var(--radius)]"
 				>
 					<div className="max-w-full space-y-6">
 						{isSearching ? (

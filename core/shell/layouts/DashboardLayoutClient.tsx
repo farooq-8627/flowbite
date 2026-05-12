@@ -9,6 +9,7 @@ import {
 	AIChatPanel,
 	AIChatPanelContent,
 } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
+import { GlobalEntityShortcuts } from "@/core/shell/components/GlobalEntityShortcuts";
 import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
 import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
 import { TopNav } from "@/core/shell/components/TopNav";
@@ -124,6 +125,7 @@ export function DashboardLayoutClient({
 
 	return (
 		<div className="flex h-screen w-full overflow-hidden">
+			<GlobalEntityShortcuts orgSlug={orgSlug} />
 			<SidebarProvider defaultOpen={initialSidebarOpen}>
 				<Suspense fallback={<SidebarSkeleton />}>
 					<AppSidebar
@@ -146,7 +148,7 @@ export function DashboardLayoutClient({
 							onToggleSearch={() => setSearchOpen(true)}
 						/>
 						<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-						<main className="flex-1 overflow-hidden sm:p-2">{children}</main>
+						<main className="flex-1 overflow-hidden">{children}</main>
 					</NavSlotProvider>
 				</SidebarInset>
 			</SidebarProvider>

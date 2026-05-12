@@ -117,7 +117,7 @@ export function KanbanBoard<T extends { id: string }>({
 				 * so every column can be `h-full` and scroll its own cards inside.
 				 */}
 				<div className="flex h-full w-full min-w-0 overflow-x-auto overflow-y-hidden">
-					<KanbanBoardPrimitive className="flex h-full items-stretch gap-3 p-1 pe-4">
+					<KanbanBoardPrimitive className="flex h-full items-stretch gap-3 ">
 						{columns.map((col, index) => {
 							const items = itemsByColumnId[col.id] ?? [];
 							const totalValue =

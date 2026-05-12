@@ -135,8 +135,22 @@ export function DashboardLayoutClient({
 						side={isRTL ? "right" : "left"}
 					/>
 				</Suspense>
+				{/*
+				 * `min-w-0 min-h-0` on SidebarInset is load-bearing: without it the
+				 * flex item defaults to `min-width: auto` (= content min-width),
+				 * letting wide descendants (Kanban columns, tables) inflate the
+				 * shell beyond the viewport at xl+ breakpoints where the sidebar
+				 * is an inline flex sibling.
+				 *
+				 * The inner `<main data-page-scroll="true">` is the canonical
+				 * nested scroll container for every dashboard page — mirror of
+				 * `data-settings-scroll="true"` in settings. Views that need to
+				 * programmatically scroll should target this attribute, never
+				 * `window` or `document.body` (see CLAUDE.md: "Never use
+				 * Element.scrollIntoView() inside nested scroll containers").
+				 */}
 				<SidebarInset
-					className="flex-1 flex flex-col"
+					className="flex min-h-0 min-w-0 flex-1 flex-col"
 					style={{
 						...insetMarginStyle,
 						transition: isDragging ? "none" : "margin 200ms ease",
@@ -148,7 +162,12 @@ export function DashboardLayoutClient({
 							onToggleSearch={() => setSearchOpen(true)}
 						/>
 						<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-						<main className="flex-1 overflow-hidden">{children}</main>
+						<main
+							data-page-scroll="true"
+							className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+						>
+							{children}
+						</main>
 					</NavSlotProvider>
 				</SidebarInset>
 			</SidebarProvider>

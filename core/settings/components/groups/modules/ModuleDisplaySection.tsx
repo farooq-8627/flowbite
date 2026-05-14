@@ -1,21 +1,24 @@
 "use client";
 
 /**
- * ModuleDisplaySection — per-slot display config used inside the Modules group.
+ * ModuleDisplaySection — per-slot display config (Modules group).
  *
- * Renders default view / board group-by / card fields / list columns for ONE
- * entity slot. The Modules group mounts one of these per tab.
+ * Layout note: this card uses the shared `<SettingsRow>` for label/control
+ * alignment so it stays visually consistent with every other Settings page
+ * (label on the left, control flush to the inline-end). Default View is a
+ * tight icon-segmented control reusing the same `<ViewToggleIcons>` design
+ * as the entity layout's view switcher — so users see one consistent affordance
+ * for "list vs board" wherever it appears.
  *
- * Writes to `orgs.settings.modules[]` — merges with whatever is already stored
- * so other per-slot fields (hidden, order, label) are preserved.
+ * Persists `defaultView` and `boardGroupBy`. Card fields and list columns are
+ * driven by `fieldDefinitions.order` + `hidden` (managed in the Fields tab).
  */
 
 import { useMutation } from "convex/react";
-import { useEffect, useState } from "react";
+import { LayoutGridIcon, ListIcon } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import {
 	Select,
 	SelectContent,
@@ -23,19 +26,18 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
 	ALLOWED_BOARD_GROUP_BY,
 	DEFAULT_BOARD_GROUP_BY,
-	DEFAULT_CARD_FIELDS,
-	DEFAULT_LIST_COLUMNS,
 	DEFAULT_VIEW,
 } from "@/core/entities/shared/config/defaults";
-import { FIELD_CATALOG } from "@/core/entities/shared/config/field-catalog";
 import type { EntitySlot, ViewKind } from "@/core/entities/shared/types";
+import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../../types";
+import { SettingsRow } from "../../shared/SettingsRow";
 import { SettingsSection } from "../../shared/SettingsSection";
 
 type ModulesArray = NonNullable<NonNullable<OrgSettings["settings"]>["modules"]>;
@@ -56,173 +58,144 @@ export function ModuleDisplaySection({ slot, orgId, modules }: Props) {
 	const [boardGroupBy, setBoardGroupBy] = useState<string>(
 		(mod?.boardGroupBy as string) ?? DEFAULT_BOARD_GROUP_BY[slot],
 	);
-	const [cardFields, setCardFields] = useState<string[]>(
-		(mod?.cardFields as string[]) ?? DEFAULT_CARD_FIELDS[slot],
-	);
-	const [listColumns, setListColumns] = useState<string[]>(
-		(mod?.listColumns as string[]) ?? DEFAULT_LIST_COLUMNS[slot],
-	);
-	const [saving, setSaving] = useState(false);
-
-	// Resync local state when the slot changes or the saved module config arrives
-	// from Convex. Guards against reverting unsaved local changes: if the user is
-	// actively editing, saving, or the mod object hasn't changed reference, do
-	// nothing. Serialize-compare on the primitive fields catches actual DB changes.
-	// biome-ignore lint/correctness/useExhaustiveDependencies: slot intentionally drives the reset
-	useEffect(() => {
-		if (!mod) return;
-		setDefaultView((mod.defaultView as ViewKind) ?? DEFAULT_VIEW[slot]);
-		setBoardGroupBy((mod.boardGroupBy as string) ?? DEFAULT_BOARD_GROUP_BY[slot]);
-		setCardFields((mod.cardFields as string[]) ?? DEFAULT_CARD_FIELDS[slot]);
-		setListColumns((mod.listColumns as string[]) ?? DEFAULT_LIST_COLUMNS[slot]);
-	}, [
-		slot,
-		mod?.defaultView,
-		mod?.boardGroupBy,
-		JSON.stringify(mod?.cardFields),
-		JSON.stringify(mod?.listColumns),
-	]);
-
-	const catalog = FIELD_CATALOG[slot];
-	const allKeys = Object.keys(catalog);
-	const allowedGroupBy = ALLOWED_BOARD_GROUP_BY[slot];
+	const [isSaving, setIsSaving] = useState(false);
 
 	const handleSave = async () => {
-		setSaving(true);
+		setIsSaving(true);
 		try {
-			const next = [...(modules ?? [])];
-			const idx = next.findIndex((m) => m.slot === slot);
-			const patch = { slot, defaultView, boardGroupBy, cardFields, listColumns };
-			if (idx >= 0) next[idx] = { ...next[idx], ...patch };
-			else next.push(patch);
+			const next: ModulesArray = (modules ?? []).map((m) =>
+				m.slot === slot ? { ...m, defaultView, boardGroupBy } : m,
+			);
+			if (!next.find((m) => m.slot === slot)) {
+				next.push({
+					slot,
+					hidden: false,
+					order: next.length,
+					defaultView,
+					boardGroupBy,
+				} as ModulesArray[number]);
+			}
 			await updateOrg({ orgId, settings: { modules: next } });
-			toast.success("Display settings saved");
+			toast.success("Saved");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Save failed");
+			toast.error(err instanceof Error ? err.message : "Couldn't save");
 		} finally {
-			setSaving(false);
+			setIsSaving(false);
 		}
-	};
-
-	const toggleField = (key: string, list: string[], setList: (v: string[]) => void) => {
-		if (list.includes(key)) setList(list.filter((k) => k !== key));
-		else setList([...list, key]);
 	};
 
 	return (
 		<SettingsSection
 			id={`modules.${slot}.display`}
-			title="Module Display"
-			description="How this entity renders across the app. Users can override the default view under Appearance → Default views."
+			title="Display"
+			description="How records are presented by default and which axis groups the board."
 		>
-			<div className="flex flex-col gap-5">
-				{/* Default view */}
-				<div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-					<Label className="text-xs font-medium">Default view</Label>
-					<ToggleGroup
-						type="single"
-						size="sm"
-						variant="outline"
-						value={defaultView}
-						onValueChange={(v) => {
-							if (v) setDefaultView(v as ViewKind);
-						}}
-					>
-						<ToggleGroupItem value="list" className="h-7 px-3 text-xs">
-							List
-						</ToggleGroupItem>
-						<ToggleGroupItem value="board" className="h-7 px-3 text-xs">
-							Board
-						</ToggleGroupItem>
-					</ToggleGroup>
-				</div>
+			<SettingsRow
+				label="Default view"
+				description="What new visitors see when they open this module."
+				compact
+			>
+				<ViewKindSegmented value={defaultView} onChange={setDefaultView} />
+			</SettingsRow>
 
-				{/* Board group by */}
-				<div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-					<Label className="text-xs font-medium">Board group by</Label>
-					<Select value={boardGroupBy} onValueChange={setBoardGroupBy}>
-						<SelectTrigger size="sm" className="h-7 w-44 text-xs">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{allowedGroupBy.map((key) => (
-								<SelectItem key={key} value={key} className="text-xs capitalize">
-									{catalog[key]?.label ?? key}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
+			<SettingsRow
+				label="Group board by"
+				description="Axis used to bucket records into columns on the board view."
+			>
+				<Select value={boardGroupBy} onValueChange={setBoardGroupBy}>
+					<SelectTrigger className="h-9 w-full">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{ALLOWED_BOARD_GROUP_BY[slot].map((g) => (
+							<SelectItem key={g} value={g} className="capitalize">
+								{labelForGroupBy(g)}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</SettingsRow>
 
-				{/* Card fields */}
-				<div className="space-y-1.5">
-					<Label className="text-xs font-medium">Card fields</Label>
-					<p className="text-[11px] text-muted-foreground">
-						Fields shown on the board card.
-					</p>
-					<div className="flex flex-wrap gap-2">
-						{allKeys.map((key) => {
-							const id = `md-card-${slot}-${key}`;
-							return (
-								<label
-									key={key}
-									htmlFor={id}
-									className="flex cursor-pointer items-center gap-1.5 rounded-[var(--radius)] border bg-muted/30 px-2 py-1 text-[11px]"
-								>
-									<Checkbox
-										id={id}
-										checked={cardFields.includes(key)}
-										onCheckedChange={() =>
-											toggleField(key, cardFields, setCardFields)
-										}
-									/>
-									{catalog[key].label}
-								</label>
-							);
-						})}
-					</div>
-				</div>
-
-				{/* List columns */}
-				<div className="space-y-1.5">
-					<Label className="text-xs font-medium">List columns</Label>
-					<p className="text-[11px] text-muted-foreground">
-						Columns shown in the table view.
-					</p>
-					<div className="flex flex-wrap gap-2">
-						{allKeys.map((key) => {
-							const id = `md-list-${slot}-${key}`;
-							return (
-								<label
-									key={key}
-									htmlFor={id}
-									className="flex cursor-pointer items-center gap-1.5 rounded-[var(--radius)] border bg-muted/30 px-2 py-1 text-[11px]"
-								>
-									<Checkbox
-										id={id}
-										checked={listColumns.includes(key)}
-										onCheckedChange={() =>
-											toggleField(key, listColumns, setListColumns)
-										}
-									/>
-									{catalog[key].label}
-								</label>
-							);
-						})}
-					</div>
-				</div>
-
-				<div className="flex justify-end">
-					<Button
-						size="sm"
-						onClick={handleSave}
-						disabled={saving}
-						className="h-7 text-xs"
-					>
-						{saving ? "Saving…" : "Save"}
-					</Button>
-				</div>
+			<div className="flex justify-end pt-2">
+				<Button size="sm" onClick={handleSave} disabled={isSaving}>
+					{isSaving ? "Saving…" : "Save"}
+				</Button>
 			</div>
 		</SettingsSection>
 	);
+}
+
+// ─── Icon segmented control for list/board ───────────────────────────────────
+
+function ViewKindSegmented({
+	value,
+	onChange,
+}: {
+	value: ViewKind;
+	onChange: (next: ViewKind) => void;
+}) {
+	return (
+		<div className="inline-flex h-8 items-center overflow-hidden rounded-[var(--radius)] border bg-background p-0.5">
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						aria-pressed={value === "list"}
+						onClick={() => onChange("list")}
+						className={cn(
+							"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
+							value === "list"
+								? "bg-accent text-accent-foreground"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<ListIcon className="size-3.5" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>List view</TooltipContent>
+			</Tooltip>
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						aria-pressed={value === "board"}
+						onClick={() => onChange("board")}
+						className={cn(
+							"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
+							value === "board"
+								? "bg-accent text-accent-foreground"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<LayoutGridIcon className="size-3.5" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Board view</TooltipContent>
+			</Tooltip>
+		</div>
+	);
+}
+
+function labelForGroupBy(key: string): string {
+	switch (key) {
+		case "status":
+			return "Status";
+		case "assignedTo":
+			return "Assignee";
+		case "source":
+			return "Source";
+		case "tag":
+		case "tags":
+			return "Tag";
+		case "currentStageId":
+			return "Stage";
+		case "industry":
+			return "Industry";
+		default:
+			return key.charAt(0).toUpperCase() + key.slice(1);
+	}
 }

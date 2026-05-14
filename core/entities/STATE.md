@@ -1,104 +1,188 @@
 # Entities — State
 
-> Updated: 2026-05-14
-> Status: 95% Complete — All 4 entity views scaffold-driven with list + board, universal ViewOptionsMenu, dynamic board grouping across every slot, custom-field sync, and instant/double-click convert flow. Remaining: AddCompanyDrawer restructure, tag-axis grouping, Files tab per entity.
+> Updated: 2026-05-15
+> Status: ~99% complete. Forms now match production-grade density. Card +
+> drawer + file UX polished across all four entities. Stage filter +
+> saved views shipped. Only the AI summary pipeline remains in this lane.
 
-## 🆕 2026-05-14 additions
+## What's shipped
 
-| Component | File | Notes |
+### The dynamic field system
+
+Every field — `displayName`, `email`, `phone`, `status`, `assignedTo`, `tags`,
+`personCode`, plus admin-added custom fields — is a row in `fieldDefinitions`.
+A single hook (`useEntityFields`) feeds:
+
+- The table column builder (`useEntityColumns` / cells/cell-dispatcher).
+- The generic form (`EntityFieldForm` / inputs/input-dispatcher).
+- The view-options menu (per-user toggles).
+- The card highlight chips (admin-flagged custom fields).
+
+Adding a field once → it appears in form, table, view options, and (if flagged
+in cardFields) the kanban card. Reorder once → everywhere updates. Hide once →
+invisible everywhere for everyone (admin) or just one user (per-user toggle).
+
+See `DYNAMIC_FIELDS_BLUEPRINT.md` for the full architecture summary.
+
+### Per-entity views
+
+| Entity | Path | Notes |
 |---|---|---|
-| ViewOptionsMenu | `core/entities/shared/components/ViewOptionsMenu.tsx` | Universal "View" popover — field visibility + group-by + hidden-status reveal. Replaces lead-only BoardOptionsMenu. Accepts `extraFields` from `useCustomFields`. |
-| board-grouping helper | `core/entities/shared/utils/board-grouping.ts` | `getHiddenCardFieldsForGrouping` + `getRevealedCardFieldForGrouping` — auto-hide grouped-by field + reveal complementary. `NO_GROUP_KEY` sentinel. |
-| useCustomFields | `core/entities/shared/hooks/useCustomFields.ts` | Reads `fieldDefinitions` per slot for ViewOptionsMenu.extraFields. |
-| FieldValueRenderer kinds | `core/entities/shared/components/FieldValueRenderer.tsx` | Added `file`, `files`, `date`, `number`, `checkbox` render kinds for dynamic custom fields. |
-| LeadCard convert flow | `core/entities/leads/components/LeadCard.tsx` | Single-click = instant convert, double-click = open drawer with deal option. Trash icon = mark lost. |
-| AddLeadDrawer company section | `core/entities/leads/components/AddLeadDrawer.tsx` | Skip/Existing/New toggle; "New" renders inline company form + creates it alongside the lead. |
-| Leads status table column | `core/entities/leads/hooks/useLeadColumns.tsx` | Colored pill matching the kanban column colour (via `getStatusColor`). |
-| revertToLead mutation | `convex/crm/entities/contacts/mutations.ts` | Soft-deletes the contact + flips origin lead back to status="new". Surfaced in Contacts row actions. |
-| Pipeline fallback | `convex/crm/fields/pipelines/queries.ts` | `getDefault` returns first pipeline for the entity if no `isDefault`. |
+| Leads | `_entities/leads/views/LeadsView.tsx` | List + board. Single-click convert / double-click "with options". Mark-lost shortcut. First-time coachmarks. Highlight chips for admin-flagged custom fields. |
+| Contacts | `_entities/contacts/views/ContactDetailView.tsx` | List + board (assignedTo). |
+| Deals | `_entities/deals/views/DealDetailView.tsx` | Pipeline kanban with stage drag, won-confetti. |
+| Companies | `_entities/companies/views/CompaniesView.tsx` | List + board (industry). CompanyDrawer with multi-assignee + multi-person picker. |
 
-## ✅ Completed — Backend
+### Card system (`EntityCard`)
 
-| Module | File | Notes |
-|---|---|---|
-| Schema (all CRM tables) | `convex/schema.ts` | leads, contacts, companies, deals + modules[] extended with defaultView/cardFields/listColumns/boardGroupBy/defaultFilters/meta + users.preferences.entityDefaultView |
-| Leads | `convex/crm/entities/leads/` | queries + mutations, canonical pattern complete |
-| Contacts | `convex/crm/entities/contacts/` | personCode inherited from lead on conversion |
-| Companies | `convex/crm/entities/companies/` | queries + mutations |
-| Deals | `convex/crm/entities/deals/` | moveToStage + closeAsDone |
-| Pipelines | `convex/crm/fields/pipelines/` | stages + stale config |
-| Dedup engine | `convex/crm/fields/dedup/helpers.ts` | email/phone/name |
-| People resolver | `convex/crm/people/queries.ts::getByPersonCode` | returns lead OR contact |
-| Org mutations | `convex/orgs/mutations.ts` | update validator accepts new modules[] shape |
+```
+┌─────────────────────────────────────────────┐
+│ ◎ Name                          [tag][tag]  │  identity + tags
+│   email                                     │
+├─────────────────────────────────────────────┤
+│ AI: Short 1–2 line summary  ▾               │  aiSummary (optional)
+├─────────────────────────────────────────────┤
+│ [Budget: $1.5M]  [Property: Villa]          │  highlight chips (admin-flagged)
+├─────────────────────────────────────────────┤
+│ [P-001] ◎asgn        ⋮ [📎3] [+] [🗑]      │  code + assignee · menu + shortcuts
+└─────────────────────────────────────────────┘
+                                              ↑
+                                grip (drag handle on right edge)
+```
 
-## ✅ Completed — Infrastructure
+- Hand-designed slots: avatar/name/email (top-left), tags (top-right),
+  personCode + assignee (bottom-left), menu + shortcuts (bottom-right).
+- Drag handle is the vertical grip on the right edge — only that triggers
+  drag, every other piece of the card behaves as expected (clicks, hovers).
+- AI summary expands on click.
+- Highlight chips render up to 3 admin-flagged custom fields with a
+  bg-primary tint, formatted by kind (currency → USD, date → locale).
+- Per-user `cardFields` from ViewOptionsMenu controls visibility of every
+  toggleable piece — pinned slots ignore it.
+- `displayName` toggle now correctly hides the name (was a bug pre-2026-05-15).
 
-| Item | File | Notes |
-|---|---|---|
-| NuqsAdapter | `app/[locale]/layout.tsx` | Wraps app tree — required for nuqs URL state (useViewToggle + useDataTable) |
-| DataTablePagination | `core/datatable/components/DataTablePagination.tsx` | Default pageSizeOptions [10,25,50,100], "Showing A–B of C" format |
-| canvas-confetti | `package.json` | Installed for deal-won celebration |
+### First-time coachmarks (`<FirstTimeTour>`)
 
-## ✅ Completed — Frontend Scaffolds + Shared
+`components/ui/first-time-tour.tsx` — sequential overlay that points at DOM
+elements tagged with `data-tour="…"`. Shows once per device (localStorage
+under `flowbite:tours:seen`). Three steps live on the leads board:
+single/double-click convert, drag-to-status, view-options. See AGENTS.md for
+the usage rules.
 
-| Component | File | Notes |
-|---|---|---|
-| EntityCard | `core/entities/scaffolds/EntityCard.tsx` | Generic card iterating cardFields via FieldValueRenderer |
-| EntityPageLayout | `core/entities/scaffolds/EntityPageLayout.tsx` | Dedicated toolbar with split button + view toggle |
-| EntityFormDrawer | `core/entities/scaffolds/EntityFormDrawer.tsx` | FormDrawer + dedup banner |
-| EntityListPage | `core/entities/scaffolds/EntityListPage.tsx` | Wraps DataTable or KanbanBoard based on view state |
-| FormDrawer | `core/entities/shared/components/FormDrawer.tsx` | Reusable right-side drawer |
-| PersonDisplay | `core/entities/shared/components/PersonDisplay.tsx` | System component for rendering people (D8) |
-| PersonSelect | `core/entities/shared/components/PersonSelect.tsx` | Combobox picker returning PersonRef (D7) |
-| EntityHoverCard | `core/entities/shared/components/EntityHoverCard.tsx` | Hover → quick-view (D9) |
-| EntityOverview | `core/entities/shared/components/EntityOverview.tsx` | Skeleton content (real content Slice 2) |
-| FieldValueRenderer | `core/entities/shared/components/FieldValueRenderer.tsx` | Switch over render kinds → JSX |
-| ViewToggleIcons | `core/entities/shared/components/ViewToggleIcons.tsx` | Two independent icon buttons (D3) |
-| EmptyState | `core/entities/shared/components/EmptyState.tsx` | Shared empty state with CTA |
-| StaleIndicator | `core/entities/shared/components/StaleIndicator.tsx` | Reads stage stale config (never hardcoded colors) |
-| DedupBanner | `core/entities/shared/components/DedupBanner.tsx` | Edit fields + link to existing (D10) |
-| field-catalog | `core/entities/shared/config/field-catalog.ts` | FIELD_CATALOG per entity |
-| defaults | `core/entities/shared/config/defaults.ts` | Fallback defaults for all config (D11) |
-| useViewToggle | `core/entities/shared/hooks/useViewToggle.ts` | URL → workspace → fallback (D6) |
-| useModuleDisplay | `core/entities/shared/hooks/useModuleDisplay.ts` | cardFields/listColumns/boardGroupBy |
-| useDedup | `core/entities/shared/hooks/useDedup.ts` | ConvexError DUPLICATE handler |
-| useBulkActions | `core/entities/shared/hooks/useBulkActions.ts` | Row selection state |
-| usePerson | `core/entities/shared/hooks/usePerson.ts` | Resolves personCode → PersonRef |
-| Shared types | `core/entities/shared/types.ts` | EntitySlot, PersonRef, ViewKind, FieldSpec |
+### Forms (`EntityFieldForm`)
 
-## ✅ Completed — Per-Entity Views (all 4)
+Round 5 redesign — production-grade density inspired by Linear / Attio /
+Pipedrive:
 
-| Entity | View File | Features |
-|---|---|---|
-| Leads | `core/entities/leads/views/LeadsView.tsx` | List + board (grouped by status), Add Lead drawer with dedup, Convert Lead drawer (single + bulk), split button (D4) |
-| Contacts | `core/entities/contacts/views/ContactDetailView.tsx` | List + board (grouped by assignedTo), primary = Convert Lead (hidden if no permission per Q-v3.2 option A) |
-| Deals | `core/entities/deals/views/DealDetailView.tsx` | List + board (pipeline stages), moveToStage on drag, confetti on won, value hidden from member role |
-| Companies | `core/entities/companies/views/CompaniesView.tsx` | List + board (grouped by industry, fallback "Uncategorized"), Add Company drawer |
+- Section bands instead of `<details>` collapsibles: small-caps section
+  header + hairline divider. Quieter, denser, more "premium".
+- Tight spacing: `gap-2.5` between fields, `gap-1` between label + input,
+  11px labels, h-9 inputs, subtle `text-destructive/60` required asterisk.
+- Two-column auto-layout for short related fields (email + phone, value +
+  assignee, industry + website). Detected by field kind/type.
+- Tags + assignees + status / source always span full width.
 
-## ✅ Completed — Gap Module Stubs
+Inputs come from `inputs/input-dispatcher`. The new MultiSelect (`components/
+ui/multi-select.tsx`) drives every multi-pick: TagPicker, CompanyDrawer's
+assignee + people pickers, ConvertLeadDrawer's lead picker. Pattern: trigger
+shows summary text only (no chips), popover lists rows with left content +
+right checkbox. `modal={true}` so it works inside the Sheet's focus trap
+(which fixed the "can't select tags in form" bug).
 
-| Module | File | Notes |
-|---|---|---|
-| Catalog | `features/catalog/MODULE.md` | Schema sketches for catalogItems + dealLineItems |
-| Documents | `features/documents/MODULE.md` | Schema sketches for documents + documentTemplates |
-| Workflows | `features/workflows/MODULE.md` | Schema sketches for workflows + workflowRuns |
+### IdentityBadge
 
-## ⬜ Pending
+`core/entities/shared/components/IdentityBadge.tsx` — universal "this is a
+record" component. Layouts: `code` (just the pill, primary-tinted), `row`
+(avatar + name + subtitle), `stack` (avatar + name on row 1, subtitle on
+row 2). Replaces PersonCodeBadge across the codebase (kept as deprecated
+re-export). Pill colour is `bg-primary/10 text-primary border-primary/30`
+so it stands out as a navigable identifier.
+
+### Universal file storage
+
+Round 5 update:
+
+- Files attach only at **org-wide** (`scope="org"`) or **personCode**
+  (`scope="person"`) level. No per-entity Files tab.
+- Cross-entity attribution via `tags?: string[]` on the file row. Example:
+  a contract uploaded "for deal D-001" lives at the personCode level with
+  tags=`["deal:D-001"]`. The deal detail view (when wired) reads files via
+  `files.queries.listByTag({ tag: "deal:D-001" })`.
+- Org-level admin policy in **Settings → Workspace → File Policy**: pick
+  allowed file categories (Image / PDF / Document / Spreadsheet / Video /
+  Audio / Archive / Other) + max size MB. `core/files/file-categories.ts` is
+  the single source of MIME mappings.
+- **Create-mode uploads**: `useFileBuffer` hook + `<FileBufferProvider>`
+  wraps the form drawer, `<CreateModeFileField>` is the buffered renderer
+  used by the input dispatcher. Bytes upload to storage immediately; the
+  `files` table row is recorded after entity creation by calling
+  `fileBuffer.commitAll({scope, scopeId})`. AddLeadDrawer wires this with
+  scope=`"person"`, scopeId=personCode.
+
+### Stage-aware tables
+
+Two new toolbar widgets:
+
+- `<StageFilter>` — dropdown that scopes the deals table to a specific
+  pipeline stage. Board view stays grouped by stage so the filter is
+  list-only.
+- `<SavedViewsMenu>` — per-user named column-set switcher. Persists to
+  `users.preferences.savedViews[slot]` (schema + updatePreferences mutation
+  extended in Round 5). Includes "Save current view…" and "Delete" actions.
+
+### First-time coachmarks (`<FirstTimeTour>`)
+
+Round 5 expansion: tours wired to leads board, contacts board, deals board,
+companies board, AND the dashboard (highlights the QuickAdd + button). Per-
+device localStorage gate per tour id. The grip + convert buttons no longer
+show tooltips — the tour explains the gesture once.
+
+## Pending
 
 | Task | Priority | Notes |
 |---|---|---|
-| BoardCardFieldsMenu | LOW | Per-session show/hide card fields + "Save as default" |
-| DynamicFieldRenderer | LOW | Renders fieldDefinitions (Phase 2 Slice 6) |
-| Entity detail pages (real content) | MEDIUM | Profile tabs, company tabs, deal detail |
+| AI summary generator | MEDIUM | Card already shows `item.aiSummary` if present. Need the cron / on-update generator. **Deferred to AI phase.** |
+| "Replay tutorials" button | LOW | Surface `resetAllTours()` in Appearance settings. |
+| Card highlight admin picker | LOW | Today driven by cardFields. Later: dedicated "show on card" toggle in Fields manager. |
+| Stage filter for non-deal entities | OPTIONAL | Only deals have stages today; contacts/leads use status. The current filter is deal-only by design. |
 
-## Architecture Notes (2026-05-12)
+## Recent history
 
-- All 4 entities render through the same 4 scaffolds (EntityListPage, EntityPageLayout, EntityCard, EntityFormDrawer). Zero custom layout per entity.
-- View toggle uses nuqs for URL state (`?view=list|board`). NuqsAdapter wraps the app tree in layout.tsx. Precedence: URL → workspace default → fallback constant.
-- Card fields, list columns, and board groupBy are DB-configurable from day 1. Hardcoded constants in `defaults.ts` serve as fallback only.
-- PersonSelect returns full PersonRef (never just an id). Search built-in via Combobox.
-- Contacts page primary action = Convert Lead (hidden if user lacks `leads.convert` permission).
-- Deal kanban uses `listGroupedByStage` query (server-side grouping with daysInStage + isStale).
-- canvas-confetti fires on positive final stage drop.
-- DataTablePagination defaults updated to [10,25,50,100] with "Showing A–B of C" format.
-- All new code uses RTL-safe classes, dynamic radius, no hardcoded entity labels.
+- 2026-05-15 — Round 5 redesign: production-grade form density, MultiSelect
+  primitive (no pills, left-content + right-checkbox), IdentityBadge
+  replaces PersonCodeBadge with primary-coloured pill, EntityCard supports
+  company + deal slots with industry/value subtitles, avatar bug fixed,
+  ConvertLeadDrawer rewritten as multi-select of unconverted leads,
+  AddDealDrawer redesigned with empty-state CTA when no pipelines,
+  CompanyDrawer redesigned, file upload system overhauled (org-wide +
+  personCode-only scope, tag-based attribution, create-mode buffer,
+  admin file-type policy), tooltips removed on tour-tagged buttons,
+  FirstTimeTour expanded to dashboard + contacts + deals + companies,
+  StageFilter + SavedViewsMenu shipped for table toolbars.
+- 2026-05-15 — Round 4 polish: name-hide bug fixed, ModuleDisplay layout
+  aligned to Settings style, ViewOptionsMenu strips protected fields,
+  TagPicker switched to popover dropdown, PersonSelect resolves stubs, file
+  field placeholder polished, EntityFieldForm switched to stacked layout,
+  card highlight slot shipped, FirstTimeTour added.
+- 2026-05-14 — Phases 0→9 of dynamic fields shipped. `useLeadColumns`,
+  `FIELD_CATALOG`, `DEFAULT_LIST_COLUMNS`, `DEFAULT_CARD_FIELDS`,
+  `BoardOptionsMenu`, `useCustomFields`, workspace `ModuleDisplaySection` all
+  deleted. `useModuleDisplay` trimmed to `boardGroupBy` only.
+- 2026-05-12 — Universal `ViewOptionsMenu`, dynamic board grouping across all
+  slots, single-click instant convert, drag-and-drop status update, mark-lost
+  shortcut.
+
+## Architecture invariants
+
+- All four entities render through the same scaffolds (EntityListPage,
+  EntityPageLayout, EntityCard, EntityFormDrawer). Zero per-entity layout.
+- View toggle uses nuqs (`?view=list|board`). Precedence: URL → workspace
+  default → fallback constant.
+- `fieldDefinitions` is the single source of metadata.
+- All visible entity labels go through `useEntityLabels()` so renames flow
+  through the UI live.
+- RTL-safe classes (`me-*`/`ms-*`/`pe-*`/`ps-*`) and dynamic radius
+  (`rounded-[var(--radius)]`) everywhere.
+- One drag handle per card (right-edge grip). Every other interactive
+  element is wrapped in an event-stop container so dnd-kit doesn't eat its
+  click.

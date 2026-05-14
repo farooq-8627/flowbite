@@ -1,12 +1,25 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { CheckCircle2, Clock, Users, X, Zap } from "lucide-react";
+import { CheckCircle2, Clock, FolderOpen, Users, X, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
+import { FileUpload } from "@/core/files/components/FileUpload";
 import { type EntityLabels, useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+
+// ─── Dashboard tour ───────────────────────────────────────────────────────────
+
+const DASHBOARD_TOUR_STEPS: TourStep[] = [
+	{
+		target: "quick-add",
+		title: "Create from anywhere",
+		body: "Press the + button in the top nav (or Cmd/Ctrl + K) to create leads, contacts, deals, and companies without leaving the page.",
+		side: "bottom",
+	},
+];
 
 // ─── Get Started Card ─────────────────────────────────────────────────────────
 
@@ -222,7 +235,42 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 				<GetStartedCard dismissedCards={dismissedCards} labels={labels} />
 				<MetricCards memberCount={stats.memberCount} labels={labels} />
 				<RecentActivity activity={stats.recentActivity} />
+				<OrgDocsVault orgId={currentOrg.org._id} />
 			</div>
+			<FirstTimeTour id="dashboard-v1" steps={DASHBOARD_TOUR_STEPS} />
 		</div>
+	);
+}
+
+// ─── Org-wide Docs vault ──────────────────────────────────────────────────────
+
+/**
+ * OrgDocsVault — workspace-scoped attachments. Every member can drop files
+ * here (training material, contracts templates, brand assets, etc.) and they
+ * persist on the dashboard for the whole org. AI access requires explicit
+ * consent (future pass).
+ */
+function OrgDocsVault({ orgId }: { orgId: Parameters<typeof FileUpload>[0]["orgId"] }) {
+	return (
+		<Card>
+			<CardHeader className="pb-3">
+				<div className="flex items-center gap-2">
+					<FolderOpen className="size-4 text-muted-foreground" />
+					<CardTitle className="text-base">Workspace Docs</CardTitle>
+				</div>
+				<CardDescription>
+					Files shared across the workspace. AI uses these only with explicit consent.
+				</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<FileUpload
+					orgId={orgId}
+					scope="org"
+					scopeId={String(orgId)}
+					label="Drop org-wide files here or click to browse"
+					emptyText="No workspace files yet."
+				/>
+			</CardContent>
+		</Card>
 	);
 }

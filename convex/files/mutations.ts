@@ -5,17 +5,26 @@
  * leads, contacts, deals, companies, users, the org itself, or arbitrary
  * custom-field attachments — all share this module.
  *
+ * SCOPE STRATEGY (Round 5):
+ *   We deliberately avoid storing files per (deal/company) because that
+ *   leads to duplication when the same contract is "for" both a person AND
+ *   a deal. Instead:
+ *     - scope="org",    scopeId=orgId         → workspace-level files
+ *     - scope="person", scopeId=personCode    → person attachments
+ *     - scope="user",   scopeId=userId        → user profile attachments
+ *     - scope="field",  scopeId=fieldValueId  → dynamic file-field bytes
+ *   Cross-entity attribution uses `tags` (e.g. `tags=["deal:D-001"]`) so a
+ *   single file can surface in BOTH the person profile AND the deal page.
+ *
  * FLOW
  *   1. Client calls `generateUploadUrl` → gets a short-lived Convex upload URL.
  *   2. Client POSTs the file directly to that URL → gets back a storageId.
- *   3. Client calls `record({ storageId, scope, scopeId, name, size, mimeType })`
- *      to register the file in our `files` table under the right scope.
+ *   3. Client calls `record({ storageId, scope, scopeId, name, size, mimeType, tags? })`.
  *   4. To delete, call `remove({ fileId })` — it deletes from _storage too.
  *
  * Permission model (lightweight for now — tightened per scope later):
  *   - Any authenticated org member can upload/delete files to scopes they can
- *     read. We wire this up scope-by-scope as each entity module gets its own
- *     permission checks; for now it's `requireOrgMember`.
+ *     read.
  */
 
 import { ConvexError, v } from "convex/values";
@@ -35,14 +44,6 @@ export const generateUploadUrl = authenticatedMutation({
 
 /**
  * Record a freshly-uploaded file in the `files` table.
- *
- * Scope + scopeId identify *where* this file belongs:
- *   - scope="lead",    scopeId=leadId      → lead attachments
- *   - scope="deal",    scopeId=dealId      → deal attachments
- *   - scope="user",    scopeId=userId      → user profile attachments
- *   - scope="org",     scopeId=orgId       → workspace-level files
- *   - scope="field",   scopeId=fieldValueId → dynamic file field
- *   - scope=<custom>,  scopeId=<anything>  → future entities (catalog, etc.)
  */
 export const record = orgMutation({
 	args: {
@@ -51,6 +52,7 @@ export const record = orgMutation({
 		scope: v.string(),
 		scopeId: v.string(),
 		fieldKey: v.optional(v.string()),
+		tags: v.optional(v.array(v.string())),
 		name: v.string(),
 		size: v.number(),
 		mimeType: v.string(),
@@ -64,6 +66,7 @@ export const record = orgMutation({
 			scope: args.scope,
 			scopeId: args.scopeId,
 			fieldKey: args.fieldKey,
+			tags: args.tags,
 			name: args.name,
 			size: args.size,
 			mimeType: args.mimeType,
@@ -72,6 +75,28 @@ export const record = orgMutation({
 			updatedAt: now,
 		});
 		return fileId;
+	},
+});
+
+/**
+ * Add or remove a tag from a file (e.g. attribute it to a different deal).
+ */
+export const updateTags = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		fileId: v.id("files"),
+		tags: v.array(v.string()),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+		const file = await ctx.db.get(args.fileId);
+		if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+		await ctx.db.patch(args.fileId, {
+			tags: args.tags,
+			updatedAt: Date.now(),
+		});
 	},
 });
 

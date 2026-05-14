@@ -274,6 +274,78 @@ reference implementation. Copy the pattern for other nested-scroll views.
 
 ---
 
+## RULE: First-time coachmarks — use `<FirstTimeTour>`, never tooltips, for power gestures
+
+Tooltips re-fire on every hover, even after the user understands the feature. That's
+fine for one-off labels. It is **not** fine for power gestures (single-click vs
+double-click, drag-and-drop, keyboard shortcuts, hidden menus). The right pattern is a
+sequential coachmark that fires once, points at the element, explains the gesture in a
+sentence, and never returns.
+
+### When to use a tour vs a tooltip
+
+| Need | Pattern |
+|---|---|
+| Static label ("Delete", "Convert") | Tooltip |
+| Distinguishing single-click vs double-click | **FirstTimeTour** |
+| Explaining drag-and-drop on the kanban | **FirstTimeTour** |
+| Surfacing a hidden ⋮ menu / view-options popover | **FirstTimeTour** |
+| Walking through a brand-new feature | **FirstTimeTour** |
+| Onboarding wizard | core/onboarding (different — full-screen, not a tour) |
+
+### Component
+
+`components/ui/first-time-tour.tsx` — `<FirstTimeTour id="..." steps=[...] />`.
+Persists "user has seen this tour" in localStorage under `flowbite:tours:seen`. The id
+is the persistence key — bump it (`v1` → `v2`) when steps change meaningfully.
+
+### Three-line wiring (anywhere in the app)
+
+```tsx
+// 1. Tag the elements you want to highlight
+<button data-tour="convert-shortcut">+</button>
+<button data-tour="kanban-grip">⋮</button>
+
+// 2. Drop the tour where the page mounts
+<FirstTimeTour
+  id="leads-board-v1"
+  steps={[
+    { target: "convert-shortcut",
+      title: "One-click convert",
+      body: "Click once to convert. Double-click to open the full form." },
+    { target: "kanban-grip", side: "start",
+      title: "Drag to change status",
+      body: "Grab the grip to drop a card into a different column." },
+  ]}
+/>
+```
+
+### Rules
+
+1. **One id, one tour.** Same id can be mounted on multiple routes — it still fires
+   only once per device.
+2. **Bump the id when you change the steps** (`leads-board-v1` → `leads-board-v2`)
+   so users see the updated tour.
+3. **`data-tour=` attribute is the targeting contract.** Don't switch to ids — they
+   collide too easily across SSR/CSR.
+4. **Steps are sequential and skippable** — Esc, the × button, or clicking the
+   backdrop dismisses the whole tour. Don't add a "remind me later".
+5. **Reset for testing.** Call `resetAllTours()` from `components/ui/first-time-tour.tsx`,
+   or surface a "Replay tutorials" button in Settings → Appearance later if needed.
+6. **Render the tour inside `<>` after the regular UI.** Conditionally mount when the
+   relevant view is visible (e.g. only on the board view, not the table) — keeps it
+   from firing on the wrong page.
+
+### Reference implementation
+
+`core/entities/_entities/leads/views/LeadsView.tsx` — `LEADS_BOARD_TOUR_STEPS`
+with three steps (single/double-click convert, drag to change status, view
+options). Tagged elements: `data-tour="lead-card-convert"` (EntityCard primary
+shortcut), `data-tour="lead-card-grip"` (EntityCard drag handle),
+`data-tour="view-options-trigger"` (ViewOptionsMenu trigger).
+
+---
+
 
 
 > **Before doing ANY work in this project, read all files in `.github/agents/base/` in this order:**

@@ -8,6 +8,23 @@ import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
+import { seedFieldDefinitionsForOrg } from "./internal";
+
+/**
+ * Lazy seed — called by `useEntityFields` on the client when it observes zero
+ * field definitions for an org that should already have them. Idempotent: if
+ * rows already exist, returns 0. Open to any org member (not gated by
+ * fieldDefinitions.manage) because it only inserts the well-known system
+ * defaults — never user-editable schema.
+ */
+export const ensureForOrg = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { org } = await requireOrgMember(ctx, args.orgId);
+		const industry = org.industry ?? "general";
+		return seedFieldDefinitionsForOrg(ctx, args.orgId, industry);
+	},
+});
 
 export const create = orgMutation({
 	args: {
@@ -64,6 +81,7 @@ export const update = orgMutation({
 		required: v.optional(v.boolean()),
 		options: v.optional(v.array(v.string())),
 		defaultValue: v.optional(v.any()),
+		hidden: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
@@ -71,6 +89,14 @@ export const update = orgMutation({
 
 		const field = await ctx.db.get(args.fieldId);
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		// Protected fields can be renamed / reordered, but not hidden.
+		if (field.protected && args.hidden === true) {
+			throw new ConvexError({
+				code: "PROTECTED",
+				message: "This field is required by the system and cannot be hidden.",
+			});
+		}
 
 		const { orgId: _o, fieldId: _f, ...updates } = args;
 		const patch = Object.fromEntries(
@@ -105,6 +131,15 @@ export const remove = orgMutation({
 
 		const field = await ctx.db.get(args.fieldId);
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		// Protected system fields (e.g. personCode, displayName) cannot be deleted.
+		// Admin can hide non-protected system fields instead.
+		if (field.protected) {
+			throw new ConvexError({
+				code: "PROTECTED",
+				message: "This field is required by the system and cannot be deleted.",
+			});
+		}
 
 		// Remove all field values for this field
 		const values = await ctx.db

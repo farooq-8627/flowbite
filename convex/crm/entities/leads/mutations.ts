@@ -180,6 +180,25 @@ export const convertToContact = orgMutation({
 			updatedAt: now,
 		});
 
+		// Propagate tags lead → contact so users don't lose labels on convert.
+		const leadTagLinks = await ctx.db
+			.query("entityTags")
+			.withIndex("by_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.leadId),
+			)
+			.collect();
+		await Promise.all(
+			leadTagLinks.map((link) =>
+				ctx.db.insert("entityTags", {
+					orgId: args.orgId,
+					tagId: link.tagId,
+					entityType: "contact",
+					entityId: contactId,
+					createdAt: now,
+				}),
+			),
+		);
+
 		await ctx.db.patch(args.leadId, {
 			status: "converted",
 			convertedAt: now,

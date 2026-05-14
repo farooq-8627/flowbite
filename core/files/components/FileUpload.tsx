@@ -1,27 +1,31 @@
 "use client";
 
 /**
- * File storage UI — reusable dropzone, list, and upload hook.
+ * File storage UI — reusable dropzone, list, hook, and buffered upload.
  *
- * Paired with the generic `convex/files/*` module. Drop these anywhere in the
- * app — they work for leads, contacts, deals, companies, user profiles, the
- * org itself, or any custom dynamic file field.
+ * Round 5 refactor:
+ *   - Reads org-level allowed file types and applies them to every dropzone.
+ *   - Adds `BufferedFileUpload` for entity CREATE mode: bytes upload to
+ *     storage immediately, but the `files` table row is deferred until the
+ *     parent entity exists. Parent calls `commitBufferedFiles()` after
+ *     create with the resolved scope/scopeId.
+ *   - Adds optional `tags` for cross-entity attribution
+ *     (e.g. tags=["deal:D-001"] on a person-scope file).
  *
- * Usage (typical):
- *   const { files, upload, remove } = useFileAttachments({ orgId, scope:"lead", scopeId: leadId });
- *   <FileDropzone onFiles={upload} />
- *   <FileList files={files} onRemove={remove} />
- *
- * No bespoke code per entity — scope + scopeId fully define the bucket.
+ * Pair with `convex/files/*`. Drop these anywhere — they work for leads,
+ * contacts, deals, companies, user profiles, the org itself, and any
+ * custom dynamic file field.
  */
 
 import { useMutation, useQuery } from "convex/react";
 import { ImageIcon, Loader2Icon, PaperclipIcon, Trash2Icon, UploadIcon } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useParams } from "next/navigation";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { buildAcceptString, type FileCategory, isFileAllowed } from "@/core/files/file-categories";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +39,14 @@ export type AttachedFile = {
 	mimeType: string;
 	createdAt: number;
 	url: string | null;
+	tags?: string[];
+};
+
+export type BufferedFile = {
+	storageId: Id<"_storage">;
+	name: string;
+	size: number;
+	mimeType: string;
 };
 
 export interface UseFileAttachmentsArgs {
@@ -42,6 +54,26 @@ export interface UseFileAttachmentsArgs {
 	scope: string;
 	scopeId: string;
 	fieldKey?: string;
+}
+
+// ─── Hook: read the org's allowed-file-types setting ─────────────────────────
+
+function useAllowedCategories(): FileCategory[] | undefined {
+	const params = useParams();
+	const orgSlug = params?.orgSlug as string | undefined;
+	const orgs = useQuery(api.orgs.queries.listMyOrgs);
+	const org = orgs?.find((o) => o.org.slug === orgSlug)?.org;
+	const allowed = org?.settings?.fileUpload?.allowedMimeCategories;
+	if (!allowed || allowed.length === 0) return undefined;
+	return allowed as FileCategory[];
+}
+
+function useMaxSizeMb(): number | undefined {
+	const params = useParams();
+	const orgSlug = params?.orgSlug as string | undefined;
+	const orgs = useQuery(api.orgs.queries.listMyOrgs);
+	const org = orgs?.find((o) => o.org.slug === orgSlug)?.org;
+	return org?.settings?.fileUpload?.maxSizeMb;
 }
 
 // ─── Hook: one-stop upload/list/remove ────────────────────────────────────────
@@ -62,13 +94,33 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 	const removeMutation = useMutation(api.files.mutations.remove);
 
 	const [uploading, setUploading] = useState<string[]>([]);
+	const allowedCategories = useAllowedCategories();
+	const maxSizeMb = useMaxSizeMb();
 
 	const upload = useCallback(
-		async (list: File[]) => {
+		async (list: File[], extra?: { tags?: string[] }) => {
 			if (!orgId) return;
-			setUploading((prev) => [...prev, ...list.map((f) => f.name)]);
+			// Pre-validate against allowed categories + max size.
+			const accepted: File[] = [];
+			for (const file of list) {
+				if (!isFileAllowed(file, allowedCategories)) {
+					toast.error(`${file.name} — file type not allowed`, {
+						description:
+							"Ask an admin to enable this file type in Settings → Workspace → File policy.",
+					});
+					continue;
+				}
+				if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) {
+					toast.error(`${file.name} — exceeds ${maxSizeMb} MB`);
+					continue;
+				}
+				accepted.push(file);
+			}
+			if (accepted.length === 0) return;
+
+			setUploading((prev) => [...prev, ...accepted.map((f) => f.name)]);
 			try {
-				for (const file of list) {
+				for (const file of accepted) {
 					try {
 						const url = await generateUploadUrl();
 						const res = await fetch(url, {
@@ -86,6 +138,7 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 							scope,
 							scopeId,
 							fieldKey,
+							tags: extra?.tags,
 							name: file.name,
 							size: file.size,
 							mimeType: file.type || "application/octet-stream",
@@ -97,10 +150,10 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 					}
 				}
 			} finally {
-				setUploading((prev) => prev.filter((n) => !list.some((f) => f.name === n)));
+				setUploading((prev) => prev.filter((n) => !accepted.some((f) => f.name === n)));
 			}
 		},
-		[orgId, generateUploadUrl, record, scope, scopeId, fieldKey],
+		[orgId, generateUploadUrl, record, scope, scopeId, fieldKey, allowedCategories, maxSizeMb],
 	);
 
 	const remove = useCallback(
@@ -117,7 +170,119 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 		[orgId, removeMutation],
 	);
 
-	return { files: files ?? [], upload, remove, uploading };
+	return {
+		files: files ?? [],
+		upload,
+		remove,
+		uploading,
+		allowedCategories,
+		maxSizeMb,
+	};
+}
+
+// ─── Hook: buffered upload (create mode — entity doesn't exist yet) ──────────
+
+/**
+ * `useBufferedFileUpload` — uploads bytes to storage immediately and stashes
+ * `{storageId, name, size, mimeType}` tuples in local state. Call `commit()`
+ * after the parent entity is created to flush the buffer into the `files`
+ * table under the right scope.
+ */
+export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
+	const generateUploadUrl = useMutation(api.files.mutations.generateUploadUrl);
+	const record = useMutation(api.files.mutations.record);
+	const allowedCategories = useAllowedCategories();
+	const maxSizeMb = useMaxSizeMb();
+
+	const [files, setFiles] = useState<BufferedFile[]>([]);
+	const [uploading, setUploading] = useState<string[]>([]);
+
+	const upload = useCallback(
+		async (list: File[]) => {
+			if (!orgId) return;
+			const accepted: File[] = [];
+			for (const file of list) {
+				if (!isFileAllowed(file, allowedCategories)) {
+					toast.error(`${file.name} — file type not allowed`);
+					continue;
+				}
+				if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) {
+					toast.error(`${file.name} — exceeds ${maxSizeMb} MB`);
+					continue;
+				}
+				accepted.push(file);
+			}
+			if (accepted.length === 0) return;
+			setUploading((prev) => [...prev, ...accepted.map((f) => f.name)]);
+			try {
+				for (const file of accepted) {
+					try {
+						const url = await generateUploadUrl();
+						const res = await fetch(url, {
+							method: "POST",
+							headers: { "Content-Type": file.type || "application/octet-stream" },
+							body: file,
+						});
+						if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+						const { storageId } = (await res.json()) as {
+							storageId: Id<"_storage">;
+						};
+						setFiles((prev) => [
+							...prev,
+							{
+								storageId,
+								name: file.name,
+								size: file.size,
+								mimeType: file.type || "application/octet-stream",
+							},
+						]);
+					} catch (err) {
+						toast.error(`Couldn't upload ${file.name}`, {
+							description: err instanceof Error ? err.message : undefined,
+						});
+					}
+				}
+			} finally {
+				setUploading((prev) => prev.filter((n) => !accepted.some((f) => f.name === n)));
+			}
+		},
+		[orgId, generateUploadUrl, allowedCategories, maxSizeMb],
+	);
+
+	const removeBuffered = useCallback((storageId: Id<"_storage">) => {
+		setFiles((prev) => prev.filter((f) => f.storageId !== storageId));
+	}, []);
+
+	const commit = useCallback(
+		async (args: { scope: string; scopeId: string; fieldKey?: string; tags?: string[] }) => {
+			if (!orgId || files.length === 0) return;
+			for (const f of files) {
+				try {
+					await record({
+						orgId,
+						storageId: f.storageId,
+						scope: args.scope,
+						scopeId: args.scopeId,
+						fieldKey: args.fieldKey,
+						tags: args.tags,
+						name: f.name,
+						size: f.size,
+						mimeType: f.mimeType,
+					});
+				} catch (err) {
+					toast.error(`Couldn't attach ${f.name}`, {
+						description: err instanceof Error ? err.message : undefined,
+					});
+				}
+			}
+			setFiles([]);
+		},
+		[orgId, files, record],
+	);
+
+	const reset = useCallback(() => setFiles([]), []);
+
+	return { files, upload, removeBuffered, uploading, commit, reset };
 }
 
 // ─── FileDropzone ─────────────────────────────────────────────────────────────
@@ -256,7 +421,7 @@ export function FileList({
 	);
 }
 
-// ─── FileUpload — dropzone + list together ────────────────────────────────────
+// ─── FileUpload — dropzone + list together (edit mode) ───────────────────────
 
 interface FileUploadProps extends UseFileAttachmentsArgs {
 	accept?: string;
@@ -264,15 +429,20 @@ interface FileUploadProps extends UseFileAttachmentsArgs {
 	label?: string;
 	emptyText?: string;
 	className?: string;
+	tags?: string[];
 }
 
 export function FileUpload(props: FileUploadProps) {
-	const { files, upload, remove, uploading } = useFileAttachments(props);
+	const { files, upload, remove, uploading, allowedCategories } = useFileAttachments(props);
+	const accept = useMemo(
+		() => props.accept ?? buildAcceptString(allowedCategories),
+		[props.accept, allowedCategories],
+	);
 	return (
 		<div className={cn("flex flex-col gap-2", props.className)}>
 			<FileDropzone
-				onFiles={upload}
-				accept={props.accept}
+				onFiles={(list) => upload(list, props.tags ? { tags: props.tags } : undefined)}
+				accept={accept}
 				multiple={props.multiple}
 				label={props.label}
 			/>
@@ -282,6 +452,80 @@ export function FileUpload(props: FileUploadProps) {
 				onRemove={remove}
 				emptyText={props.emptyText}
 			/>
+		</div>
+	);
+}
+
+// ─── BufferedFileUpload — create mode (entity doesn't exist yet) ─────────────
+
+interface BufferedFileUploadProps {
+	orgId: Id<"orgs"> | undefined;
+	files: BufferedFile[];
+	onFilesChange: (files: BufferedFile[]) => void;
+	/** Receive the buffered upload helpers from a parent useBufferedFileUpload hook. */
+	upload: (files: File[]) => Promise<void>;
+	uploading: string[];
+	multiple?: boolean;
+	label?: string;
+	className?: string;
+}
+
+export function BufferedFileUpload({
+	files,
+	onFilesChange,
+	upload,
+	uploading,
+	multiple = true,
+	label = "Drop files here or click to browse",
+	className,
+}: BufferedFileUploadProps) {
+	const allowedCategories = useAllowedCategories();
+	const accept = useMemo(() => buildAcceptString(allowedCategories), [allowedCategories]);
+	return (
+		<div className={cn("flex flex-col gap-2", className)}>
+			<FileDropzone
+				onFiles={(list) => void upload(list)}
+				accept={accept}
+				multiple={multiple}
+				label={label}
+			/>
+			{(files.length > 0 || uploading.length > 0) && (
+				<ul className="flex flex-col gap-1.5">
+					{uploading.map((name) => (
+						<li
+							key={`upl-${name}`}
+							className="flex items-center gap-2 rounded-[var(--radius)] border bg-muted/30 px-2 py-1.5 text-xs"
+						>
+							<Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+							<span className="flex-1 truncate">{name}</span>
+							<span className="text-[10px] text-muted-foreground">Uploading…</span>
+						</li>
+					))}
+					{files.map((f) => (
+						<li
+							key={f.storageId as string}
+							className="group/file flex items-center gap-2 rounded-[var(--radius)] border bg-card px-2 py-1.5 text-xs"
+						>
+							<FileIconForType mimeType={f.mimeType} />
+							<span className="flex-1 truncate">{f.name}</span>
+							<span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+								{formatSize(f.size)}
+							</span>
+							<Button
+								size="icon"
+								variant="ghost"
+								className="size-5 opacity-0 transition-opacity group-hover/file:opacity-100"
+								onClick={() =>
+									onFilesChange(files.filter((x) => x.storageId !== f.storageId))
+								}
+								aria-label={`Remove ${f.name}`}
+							>
+								<Trash2Icon className="size-3 text-destructive" />
+							</Button>
+						</li>
+					))}
+				</ul>
+			)}
 		</div>
 	);
 }

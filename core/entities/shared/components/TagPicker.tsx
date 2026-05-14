@@ -1,92 +1,88 @@
 "use client";
 
 /**
- * TagPicker — multi-select combobox over tags query (D16: search built-in).
+ * TagPicker — multi-select tag input built on the universal MultiSelect.
+ *
+ * Replaces the pre-Round-5 chip-list trigger. Now the trigger reads
+ * "N tags selected" (or the placeholder when empty); the popover has the
+ * standard left-content + right-checkbox row treatment.
+ *
+ * Create-on-the-fly: when the search query has no exact match, a "Create
+ * '<query>'" row appears below the results. Clicking it calls the tag
+ * `create` mutation and selects the new tag.
  */
 
-import { useQuery } from "convex/react";
-import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import {
-	Combobox,
-	ComboboxContent,
-	ComboboxEmpty,
-	ComboboxInput,
-	ComboboxItem,
-	ComboboxList,
-} from "@/components/ui/combobox";
+import { useMutation, useQuery } from "convex/react";
+import { useMemo } from "react";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
 interface TagPickerProps {
 	orgId: Id<"orgs"> | undefined;
+	/** Currently-selected tag NAMES. */
 	value: string[];
 	onChange: (tags: string[]) => void;
 	placeholder?: string;
+	disabled?: boolean;
 }
 
-export function TagPicker({ orgId, value, onChange, placeholder = "Add tags…" }: TagPickerProps) {
+interface TagOption extends MultiSelectOption {
+	color?: string;
+}
+
+export function TagPicker({
+	orgId,
+	value,
+	onChange,
+	placeholder = "Add tags…",
+	disabled,
+}: TagPickerProps) {
 	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
-	const [inputValue, setInputValue] = useState("");
+	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 
-	const options = useMemo(() => tags ?? [], [tags]);
-	const filtered = useMemo(() => {
-		if (!inputValue) return options;
-		const q = inputValue.toLowerCase();
-		return options.filter((t) => t.name.toLowerCase().includes(q));
-	}, [options, inputValue]);
+	const options: TagOption[] = useMemo(
+		() =>
+			(tags ?? []).map((t) => ({
+				value: t.name,
+				label: t.name,
+				color: t.color as string | undefined,
+			})),
+		[tags],
+	);
 
-	const toggle = (tagName: string) => {
-		if (value.includes(tagName)) {
-			onChange(value.filter((t) => t !== tagName));
-		} else {
-			onChange([...value, tagName]);
+	const handleCreate = async (label: string): Promise<string | undefined> => {
+		if (!orgId) return undefined;
+		try {
+			await createTag({ orgId, name: label });
+			return label; // selecting by name
+		} catch {
+			return undefined;
 		}
 	};
 
 	return (
-		<div className="flex flex-col gap-2">
-			{value.length > 0 && (
-				<div className="flex flex-wrap gap-1">
-					{value.map((t) => (
-						<Badge key={t} variant="secondary" className="text-xs">
-							{t}
-							<button
-								type="button"
-								className="ms-1 text-muted-foreground hover:text-foreground"
-								onClick={() => toggle(t)}
-							>
-								×
-							</button>
-						</Badge>
-					))}
+		<MultiSelect<TagOption>
+			value={value}
+			onChange={onChange}
+			options={options}
+			placeholder={placeholder}
+			searchPlaceholder="Search or create tag…"
+			emptyText="No tags yet."
+			onCreate={orgId ? handleCreate : undefined}
+			disabled={disabled}
+			renderRow={(option) => (
+				<div className="flex min-w-0 flex-1 items-center gap-2">
+					{option.color && (
+						<span
+							aria-hidden
+							className="inline-block size-2 shrink-0 rounded-full"
+							style={{ backgroundColor: option.color }}
+						/>
+					)}
+					<span className="truncate text-sm">{option.label}</span>
 				</div>
 			)}
-			<Combobox
-				value={null}
-				onValueChange={(val) => {
-					if (val) toggle(val as string);
-				}}
-			>
-				<ComboboxInput
-					placeholder={placeholder}
-					value={inputValue}
-					onChange={(e) => setInputValue(e.target.value)}
-				/>
-				<ComboboxContent>
-					<ComboboxList>
-						<ComboboxEmpty>No tags found</ComboboxEmpty>
-						{filtered.map((tag) => (
-							<ComboboxItem key={tag._id} value={tag.name}>
-								<span className="text-sm">{tag.name}</span>
-								{value.includes(tag.name) && (
-									<span className="ms-auto text-xs text-muted-foreground">✓</span>
-								)}
-							</ComboboxItem>
-						))}
-					</ComboboxList>
-				</ComboboxContent>
-			</Combobox>
-		</div>
+		/>
 	);
 }

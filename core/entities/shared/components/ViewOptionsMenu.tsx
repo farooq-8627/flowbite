@@ -1,26 +1,20 @@
 "use client";
 
 /**
- * ViewOptionsMenu — the universal "View" popover for every entity page.
+ * ViewOptionsMenu — toolbar popover that controls per-session card/column
+ * visibility, board group-by axis, and hidden-status reveal.
  *
- * Replaces the old lead-only BoardOptionsMenu. Works for leads, contacts,
- * deals, companies, and any future slot; in list mode and board mode.
+ * Field metadata comes from `useEntityFields(slot)` — the canonical source.
+ * Toggling a checkbox is per-session (caller-managed). Admin-global hide
+ * lives in Settings → Modules → <Entity> → Fields.
  *
- * Sections (shown conditionally depending on `view`):
- *   1. "Card fields" / "List columns" — per-session visibility toggles over
- *      the slot's FIELD_CATALOG. Ephemeral overrides of the admin default.
- *   2. "Group by" (board only) — choose the board grouping axis from
- *      ALLOWED_BOARD_GROUP_BY[slot]. Swaps the columns live.
- *   3. "Show hidden statuses" (board + lead-like) — opt-in reveal of terminal
- *      statuses that are hidden by default (e.g. converted, lost).
- *
- * The menu itself is stateless — all state is lifted into the parent view,
- * which is responsible for applying the toggles to its rendering.
+ * RULE: protected fields (e.g. displayName, personCode) are NEVER shown in
+ * the toggle list — they cannot be hidden anywhere, so surfacing a useless
+ * checkbox is bad UX. They're filtered out client-side in this component.
  */
 
 import { Settings2 } from "lucide-react";
 import { useMemo } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -33,23 +27,19 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { ALLOWED_BOARD_GROUP_BY } from "@/core/entities/shared/config/defaults";
-import { FIELD_CATALOG } from "@/core/entities/shared/config/field-catalog";
+import type { Id } from "@/convex/_generated/dataModel";
+import { ALLOWED_BOARD_GROUP_BY, getStatusColor } from "@/core/entities/shared/config/defaults";
+import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import type { EntitySlot } from "@/core/entities/shared/types";
 
 interface ViewOptionsMenuProps {
 	slot: EntitySlot;
-	/** Which view this menu is attached to — controls which sections are visible. */
+	orgId?: Id<"orgs">;
 	view: "list" | "board";
-	/** Currently visible card/list fields (subset of the catalog keys). */
 	visibleFields: string[];
 	onVisibleFieldsChange: (next: string[]) => void;
-	/** Extra custom fields discovered dynamically (e.g. from fieldDefinitions). */
-	extraFields?: Array<{ key: string; label: string }>;
-	/** Current board group-by field (board view only). */
 	groupBy?: string;
 	onGroupByChange?: (next: string) => void;
-	/** All status column ids for the slot's status-based grouping (lead-like). */
 	allStatuses?: string[];
 	hiddenStatuses?: string[];
 	revealedStatuses?: string[];
@@ -58,28 +48,25 @@ interface ViewOptionsMenuProps {
 
 export function ViewOptionsMenu({
 	slot,
+	orgId,
 	view,
 	visibleFields,
 	onVisibleFieldsChange,
-	extraFields,
 	groupBy,
 	onGroupByChange,
-	allStatuses,
+	allStatuses: _allStatuses,
 	hiddenStatuses,
 	revealedStatuses,
 	onRevealedStatusesChange,
 }: ViewOptionsMenuProps) {
-	const catalog = FIELD_CATALOG[slot];
-	const fieldEntries = useMemo(() => {
-		// Merge static catalog with any dynamic custom fields (file, dropdown, …).
-		const base = Object.entries(catalog).map(([key, spec]) => ({
-			key,
-			label: spec?.label ?? key,
-		}));
-		const seen = new Set(base.map((b) => b.key));
-		const extra = (extraFields ?? []).filter((f) => !seen.has(f.key));
-		return [...base, ...extra];
-	}, [catalog, extraFields]);
+	const { visibleFields: fields } = useEntityFields(slot, orgId);
+
+	// Skip protected fields — they can't be hidden, so a toggle is meaningless.
+	// (Admin-global hide is in Settings → Modules → <Entity> → Fields.)
+	const fieldEntries = useMemo(
+		() => fields.filter((f) => !f.protected).map((f) => ({ key: f.name, label: f.label })),
+		[fields],
+	);
 
 	const toggleField = (key: string) => {
 		if (visibleFields.includes(key))
@@ -94,8 +81,7 @@ export function ViewOptionsMenu({
 		else onRevealedStatusesChange([...revealedStatuses, status]);
 	};
 
-	const hasStatusSection =
-		view === "board" && hiddenStatuses && hiddenStatuses.length > 0 && allStatuses;
+	const hasStatusSection = view === "board" && hiddenStatuses && hiddenStatuses.length > 0;
 	const hasGroupBySection = view === "board" && !!onGroupByChange && !!groupBy;
 	const allowedGroupBy = ALLOWED_BOARD_GROUP_BY[slot];
 
@@ -109,26 +95,27 @@ export function ViewOptionsMenu({
 					size="sm"
 					className="h-7 gap-1.5 px-2 text-xs"
 					aria-label="View options"
+					data-tour="view-options-trigger"
 				>
 					<Settings2 className="size-3.5" />
 					<span className="hidden sm:inline">View</span>
 				</Button>
 			</PopoverTrigger>
-			<PopoverContent align="end" className="w-72 p-2" sideOffset={6}>
+			<PopoverContent align="end" className="w-72 p-3" sideOffset={6}>
 				{hasGroupBySection && (
 					<>
-						<div className="space-y-2">
-							<Label className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+						<div className="space-y-1.5">
+							<Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
 								Group by
 							</Label>
 							<Select value={groupBy} onValueChange={(v) => onGroupByChange?.(v)}>
-								<SelectTrigger className="h-7 text-xs">
+								<SelectTrigger className="h-8 w-full text-xs">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
 									{allowedGroupBy.map((opt) => {
-										const spec = catalog[opt];
-										const label = spec?.label ?? labelForGroupBy(opt);
+										const f = fields.find((x) => x.name === opt);
+										const label = f?.label ?? labelForGroupBy(opt);
 										return (
 											<SelectItem key={opt} value={opt} className="text-xs">
 												{label}
@@ -138,15 +125,15 @@ export function ViewOptionsMenu({
 								</SelectContent>
 							</Select>
 						</div>
-						<Separator className="my-2" />
+						<Separator className="my-3" />
 					</>
 				)}
 
-				<div className="space-y-2">
-					<Label className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+				<div className="space-y-1.5">
+					<Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
 						{fieldsLabel}
 					</Label>
-					<div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+					<div className="-mx-1 flex max-h-64 flex-col gap-0.5 overflow-y-auto">
 						{fieldEntries.map(({ key, label }) => {
 							const id = `vo-field-${slot}-${key}`;
 							return (
@@ -167,21 +154,21 @@ export function ViewOptionsMenu({
 					</div>
 				</div>
 
-				{hasStatusSection && allStatuses && (
+				{hasStatusSection && (
 					<>
-						<Separator className="my-2" />
-						<div className="space-y-2">
-							<Label className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+						<Separator className="my-3" />
+						<div className="space-y-1.5">
+							<Label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
 								Show statuses
 							</Label>
-							<p className="px-1 text-[10px] text-muted-foreground">
-								Terminal statuses are hidden by default. Toggle them on to see the
-								full board.
+							<p className="text-[10px] text-muted-foreground">
+								Closed and lost columns are hidden by default.
 							</p>
-							<div className="flex flex-col gap-1">
+							<div className="-mx-1 flex flex-col gap-0.5">
 								{hiddenStatuses?.map((status) => {
 									const isShown = revealedStatuses?.includes(status) ?? false;
 									const id = `vo-status-${slot}-${status}`;
+									const color = getStatusColor(slot, status);
 									return (
 										<label
 											key={status}
@@ -193,12 +180,14 @@ export function ViewOptionsMenu({
 												checked={isShown}
 												onCheckedChange={() => toggleStatus(status)}
 											/>
-											<Badge
-												variant="outline"
-												className="h-4 px-1 text-[9px] capitalize"
-											>
+											<span
+												aria-hidden
+												className="inline-block size-2 shrink-0 rounded-full"
+												style={{ backgroundColor: color }}
+											/>
+											<span className="flex-1 truncate capitalize">
 												{status}
-											</Badge>
+											</span>
 										</label>
 									);
 								})}
@@ -211,7 +200,6 @@ export function ViewOptionsMenu({
 	);
 }
 
-/** Fallback human label for group-by options not present in FIELD_CATALOG. */
 function labelForGroupBy(key: string): string {
 	switch (key) {
 		case "tag":

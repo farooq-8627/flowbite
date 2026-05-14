@@ -56,8 +56,8 @@ import { KanbanItem, KanbanItemHandle } from "@/components/ui/kanban";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Id } from "@/convex/_generated/dataModel";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
+import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
 import { TagsCell } from "@/core/entities/shared/components/TagsCell";
-import { PersonCodeBadge } from "@/core/entities/shared/PersonCodeBadge";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { cn } from "@/lib/utils";
 
@@ -68,12 +68,17 @@ export type EntityCardItem = Record<string, unknown> & {
 	_id?: string;
 	orgId?: Id<"orgs">;
 	personCode?: string;
+	companyCode?: string;
+	dealCode?: string;
 	displayName?: string;
 	title?: string;
 	name?: string;
 	email?: string;
 	phone?: string;
 	avatarUrl?: string;
+	industry?: string;
+	value?: number;
+	currentStageId?: string;
 	assignedTo?: string;
 	updatedAt?: number;
 	/** Short 1–2 line AI-generated summary. When undefined → the middle strip is hidden. */
@@ -107,6 +112,17 @@ export interface EntityCardProps {
 	item: EntityCardItem;
 	/** Which cardFields to render (visibility toggles for email/personCode/tags/avatar/aiSummary/assignee). */
 	cardFields?: string[];
+	/**
+	 * Custom-field defs to surface as highlighted chips between the identity
+	 * row and the bottom action row. Each name in this array must also appear
+	 * in `cardFields` to be rendered (so the user's per-session toggle still
+	 * works). Pinned kinds (displayName/email/tags/personCode/assignedTo) are
+	 * filtered out automatically — they have their own designed slots.
+	 *
+	 * The chip background is the muted-accent so the value reads as
+	 * "highlighted but not loud" — fits any theme. Long values truncate.
+	 */
+	highlightFieldDefs?: Array<{ name: string; label: string; kind?: string; type?: string }>;
 	/** Icon-only shortcut buttons rendered in the bottom-right cluster. */
 	shortcuts?: EntityShortcut[];
 	/** Right-side overflow menu (Edit, Delete, Revert, etc.). Rendered bottom-right before shortcuts. */
@@ -121,6 +137,8 @@ export interface EntityCardProps {
 	isHighlighted?: boolean;
 	/** Incrementing counter that triggers the flash animation to replay. */
 	highlightEpoch?: number;
+	/** Map of custom field values for THIS entity row (fieldName → value). */
+	customFieldValues?: Record<string, unknown>;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -129,12 +147,14 @@ export function EntityCard({
 	slot,
 	item,
 	cardFields,
+	highlightFieldDefs,
 	shortcuts,
 	menuItems,
 	staleness,
 	isDragging,
 	isHighlighted,
 	highlightEpoch,
+	customFieldValues,
 }: EntityCardProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -161,27 +181,51 @@ export function EntityCard({
 	const title = item.displayName ?? item.title ?? item.name ?? "Untitled";
 	const itemId = (item._id ?? item.id) as string;
 	const orgId = item.orgId;
-	const isPersonLike = slot === "lead" || slot === "contact";
+	const isCompany = slot === "company";
+	const isDeal = slot === "deal";
 
 	// Per-piece visibility flags — every piece is addressable by cardFields.
+	// IMPORTANT: the array, when non-empty, is treated as the explicit allow-list
+	// for everything in it. Pieces that aren't first-class fields (avatar) default
+	// to ON unless the caller passes "noAvatar" in cardFields.
 	const fields = cardFields ?? [];
+	const showName =
+		fields.length === 0 || fields.includes("displayName") || fields.includes("name");
 	const showEmail = fields.includes("email") && !!item.email;
 	const showTags = fields.includes("tags") && !!orgId;
-	const showPersonCode = fields.includes("personCode") && !!item.personCode;
+	// PersonCode: leads/contacts use personCode field, companies/deals use companyCode/dealCode.
+	const codeValue =
+		(item.personCode as string | undefined) ??
+		(item.companyCode as string | undefined) ??
+		(item.dealCode as string | undefined);
+	const showPersonCode =
+		(fields.includes("personCode") ||
+			fields.includes("companyCode") ||
+			fields.includes("dealCode")) &&
+		!!codeValue;
 	const showAssignee = fields.includes("assignedTo") && !!item.assignedTo;
 	const showSummary = fields.includes("aiSummary") && !!item.aiSummary;
-	const showAvatar = isPersonLike && fields.includes("avatar") !== false; // on unless explicitly hidden
+	// Avatar: ON by default for all entities (we have a logo for companies, an
+	// initials fallback for deals/leads/contacts). Users can opt-out by adding
+	// "noAvatar" to cardFields.
+	const showAvatar = !fields.includes("noAvatar");
+
+	// Subtitle for non-person entities — for companies it's industry, for deals
+	// it's the stage/value. Falls back to email for person-like.
+	const subtitle = isCompany
+		? (item.industry as string | undefined)
+		: isDeal
+			? formatDealSubtitle(item)
+			: showEmail
+				? (item.email as string | undefined)
+				: undefined;
 
 	// Staleness border colour (left edge only so it reads as a status bar)
 	const borderClass = useStalenessBorder(item.updatedAt, staleness);
 
-	// Profile link — only when we have a personCode and org context.
-	const profileHref =
-		item.personCode && orgSlug
-			? locale
-				? `/${locale}/${orgSlug}/profile/${item.personCode}`
-				: `/${orgSlug}/profile/${item.personCode}`
-			: null;
+	// Detail link — derive from entity type + code.
+	const detailHref =
+		codeValue && orgSlug ? buildDetailHref(slot, codeValue, orgSlug, locale) : null;
 
 	const initials = getInitials(title);
 
@@ -204,14 +248,15 @@ export function EntityCard({
 			>
 				{/* ── Row 1: identity (top-left) + tags (top-right) ── */}
 				<div className="flex items-start gap-2">
-					{/* Identity — avatar + (name/email) → profile */}
+					{/* Identity — avatar + (name/email or industry/stage) → detail */}
 					<IdentityCluster
-						href={profileHref}
+						href={detailHref}
 						avatarUrl={item.avatarUrl}
 						initials={initials}
 						showAvatar={showAvatar}
+						showName={showName}
 						title={title}
-						email={showEmail ? item.email : undefined}
+						subtitle={subtitle}
 					/>
 
 					{/* Tags — TOP-right corner */}
@@ -260,6 +305,19 @@ export function EntityCard({
 					</div>
 				)}
 
+				{/* Custom-field row removed — cards are slot-based by design.
+				    Future: a designed `meta` slot will surface 1–3 admin-bound
+				    fields here (see DYNAMIC_FIELDS_BLUEPRINT.md §1). */}
+
+				{/* ── Highlighted custom fields ── */}
+				{highlightFieldDefs && highlightFieldDefs.length > 0 && customFieldValues && (
+					<HighlightFieldStrip
+						defs={highlightFieldDefs}
+						values={customFieldValues}
+						visibleFields={fields}
+					/>
+				)}
+
 				{/* ── Row 3: personCode + assignee (bottom-left) | menu + shortcuts (bottom-right) ── */}
 				{(showPersonCode ||
 					showAssignee ||
@@ -275,9 +333,13 @@ export function EntityCard({
 									onClick={(e) => e.stopPropagation()}
 									onKeyDown={(e) => e.stopPropagation()}
 								>
-									<PersonCodeBadge
-										personCode={item.personCode as string}
-										className="h-4 border-0 bg-muted px-1.5 py-0 text-[9px]"
+									<IdentityBadge
+										entityType={
+											isCompany ? "company" : isDeal ? "deal" : "person"
+										}
+										code={codeValue}
+										layout="code"
+										size="xs"
 									/>
 								</div>
 							)}
@@ -339,6 +401,7 @@ export function EntityCard({
 					<button
 						type="button"
 						aria-label="Drag card"
+						data-tour="lead-card-grip"
 						className={cn(
 							"absolute inset-y-1 end-0 flex w-4 cursor-grab items-center justify-center rounded-e-[var(--radius)] text-muted-foreground/40 transition-colors",
 							"hover:bg-muted hover:text-muted-foreground focus-visible:bg-muted focus-visible:outline-none",
@@ -353,22 +416,114 @@ export function EntityCard({
 	);
 }
 
-// ─── Identity cluster (avatar + name + email → profile) ──────────────────────
+// ─── HighlightFieldStrip — admin-flagged "important" fields shown inline ─────
+
+const PINNED_NAMES = new Set([
+	"displayName",
+	"email",
+	"phone",
+	"tags",
+	"personCode",
+	"entityCode",
+	"assignedTo",
+	"avatar",
+	"aiSummary",
+]);
+
+function HighlightFieldStrip({
+	defs,
+	values,
+	visibleFields,
+}: {
+	defs: Array<{ name: string; label: string; kind?: string; type?: string }>;
+	values: Record<string, unknown>;
+	visibleFields: string[];
+}) {
+	// Filter: must be in cardFields (per-user toggle still applies), must NOT
+	// be a pinned slot (those have their own designed home), must have a
+	// non-empty value (no point showing "—" chips).
+	const rows = defs
+		.filter((d) => visibleFields.includes(d.name))
+		.filter((d) => !PINNED_NAMES.has(d.name) && d.kind !== "displayName")
+		.map((d) => {
+			const raw = values[d.name];
+			const formatted = formatHighlightValue(raw, d);
+			if (formatted === null) return null;
+			return { name: d.name, label: d.label, value: formatted };
+		})
+		.filter((x): x is { name: string; label: string; value: string } => x !== null)
+		.slice(0, 3); // never more than 3 highlight chips per card
+
+	if (rows.length === 0) return null;
+
+	return (
+		<div className="flex flex-wrap gap-1">
+			{rows.map((r) => (
+				<span
+					key={r.name}
+					className="inline-flex items-center gap-1 rounded-[calc(var(--radius)-2px)] bg-primary/10 px-1.5 py-0.5 text-[10px]"
+					title={`${r.label}: ${r.value}`}
+				>
+					<span className="text-muted-foreground">{r.label}</span>
+					<span className="truncate font-medium text-primary max-w-[14ch]">
+						{r.value}
+					</span>
+				</span>
+			))}
+		</div>
+	);
+}
+
+function formatHighlightValue(raw: unknown, def: { kind?: string; type?: string }): string | null {
+	if (raw === undefined || raw === null || raw === "") return null;
+	if (Array.isArray(raw)) {
+		if (raw.length === 0) return null;
+		return raw.slice(0, 2).join(", ");
+	}
+	if (def.kind === "currency" || def.type === "number") {
+		const num = Number(raw);
+		if (Number.isNaN(num)) return String(raw);
+		if (def.kind === "currency") {
+			try {
+				return new Intl.NumberFormat(undefined, {
+					style: "currency",
+					currency: "USD",
+					maximumFractionDigits: 0,
+				}).format(num);
+			} catch {
+				return String(num);
+			}
+		}
+		return String(num);
+	}
+	if (def.type === "date" && typeof raw === "number") {
+		try {
+			return new Date(raw).toLocaleDateString();
+		} catch {
+			return String(raw);
+		}
+	}
+	return String(raw);
+}
+
+// ─── Identity cluster (avatar + name + subtitle → detail) ──────────────────────
 
 function IdentityCluster({
 	href,
 	avatarUrl,
 	initials,
 	showAvatar,
+	showName,
 	title,
-	email,
+	subtitle,
 }: {
 	href: string | null;
 	avatarUrl?: string;
 	initials: string;
 	showAvatar: boolean;
+	showName: boolean;
 	title: string;
-	email?: string;
+	subtitle?: string;
 }) {
 	const content = (
 		<span className="flex min-w-0 flex-1 items-center gap-2">
@@ -378,12 +533,16 @@ function IdentityCluster({
 					<AvatarFallback className="text-[9px]">{initials}</AvatarFallback>
 				</Avatar>
 			)}
-			<span className="flex min-w-0 flex-col leading-tight">
-				<span className="truncate font-medium">{title}</span>
-				{email && (
-					<span className="truncate text-[11px] text-muted-foreground">{email}</span>
-				)}
-			</span>
+			{(showName || subtitle) && (
+				<span className="flex min-w-0 flex-col leading-tight">
+					{showName && <span className="truncate font-medium">{title}</span>}
+					{subtitle && (
+						<span className="truncate text-[11px] text-muted-foreground">
+							{subtitle}
+						</span>
+					)}
+				</span>
+			)}
 		</span>
 	);
 
@@ -465,27 +624,37 @@ function ShortcutCluster({
 				</HoverCard>
 			)}
 
-			{shortcuts?.map((s) => (
-				<Tooltip key={s.label}>
-					<TooltipTrigger asChild>
-						<Button
-							size="icon"
-							variant={s.variant === "primary" ? "default" : "ghost"}
-							onClick={s.onSelect}
-							aria-label={s.label}
-							className={cn(
-								"size-5",
-								s.variant !== "primary" && "opacity-70 hover:opacity-100",
-							)}
-						>
-							<s.icon className="size-3" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent side="top" className="text-xs">
-						{s.label}
-					</TooltipContent>
-				</Tooltip>
-			))}
+			{shortcuts?.map((s) => {
+				// Tour-tagged buttons skip the Tooltip — the FirstTimeTour explains
+				// the gesture once. We keep `aria-label` and a native `title` for a
+				// quiet hover hint.
+				const isTourTagged = s.variant === "primary";
+				const button = (
+					<Button
+						size="icon"
+						variant={s.variant === "primary" ? "default" : "ghost"}
+						onClick={s.onSelect}
+						aria-label={s.label}
+						title={isTourTagged ? undefined : s.label}
+						data-tour={isTourTagged ? "lead-card-convert" : undefined}
+						className={cn(
+							"size-5",
+							s.variant !== "primary" && "opacity-70 hover:opacity-100",
+						)}
+					>
+						<s.icon className="size-3" />
+					</Button>
+				);
+				if (isTourTagged) return <span key={s.label}>{button}</span>;
+				return (
+					<Tooltip key={s.label}>
+						<TooltipTrigger asChild>{button}</TooltipTrigger>
+						<TooltipContent side="top" className="text-xs">
+							{s.label}
+						</TooltipContent>
+					</Tooltip>
+				);
+			})}
 		</>
 	);
 }
@@ -554,5 +723,38 @@ function formatDate(ts: number): string {
 		});
 	} catch {
 		return String(ts);
+	}
+}
+
+function formatDealSubtitle(item: EntityCardItem): string | undefined {
+	const value = item.value as number | undefined;
+	if (typeof value === "number" && !Number.isNaN(value)) {
+		try {
+			return new Intl.NumberFormat(undefined, {
+				style: "currency",
+				currency: "USD",
+				maximumFractionDigits: 0,
+			}).format(value);
+		} catch {
+			return `$${value}`;
+		}
+	}
+	return undefined;
+}
+
+function buildDetailHref(
+	slot: EntitySlot,
+	code: string,
+	orgSlug: string,
+	locale: string | undefined,
+): string {
+	const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
+	switch (slot) {
+		case "company":
+			return `${prefix}/companies/${code}`;
+		case "deal":
+			return `${prefix}/deals/${code}`;
+		default:
+			return `${prefix}/profile/${code}`;
 	}
 }

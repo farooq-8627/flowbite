@@ -77,6 +77,24 @@ export default defineSchema({
 				entityDefaultView: v.optional(
 					v.record(v.string(), v.union(v.literal("list"), v.literal("board"))),
 				),
+				/**
+				 * Per-user saved table views. Keyed by entity slot. Each entry
+				 * is `{ name, columns, filters? }`. Filters is a free-form map
+				 * because each entity has its own filter axes.
+				 */
+				savedViews: v.optional(
+					v.record(
+						v.string(), // entity slot (lead/contact/deal/company)
+						v.array(
+							v.object({
+								id: v.string(), // stable id (slug of name)
+								name: v.string(),
+								columns: v.array(v.string()),
+								filters: v.optional(v.record(v.string(), v.any())),
+							}),
+						),
+					),
+				),
 			}),
 		),
 		...timestamps,
@@ -160,6 +178,16 @@ export default defineSchema({
 						morningBriefingTime: v.optional(v.string()), // "09:00"
 						rentAlertDays: v.optional(v.number()), // 95-day renewal alert (Dubai RE)
 						rentAlertEnabled: v.optional(v.boolean()),
+					}),
+				),
+				// File upload policy. allowedMimeCategories controls which broad
+				// categories of files can be uploaded across the workspace
+				// (image, pdf, document, spreadsheet, video, audio, archive, other).
+				// Empty / undefined = allow all. maxSizeMb caps the per-file size.
+				fileUpload: v.optional(
+					v.object({
+						allowedMimeCategories: v.optional(v.array(v.string())),
+						maxSizeMb: v.optional(v.number()),
 					}),
 				),
 			}),
@@ -378,13 +406,34 @@ export default defineSchema({
 
 	// ── fieldDefinitions ─────────────────────────────────────────────────────
 	// Admin-defined custom fields per entity type. AI reads these to know what fields exist.
+	// System (seeded) fields and admin-created custom fields share this table — they're
+	// distinguished by `system: true` (seeded by an industry template) and
+	// `protected: true` (cannot be deleted or hidden — e.g. personCode).
 	fieldDefinitions: defineTable({
 		...orgScoped,
 		entityType: v.string(), // "lead" | "contact" | "company" | "deal"
-		name: v.string(), // internal: "budget", "tech_stack"
-		label: v.string(), // display: "Budget", "Tech Stack"
+		name: v.string(), // internal: "displayName", "budget", "tech_stack"
+		label: v.string(), // display: "Name", "Budget", "Tech Stack"
 		labelAr: v.optional(v.string()),
-		type: v.string(), // "text"|"number"|"select"|"multiselect"|"date"|"boolean"|"url"|"email"|"relation"|"file"
+		type: v.string(), // "text"|"number"|"select"|"multiselect"|"date"|"boolean"|"url"|"email"|"relation"|"file"|"files"
+		// kind dispatches the editor + renderer for system fields whose data lives on
+		// the entity row itself, not in fieldValues. Examples: "status", "assignee",
+		// "personCode", "tags", "company-ref", "stage", "displayName", "email", …
+		kind: v.optional(v.string()),
+		// storage tells renderers where the value lives. Defaults to "fieldValues" for
+		// admin-created custom fields. System fields use "column" (entity row) or "join"
+		// (e.g. tags via entityTags).
+		storage: v.optional(v.string()), // "column" | "fieldValues" | "join"
+		// columnKey: for storage="column", which entity column to read/write
+		// (e.g. "status", "assignedTo", "personCode").
+		columnKey: v.optional(v.string()),
+		// system: true → seeded by an industry template. Admin can rename/reorder/hide
+		// but the row carries metadata (kind, storage) the system relies on.
+		system: v.optional(v.boolean()),
+		// protected: true → the row cannot be deleted or hidden (personCode, displayName).
+		protected: v.optional(v.boolean()),
+		// hidden: admin toggle to keep the field but exclude from forms / cards / tables.
+		hidden: v.optional(v.boolean()),
 		options: v.optional(v.array(v.string())),
 		required: v.boolean(),
 		order: v.number(),
@@ -676,6 +725,12 @@ export default defineSchema({
 	//   - `fieldKey` — optional hint for dynamic-field attachments so we can
 	//                  route file pickers to the right field (e.g. a custom
 	//                  "contract" file field vs free-form attachments).
+	//   - `tags` — free-form attribution markers. Used to relate person-scope
+	//              files (scope="person", scopeId=personCode) back to a deal or
+	//              company without storing the file twice. Example: a contract
+	//              uploaded "for deal D-001" lives at the personCode level with
+	//              tags=["deal:D-001"]. The deal detail view then reads files
+	//              by personCode + tag. Cross-entity attribution without dupes.
 	// storageId is the Convex File Storage id — actual bytes live there.
 	files: defineTable({
 		...orgScoped,
@@ -683,6 +738,7 @@ export default defineSchema({
 		scope: v.string(),
 		scopeId: v.string(),
 		fieldKey: v.optional(v.string()),
+		tags: v.optional(v.array(v.string())),
 		name: v.string(), // original filename (user-visible)
 		size: v.number(), // bytes
 		mimeType: v.string(), // e.g. "application/pdf"

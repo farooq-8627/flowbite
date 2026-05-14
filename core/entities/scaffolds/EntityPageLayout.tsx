@@ -125,10 +125,11 @@ export function EntityPageLayout({
 							)}
 						</div>
 					)}
-					{toolbarExtras}
 				</div>
 
 				<div className="flex shrink-0 items-center gap-1.5">
+					{/* View options first (gated to board view by parent), then view-toggle, then primary action. */}
+					{toolbarExtras}
 					<ViewToggleIcons view={view} onViewChange={onViewChange} views={views} />
 
 					{showPrimary && (

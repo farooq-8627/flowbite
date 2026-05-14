@@ -30,6 +30,8 @@ import type * as crm_entities_deals_queries from "../crm/entities/deals/queries.
 import type * as crm_entities_leads_mutations from "../crm/entities/leads/mutations.js";
 import type * as crm_entities_leads_queries from "../crm/entities/leads/queries.js";
 import type * as crm_fields_dedup_helpers from "../crm/fields/dedup/helpers.js";
+import type * as crm_fields_fieldDefinitions_internal from "../crm/fields/fieldDefinitions/internal.js";
+import type * as crm_fields_fieldDefinitions_migrations from "../crm/fields/fieldDefinitions/migrations.js";
 import type * as crm_fields_fieldDefinitions_mutations from "../crm/fields/fieldDefinitions/mutations.js";
 import type * as crm_fields_fieldDefinitions_queries from "../crm/fields/fieldDefinitions/queries.js";
 import type * as crm_fields_fieldValues_mutations from "../crm/fields/fieldValues/mutations.js";
@@ -63,6 +65,7 @@ import type * as orgRoles_queries from "../orgRoles/queries.js";
 import type * as orgs_helpers from "../orgs/helpers.js";
 import type * as orgs_mutations from "../orgs/mutations.js";
 import type * as orgs_queries from "../orgs/queries.js";
+import type * as orgs_templates_fields from "../orgs/templates/fields.js";
 import type * as users_helpers from "../users/helpers.js";
 import type * as users_mutations from "../users/mutations.js";
 import type * as users_queries from "../users/queries.js";
@@ -96,6 +99,8 @@ declare const fullApi: ApiFromModules<{
   "crm/entities/leads/mutations": typeof crm_entities_leads_mutations;
   "crm/entities/leads/queries": typeof crm_entities_leads_queries;
   "crm/fields/dedup/helpers": typeof crm_fields_dedup_helpers;
+  "crm/fields/fieldDefinitions/internal": typeof crm_fields_fieldDefinitions_internal;
+  "crm/fields/fieldDefinitions/migrations": typeof crm_fields_fieldDefinitions_migrations;
   "crm/fields/fieldDefinitions/mutations": typeof crm_fields_fieldDefinitions_mutations;
   "crm/fields/fieldDefinitions/queries": typeof crm_fields_fieldDefinitions_queries;
   "crm/fields/fieldValues/mutations": typeof crm_fields_fieldValues_mutations;
@@ -129,6 +134,7 @@ declare const fullApi: ApiFromModules<{
   "orgs/helpers": typeof orgs_helpers;
   "orgs/mutations": typeof orgs_mutations;
   "orgs/queries": typeof orgs_queries;
+  "orgs/templates/fields": typeof orgs_templates_fields;
   "users/helpers": typeof users_helpers;
   "users/mutations": typeof users_mutations;
   "users/queries": typeof users_queries;

@@ -1,11 +1,9 @@
 /**
  * Fallback defaults for entity display configuration.
  *
- * These are used ONLY when the DB value (`orgs.settings.modules[slot].*`) is absent.
- * Admin changes in Settings override these via Convex reactivity.
- *
- * Future: dynamic via `orgs.settings.modules[slot].{cardFields,listColumns,boardGroupBy}`
- * — ALREADY DYNAMIC in this build; these are just the fallback layer.
+ * Card fields and list columns are no longer hardcoded — they come from
+ * `fieldDefinitions` via `useEntityFields`. Only default-view and
+ * board-group-by fallbacks remain here.
  */
 
 import type { EntitySlot, ViewKind } from "../types";
@@ -15,20 +13,6 @@ export const DEFAULT_VIEW: Record<EntitySlot, ViewKind> = {
 	contact: "list",
 	deal: "board",
 	company: "list",
-};
-
-export const DEFAULT_CARD_FIELDS: Record<EntitySlot, string[]> = {
-	lead: ["avatar", "displayName", "email", "personCode", "assignedTo", "tags", "aiSummary"],
-	contact: ["avatar", "displayName", "email", "personCode", "assignedTo", "tags", "aiSummary"],
-	deal: ["dealCode", "title", "personCode", "value", "assignedTo", "tags", "aiSummary"],
-	company: ["companyCode", "name", "industry", "assignedTo", "tags", "aiSummary"],
-};
-
-export const DEFAULT_LIST_COLUMNS: Record<EntitySlot, string[]> = {
-	lead: ["personCode", "displayName", "status", "source", "assignedTo", "tags", "createdAt"],
-	contact: ["personCode", "displayName", "email", "companyId", "assignedTo", "tags", "createdAt"],
-	deal: ["dealCode", "title", "personCode", "value", "currentStageId", "assignedTo", "createdAt"],
-	company: ["companyCode", "name", "industry", "contactCount", "openDealCount", "assignedTo"],
 };
 
 export const DEFAULT_BOARD_GROUP_BY: Record<EntitySlot, string> = {

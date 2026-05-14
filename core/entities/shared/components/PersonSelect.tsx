@@ -103,6 +103,17 @@ export function PersonSelect({
 		);
 	}, [options, inputValue]);
 
+	// If the caller hands us a stub `{id, displayName: ""}` (because they only
+	// store the user id externally), enrich it with the full profile from
+	// `options`. This keeps the trigger showing avatar + real name instead of
+	// "?? <id>" when a value has just been (re-)hydrated from the DB.
+	const display = useMemo<PersonRef | null>(() => {
+		if (!value) return null;
+		if (value.displayName && value.displayName.length > 0) return value;
+		const enriched = options.find((o) => o.id === value.id);
+		return enriched ?? value;
+	}, [value, options]);
+
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
 			<PopoverTrigger asChild>
@@ -114,19 +125,21 @@ export function PersonSelect({
 					disabled={disabled}
 					className={cn(
 						"h-9 w-full justify-between px-3 font-normal",
-						!value && "text-muted-foreground",
+						!display && "text-muted-foreground",
 						className,
 					)}
 				>
-					{value ? (
+					{display ? (
 						<span className="flex items-center gap-2 truncate">
 							<Avatar className="size-5">
-								<AvatarImage src={value.avatarUrl} />
+								<AvatarImage src={display.avatarUrl} />
 								<AvatarFallback className="text-[9px]">
-									{value.displayName.slice(0, 2).toUpperCase()}
+									{(display.displayName || "?").slice(0, 2).toUpperCase()}
 								</AvatarFallback>
 							</Avatar>
-							<span className="truncate">{value.displayName}</span>
+							<span className="truncate">
+								{display.displayName || display.email || display.id}
+							</span>
 						</span>
 					) : (
 						<span className="truncate">{placeholder}</span>
@@ -153,7 +166,7 @@ export function PersonSelect({
 									key={person.id}
 									value={person.id}
 									onSelect={() => {
-										onChange(person.id === value?.id ? null : person);
+										onChange(person.id === display?.id ? null : person);
 										setOpen(false);
 										setInputValue("");
 									}}

@@ -96,7 +96,7 @@ export function FormDrawer({
 				{/* Body: native scroll, comfortable padding so focus rings don't clip */}
 				<div
 					className={cn(
-						"min-h-0 flex-1 overflow-y-auto px-6 pb-6",
+						"min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-6",
 						"[&_input]:focus-visible:z-10",
 						bodyClassName,
 					)}

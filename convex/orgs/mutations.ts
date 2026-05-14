@@ -19,6 +19,7 @@ import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions";
 import { logActivity } from "../activityLogs/helpers";
+import { seedFieldDefinitionsForOrg } from "../crm/fields/fieldDefinitions/internal";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
 
@@ -377,6 +378,10 @@ export const updateOrgIndustry = authenticatedMutation({
 			});
 		}
 
+		// Seed default fieldDefinitions for this industry (idempotent — only inserts
+		// system rows the org doesn't already have for the given entityType+name).
+		await seedFieldDefinitionsForOrg(ctx, args.orgId, args.industry, now);
+
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId: ctx.userId,
@@ -729,6 +734,12 @@ export const update = orgMutation({
 						rentAlertEnabled: v.optional(v.boolean()),
 					}),
 				),
+				fileUpload: v.optional(
+					v.object({
+						allowedMimeCategories: v.optional(v.array(v.string())),
+						maxSizeMb: v.optional(v.number()),
+					}),
+				),
 			}),
 		),
 		aiContext: v.optional(v.string()),
@@ -793,6 +804,7 @@ export const update = orgMutation({
 			const existing: {
 				codePrefixes?: Record<string, string | undefined>;
 				reminderDefaults?: Record<string, unknown>;
+				fileUpload?: Record<string, unknown>;
 				[k: string]: unknown;
 			} = org?.settings ?? {};
 			patchData.settings = {
@@ -809,6 +821,12 @@ export const update = orgMutation({
 					reminderDefaults: {
 						...existing.reminderDefaults,
 						...newSettings.reminderDefaults,
+					},
+				}),
+				...(newSettings.fileUpload && {
+					fileUpload: {
+						...existing.fileUpload,
+						...newSettings.fileUpload,
 					},
 				}),
 			};

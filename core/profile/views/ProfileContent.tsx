@@ -1,5 +1,8 @@
 "use client";
+"use client";
 
+import type { Id } from "@/convex/_generated/dataModel";
+import { FileUpload } from "@/core/files/components/FileUpload";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
 import { ProfileSection } from "./ProfileSection";
@@ -8,6 +11,7 @@ type Props = {
 	activeGroup: ProfileGroupId;
 	personCode: string;
 	orgSlug: string;
+	orgId: Id<"orgs"> | undefined;
 };
 
 /**
@@ -21,7 +25,7 @@ type Props = {
  * `ENTITY_SCAFFOLDS_ARCHITECTURE.md` replaces these with real content
  * (PersonHeader, PersonOverviewTab, UnifiedTimeline, etc.).
  */
-export function ProfileContent({ activeGroup, personCode, orgSlug }: Props) {
+export function ProfileContent({ activeGroup, personCode, orgSlug, orgId }: Props) {
 	switch (activeGroup) {
 		case "overview":
 			return <OverviewGroup personCode={personCode} />;
@@ -33,6 +37,8 @@ export function ProfileContent({ activeGroup, personCode, orgSlug }: Props) {
 			return <NotesGroup personCode={personCode} />;
 		case "deals":
 			return <DealsGroup personCode={personCode} />;
+		case "files":
+			return <FilesGroup personCode={personCode} orgId={orgId} />;
 		case "reminders":
 			return <RemindersGroup personCode={personCode} />;
 		case "calendar":
@@ -154,6 +160,35 @@ function DealsGroup({ personCode }: { personCode: string }) {
 					personCode={personCode}
 					label={`${labels.deal.plural} for this person`}
 				/>
+			</ProfileSection>
+		</div>
+	);
+}
+
+/**
+ * FilesGroup — drag-and-drop attachments scoped to a single person
+ * (scope="person", scopeId=personCode). Future passes will gate AI access to
+ * these files through a per-person consent flag.
+ */
+function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs"> | undefined }) {
+	return (
+		<div className="grid gap-6">
+			<ProfileSection
+				id="files.attachments"
+				title="Attachments"
+				description="Drop files here — contracts, IDs, notes. Available to AI only with explicit consent (coming soon)."
+			>
+				{orgId ? (
+					<FileUpload
+						orgId={orgId}
+						scope="person"
+						scopeId={personCode}
+						label="Drop files here or click to browse"
+						emptyText="No files attached yet."
+					/>
+				) : (
+					<div className="text-xs text-muted-foreground">Loading…</div>
+				)}
 			</ProfileSection>
 		</div>
 	);

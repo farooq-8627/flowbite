@@ -165,7 +165,12 @@ export function QuickAddMenu() {
 			<Tooltip>
 				<TooltipTrigger asChild>
 					<PopoverTrigger asChild>
-						<Button size="icon" aria-label="Quick create" className="size-8">
+						<Button
+							size="icon"
+							aria-label="Quick create"
+							className="size-8"
+							data-tour="quick-add"
+						>
 							<PlusIcon className="size-4" />
 						</Button>
 					</PopoverTrigger>

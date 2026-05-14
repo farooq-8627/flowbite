@@ -46,6 +46,16 @@ export type OrgSettings = {
 			rentAlertDays?: number;
 			rentAlertEnabled?: boolean;
 		};
+		/**
+		 * File upload policy. Controls which file categories are accepted
+		 * across the workspace. Empty / undefined = allow all.
+		 * Categories: "image" | "pdf" | "document" | "spreadsheet" | "video"
+		 *           | "audio" | "archive" | "other"
+		 */
+		fileUpload?: {
+			allowedMimeCategories?: string[];
+			maxSizeMb?: number;
+		};
 	} | null;
 };
 

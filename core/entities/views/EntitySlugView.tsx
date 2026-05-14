@@ -9,10 +9,10 @@ import {
 	type EntityLabels,
 	useEntityLabels,
 } from "@/core/shared/hooks/useEntityLabels";
-import { CompaniesView } from "../companies/views/CompaniesView";
-import { ContactsView } from "../contacts/views/ContactDetailView";
-import { DealsView } from "../deals/views/DealDetailView";
-import { LeadsView } from "../leads/views/LeadsView";
+import { CompaniesView } from "../_entities/companies/views/CompaniesView";
+import { ContactsView } from "../_entities/contacts/views/ContactDetailView";
+import { DealsView } from "../_entities/deals/views/DealDetailView";
+import { LeadsView } from "../_entities/leads/views/LeadsView";
 
 type Slot = "lead" | "contact" | "deal" | "company";
 

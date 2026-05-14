@@ -21,6 +21,7 @@
 import {
 	Bell,
 	CalendarDays,
+	FolderOpen,
 	History,
 	LayoutList,
 	type LucideIcon,
@@ -36,6 +37,7 @@ export type ProfileGroupId =
 	| "timeline"
 	| "notes"
 	| "deals"
+	| "files"
 	| "reminders"
 	| "calendar";
 
@@ -45,6 +47,7 @@ export const PROFILE_GROUPS: (ShellGroup & { id: ProfileGroupId; icon: LucideIco
 	{ id: "timeline", label: "Timeline", icon: History },
 	{ id: "notes", label: "Notes", icon: StickyNote },
 	{ id: "deals", label: "Deals", icon: LayoutList, permission: "deals.view" },
+	{ id: "files", label: "Files", icon: FolderOpen },
 	{ id: "reminders", label: "Reminders", icon: Bell, permission: "reminders.view" },
 	{ id: "calendar", label: "Calendar", icon: CalendarDays },
 ];
@@ -139,6 +142,15 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 		description: "Every deal linked via personCode.",
 		keywords: ["deal", "opportunity", "pipeline", "won", "lost"],
 		permission: "deals.view",
+	},
+
+	// Files
+	{
+		id: "files.attachments",
+		groupId: "files",
+		label: "Attachments",
+		description: "Files associated with this person — contracts, IDs, notes.",
+		keywords: ["files", "attachments", "documents", "uploads"],
 	},
 
 	// Reminders

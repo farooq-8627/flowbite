@@ -161,6 +161,19 @@ export const updatePreferences = authenticatedMutation({
 		entityDefaultView: v.optional(
 			v.record(v.string(), v.union(v.literal("list"), v.literal("board"))),
 		),
+		savedViews: v.optional(
+			v.record(
+				v.string(),
+				v.array(
+					v.object({
+						id: v.string(),
+						name: v.string(),
+						columns: v.array(v.string()),
+						filters: v.optional(v.record(v.string(), v.any())),
+					}),
+				),
+			),
+		),
 	},
 	handler: async (ctx, args) => {
 		const existing = ctx.user.preferences ?? {};
@@ -170,6 +183,7 @@ export const updatePreferences = authenticatedMutation({
 				...(args.entityDefaultView !== undefined
 					? { entityDefaultView: args.entityDefaultView }
 					: {}),
+				...(args.savedViews !== undefined ? { savedViews: args.savedViews } : {}),
 			},
 			updatedAt: Date.now(),
 		});

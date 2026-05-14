@@ -147,6 +147,30 @@ export function getSettingsSections(
 				"Prefix used when generating unique codes for new records, e.g. P-001, D-042.",
 			keywords: ["prefix", "code", "id", "numbering", "record id", "P-", "D-"],
 		},
+		{
+			id: "workspace.file-policy",
+			groupId: "workspace",
+			label: "File Policy",
+			description:
+				"Allowed file types + max upload size for every file attachment in the workspace.",
+			keywords: [
+				"file",
+				"upload",
+				"attachment",
+				"mime",
+				"category",
+				"allowed",
+				"size",
+				"limit",
+				"pdf",
+				"image",
+				"document",
+				"spreadsheet",
+				"video",
+				"audio",
+				"archive",
+			],
+		},
 
 		// ── Modules ───────────────────────────────────────────────────────────
 		{

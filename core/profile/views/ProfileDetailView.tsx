@@ -61,6 +61,7 @@ export function ProfileDetailView({
 					activeGroup={groupId as ProfileGroupId}
 					personCode={personCode}
 					orgSlug={orgSlug}
+					orgId={orgId}
 				/>
 			)}
 		/>

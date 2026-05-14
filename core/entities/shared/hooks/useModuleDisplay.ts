@@ -1,22 +1,16 @@
 "use client";
 
 /**
- * useModuleDisplay — reads cardFields / listColumns / boardGroupBy for a slot.
- *
- * Precedence: DB value (`orgs.settings.modules[slot].*`) → fallback defaults.
- * Admin changes in Settings → Workspace → Module Display update the DB;
- * Convex reactivity re-renders all consumers instantly.
+ * useModuleDisplay — reads boardGroupBy + (future) defaultView from settings
+ * for a given slot. Card fields and list columns are no longer here — they're
+ * driven by `fieldDefinitions` order + `hidden` flag (see useEntityFields).
  */
 
 import { useQuery } from "convex/react";
 import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
-import {
-	DEFAULT_BOARD_GROUP_BY,
-	DEFAULT_CARD_FIELDS,
-	DEFAULT_LIST_COLUMNS,
-} from "../config/defaults";
+import { DEFAULT_BOARD_GROUP_BY } from "../config/defaults";
 import type { EntitySlot } from "../types";
 
 export function useModuleDisplay(slot: EntitySlot) {
@@ -29,12 +23,6 @@ export function useModuleDisplay(slot: EntitySlot) {
 	return useMemo(() => {
 		const mod = modules?.find((m) => m.slot === slot);
 		return {
-			cardFields:
-				((mod as Record<string, unknown>)?.cardFields as string[] | undefined) ??
-				DEFAULT_CARD_FIELDS[slot],
-			listColumns:
-				((mod as Record<string, unknown>)?.listColumns as string[] | undefined) ??
-				DEFAULT_LIST_COLUMNS[slot],
 			boardGroupBy:
 				((mod as Record<string, unknown>)?.boardGroupBy as string | undefined) ??
 				DEFAULT_BOARD_GROUP_BY[slot],

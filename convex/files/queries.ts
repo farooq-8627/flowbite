@@ -6,6 +6,9 @@
  *
  * `listByField(orgId, scope, scopeId, fieldKey)` — narrow to a specific dynamic
  * field (e.g. a "contract" file field on a lead).
+ *
+ * `listByTag(orgId, tag)` — cross-entity attribution lookup. Person-scope files
+ * tagged with e.g. "deal:D-001" surface in the deal detail view.
  */
 
 import { v } from "convex/values";
@@ -26,8 +29,6 @@ export const listByScope = orgQuery({
 			)
 			.collect();
 		const active = rows.filter((f) => f.deletedAt === undefined);
-		// Resolve a temporary URL for each file so the UI can render thumbnails /
-		// trigger downloads without the caller having to request URLs separately.
 		const withUrls = await Promise.all(
 			active.map(async (f) => ({
 				...f,
@@ -58,6 +59,35 @@ export const listByField = orgQuery({
 			)
 			.collect();
 		const active = rows.filter((f) => f.deletedAt === undefined);
+		const withUrls = await Promise.all(
+			active.map(async (f) => ({
+				...f,
+				url: await ctx.storage.getUrl(f.storageId),
+			})),
+		);
+		return withUrls.sort((a, b) => b.createdAt - a.createdAt);
+	},
+});
+
+/**
+ * Find files attributed to a tag — used to surface person-scope files in
+ * deal/company views without duplication. Tag convention: "deal:D-001",
+ * "company:C-001". Server-side tag membership filter (no Convex tag index;
+ * we read all org files and filter client-side. Acceptable for this scale
+ * since file counts are small per org.)
+ */
+export const listByTag = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		tag: v.string(),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+		const rows = await ctx.db
+			.query("files")
+			.withIndex("by_org_and_scope", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		const active = rows.filter((f) => f.deletedAt === undefined && f.tags?.includes(args.tag));
 		const withUrls = await Promise.all(
 			active.map(async (f) => ({
 				...f,

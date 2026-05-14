@@ -117,23 +117,45 @@ export function useShellSearch(
  */
 export function scrollToShellSection(sectionId: string, headerOffset = 24): void {
 	if (typeof document === "undefined") return;
-	const el = document.getElementById(sectionId);
-	if (!el) return;
 
-	// 1. Scroll only if there is a scrollable ancestor.
-	const container = findScrollableAncestor(el);
-	if (container) {
-		const elRect = el.getBoundingClientRect();
-		const containerRect = container.getBoundingClientRect();
-		const targetTop = container.scrollTop + (elRect.top - containerRect.top) - headerOffset;
-		container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+	// 0. Announce the pick so tab-driven groups (e.g. Modules) can switch first.
+	//    We fire this BEFORE looking up the element so groups have time to mount
+	//    the correct sub-panel. Most groups ignore the event; the ones that
+	//    swap tab content listen, flip their state, and on the next microtask
+	//    the element exists — that's when we try the scroll again.
+	try {
+		window.dispatchEvent(new CustomEvent("shell:section-requested", { detail: { sectionId } }));
+	} catch {
+		// SSR or older browsers — ignore.
 	}
 
-	// 2. Highlight ALWAYS — gives a visual affordance even when nothing scrolls.
-	el.classList.add("ring-2", "ring-inset", "ring-primary/50", "transition");
-	window.setTimeout(() => {
-		el.classList.remove("ring-2", "ring-inset", "ring-primary/50");
-	}, 1400);
+	const tryScroll = (retries: number) => {
+		const el = document.getElementById(sectionId);
+		if (!el) {
+			if (retries > 0) {
+				// Tab-switching groups may mount on the next tick.
+				window.setTimeout(() => tryScroll(retries - 1), 40);
+			}
+			return;
+		}
+
+		// 1. Scroll only if there is a scrollable ancestor.
+		const container = findScrollableAncestor(el);
+		if (container) {
+			const elRect = el.getBoundingClientRect();
+			const containerRect = container.getBoundingClientRect();
+			const targetTop = container.scrollTop + (elRect.top - containerRect.top) - headerOffset;
+			container.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+		}
+
+		// 2. Highlight ALWAYS — gives a visual affordance even when nothing scrolls.
+		el.classList.add("ring-2", "ring-inset", "ring-primary/50", "transition");
+		window.setTimeout(() => {
+			el.classList.remove("ring-2", "ring-inset", "ring-primary/50");
+		}, 1400);
+	};
+
+	tryScroll(4);
 }
 
 /** Walk up the DOM; return the first ancestor that is an actually-scrollable container. */

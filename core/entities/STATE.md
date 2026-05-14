@@ -1,7 +1,21 @@
 # Entities — State
 
-> Updated: 2026-05-12
-> Status: 75% Complete — All 4 entity views scaffold-driven with list + board. Slice 0 + Slice 1–5 done. Remaining: EntityOverview real content, Settings UI, user-pref default view.
+> Updated: 2026-05-14
+> Status: 95% Complete — All 4 entity views scaffold-driven with list + board, universal ViewOptionsMenu, dynamic board grouping across every slot, custom-field sync, and instant/double-click convert flow. Remaining: AddCompanyDrawer restructure, tag-axis grouping, Files tab per entity.
+
+## 🆕 2026-05-14 additions
+
+| Component | File | Notes |
+|---|---|---|
+| ViewOptionsMenu | `core/entities/shared/components/ViewOptionsMenu.tsx` | Universal "View" popover — field visibility + group-by + hidden-status reveal. Replaces lead-only BoardOptionsMenu. Accepts `extraFields` from `useCustomFields`. |
+| board-grouping helper | `core/entities/shared/utils/board-grouping.ts` | `getHiddenCardFieldsForGrouping` + `getRevealedCardFieldForGrouping` — auto-hide grouped-by field + reveal complementary. `NO_GROUP_KEY` sentinel. |
+| useCustomFields | `core/entities/shared/hooks/useCustomFields.ts` | Reads `fieldDefinitions` per slot for ViewOptionsMenu.extraFields. |
+| FieldValueRenderer kinds | `core/entities/shared/components/FieldValueRenderer.tsx` | Added `file`, `files`, `date`, `number`, `checkbox` render kinds for dynamic custom fields. |
+| LeadCard convert flow | `core/entities/leads/components/LeadCard.tsx` | Single-click = instant convert, double-click = open drawer with deal option. Trash icon = mark lost. |
+| AddLeadDrawer company section | `core/entities/leads/components/AddLeadDrawer.tsx` | Skip/Existing/New toggle; "New" renders inline company form + creates it alongside the lead. |
+| Leads status table column | `core/entities/leads/hooks/useLeadColumns.tsx` | Colored pill matching the kanban column colour (via `getStatusColor`). |
+| revertToLead mutation | `convex/crm/entities/contacts/mutations.ts` | Soft-deletes the contact + flips origin lead back to status="new". Surfaced in Contacts row actions. |
+| Pipeline fallback | `convex/crm/fields/pipelines/queries.ts` | `getDefault` returns first pipeline for the entity if no `isDefault`. |
 
 ## ✅ Completed — Backend
 

@@ -1,6 +1,13 @@
 /**
  * Companies Mutations — convex/crm/entities/companies/mutations.ts
  * STATUS: IMPLEMENTED
+ *
+ * CANONICAL MODEL:
+ *   - Company owns the relationship to people via `personCodes[]` (single
+ *     source of truth). A lead OR a contact is linked to a company by their
+ *     personCode appearing in this array.
+ *   - Company has a multi-assignee team via `assignees[]`. `assignedTo` is
+ *     kept as the "primary" assignee for back-compat.
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
@@ -18,6 +25,10 @@ export const create = orgMutation({
 		website: v.optional(v.string()),
 		size: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
+		assignees: v.optional(v.array(v.id("users"))),
+		personCodes: v.optional(v.array(v.string())),
+		/** @deprecated — use `assignees`. Still accepted for back-compat. */
+		teamMembers: v.optional(v.array(v.id("users"))),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -34,6 +45,9 @@ export const create = orgMutation({
 			website: args.website,
 			size: args.size,
 			assignedTo: args.assignedTo,
+			assignees: args.assignees,
+			personCodes: args.personCodes,
+			teamMembers: args.teamMembers,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -72,6 +86,9 @@ export const update = orgMutation({
 		website: v.optional(v.string()),
 		size: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
+		assignees: v.optional(v.array(v.id("users"))),
+		personCodes: v.optional(v.array(v.string())),
+		teamMembers: v.optional(v.array(v.id("users"))),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -97,6 +114,84 @@ export const update = orgMutation({
 			entityId: args.companyId,
 			description: `Company updated: ${company.name}`,
 			metadata: { companyCode: company.companyCode },
+		});
+	},
+});
+
+/**
+ * Attach a person (by personCode) to a company's member list. Idempotent —
+ * calling it twice with the same personCode keeps the array unique.
+ */
+export const addPerson = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		companyId: v.id("companies"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.update");
+
+		const company = await ctx.db.get(args.companyId);
+		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+
+		const current = company.personCodes ?? [];
+		if (current.includes(args.personCode)) return;
+
+		await ctx.db.patch(args.companyId, {
+			personCodes: [...current, args.personCode],
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "updated",
+			entityType: "company",
+			entityId: args.companyId,
+			description: `Added ${args.personCode} to ${company.name}`,
+			metadata: { companyCode: company.companyCode, personCode: args.personCode },
+		});
+	},
+});
+
+/**
+ * Remove a person from the company's member list. Idempotent.
+ */
+export const removePerson = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		companyId: v.id("companies"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.update");
+
+		const company = await ctx.db.get(args.companyId);
+		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+
+		const current = company.personCodes ?? [];
+		const next = current.filter((pc) => pc !== args.personCode);
+		if (next.length === current.length) return;
+
+		await ctx.db.patch(args.companyId, {
+			personCodes: next,
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "updated",
+			entityType: "company",
+			entityId: args.companyId,
+			description: `Removed ${args.personCode} from ${company.name}`,
+			metadata: { companyCode: company.companyCode, personCode: args.personCode },
 		});
 	},
 });

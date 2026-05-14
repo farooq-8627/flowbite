@@ -5,6 +5,8 @@
  *
  * - Sortable headers via DataTableColumnHeader.
  * - Assignee resolves to a PersonDisplay (avatar + name → /profile).
+ * - Status column renders a colored pill matching the kanban column colour
+ *   (single source of truth: `getStatusColor("lead", status)`).
  * - Tags column uses TagsCell with inline add/edit (pencil on hover).
  * - Row actions column (vertical dots → Edit / Convert / Delete).
  * - `meta.label` on every column so View Options reads nicely.
@@ -13,7 +15,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { useMutation } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
-import { ArrowRightCircleIcon } from "lucide-react";
+import { ArrowRightCircleIcon, PencilIcon } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -24,8 +26,10 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { DataTableColumnHeader } from "@/core/datatable/components/DataTableColumnHeader";
 import { DataTableRowActions } from "@/core/datatable/components/DataTableRowActions";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
+import { CompanyCell } from "@/core/entities/shared/components/CompanyCell";
 import { CopyField } from "@/core/entities/shared/components/CopyField";
 import { TagsCell } from "@/core/entities/shared/components/TagsCell";
+import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useModuleDisplay } from "@/core/entities/shared/hooks/useModuleDisplay";
 import { PersonCodeBadge } from "@/core/entities/shared/PersonCodeBadge";
 
@@ -37,6 +41,7 @@ type LeadRow = Record<string, unknown> & {
 
 interface UseLeadColumnsOptions {
 	onConvert?: (leadId: Id<"leads">) => void;
+	onEdit?: (lead: LeadRow) => void;
 }
 
 export function useLeadColumns(options?: UseLeadColumnsOptions): ColumnDef<LeadRow, unknown>[] {
@@ -107,11 +112,28 @@ export function useLeadColumns(options?: UseLeadColumnsOptions): ColumnDef<LeadR
 						header: ({ column }) => (
 							<DataTableColumnHeader column={column} title="Status" />
 						),
-						cell: ({ row }) => (
-							<Badge variant="secondary" className="h-5 text-[10px] capitalize">
-								{row.getValue("status") as string}
-							</Badge>
-						),
+						cell: ({ row }) => {
+							const status = row.getValue("status") as string;
+							const color = getStatusColor("lead", status);
+							return (
+								<Badge
+									variant="outline"
+									className="h-5 gap-1 text-[10px] capitalize"
+									style={{
+										backgroundColor: `${color}1a`,
+										borderColor: `${color}66`,
+										color,
+									}}
+								>
+									<span
+										aria-hidden
+										className="inline-block size-1.5 shrink-0 rounded-full"
+										style={{ backgroundColor: color }}
+									/>
+									{status}
+								</Badge>
+							);
+						},
 						filterFn: "equals",
 					});
 					break;
@@ -205,6 +227,26 @@ export function useLeadColumns(options?: UseLeadColumnsOptions): ColumnDef<LeadR
 						},
 					});
 					break;
+				case "companyId":
+				case "company":
+					cols.push({
+						id: "companyId",
+						accessorKey: "companyId",
+						meta: { label: "Company" },
+						header: "Company",
+						enableSorting: false,
+						cell: ({ row }) => {
+							const r = row.original as LeadRow;
+							return (
+								<CompanyCell
+									orgId={r.orgId as Id<"orgs"> | undefined}
+									personCode={r.personCode as string | undefined}
+									entityType="lead"
+								/>
+							);
+						},
+					});
+					break;
 				case "createdAt":
 					cols.push({
 						id: "createdAt",
@@ -252,18 +294,30 @@ export function useLeadColumns(options?: UseLeadColumnsOptions): ColumnDef<LeadR
 					<DataTableRowActions
 						row={row}
 						extraItems={
-							options?.onConvert ? (
-								<DropdownMenuItem
-									onClick={() => {
-										const r = row.original as LeadRow;
-										const leadId = (r._id ?? r.id) as Id<"leads">;
-										options.onConvert?.(leadId);
-									}}
-								>
-									<ArrowRightCircleIcon className="me-2 size-4" />
-									Convert
-								</DropdownMenuItem>
-							) : null
+							<>
+								{options?.onEdit && (
+									<DropdownMenuItem
+										onClick={() => {
+											options.onEdit?.(row.original as LeadRow);
+										}}
+									>
+										<PencilIcon className="me-2 size-4" />
+										Edit
+									</DropdownMenuItem>
+								)}
+								{options?.onConvert && (
+									<DropdownMenuItem
+										onClick={() => {
+											const r = row.original as LeadRow;
+											const leadId = (r._id ?? r.id) as Id<"leads">;
+											options.onConvert?.(leadId);
+										}}
+									>
+										<ArrowRightCircleIcon className="me-2 size-4" />
+										Convert
+									</DropdownMenuItem>
+								)}
+							</>
 						}
 						onDelete={async (r) => {
 							const orig = r.original as LeadRow;
@@ -285,5 +339,5 @@ export function useLeadColumns(options?: UseLeadColumnsOptions): ColumnDef<LeadR
 		});
 
 		return cols;
-	}, [listColumns, options?.onConvert, deleteLead]);
+	}, [listColumns, options?.onConvert, options?.onEdit, deleteLead]);
 }

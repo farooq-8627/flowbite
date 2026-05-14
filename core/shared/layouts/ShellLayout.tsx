@@ -151,6 +151,29 @@ export function ShellLayout({
 		return () => observer.disconnect();
 	}, [sectionsForGroup, isSearching]);
 
+	// External components (e.g. Settings → ModulesGroup) tell us which sub-
+	// group is "active" right now via this custom event. The pill highlights
+	// follow without depending on viewport scroll position.
+	useEffect(() => {
+		function onSectionActive(e: Event) {
+			const id = (e as CustomEvent<{ sectionId: string }>).detail?.sectionId;
+			if (!id) return;
+			// Only honor IDs we know about (or that share a parent prefix).
+			const knownIds = new Set(sectionsForGroup.map((s) => s.id));
+			if (knownIds.has(id)) {
+				setActiveSectionId(id);
+				return;
+			}
+			// Fallback: id like "modules.lead" should highlight the first child
+			// "modules.lead.display" pill if present.
+			const child = sectionsForGroup.find((s) => s.id.startsWith(`${id}.`));
+			if (child) setActiveSectionId(child.id);
+		}
+		window.addEventListener("shell:section-active", onSectionActive as EventListener);
+		return () =>
+			window.removeEventListener("shell:section-active", onSectionActive as EventListener);
+	}, [sectionsForGroup]);
+
 	// ── Keep the URL in sync when visible groups change (first-render fallback).
 	useEffect(() => {
 		if (resolvedGroupId !== activeGroup) setActiveGroup(resolvedGroupId);

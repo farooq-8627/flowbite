@@ -8,6 +8,7 @@
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
+import type { Id } from "../../../_generated/dataModel";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { generatePersonCode } from "../../../_shared/recordCodes";
@@ -174,5 +175,68 @@ export const softDelete = orgMutation({
 			personCode: contact.personCode,
 			description: `Contact deleted: ${contact.displayName}`,
 		});
+	},
+});
+
+/**
+ * Revert a converted contact back to a lead.
+ *
+ * Used when a conversion was accidental. The contact is soft-deleted and the
+ * original lead (linked via `leadId`) is flipped back to status="new" so it
+ * reappears on the leads board. Both actions are logged.
+ *
+ * Requires `leads.convert` — same permission that did the conversion. If the
+ * contact has no `leadId` (created directly, not via conversion), this throws.
+ */
+export const revertToLead = orgMutation({
+	args: { orgId: v.id("orgs"), contactId: v.id("contacts") },
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "leads.convert");
+
+		const contact = await ctx.db.get(args.contactId);
+		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+		if (!contact.leadId) {
+			throw new ConvexError({
+				code: "NO_ORIGIN_LEAD",
+				message:
+					"This contact was not created from a lead and cannot be reverted. Delete instead.",
+			});
+		}
+
+		const lead = await ctx.db.get(contact.leadId);
+		if (!lead || lead.orgId !== args.orgId) {
+			throw new ConvexError({
+				code: "LEAD_NOT_FOUND",
+				message: "Original lead no longer exists. Delete the contact instead.",
+			});
+		}
+
+		const now = Date.now();
+		// Flip the lead back to its working state. Clear convertedAt so the
+		// lead's list/board row stops showing the "converted" status and the
+		// standard workflow (edit, re-convert, etc.) becomes available again.
+		await ctx.db.patch(contact.leadId, {
+			status: "new",
+			convertedAt: undefined,
+			deletedAt: undefined,
+			updatedAt: now,
+		});
+		// Soft-delete the contact.
+		await ctx.db.patch(args.contactId, { deletedAt: now, updatedAt: now });
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "reverted",
+			entityType: "contact",
+			entityId: args.contactId,
+			personCode: contact.personCode,
+			description: `Contact reverted to lead: ${contact.displayName}`,
+		});
+
+		return { leadId: contact.leadId as Id<"leads"> };
 	},
 });

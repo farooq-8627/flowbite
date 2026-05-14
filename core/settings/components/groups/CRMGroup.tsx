@@ -24,15 +24,27 @@ import { SettingsSection } from "../shared/SettingsSection";
 // Tags (manage)
 // ────────────────────────────────────────────────────────────────────────────
 
+// 18 curated palette colours + a native custom colour picker fallback. Pairs
+// are evenly spaced across the hue wheel so adjacent tags remain distinguishable.
 const TAG_COLORS = [
-	"#ef4444",
-	"#f97316",
-	"#eab308",
-	"#22c55e",
-	"#14b8a6",
-	"#3b82f6",
-	"#8b5cf6",
-	"#ec4899",
+	"#ef4444", // red
+	"#f97316", // orange
+	"#f59e0b", // amber
+	"#eab308", // yellow
+	"#84cc16", // lime
+	"#22c55e", // green
+	"#10b981", // emerald
+	"#14b8a6", // teal
+	"#06b6d4", // cyan
+	"#0ea5e9", // sky
+	"#3b82f6", // blue
+	"#6366f1", // indigo
+	"#8b5cf6", // violet
+	"#a855f7", // purple
+	"#d946ef", // fuchsia
+	"#ec4899", // pink
+	"#f43f5e", // rose
+	"#64748b", // slate
 ];
 
 function TagsSection({
@@ -107,7 +119,7 @@ function TagsSection({
 					)}
 				</div>
 
-				<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
 					<Input
 						placeholder="Enter tag name"
 						value={newTag}
@@ -120,20 +132,34 @@ function TagsSection({
 						}}
 						className="sm:max-w-xs"
 					/>
-					<div className="flex items-center gap-1">
+					<div className="flex items-center gap-1 flex-wrap">
 						{TAG_COLORS.map((c) => (
 							<button
 								key={c}
 								type="button"
-								aria-label={`Color ${c}`}
+								aria-label={`Use color ${c}`}
 								onClick={() => setNewColor(c)}
-								className="size-6 rounded-full ring-offset-2 transition-all"
+								className="size-4 rounded-full border border-transparent transition-transform hover:scale-110"
 								style={{
 									backgroundColor: c,
 									outline: newColor === c ? "2px solid var(--ring)" : undefined,
+									outlineOffset: newColor === c ? "1px" : undefined,
 								}}
 							/>
 						))}
+						<label
+							className="group/custom relative inline-flex size-4 cursor-pointer items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-[9px] text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+							title="Custom color"
+							aria-label="Custom color picker"
+						>
+							<span aria-hidden>+</span>
+							<input
+								type="color"
+								value={newColor ?? "#3b82f6"}
+								onChange={(e) => setNewColor(e.target.value)}
+								className="absolute inset-0 size-full cursor-pointer opacity-0"
+							/>
+						</label>
 					</div>
 					<Button size="sm" onClick={handleCreate} disabled={!newTag.trim()}>
 						<Plus className="size-4" /> Add tag

@@ -109,6 +109,7 @@ export const update = orgMutation({
 		email: v.optional(v.string()),
 		phone: v.optional(v.string()),
 		status: v.optional(v.string()),
+		source: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
 	},
 	handler: async (ctx, args) => {

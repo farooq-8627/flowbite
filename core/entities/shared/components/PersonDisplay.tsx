@@ -4,6 +4,11 @@
  * PersonDisplay — THE system component for rendering any person anywhere (D8).
  * Avatar + configurable sections (personCode, name, email, status).
  * Hover → EntityHoverCard. Click → /profile/[personCode].
+ *
+ * The `show` array controls visibility of each sub-piece independently.
+ * When only `["avatar"]` is passed (no name, no personCode) the component
+ * degrades gracefully to a solo avatar pill — useful for compact table cells
+ * or the "just show the photo" case after the user hid name & code separately.
  */
 
 import Link from "next/link";
@@ -110,7 +115,7 @@ export function PersonDisplay({
 			<Link
 				href={href}
 				onClick={(e) => e.stopPropagation()}
-				className="hover:underline underline-offset-4"
+				className="rounded-[calc(var(--radius)-2px)] outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
 			>
 				{content}
 			</Link>

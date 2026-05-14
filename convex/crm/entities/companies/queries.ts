@@ -61,3 +61,118 @@ export const getByCompanyCode = orgQuery({
 			.first();
 	},
 });
+
+/**
+ * Return the (first) company a personCode belongs to, by scanning
+ * `companies.personCodes[]`. Used for card badges, forms, and the
+ * company-column in tables.
+ */
+export const getByPersonCode = orgQuery({
+	args: { orgId: v.id("orgs"), personCode: v.string() },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.view");
+
+		const all = await ctx.db
+			.query("companies")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		return (
+			all.find(
+				(c) => c.deletedAt === undefined && (c.personCodes ?? []).includes(args.personCode),
+			) ?? null
+		);
+	},
+});
+
+/**
+ * Persons (leads + contacts) that aren't yet attached to any company. Used
+ * to populate the "persons without a company" multi-select inside the
+ * Add/Edit Company drawers.
+ */
+export const listPersonsWithoutCompany = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "leads.view");
+
+		const [companies, leads, contacts] = await Promise.all([
+			ctx.db
+				.query("companies")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.collect(),
+			ctx.db
+				.query("leads")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.collect(),
+			ctx.db
+				.query("contacts")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.collect(),
+		]);
+
+		const taken = new Set<string>();
+		for (const c of companies) {
+			if (c.deletedAt !== undefined) continue;
+			for (const pc of c.personCodes ?? []) taken.add(pc);
+		}
+
+		type Person = {
+			personCode: string;
+			displayName: string;
+			email?: string;
+			kind: "lead" | "contact";
+		};
+		const persons: Person[] = [];
+		for (const l of leads) {
+			if (l.deletedAt !== undefined || l.convertedAt) continue;
+			if (taken.has(l.personCode)) continue;
+			persons.push({
+				personCode: l.personCode,
+				displayName: l.displayName,
+				email: l.email,
+				kind: "lead",
+			});
+		}
+		for (const c of contacts) {
+			if (c.deletedAt !== undefined) continue;
+			if (taken.has(c.personCode)) continue;
+			persons.push({
+				personCode: c.personCode,
+				displayName: c.displayName,
+				email: c.email,
+				kind: "contact",
+			});
+		}
+		return persons.sort((a, b) => a.displayName.localeCompare(b.displayName));
+	},
+});
+
+/**
+ * All persons in an org with their current company (if any). Useful for the
+ * company column in lead/contact tables and for "show employees of company X"
+ * popovers.
+ */
+export const listAllPersonsWithCompany = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "leads.view");
+
+		const companies = await ctx.db
+			.query("companies")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		const map = new Map<string, { companyId: string; name: string }>();
+		for (const c of companies) {
+			if (c.deletedAt !== undefined) continue;
+			for (const pc of c.personCodes ?? []) {
+				map.set(pc, { companyId: c._id as string, name: c.name });
+			}
+		}
+		return Array.from(map.entries()).map(([personCode, company]) => ({
+			personCode,
+			...company,
+		}));
+	},
+});

@@ -152,6 +152,40 @@ export function FieldValueRenderer({
 		case "count":
 			return <span className="text-sm tabular-nums">{String(value)}</span>;
 
+		case "file":
+		case "files": {
+			// A file-type dynamic field shows a compact "N file(s)" chip with a
+			// paperclip icon. The Profile / detail view is where the actual
+			// dropzone lives; here we just indicate presence + count.
+			const files = Array.isArray(value) ? value : value ? [value] : [];
+			if (files.length === 0) return <span className="text-muted-foreground text-sm">—</span>;
+			return (
+				<span className="inline-flex items-center gap-1 rounded-[calc(var(--radius)-2px)] bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+					📎 {files.length}
+				</span>
+			);
+		}
+
+		case "date": {
+			const ts = Number(value);
+			if (Number.isNaN(ts)) return <span className="text-sm">{String(value)}</span>;
+			return (
+				<span className="text-xs text-muted-foreground tabular-nums">
+					{new Date(ts).toLocaleDateString()}
+				</span>
+			);
+		}
+
+		case "number":
+			return <span className="text-sm tabular-nums">{String(value)}</span>;
+
+		case "checkbox":
+			return (
+				<span className="text-sm">
+					{value ? "✓" : <span className="text-muted-foreground">—</span>}
+				</span>
+			);
+
 		default:
 			return <span className="text-sm">{String(value)}</span>;
 	}

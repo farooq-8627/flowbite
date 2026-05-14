@@ -1,8 +1,83 @@
 # PHASE 2 — CRM Core Progress
 
-> Last Updated: 2026-05-08
-> Status: **Backend 100% COMPLETE — Frontend NEXT (vertical slices)**
-> Score: Backend 100/100
+> Last Updated: 2026-05-14
+> Status: **Backend 100% COMPLETE — Frontend Slice 1 COMPLETE (polish pass 4)**
+> Score: Backend 100/100 · Frontend Slice 1 ~95/100
+
+---
+
+## 🆕 2026-05-14 — Polish pass 4
+
+Focus: universal view options for every entity, dynamic board grouping, and
+settings cleanup.
+
+**Frontend additions / rewrites:**
+- `ViewOptionsMenu` (NEW) — universal replacement for the old lead-only
+  `BoardOptionsMenu`. Supports list + board modes, dynamic group-by selector
+  (backed by `ALLOWED_BOARD_GROUP_BY[slot]`), per-session field visibility
+  toggles, and terminal-status reveal. Wired into Leads, Contacts, Deals,
+  and Companies.
+- Dynamic board grouping end-to-end — users can group by status/assignee/
+  source (leads), assignee/company (contacts), stage/assignee (deals),
+  industry/assignee (companies). Drag updates the active axis (status swap
+  on lead, assigned-user swap on any entity). `board-grouping.ts` helper
+  hides the grouped-by field from the card + reveals a complementary one.
+- `useCustomFields` hook — reads `fieldDefinitions` per entity and feeds
+  `ViewOptionsMenu.extraFields` so user-defined fields appear alongside
+  built-ins in the "card fields" toggle list.
+- `FieldValueRenderer` — added `file`, `files`, `date`, `number`, `checkbox`
+  render kinds to support dynamic custom-field rendering.
+- Settings Modules group — `getSettingsGroups(labels)` factory so sub-group
+  labels track entity renames (e.g. "Leads" → "Inquiries"). URL uses the
+  renamed slug (`?tab=inquiries`). `shell:section-requested` event lets
+  sub-group pill clicks auto-switch the active tab + scroll.
+- `QuickAddMenu` — creation from any page now navigates to the entity
+  route with `?new=1`; each view's `useQuickAddListener` reads the param
+  and auto-opens its drawer. Fixes global shortcuts not firing off the
+  entity page.
+- `AddLeadDrawer` — "Works at a {company}?" section with Skip/Existing/New
+  tabs. "Existing" = Select of all companies. "New" = inline
+  name/industry/website form; the company is created alongside the lead.
+- `LeadCard` — single-click convert = instant (no form); double-click =
+  open full convert drawer (with "also create a deal" option). Separate
+  Lost (trash) icon. Overflow menu has "Convert with options…" + Delete.
+- `LeadsView.handleMarkLost` — updates lead status to "lost" in one click.
+- Lead status table column — renders colored pill matching the kanban
+  column colour (single source of truth: `getStatusColor`).
+- Contacts — `revertToLead` mutation. Soft-deletes the contact + flips the
+  origin lead back to status="new". Row actions menu exposes it.
+- Tag color picker (Settings → CRM → Tags) — 18 preset colours + a
+  `<input type="color">` fallback for custom. Circles shrunk to size-4
+  with hover-scale.
+- CopyField, PersonCodeBadge, PersonDisplay — all `hover:underline`
+  styles removed for a cleaner look.
+- Pipeline `getDefault` — falls back to the first pipeline for the entity
+  if no explicit default exists. Unblocks deal creation for new orgs.
+
+**Backend additions:**
+- `convex/crm/entities/leads/mutations.update` — added `source` to args.
+- `convex/crm/entities/contacts/mutations.revertToLead` — new.
+- `convex/crm/fields/pipelines/queries.getDefault` — first-pipeline fallback.
+
+**Verification gate:**
+```bash
+pnpm typecheck                  →  ✅ 0 errors
+pnpm exec biome check .         →  ✅ 0 errors / 0 warnings
+pnpm build                      →  ✅ 20 static pages, 13s compile
+```
+
+**Deferred to next session:**
+- `AddCompanyDrawer` restructure — drop `teamMembers` concept in favour of
+  a multi-assignee + persons-without-company multi-select. Requires a
+  schema decision on whether `companies.personCodes[]` or
+  `contacts/leads.companyId` is the source of truth.
+- Tag-axis board grouping — needs a batched tag-per-entity query.
+- `PersonDisplay.show[]` card-level toggles to hide name/email
+  independently. The plumbing exists; cards just don't expose it yet —
+  users can already control visibility via Settings → Modules → {slot}
+  → Card Fields.
+- Entity-detail "Files" tab — file storage lib is done; just needs
+  mounting once detail views are built (Slice 2).
 
 ---
 

@@ -25,13 +25,17 @@ export const getDefault = orgQuery({
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.view");
 
-		return ctx.db
+		const pipelines = await ctx.db
 			.query("pipelines")
 			.withIndex("by_org_and_entity", (q) =>
 				q.eq("orgId", args.orgId).eq("entityType", args.entityType),
 			)
-			.filter((q) => q.eq(q.field("isDefault"), true))
-			.first();
+			.collect();
+
+		// Prefer the explicitly-marked default. If none, fall back to the first
+		// pipeline so new orgs can still create deals before they've set a
+		// default in Settings → Modules → Deals → Pipelines.
+		return pipelines.find((p) => p.isDefault === true) ?? pipelines[0] ?? null;
 	},
 });
 

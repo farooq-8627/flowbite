@@ -3,17 +3,22 @@
 /**
  * LeadsView — scaffold-driven leads list + board view.
  *
- * Primary action: Add Lead (no dropdown chevron — Convert is selection-driven).
- * Selection toolbar above DataTable for bulk convert. Per-row convert via the
- * row actions menu (vertical dots). Drag a card between board columns to update
- * its status.
+ * - Primary action: Add Lead (convert is a per-row action).
+ * - Dynamic board grouping — status (default) / assignee / source / tag.
+ *   When grouping by a non-status field, the card auto-hides that field and
+ *   surfaces a complementary one so the user still sees status etc.
+ * - Selection toolbar above DataTable for bulk convert.
+ * - Board drag updates whichever field the board is grouped by (status,
+ *   assignedTo, source, …) — no more "drag did nothing" when the grouping
+ *   axis wasn't status.
+ * - Single-click a card's convert shortcut → instant convert (no form).
+ * - Double-click the convert shortcut → open convert drawer (with deal option).
+ * - Lost shortcut (trash icon) → marks lead as lost.
  *
- * Board options:
- *   - Per-session cardFields menu (click "View" button in toolbar).
- *   - Hidden terminal statuses ("converted", "lost") toggleable via same menu.
- *
- * Search: wired to EntityPageLayout's toolbar search and filters both list
- * and board views before grouping.
+ * Search:
+ *   - Wired into EntityPageLayout's toolbar search.
+ *   - Matching cards move to the TOP of their column.
+ *   - Briefly flash-highlighted so they're easy to spot.
  */
 
 import { useMutation, useQuery } from "convex/react";
@@ -22,19 +27,28 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
-import { BoardOptionsMenu } from "@/core/entities/shared/components/BoardOptionsMenu";
-import { LEAD_STATUSES } from "@/core/entities/shared/config/defaults";
+import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
+import { getStatusColor, LEAD_STATUSES } from "@/core/entities/shared/config/defaults";
+import { useCustomFields } from "@/core/entities/shared/hooks/useCustomFields";
+import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useModuleDisplay } from "@/core/entities/shared/hooks/useModuleDisplay";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
+import {
+	getHiddenCardFieldsForGrouping,
+	getRevealedCardFieldForGrouping,
+	NO_GROUP_KEY,
+} from "@/core/entities/shared/utils/board-grouping";
+import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AddLeadDrawer } from "../components/AddLeadDrawer";
 import { ConvertLeadDrawer } from "../components/ConvertLeadDrawer";
+import { EditLeadDrawer } from "../components/EditLeadDrawer";
 import { LeadCard } from "../components/LeadCard";
 import { useLeadColumns } from "../hooks/useLeadColumns";
 import { useLeadMutations } from "../hooks/useLeadMutations";
@@ -43,11 +57,22 @@ import { useLeads } from "../hooks/useLeads";
 // Terminal statuses hidden by default on the board (too noisy otherwise).
 const HIDDEN_LEAD_STATUSES: string[] = ["converted", "lost"];
 
+// Lead fields to match against when searching.
+const LEAD_SEARCH_FIELDS = [
+	"displayName",
+	"email",
+	"phone",
+	"personCode",
+	"status",
+	"source",
+] as const;
+
 export function LeadsView(_props: { orgSlug: string }) {
 	const labels = useEntityLabels();
 	const { items, orgId } = useLeads();
 	const [view, setView] = useViewToggle("lead");
-	const { boardGroupBy, cardFields: defaultCardFields } = useModuleDisplay("lead");
+	const { boardGroupBy: defaultGroupBy, cardFields: defaultCardFields } =
+		useModuleDisplay("lead");
 	const { create, convert, remove } = useLeadMutations(orgId);
 	const updateLead = useMutation(api.crm.entities.leads.mutations.update);
 
@@ -64,15 +89,26 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const [addOpen, setAddOpen] = useState(false);
 	const [convertOpen, setConvertOpen] = useState(false);
 	const [convertIds, setConvertIds] = useState<Id<"leads">[]>([]);
+	const [editOpen, setEditOpen] = useState(false);
+	const [editingLead, setEditingLead] = useState<NonNullable<typeof items>[number] | null>(null);
 	const [search, setSearch] = useState("");
 	const [cardFields, setCardFields] = useState<string[]>(defaultCardFields);
 	const [revealedStatuses, setRevealedStatuses] = useState<string[]>([]);
+	const [groupBy, setGroupBy] = useState<string>(defaultGroupBy);
 
-	// Keep the board cardFields in sync with settings changes until the user
-	// overrides per-session.
+	// Custom fields (file, dropdown, etc.) show up in ViewOptionsMenu alongside
+	// the built-in FIELD_CATALOG entries — so toggling a user-defined "Budget"
+	// field on the card works exactly like toggling "Source".
+	const customFields = useCustomFields("lead", orgId);
+
+	// Keep the board cardFields + groupBy in sync with settings changes until
+	// the user overrides per-session.
 	useEffect(() => {
 		setCardFields(defaultCardFields);
 	}, [defaultCardFields]);
+	useEffect(() => {
+		setGroupBy(defaultGroupBy);
+	}, [defaultGroupBy]);
 
 	// ⌘⇧V toggles list/board
 	const scToggle = useShortcut("toggleView");
@@ -95,68 +131,178 @@ export function LeadsView(_props: { orgSlug: string }) {
 	// Global quick-add listeners (TopNav + button)
 	useQuickAddListener("create-lead", () => setAddOpen(true));
 	useQuickAddListener("convert-lead", () => {
-		// If nothing selected, pop the drawer open with no pre-selected ids —
-		// user picks inside. Otherwise prefill with the first lead by id.
 		const firstId = items?.[0]?.id as Id<"leads"> | undefined;
 		if (firstId) openConvertFor([firstId]);
 	});
 
 	const columns = useLeadColumns({
 		onConvert: (leadId) => openConvertFor([leadId]),
+		onEdit: (lead) => {
+			const found = leadLookup.get(lead.id ?? (lead._id as unknown as string));
+			if (found) {
+				setEditingLead(found);
+				setEditOpen(true);
+			}
+		},
 	});
 
-	// Board columns — exclude terminal statuses unless revealed in the menu
-	const visibleStatuses = useMemo(() => {
-		return LEAD_STATUSES.filter(
-			(s) => !HIDDEN_LEAD_STATUSES.includes(s) || revealedStatuses.includes(s),
-		);
-	}, [revealedStatuses]);
+	// ── Dynamic board grouping ───────────────────────────────────────────────
+	// Visible columns depend on the active `groupBy`:
+	//   - status    → LEAD_STATUSES + any in-use terminal statuses the user revealed
+	//   - assignedTo→ one per unique assignee (plus "Unassigned")
+	//   - source    → LEAD_SOURCES + any in-use values
+	//   - tag       → one per unique tag (+ "Untagged")
+	//   - default   → one column per unique raw value of the field
+	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const memberNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const m of members ?? []) {
+			map.set(m.userId as string, m.user?.name ?? m.user?.email ?? (m.userId as string));
+		}
+		return map;
+	}, [members]);
 
-	const boardColumns: KanbanColumnConfig[] = useMemo(
-		() => visibleStatuses.map((s) => ({ id: s, title: s })),
-		[visibleStatuses],
+	// Batched tag lookup — used for both the tag column in the table and
+	// for board grouping by tag. One index read covers every lead in the org.
+	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "lead");
+
+	const boardColumns: KanbanColumnConfig[] = useMemo(() => {
+		if (groupBy === "status") {
+			const statusesInItems = new Set<string>();
+			for (const it of items ?? [])
+				statusesInItems.add(String((it as Record<string, unknown>).status ?? "new"));
+			const union: string[] = [];
+			const seen = new Set<string>();
+			for (const s of LEAD_STATUSES) {
+				union.push(s);
+				seen.add(s);
+			}
+			for (const s of statusesInItems) if (!seen.has(s)) union.push(s);
+			const visible = union.filter((s) => {
+				if (!HIDDEN_LEAD_STATUSES.includes(s)) return true;
+				if (revealedStatuses.includes(s)) return true;
+				if (statusesInItems.has(s)) return true;
+				return false;
+			});
+			return visible.map((s) => ({
+				id: s,
+				title: s,
+				color: getStatusColor("lead", s),
+			}));
+		}
+
+		if (groupBy === "assignedTo") {
+			const assignees = new Set<string>();
+			for (const it of items ?? []) {
+				const a = (it as Record<string, unknown>).assignedTo as string | undefined;
+				assignees.add(a ? String(a) : NO_GROUP_KEY);
+			}
+			return Array.from(assignees).map((a) => ({
+				id: a,
+				title: a === NO_GROUP_KEY ? "Unassigned" : (memberNameById.get(a) ?? a),
+				color: getStatusColor("lead", a === NO_GROUP_KEY ? "unassigned" : "assigned"),
+			}));
+		}
+
+		if (groupBy === "tag" || groupBy === "tags") {
+			// One column per tag, plus an "Untagged" bucket at the end.
+			const cols: KanbanColumnConfig[] = uniqueTags.map((t) => ({
+				id: t.name,
+				title: t.name,
+				color: (t.color as string | undefined) ?? getStatusColor("lead", t.name),
+			}));
+			cols.push({
+				id: NO_GROUP_KEY,
+				title: "Untagged",
+				color: getStatusColor("lead", "unassigned"),
+			});
+			return cols;
+		}
+
+		// Generic fallback — unique raw values of the field.
+		const values = new Set<string>();
+		for (const it of items ?? []) {
+			const raw = (it as Record<string, unknown>)[groupBy];
+			values.add(raw ? String(raw) : NO_GROUP_KEY);
+		}
+		return Array.from(values).map((v) => ({
+			id: v,
+			title: v === NO_GROUP_KEY ? "—" : v,
+			color: getStatusColor("lead", v),
+		}));
+	}, [groupBy, items, revealedStatuses, memberNameById, uniqueTags]);
+
+	// Search ranking
+	const rankedItems = useMemo(
+		() =>
+			rankBySearch(
+				(items ?? []) as SearchableItem[],
+				search,
+				LEAD_SEARCH_FIELDS as unknown as string[],
+			),
+		[items, search],
 	);
+	const [flashEpoch, setFlashEpoch] = useState(0);
+	useEffect(() => {
+		if (!search) return;
+		setFlashEpoch((e) => e + 1);
+	}, [search]);
 
-	// Search filter (applied at source → used by both list + board)
-	const filteredItems = useMemo(() => {
-		if (!items) return items;
-		const q = search.trim().toLowerCase();
-		if (!q) return items;
-		return items.filter((it) => {
-			const i = it as Record<string, unknown>;
-			return [i.displayName, i.email, i.phone, i.personCode, i.status, i.source].some(
-				(v) => typeof v === "string" && v.toLowerCase().includes(q),
-			);
-		});
-	}, [items, search]);
-
-	// Group items by the board groupBy field (default: status)
 	const itemsByColumnId = useMemo(() => {
-		if (!filteredItems) return {};
-		const grouped: Record<string, typeof filteredItems> = {};
+		const grouped: Record<string, typeof rankedItems.items> = {};
 		for (const col of boardColumns) grouped[col.id] = [];
-		for (const item of filteredItems) {
-			const key = String((item as Record<string, unknown>)[boardGroupBy] ?? "new");
-			if (!grouped[key]) continue; // item in a hidden column — skip
+
+		if (groupBy === "tag" || groupBy === "tags") {
+			// Fan out: one item can appear in many tag columns. Items with no
+			// tags fall into the "Untagged" (NO_GROUP_KEY) bucket.
+			for (const item of rankedItems.items) {
+				const tagList = tagsByEntityId[item.id] ?? [];
+				if (tagList.length === 0) {
+					if (!grouped[NO_GROUP_KEY]) grouped[NO_GROUP_KEY] = [];
+					grouped[NO_GROUP_KEY].push(item);
+					continue;
+				}
+				for (const tag of tagList) {
+					if (!grouped[tag.name]) grouped[tag.name] = [];
+					grouped[tag.name].push(item);
+				}
+			}
+			return grouped;
+		}
+
+		for (const item of rankedItems.items) {
+			const raw = (item as Record<string, unknown>)[groupBy];
+			const key = raw ? String(raw) : NO_GROUP_KEY;
+			if (!grouped[key]) grouped[key] = [];
 			grouped[key].push(item);
 		}
 		return grouped;
-	}, [filteredItems, boardColumns, boardGroupBy]);
+	}, [rankedItems.items, boardColumns, groupBy, tagsByEntityId]);
 
-	// Drag card → update status
+	// Drag card → update whichever field is the current groupBy
 	const handleCardMove = useCallback(
 		async (itemId: string, _from: string, to: string) => {
 			if (!orgId) return;
-			if (boardGroupBy !== "status") return;
 			try {
-				await updateLead({ orgId, leadId: itemId as Id<"leads">, status: to });
+				if (groupBy === "status") {
+					await updateLead({ orgId, leadId: itemId as Id<"leads">, status: to });
+				} else if (groupBy === "assignedTo") {
+					await updateLead({
+						orgId,
+						leadId: itemId as Id<"leads">,
+						assignedTo: to === NO_GROUP_KEY ? undefined : (to as Id<"users">),
+					});
+				} else if (groupBy === "source") {
+					await updateLead({ orgId, leadId: itemId as Id<"leads">, source: to });
+				}
+				// Unknown/custom groupBy — no-op (drag is visual only).
 			} catch (err) {
-				toast.error("Couldn't update status", {
+				toast.error("Couldn't update", {
 					description: err instanceof Error ? err.message : undefined,
 				});
 			}
 		},
-		[orgId, updateLead, boardGroupBy],
+		[orgId, updateLead, groupBy],
 	);
 
 	const leadLookup = useMemo(() => {
@@ -181,11 +327,48 @@ export function LeadsView(_props: { orgSlug: string }) {
 		}
 	};
 
+	const handleMarkLost = async (leadId: Id<"leads">) => {
+		if (!orgId) return;
+		try {
+			await updateLead({ orgId, leadId, status: "lost" });
+			toast.success(`${labels.lead.singular} marked as lost`);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : "Couldn't mark as lost");
+		}
+	};
+
+	// Single-click convert = instant (no form); double-click = open drawer
+	const handleInstantConvert = useCallback(
+		async (leadId: Id<"leads">) => {
+			try {
+				await convert(leadId);
+				toast.success(
+					`${labels.lead.singular} converted to ${labels.contact.singular.toLowerCase()}`,
+				);
+			} catch (err) {
+				toast.error("Convert failed", {
+					description: err instanceof Error ? err.message : undefined,
+				});
+			}
+		},
+		[convert, labels],
+	);
+
+	// Derive what card fields to show given the active groupBy — hide the
+	// grouped-by field, and reveal a complementary one from the reveal matrix.
+	const effectiveCardFields = useMemo(() => {
+		const hidden = new Set(getHiddenCardFieldsForGrouping(groupBy));
+		let next = cardFields.filter((f) => !hidden.has(f));
+		const reveal = getRevealedCardFieldForGrouping(groupBy, "lead");
+		if (reveal && !next.includes(reveal)) next = [reveal, ...next];
+		return next;
+	}, [cardFields, groupBy]);
+
 	return (
 		<>
 			<EntityListPage
 				slot="lead"
-				items={filteredItems}
+				items={rankedItems.items as typeof items}
 				columns={columns}
 				views={["list", "board"]}
 				view={view}
@@ -197,19 +380,21 @@ export function LeadsView(_props: { orgSlug: string }) {
 					onChange: setSearch,
 					placeholder: `Search ${labels.lead.plural.toLowerCase()}…`,
 				}}
-				renderToolbarExtras={() =>
-					view === "board" ? (
-						<BoardOptionsMenu
-							slot="lead"
-							cardFields={cardFields}
-							onCardFieldsChange={setCardFields}
-							allStatuses={[...LEAD_STATUSES]}
-							hiddenStatuses={HIDDEN_LEAD_STATUSES}
-							revealedStatuses={revealedStatuses}
-							onRevealedStatusesChange={setRevealedStatuses}
-						/>
-					) : null
-				}
+				renderToolbarExtras={() => (
+					<ViewOptionsMenu
+						slot="lead"
+						view={view}
+						visibleFields={cardFields}
+						onVisibleFieldsChange={setCardFields}
+						extraFields={customFields}
+						groupBy={groupBy}
+						onGroupByChange={setGroupBy}
+						allStatuses={[...LEAD_STATUSES]}
+						hiddenStatuses={HIDDEN_LEAD_STATUSES}
+						revealedStatuses={revealedStatuses}
+						onRevealedStatusesChange={setRevealedStatuses}
+					/>
+				)}
 				aboveBody={(table) => {
 					const selectedRows = table.getFilteredSelectedRowModel().rows;
 					if (selectedRows.length === 0) return null;
@@ -251,11 +436,22 @@ export function LeadsView(_props: { orgSlug: string }) {
 								orgId,
 							} as unknown as Parameters<typeof LeadCard>[0]["item"]
 						}
-						cardFields={cardFields}
+						cardFields={effectiveCardFields}
 						staleness={staleness}
 						isDragging={isDragging}
-						onConvert={() => openConvertFor([item.id as Id<"leads">])}
+						isHighlighted={search ? rankedItems.matchedIds.has(item.id) : false}
+						highlightEpoch={flashEpoch}
+						onConvert={() => handleInstantConvert(item.id as Id<"leads">)}
+						onConvertWithOptions={() => openConvertFor([item.id as Id<"leads">])}
 						onDelete={() => handleDelete(item.id as Id<"leads">)}
+						onMarkLost={() => handleMarkLost(item.id as Id<"leads">)}
+						onEdit={() => {
+							const lead = leadLookup.get(item.id);
+							if (lead) {
+								setEditingLead(lead);
+								setEditOpen(true);
+							}
+						}}
 					/>
 				)}
 				onCardMove={handleCardMove}
@@ -282,6 +478,16 @@ export function LeadsView(_props: { orgSlug: string }) {
 					.map((id) => leadLookup.get(id))
 					.filter((r): r is NonNullable<typeof r> => !!r)}
 				onConvert={(leadId) => convert(leadId)}
+			/>
+
+			<EditLeadDrawer
+				open={editOpen}
+				onOpenChange={(v) => {
+					setEditOpen(v);
+					if (!v) setEditingLead(null);
+				}}
+				orgId={orgId}
+				lead={editingLead as unknown as Doc<"leads"> | null}
 			/>
 		</>
 	);

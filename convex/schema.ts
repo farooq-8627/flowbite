@@ -468,6 +468,12 @@ export default defineSchema({
 
 	// ── companies ────────────────────────────────────────────────────────────
 	// B2B company entity. companyCode auto-generated (CO-001).
+	//
+	// CANONICAL MODEL (2026-05): people belong to a company via
+	// `companies.personCodes[]` — a single source of truth that works for both
+	// leads and contacts (both share a personCode). The `teamMembers` +
+	// `contacts.companyId` / `deals.companyId` fields are kept only for
+	// back-compat while the UI finishes migrating to personCodes.
 	companies: defineTable({
 		...orgScoped,
 		companyCode: v.string(), // "CO-001" — auto-generated
@@ -475,7 +481,20 @@ export default defineSchema({
 		industry: v.optional(v.string()),
 		website: v.optional(v.string()),
 		size: v.optional(v.string()), // "1-10"|"11-50"|"51-200"|"201-1000"|"1000+"
+		/** Primary assignee — kept for back-compat / notifications routing. */
 		assignedTo: v.optional(v.id("users")),
+		/**
+		 * Multi-assignee team — 2–3 members that jointly manage this company.
+		 * Replaces the older `teamMembers` concept.
+		 */
+		assignees: v.optional(v.array(v.id("users"))),
+		/**
+		 * People (leads or contacts) attached to this company. Canonical join.
+		 * Any personCode listed here treats the company as their employer.
+		 */
+		personCodes: v.optional(v.array(v.string())),
+		/** @deprecated — use `assignees` instead. */
+		teamMembers: v.optional(v.array(v.id("users"))),
 		aiContext: aiContextValidator,
 		...timestamps,
 		...softDelete,

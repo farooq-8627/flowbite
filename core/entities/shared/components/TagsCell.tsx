@@ -28,6 +28,7 @@ import {
 	CommandList,
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,12 @@ interface TagsCellProps {
 	size?: "xs" | "sm";
 	/** Max chips before a "+N" overflow chip. */
 	max?: number;
+	/**
+	 * When true, hides the pencil-edit affordance once tags exist (display-only
+	 * mode). The initial `+` button remains so empty records can still be
+	 * tagged quickly. Used on cards where edit flows through the overflow menu.
+	 */
+	readOnlyAfterFirst?: boolean;
 	className?: string;
 }
 
@@ -49,6 +56,7 @@ export function TagsCell({
 	entityId,
 	size = "xs",
 	max = 3,
+	readOnlyAfterFirst = false,
 	className,
 }: TagsCellProps) {
 	const [open, setOpen] = useState(false);
@@ -90,7 +98,6 @@ export function TagsCell({
 
 	const chipCls =
 		size === "xs" ? "h-4 px-1 text-[9px] font-normal" : "h-5 px-1.5 text-[10px] font-normal";
-	const btnCls = size === "xs" ? "h-5 gap-1 px-1 text-[10px]" : "h-6 gap-1 px-1.5 text-xs";
 
 	const toggleTag = async (tagId: Id<"tags">) => {
 		if (!orgId) return;
@@ -126,14 +133,23 @@ export function TagsCell({
 		<Popover open={open} onOpenChange={setOpen}>
 			<div className={cn("group/tagscell flex items-center gap-1", className)}>
 				{isEmpty ? (
-					<PopoverTrigger asChild>
-						<Button variant="ghost" size="sm" className={btnCls} aria-label="Add tags">
-							<PlusIcon className={size === "xs" ? "size-3" : "size-3.5"} />
-							<span className="sr-only group-hover/tagscell:not-sr-only">
-								Add tag
-							</span>
-						</Button>
-					</PopoverTrigger>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<PopoverTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									className={size === "xs" ? "size-5" : "size-6"}
+									aria-label="Add tag"
+								>
+									<PlusIcon className={size === "xs" ? "size-3" : "size-3.5"} />
+								</Button>
+							</PopoverTrigger>
+						</TooltipTrigger>
+						<TooltipContent side="top" className="text-xs">
+							Add tag
+						</TooltipContent>
+					</Tooltip>
 				) : (
 					<>
 						{visible.map((tag) => (
@@ -159,18 +175,20 @@ export function TagsCell({
 								+{overflow}
 							</Badge>
 						)}
-						<PopoverTrigger asChild>
-							<Button
-								variant="ghost"
-								size="icon"
-								className={cn(
-									"size-5 opacity-0 transition-opacity group-hover/tagscell:opacity-100",
-								)}
-								aria-label="Edit tags"
-							>
-								<PencilIcon className="size-3" />
-							</Button>
-						</PopoverTrigger>
+						{!readOnlyAfterFirst && (
+							<PopoverTrigger asChild>
+								<Button
+									variant="ghost"
+									size="icon"
+									className={cn(
+										"size-5 opacity-0 transition-opacity group-hover/tagscell:opacity-100",
+									)}
+									aria-label="Edit tags"
+								>
+									<PencilIcon className="size-3" />
+								</Button>
+							</PopoverTrigger>
+						)}
 					</>
 				)}
 			</div>

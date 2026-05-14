@@ -56,7 +56,12 @@ export type FieldRenderKind =
 	| "stale"
 	| "relativeTime"
 	| "link"
-	| "count";
+	| "count"
+	| "file"
+	| "files"
+	| "date"
+	| "number"
+	| "checkbox";
 
 export type FieldSpec = {
 	/** Human label — can be a function for label-reactive spots */

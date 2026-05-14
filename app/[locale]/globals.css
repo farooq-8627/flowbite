@@ -264,3 +264,22 @@ html[data-font="source-code-pro"] body {
 *::-webkit-scrollbar {
 	display: none;
 }
+
+/* ── Entity card flash highlight ─────────────────────────────────────────
+ * Applied briefly when a search matches a card so the user can spot it at
+ * a glance. The class is toggled off-then-on via JS (see EntityCard) so
+ * the animation replays on each new search query. */
+@keyframes entity-card-flash {
+	0%,
+	100% {
+		box-shadow: 0 0 0 0 hsl(var(--ring) / 0);
+	}
+	30%,
+	70% {
+		box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+	}
+}
+
+.entity-card-flash {
+	animation: entity-card-flash 1.4s ease-in-out both;
+}

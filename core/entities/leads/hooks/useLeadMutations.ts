@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * useLeadMutations — wraps lead create/update/convert/delete mutations with toast.
+ * useLeadMutations — wraps lead create/update/convert/delete mutations with
+ * label-aware toasts.
  *
- * `convert` returns the full mutation result (`{ contactId, personCode }`) so
- * callers like ConvertLeadDrawer can chain deal creation against the new
- * contact. The per-lead toast is suppressed for convert when `silent=true`,
- * letting the caller render a single combined toast for bulk flows.
+ * - Labels: toasts use `useEntityLabels()` so a renamed entity ("Inquiry")
+ *   shows the right word everywhere.
+ * - Errors: we surface the real ConvexError / Error message in the toast
+ *   description so phone-parsing / validation failures stop being silent.
  */
 
 import { useMutation } from "convex/react";
@@ -14,8 +15,20 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+
+function describeError(err: unknown): string | undefined {
+	if (!err) return undefined;
+	if (err instanceof Error) return err.message;
+	if (typeof err === "object" && err !== null) {
+		const maybe = err as { data?: { message?: string }; message?: string };
+		return maybe.data?.message ?? maybe.message;
+	}
+	return String(err);
+}
 
 export function useLeadMutations(orgId: Id<"orgs"> | undefined) {
+	const labels = useEntityLabels();
 	const createLead = useMutation(api.crm.entities.leads.mutations.create);
 	const updateLead = useMutation(api.crm.entities.leads.mutations.update);
 	const convertLead = useMutation(api.crm.entities.leads.mutations.convertToContact);
@@ -30,31 +43,54 @@ export function useLeadMutations(orgId: Id<"orgs"> | undefined) {
 			assignedTo?: Id<"users">;
 		}) => {
 			if (!orgId) return;
-			const result = await createLead({ orgId, ...data });
-			toast.success("Lead created", {
-				description: `${data.displayName} (${result.personCode})`,
-			});
-			return result;
+			try {
+				const result = await createLead({ orgId, ...data });
+				toast.success(`${labels.lead.singular} created`, {
+					description: `${data.displayName} (${result.personCode})`,
+				});
+				return result;
+			} catch (err) {
+				const description = describeError(err);
+				toast.error(`Couldn't create ${labels.lead.singular.toLowerCase()}`, {
+					description,
+				});
+				// Rethrow so the form's submit handler can short-circuit.
+				throw err;
+			}
 		},
-		[orgId, createLead],
+		[orgId, createLead, labels.lead.singular],
 	);
 
 	const convert = useCallback(
 		async (leadId: Id<"leads">, companyId?: Id<"companies">) => {
 			if (!orgId) return undefined;
-			const result = await convertLead({ orgId, leadId, companyId });
-			return result; // { contactId, personCode } — caller handles toast
+			try {
+				return await convertLead({ orgId, leadId, companyId });
+			} catch (err) {
+				toast.error(
+					`Couldn't convert ${labels.lead.singular.toLowerCase()} to ${labels.contact.singular.toLowerCase()}`,
+					{ description: describeError(err) },
+				);
+				throw err;
+			}
 		},
-		[orgId, convertLead],
+		[orgId, convertLead, labels.lead.singular, labels.contact.singular],
 	);
 
 	const remove = useCallback(
 		async (leadId: Id<"leads">) => {
 			if (!orgId) return;
-			await deleteLead({ orgId, leadId });
-			toast.success("Lead deleted");
+			try {
+				await deleteLead({ orgId, leadId });
+				toast.success(`${labels.lead.singular} deleted`);
+			} catch (err) {
+				toast.error(`Couldn't delete ${labels.lead.singular.toLowerCase()}`, {
+					description: describeError(err),
+				});
+				throw err;
+			}
 		},
-		[orgId, deleteLead],
+		[orgId, deleteLead, labels.lead.singular],
 	);
 
 	return { create, update: updateLead, convert, remove };

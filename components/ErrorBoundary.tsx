@@ -1,37 +1,32 @@
 /**
  * Error Boundary Component
- * STATUS: IMPLEMENTED
  *
- * Catches React errors and prevents full-page crashes.
- * Logs errors to Sentry for monitoring and debugging.
+ * Catches React errors in child components and logs them to Sentry.
  *
- * Features:
- * - Catches rendering errors in child components
- * - Logs to Sentry with context
- * - Shows fallback UI on error
- * - Prevents error propagation
+ * Fallback can be:
+ *   - a React node (e.g. <DashboardError />) — rendered as-is on error
+ *   - a component (e.g. DashboardError) — rendered with `{ error, reset }`
  *
- * @see https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary
- * @see components/errors/DashboardError.tsx for fallback UI
- *
- * @example
- * <ErrorBoundary fallback={<DashboardError />}>
- *   <YourComponent />
- * </ErrorBoundary>
+ * The component form lets the fallback surface the real error for debugging.
  */
 "use client";
 
 import * as Sentry from "@sentry/nextjs";
 import React from "react";
 
+type FallbackComponent = React.ComponentType<{
+	error: Error & { digest?: string };
+	reset: () => void;
+}>;
+
 interface Props {
 	children: React.ReactNode;
-	fallback: React.ReactNode;
+	fallback: React.ReactNode | FallbackComponent;
 }
 
 interface State {
 	hasError: boolean;
-	error: Error | null;
+	error: (Error & { digest?: string }) | null;
 }
 
 export class ErrorBoundary extends React.Component<Props, State> {
@@ -45,9 +40,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
 	}
 
 	componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+		// Keep a full console trace so we can see the real cause in prod too.
+		// eslint-disable-next-line no-console
 		console.error("Error caught by boundary:", error, errorInfo);
 
-		// Log to Sentry
 		Sentry.captureException(error, {
 			contexts: {
 				react: {
@@ -57,9 +53,19 @@ export class ErrorBoundary extends React.Component<Props, State> {
 		});
 	}
 
+	reset = () => {
+		this.setState({ hasError: false, error: null });
+	};
+
 	render() {
-		if (this.state.hasError) {
-			return this.props.fallback;
+		if (this.state.hasError && this.state.error) {
+			const { fallback } = this.props;
+			// Component form → pass error + reset for debugging.
+			if (typeof fallback === "function") {
+				const FallbackComp = fallback as FallbackComponent;
+				return <FallbackComp error={this.state.error} reset={this.reset} />;
+			}
+			return fallback;
 		}
 
 		return this.props.children;

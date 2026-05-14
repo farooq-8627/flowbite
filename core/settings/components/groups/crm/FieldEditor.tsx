@@ -57,6 +57,8 @@ const FIELD_TYPES = [
 	{ value: "multiselect", label: "Multi select" },
 	{ value: "url", label: "URL" },
 	{ value: "email", label: "Email" },
+	{ value: "file", label: "File (single)" },
+	{ value: "files", label: "Files (multiple)" },
 ] as const;
 
 type FieldType = (typeof FIELD_TYPES)[number]["value"];
@@ -87,6 +89,8 @@ const createFieldSchema = z.object({
 		z.literal("multiselect"),
 		z.literal("url"),
 		z.literal("email"),
+		z.literal("file"),
+		z.literal("files"),
 	]),
 	groupName: z.string().optional(),
 	required: z.boolean(),

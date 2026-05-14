@@ -157,7 +157,13 @@ export const listMembers = orgQuery({
 			if (m.deletedAt !== undefined) continue;
 			const memberUser = await ctx.db.get(m.userId);
 			if (!memberUser || memberUser.deletedAt !== undefined) continue;
-			result.push({ ...m, user: memberUser });
+			// Resolve the storage-backed avatar to a URL if one isn't already set.
+			// Avoids "UM" initials-only rendering for users who uploaded a photo.
+			let avatarUrl = memberUser.avatarUrl;
+			if (!avatarUrl && memberUser.avatarStorageId) {
+				avatarUrl = (await ctx.storage.getUrl(memberUser.avatarStorageId)) ?? undefined;
+			}
+			result.push({ ...m, user: { ...memberUser, avatarUrl } });
 		}
 		return result;
 	},

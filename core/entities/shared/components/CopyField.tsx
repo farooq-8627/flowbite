@@ -74,7 +74,8 @@ export function CopyField({
 			onClick={handleCopy}
 			title={title ?? "Click to copy"}
 			className={cn(
-				"max-w-full truncate text-start text-inherit hover:text-foreground hover:underline underline-offset-2 focus-visible:outline-none focus-visible:underline",
+				// No underline — plain clickable text. Copy confirmation comes via the toast.
+				"max-w-full truncate text-start text-inherit transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none",
 				className,
 			)}
 			{...props}

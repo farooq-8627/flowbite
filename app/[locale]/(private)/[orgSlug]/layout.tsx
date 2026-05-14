@@ -14,7 +14,7 @@ export default async function Layout({
 	const { orgSlug } = await params;
 
 	return (
-		<ErrorBoundary fallback={<DashboardError />}>
+		<ErrorBoundary fallback={DashboardError}>
 			<OnboardingGuard>
 				<DashboardLayout orgSlug={orgSlug}>{children}</DashboardLayout>
 			</OnboardingGuard>

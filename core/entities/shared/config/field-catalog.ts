@@ -11,6 +11,7 @@ import type { EntitySlot, FieldSpec } from "../types";
 
 export const FIELD_CATALOG: Record<EntitySlot, Record<string, FieldSpec>> = {
 	lead: {
+		avatar: { label: "Avatar", render: "text" },
 		personCode: { label: "Person Code", render: "personCode" },
 		displayName: { label: "Name", render: "personDisplay", scope: "lead" },
 		email: { label: "Email", render: "email" },
@@ -19,10 +20,12 @@ export const FIELD_CATALOG: Record<EntitySlot, Record<string, FieldSpec>> = {
 		source: { label: "Source", render: "badge" },
 		assignedTo: { label: "Assignee", render: "personDisplay", scope: "user" },
 		tags: { label: "Tags", render: "tags" },
+		aiSummary: { label: "AI summary", render: "text" },
 		createdAt: { label: "Created", render: "relativeTime" },
 		updatedAt: { label: "Updated", render: "relativeTime" },
 	},
 	contact: {
+		avatar: { label: "Avatar", render: "text" },
 		personCode: { label: "Person Code", render: "personCode" },
 		displayName: { label: "Name", render: "personDisplay", scope: "contact" },
 		email: { label: "Email", render: "email" },
@@ -30,6 +33,7 @@ export const FIELD_CATALOG: Record<EntitySlot, Record<string, FieldSpec>> = {
 		companyId: { label: "Company", render: "companyLink" },
 		assignedTo: { label: "Assignee", render: "personDisplay", scope: "user" },
 		tags: { label: "Tags", render: "tags" },
+		aiSummary: { label: "AI summary", render: "text" },
 		createdAt: { label: "Created", render: "relativeTime" },
 	},
 	deal: {
@@ -40,6 +44,7 @@ export const FIELD_CATALOG: Record<EntitySlot, Record<string, FieldSpec>> = {
 		currentStageId: { label: "Stage", render: "stageBadge" },
 		assignedTo: { label: "Assignee", render: "personDisplay", scope: "user" },
 		tags: { label: "Tags", render: "tags" },
+		aiSummary: { label: "AI summary", render: "text" },
 		staleIndicator: { label: "Stale", render: "stale" },
 		createdAt: { label: "Created", render: "relativeTime" },
 	},
@@ -50,6 +55,7 @@ export const FIELD_CATALOG: Record<EntitySlot, Record<string, FieldSpec>> = {
 		website: { label: "Website", render: "link" },
 		assignedTo: { label: "Assignee", render: "personDisplay", scope: "user" },
 		tags: { label: "Tags", render: "tags" },
+		aiSummary: { label: "AI summary", render: "text" },
 		contactCount: { label: "Contacts", render: "count", computed: true },
 		openDealCount: { label: "Open Deals", render: "count", computed: true },
 		createdAt: { label: "Created", render: "relativeTime" },

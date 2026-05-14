@@ -41,8 +41,11 @@ export const list = orgQuery({
 		// Over-fetch to account for soft-deleted + secondary filters, then trim
 		const results = await q.take(cap * 3);
 
+		// Converted leads REMAIN in the list — they just have status="converted"
+		// and show up in that kanban column / table row. This keeps the history
+		// visible + lets the user revert a mistaken conversion from its row.
 		return results
-			.filter((l) => l.deletedAt === undefined && !l.convertedAt)
+			.filter((l) => l.deletedAt === undefined)
 			.filter((l) => !args.assignedTo || l.assignedTo === args.assignedTo)
 			.filter((l) => !args.source || l.source === args.source)
 			.slice(0, cap);

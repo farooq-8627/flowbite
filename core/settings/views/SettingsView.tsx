@@ -8,7 +8,7 @@ import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import type { ShellGroup, ShellSection } from "@/core/shared/layouts";
 import { ShellLayout } from "@/core/shared/layouts";
 import { SettingsContent } from "../components/SettingsContent";
-import { DEFAULT_GROUP, SETTINGS_GROUPS, type SettingsGroupId } from "../config/settings-nav";
+import { DEFAULT_GROUP, getSettingsGroups, type SettingsGroupId } from "../config/settings-nav";
 import { getSettingsSections } from "../config/settings-sections";
 import type { OrgSettings } from "../types";
 
@@ -44,6 +44,7 @@ export function SettingsView({ orgSlug }: { orgSlug: string }) {
 	// and the toolbar pills, mobile sheet, and search index all update.
 	const labels = useEntityLabels(orgId);
 	const dynamicSections = useMemo(() => getSettingsSections(labels), [labels]);
+	const dynamicGroups = useMemo(() => getSettingsGroups(labels), [labels]);
 
 	const isReady = !!orgId && settings !== undefined && permissions !== undefined;
 
@@ -58,7 +59,7 @@ export function SettingsView({ orgSlug }: { orgSlug: string }) {
 	return (
 		<ShellLayout
 			title="Settings"
-			groups={SETTINGS_GROUPS as ShellGroup[]}
+			groups={dynamicGroups as ShellGroup[]}
 			sections={dynamicSections as ShellSection[]}
 			permissions={permissions}
 			defaultGroupId={DEFAULT_GROUP}

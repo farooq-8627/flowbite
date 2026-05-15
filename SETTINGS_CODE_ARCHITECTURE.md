@@ -128,7 +128,7 @@ const tagsDescription =
 
 ```ts
 // See useSettingsSearch.ts — never el.scrollIntoView() in this shell.
-import { scrollToSection } from "@/core/settings/hooks/useSettingsSearch";
+import { scrollToSection } from "@/core/platform/settings/hooks/useSettingsSearch";
 scrollToSection("crm.tags");  // scrolls the inner <main> only
 ```
 

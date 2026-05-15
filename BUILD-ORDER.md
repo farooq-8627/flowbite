@@ -173,7 +173,7 @@ import { ERRORS } from "../../../_shared/errors";
 import { internal } from "../../../_generated/api";
 
 // Frontend hooks
-import { useEntityLabels } from "@/core/shell/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shell/hooks/useEntityLabels";
 import { PersonCodeBadge } from "@/core/entities/shared/PersonCodeBadge";
 import { api } from "@/convex/_generated/api";
 ```

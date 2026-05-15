@@ -55,8 +55,9 @@ export default defineSchema({
 	fieldDefinitions: crmFields.fieldDefinitions,
 	fieldValues: crmFields.fieldValues,
 
-	// CRM — shared (notes, reminders, tags, savedViews)
+	// CRM — shared (notes, messages, reminders, tags, savedViews)
 	notes: crmShared.notes,
+	messages: crmShared.messages,
 	reminders: crmShared.reminders,
 	tags: crmShared.tags,
 	entityTags: crmShared.entityTags,

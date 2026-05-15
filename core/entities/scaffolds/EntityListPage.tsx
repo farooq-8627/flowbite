@@ -15,10 +15,13 @@
 
 import type { ColumnDef, Table } from "@tanstack/react-table";
 import type { Id } from "@/convex/_generated/dataModel";
-import { DataTable } from "@/core/datatable/components/DataTable";
-import { DataTableViewOptions } from "@/core/datatable/components/DataTableViewOptions";
-import { useDataTable } from "@/core/datatable/hooks/useDataTable";
-import { KanbanBoard, type KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
+import { DataTable } from "@/core/data-display/datatable/components/DataTable";
+import { DataTableViewOptions } from "@/core/data-display/datatable/components/DataTableViewOptions";
+import { useDataTable } from "@/core/data-display/datatable/hooks/useDataTable";
+import {
+	KanbanBoard,
+	type KanbanColumnConfig,
+} from "@/core/data-display/kanban/components/KanbanBoard";
 import { EmptyState } from "../shared/components/EmptyState";
 import type { EntitySlot, ViewKind } from "../shared/types";
 import { EntityPageLayout, type PrimaryActionConfig } from "./EntityPageLayout";

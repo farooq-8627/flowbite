@@ -30,8 +30,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { FileDropzone, useFileAttachments } from "@/core/data-io/files/components/FileUpload";
 import type { EntitySlot } from "@/core/entities/shared/types";
-import { FileDropzone, useFileAttachments } from "@/core/files/components/FileUpload";
 import { cn } from "@/lib/utils";
 import { type FieldDef, getInputRenderer } from "../inputs/input-dispatcher";
 

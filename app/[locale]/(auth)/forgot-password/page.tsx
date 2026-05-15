@@ -1,4 +1,4 @@
-import { ForgotPasswordPage } from "@/core/auth/components/ForgotPasswordPage";
+import { ForgotPasswordPage } from "@/core/shell/auth/components/ForgotPasswordPage";
 
 export default function Page() {
 	return <ForgotPasswordPage />;

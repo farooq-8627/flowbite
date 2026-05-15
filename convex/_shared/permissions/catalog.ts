@@ -78,6 +78,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, { label: string; descripti
 	companies: { label: "{Companies}" },
 	deals: { label: "{Deals}" },
 	notes: { label: "Notes" },
+	messages: { label: "Messages" },
 	reminders: { label: "Reminders" },
 	tags: { label: "Tags" },
 	savedViews: { label: "Saved Views" },
@@ -97,6 +98,7 @@ export const PERMISSION_MODULE_ORDER: readonly string[] = [
 	"companies",
 	"deals",
 	"notes",
+	"messages",
 	"reminders",
 	"tags",
 	"savedViews",
@@ -385,6 +387,34 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		key: "notes.pin",
 		module: "notes",
 		label: "Pin notes",
+		defaultRoles: ["Owner", "Admin"],
+	},
+
+	// ── Messages ─────────────────────────────────────────────────────────────
+	{
+		key: "messages.view",
+		module: "messages",
+		label: "View messages",
+		description: "Read chat-style messages on profile, deal, and company threads.",
+		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
+	},
+	{
+		key: "messages.send",
+		module: "messages",
+		label: "Send messages",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "messages.delete",
+		module: "messages",
+		label: "Delete own messages",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "messages.deleteAny",
+		module: "messages",
+		label: "Delete any message",
+		description: "Moderator-level — remove other members' messages.",
 		defaultRoles: ["Owner", "Admin"],
 	},
 

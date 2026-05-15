@@ -25,13 +25,13 @@ import { Label } from "@/components/ui/label";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
 import {
 	CreateModeFileField,
 	FileBufferProvider,
 	useFileBuffer,
-} from "@/core/files/components/CreateModeFileField";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+} from "@/core/data-io/files/components/CreateModeFileField";
+import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 type Mode = "add" | "edit";
 

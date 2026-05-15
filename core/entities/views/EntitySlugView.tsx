@@ -8,7 +8,7 @@ import {
 	ENTITY_LABEL_DEFAULTS,
 	type EntityLabels,
 	useEntityLabels,
-} from "@/core/shared/hooks/useEntityLabels";
+} from "@/core/shell/shared/hooks/useEntityLabels";
 import { CompaniesView } from "../_entities/companies/views/CompaniesView";
 import { ContactsView } from "../_entities/contacts/views/ContactDetailView";
 import { DealsView } from "../_entities/deals/views/DealDetailView";

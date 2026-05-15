@@ -10,7 +10,7 @@ export const listForPerson = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "notes.view");
+		requireRole(member.permissions, "reminders.view");
 
 		return ctx.db
 			.query("reminders")
@@ -25,9 +25,11 @@ export const getDueToday = orgQuery({
 	args: { orgId: v.id("orgs") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "notes.view");
+		requireRole(member.permissions, "reminders.view");
 
-		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
+		// `reminders.manage` is the moderator-level gate that lets a member see
+		// every reminder in the org (not just their own). Fallbacks to assignee-only.
+		const canSeeAllReminders = hasPermission(member.permissions, "reminders.manage");
 		const startOfDay = new Date();
 		startOfDay.setHours(0, 0, 0, 0);
 		const endOfDay = new Date();
@@ -44,7 +46,7 @@ export const getDueToday = orgQuery({
 			)
 			.collect();
 
-		return isAdmin ? reminders : reminders.filter((r) => r.assignedTo === userId);
+		return canSeeAllReminders ? reminders : reminders.filter((r) => r.assignedTo === userId);
 	},
 });
 
@@ -52,7 +54,7 @@ export const listOpen = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "notes.view");
+		requireRole(member.permissions, "reminders.view");
 
 		return ctx.db
 			.query("reminders")

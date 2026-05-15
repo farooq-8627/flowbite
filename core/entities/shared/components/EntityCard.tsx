@@ -59,7 +59,10 @@ import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
 import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import type { EntitySlot } from "@/core/entities/shared/types";
-import { formatCurrency, useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
+import {
+	formatCurrency,
+	useOrgDefaultCurrency,
+} from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
 import { cn } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────

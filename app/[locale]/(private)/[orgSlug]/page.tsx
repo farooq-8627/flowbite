@@ -1,4 +1,4 @@
-import { DashboardHomeView } from "@/core/shell/views/DashboardHomeView";
+import { DashboardHomeView } from "@/core/shell/shell/views/DashboardHomeView";
 
 export default async function DashboardPage({ params }: { params: Promise<{ orgSlug: string }> }) {
 	const { orgSlug } = await params;

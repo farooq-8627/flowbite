@@ -29,14 +29,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+	FileBufferProvider,
+	useFileBuffer,
+} from "@/core/data-io/files/components/CreateModeFileField";
 import { EntityFormDrawer } from "@/core/entities/scaffolds/EntityFormDrawer";
 import {
 	EntityFieldForm,
 	type EntityFormValues,
 } from "@/core/entities/shared/components/EntityFieldForm";
 import { useDedup } from "@/core/entities/shared/hooks/useDedup";
-import { FileBufferProvider, useFileBuffer } from "@/core/files/components/CreateModeFileField";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { cn } from "@/lib/utils";
 
 interface AddLeadDrawerProps {

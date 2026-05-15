@@ -31,7 +31,7 @@ import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-selec
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 interface LeadOption extends MultiSelectOption {
 	leadId: Id<"leads">;

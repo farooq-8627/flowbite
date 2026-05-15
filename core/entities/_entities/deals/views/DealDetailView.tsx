@@ -27,6 +27,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
+import {
+	CreateModeFileField,
+	FileBufferProvider,
+	useFileBuffer,
+} from "@/core/data-io/files/components/CreateModeFileField";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
@@ -48,14 +54,8 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
-import {
-	CreateModeFileField,
-	FileBufferProvider,
-	useFileBuffer,
-} from "@/core/files/components/CreateModeFileField";
-import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
-import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 

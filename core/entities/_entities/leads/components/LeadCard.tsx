@@ -24,7 +24,7 @@ import {
 	type EntityShortcut,
 	type MenuAction,
 } from "@/core/entities/shared/components/EntityCard";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 type LeadCardItem = EntityCardItem & {
 	_id?: Id<"leads">;

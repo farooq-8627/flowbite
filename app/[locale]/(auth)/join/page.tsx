@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
-import { AuthShellLayout } from "@/core/auth/layouts/AuthShellLayout";
+import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
 
 /**
  * JoinPage — Enter an invite token to join a workspace.

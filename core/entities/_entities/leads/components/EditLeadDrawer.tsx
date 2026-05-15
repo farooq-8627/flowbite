@@ -19,7 +19,7 @@ import {
 	EntityFieldForm,
 	type EntityFormValues,
 } from "@/core/entities/shared/components/EntityFieldForm";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 interface EditLeadDrawerProps {
 	open: boolean;

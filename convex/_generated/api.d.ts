@@ -10,6 +10,7 @@
 
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
+import type * as _migrations_cleanup from "../_migrations/cleanup.js";
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_permissions_catalog from "../_shared/permissions/catalog.js";
@@ -44,6 +45,9 @@ import type * as crm_fields_pipelines_helpers from "../crm/fields/pipelines/help
 import type * as crm_fields_pipelines_mutations from "../crm/fields/pipelines/mutations.js";
 import type * as crm_fields_pipelines_queries from "../crm/fields/pipelines/queries.js";
 import type * as crm_people_queries from "../crm/people/queries.js";
+import type * as crm_shared_calendar_queries from "../crm/shared/calendar/queries.js";
+import type * as crm_shared_messages_mutations from "../crm/shared/messages/mutations.js";
+import type * as crm_shared_messages_queries from "../crm/shared/messages/queries.js";
 import type * as crm_shared_notes_mutations from "../crm/shared/notes/mutations.js";
 import type * as crm_shared_notes_queries from "../crm/shared/notes/queries.js";
 import type * as crm_shared_reminders_mutations from "../crm/shared/reminders/mutations.js";
@@ -90,6 +94,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
+  "_migrations/cleanup": typeof _migrations_cleanup;
   "_shared/constants": typeof _shared_constants;
   "_shared/errors": typeof _shared_errors;
   "_shared/permissions/catalog": typeof _shared_permissions_catalog;
@@ -124,6 +129,9 @@ declare const fullApi: ApiFromModules<{
   "crm/fields/pipelines/mutations": typeof crm_fields_pipelines_mutations;
   "crm/fields/pipelines/queries": typeof crm_fields_pipelines_queries;
   "crm/people/queries": typeof crm_people_queries;
+  "crm/shared/calendar/queries": typeof crm_shared_calendar_queries;
+  "crm/shared/messages/mutations": typeof crm_shared_messages_mutations;
+  "crm/shared/messages/queries": typeof crm_shared_messages_queries;
   "crm/shared/notes/mutations": typeof crm_shared_notes_mutations;
   "crm/shared/notes/queries": typeof crm_shared_notes_queries;
   "crm/shared/reminders/mutations": typeof crm_shared_reminders_mutations;

@@ -26,8 +26,8 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { Id } from "@/convex/_generated/dataModel";
-import { DataTableColumnHeader } from "@/core/datatable/components/DataTableColumnHeader";
-import { DataTableRowActions } from "@/core/datatable/components/DataTableRowActions";
+import { DataTableColumnHeader } from "@/core/data-display/datatable/components/DataTableColumnHeader";
+import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import {
 	type EntityRow,
 	type FieldDef,
@@ -116,7 +116,8 @@ export function useEntityColumns<TRow extends EntityRow>(
 				cell: ({ row }) => {
 					const r = row.original as EntityRow;
 					const customValues = customValuesByEntityId?.[r.id];
-					const prefetchedTags = field.kind === "tags" ? tagsByEntityId?.[r.id] : undefined;
+					const prefetchedTags =
+						field.kind === "tags" ? tagsByEntityId?.[r.id] : undefined;
 					return renderer({ slot, field, row: r, customValues, prefetchedTags });
 				},
 				// Tags are sortable when batch data is provided; otherwise
@@ -202,7 +203,15 @@ export function useEntityColumns<TRow extends EntityRow>(
 		}
 
 		return cols;
-	}, [tableFields, customValuesByEntityId, hiddenColumnIds, onDelete, rowExtraActions, slot, tagsByEntityId]);
+	}, [
+		tableFields,
+		customValuesByEntityId,
+		hiddenColumnIds,
+		onDelete,
+		rowExtraActions,
+		slot,
+		tagsByEntityId,
+	]);
 
 	return { columns, fields: tableFields, isLoading };
 }

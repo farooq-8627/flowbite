@@ -28,7 +28,11 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { type AttachedFile, FileList, FileUpload } from "@/core/files/components/FileUpload";
+import {
+	type AttachedFile,
+	FileList,
+	FileUpload,
+} from "@/core/data-io/files/components/FileUpload";
 
 type EntityType = "lead" | "contact" | "deal" | "company" | "user" | "org";
 

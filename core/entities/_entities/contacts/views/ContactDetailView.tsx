@@ -22,7 +22,8 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { DataTableRowActions } from "@/core/datatable/components/DataTableRowActions";
+import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
+import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { EditContactDrawer } from "@/core/entities/_entities/contacts/components/EditContactDrawer";
 import { ConvertLeadDrawer } from "@/core/entities/_entities/leads/components/ConvertLeadDrawer";
 import { useLeadMutations } from "@/core/entities/_entities/leads/hooks/useLeadMutations";
@@ -46,9 +47,8 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
-import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
-import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 

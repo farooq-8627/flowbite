@@ -230,7 +230,7 @@ type Props<TRow> = {
 "use client";
 
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useLeads } from "../hooks/useLeads";
 import { useLeadColumns } from "../hooks/useLeadColumns";
 import { AddLeadDialog } from "../components/AddLeadDialog";

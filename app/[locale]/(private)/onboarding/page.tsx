@@ -1,3 +1,3 @@
-import { OnboardingPage } from "@/core/onboarding/components/OnboardingPage";
+import { OnboardingPage } from "@/core/shell/onboarding/components/OnboardingPage";
 
 export default OnboardingPage;

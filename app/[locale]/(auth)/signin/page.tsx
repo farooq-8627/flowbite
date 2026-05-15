@@ -1,3 +1,3 @@
-import { SignInPage } from "@/core/auth/components/SignInPage";
+import { SignInPage } from "@/core/shell/auth/components/SignInPage";
 
 export default SignInPage;

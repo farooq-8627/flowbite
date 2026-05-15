@@ -1,4 +1,4 @@
-import { ProfileDetailView } from "@/core/profile/views/ProfileDetailView";
+import { ProfileDetailView } from "@/core/platform/profile/views/ProfileDetailView";
 
 /**
  * Person detail page.

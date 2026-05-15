@@ -59,7 +59,7 @@ export const getForPerson = orgQuery({
 				.take(200)
 				.then((rows) =>
 					rows
-						.filter((r) => r.personCode === args.personCode && !r.isActivityChat)
+						.filter((r) => r.personCode === args.personCode)
 						.filter((r) => canViewInternal || !r.isInternal),
 				),
 			// Reminders for this person

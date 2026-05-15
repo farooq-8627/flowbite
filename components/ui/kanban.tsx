@@ -918,7 +918,11 @@ function KanbanItem(props: KanbanItemProps) {
 						"cursor-default": context.flatCursor,
 						"data-dragging:cursor-grabbing": !context.flatCursor,
 						"cursor-grab": !isDragging && asHandle && !context.flatCursor,
-						"opacity-50": isDragging,
+						// While dragging the overlay clone is what the user sees.
+						// Hide the source card entirely (visibility:hidden keeps
+						// its slot in the column so layout doesn't jump). This
+						// avoids the faded "ghost" at the original position.
+						invisible: isDragging,
 						"pointer-events-none opacity-50": disabled,
 					},
 					className,
@@ -973,8 +977,10 @@ const KanbanOverlayContext = React.createContext(false);
 const dropAnimation: DropAnimation = {
 	sideEffects: defaultDropAnimationSideEffects({
 		styles: {
+			// Keep the dropped card at full opacity so there is no fade flash
+			// at the destination column.
 			active: {
-				opacity: "0.4",
+				opacity: "1",
 			},
 		},
 	}),

@@ -35,6 +35,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
@@ -51,9 +52,8 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
-import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
-import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
-import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AddLeadDrawer } from "../components/AddLeadDrawer";

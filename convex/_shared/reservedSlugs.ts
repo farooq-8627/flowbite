@@ -70,6 +70,16 @@ export const RESERVED_SLUGS = new Set([
 	"changelog",
 	"roadmap",
 
+	// ── Workspace feature routes (cross-cutting, not entity slots) ───────────
+	// These map to /{orgSlug}/{slug} static routes and must never collide with
+	// renamable entity slugs.
+	"profile",
+	"messages",
+	"calendar",
+	"reminders",
+	"notes",
+	"timeline",
+
 	// ── Platform admin ───────────────────────────────────────────────────────
 	"platform",
 	"superadmin",

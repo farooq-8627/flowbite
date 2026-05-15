@@ -28,10 +28,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { CreateModeFileField } from "@/core/data-io/files/components/CreateModeFileField";
+import { FileUpload } from "@/core/data-io/files/components/FileUpload";
 import type { EntitySlot } from "@/core/entities/shared/types";
-import { CreateModeFileField } from "@/core/files/components/CreateModeFileField";
-import { FileUpload } from "@/core/files/components/FileUpload";
-import { useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
+import { useOrgDefaultCurrency } from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
 import { cn } from "@/lib/utils";
 import { BufferedTagsPicker } from "../BufferedTagsPicker";
 import { PersonSelect } from "../PersonSelect";

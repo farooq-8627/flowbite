@@ -1,4 +1,4 @@
-import { JoinOrgPage } from "@/core/auth/components/JoinOrgPage";
+import { JoinOrgPage } from "@/core/shell/auth/components/JoinOrgPage";
 
 interface Props {
 	params: Promise<{ token: string }>;

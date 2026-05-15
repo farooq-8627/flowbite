@@ -1,18 +1,21 @@
-# FRONTEND-DECISIONS.md
-# Orbitly — All Frontend Architecture Decisions (Locked)
+# FlowBite — Frontend Architecture Decisions (Locked)
 
-> **Purpose**: Single source of truth for every frontend decision made.
+> **Purpose**: Single source of truth for every frontend architecture decision.
 > AI agents MUST read this before building any frontend module.
-> Updated: 2026-05-08
+> **Updated**: 2026-05-16
 >
-> **Cross-reference**: `PHASE2-PROGRESS.md` (build plan), `CONVEX-ARCHITECTURE.md` (backend patterns),
-> `.kiro/code-architecture-v.md` (full architecture bible), `convex/_shared/permissions.ts` (RBAC)
+> **Cross-reference**: `CORE-FEATURES-ARCHITECTURE.md` (current build), `Phase-2-progress.md`,
+> `convex/_shared/permissions/catalog.ts` (RBAC catalog), `convex/schema/*.ts` (schema).
+>
+> **Conventions**:
+> - "App name" placeholders use `{App}` so this doc stays brand-agnostic. Real text comes from `APP_CONFIG`.
+> - All examples use `{orgSlug}`, `{personCode}` etc. for path parameters.
 
 ---
 
 ## RULE 0 — NEVER HARDCODE ENTITY LABELS OR SLUGS
 
-This is the most important rule. It is violated most often.
+This is the most-violated rule. Read first.
 
 ```
 ❌ BANNED: "Leads", "Contacts", "Deals", "Companies" as hardcoded strings in UI
@@ -21,9 +24,9 @@ This is the most important rule. It is violated most often.
 ✅ REQUIRED: All nav hrefs use the entitySlot system — labels and slugs from DB
 ```
 
-**Why**: Different industries rename entities. A Dubai RE firm calls leads "Inquiries". A freelancer
-calls deals "Projects". A law firm calls contacts "Clients". The UI must reflect whatever the org
-has configured — not what we hardcoded.
+**Why**: Different industries rename entities. A Dubai RE firm calls leads "Inquiries". A
+freelancer calls deals "Projects". A law firm calls contacts "Clients". The UI must reflect what
+the org has configured — not what we hardcoded.
 
 **How it works**:
 ```typescript
@@ -34,29 +37,27 @@ has configured — not what we hardcoded.
 const labels = useQuery(api.orgs.getEntityLabels);
 const leadLabel = labels?.lead?.plural ?? "Leads";
 const leadSlug = labels?.lead?.slug ?? "leads";
-// href = `/dashboard/${orgSlug}/${leadSlug}`
+// href = `/${orgSlug}/${leadSlug}`
 ```
 
-**Route slugs are also DB-backed**:
-- Default: `/leads`, `/contacts`, `/deals`, `/companies`
-- Org can rename: `/inquiries`, `/clients`, `/opportunities`, `/accounts`
-- The route `[entity]` dynamic segment handles this
-- `orgSettings.entityLabels[slot].slug` is the URL segment
+**Workspace-scoped routes are NOT renamable.** Routes under the new Workspace nav group
+(`messages`, `calendar`, `reminders`, `notes`, `timeline`, `profile`) are static slugs reserved
+in `convex/_shared/reservedSlugs.ts`. Only CRM entity slots (lead/contact/deal/company) are renamable.
 
 ---
 
-## RULE 1 — PERSON PAGE: ONE PAGE FOR LEAD + CONTACT
+## RULE 1 — A PERSON IS ONE IDENTITY: ONE PROFILE PAGE
 
-### Decision: A person is ONE identity. One page. One URL. personCode is the slug.
+A person is ONE identity. ONE page. ONE URL. `personCode` is the slug.
 
 ```
-❌ WRONG: /leads/[leadId] and /contacts/[contactId] as separate pages
+❌ WRONG:  /leads/[leadId] and /contacts/[contactId] as separate detail pages
 ✅ CORRECT: /profile/[personCode] — one page for the same human regardless of stage
 ```
 
-**Route**: `/{locale}/{orgSlug}/profile/P-001`
+**Route**: `/{locale}/{orgSlug}/profile/{personCode}` (e.g. `.../profile/P-001`)
 
-**How the backend resolves personCode**:
+**Backend resolution**:
 ```typescript
 // convex/crm/people/queries.ts::getByPersonCode
 // 1. Check contacts first (converted = more current state)
@@ -64,135 +65,58 @@ const leadSlug = labels?.lead?.slug ?? "leads";
 // 3. Return { entity, type: "lead"|"contact" }
 ```
 
-**No separate /leads and /contacts detail pages.** The `[entitySlug]` dynamic route handles
-list views. The `/profile/[personCode]` route handles detail views for all people.
+**No separate `/leads/{id}` and `/contacts/{id}` detail pages.** The `[entitySlug]` dynamic route
+handles list views only. The `/profile/[personCode]` route handles detail for everyone.
 
 ---
 
-## RULE 2 — PROFILE PAGE: WHAT IT SHOWS
+## RULE 2 — MESSAGES, NOTES, NOTIFICATIONS, ACTIVITY LOGS, REMINDERS ARE INDEPENDENT TABLES
 
-The profile page (`/profile/[personCode]`) is the central hub for everything about a person.
+This rule supersedes the previous Rule 2 (which stored messages on the notes table via an
+`isActivityChat` boolean). Six concepts → six dedicated tables (or read-merged views). Cross-ref:
+`CORE-FEATURES-ARCHITECTURE.md` §0.
 
-### Tabs (left content area)
+| # | Concept | Table | Backend status | Frontend status |
+|---|---|---|---|---|
+| 1 | Notes | `notes` | ✅ exists; `isActivityChat` field **removed** in this revision | UI pending |
+| 2 | Messages | `messages` (NEW) | 🆕 added in this revision | UI pending |
+| 3 | Notifications | `notifications` | ✅ exists | UI pending |
+| 4 | Activity Logs | `activityLogs` | ✅ exists | (no direct UI — feeds Timeline) |
+| 5 | Reminders | `reminders` | ✅ exists | UI pending |
+| 6 | Timeline | NO TABLE — read view that merges activityLogs + notes + reminders | ✅ `timeline.getForPerson` / `getForOrg` | UI pending (custom design) |
+| 7 | Calendar | NO TABLE — read view that merges reminders + activityLogs + deal close dates | 🆕 `calendar.getEvents` | UI pending |
 
-| Tab | Content | Who sees it |
-|---|---|---|
-| **Overview** | personCode badge, contact info, assignee, company, tags, custom fields, quick actions | All with contacts.view |
-| **Messages** | Human messages + AI on-behalf. Chat bubble UI. Real-time. | All with contacts.view |
-| **Timeline** | Everything logged: created, updated, stage changes, AI actions, WhatsApp, reminders. Feed UI. AI scans this. | Role-filtered |
-| **Notes** | Agent-written notes. Editable. AI briefing shown at top. | All with notes.view |
-| **Deals** | All deals linked via personCode | roles with deals.view |
-| **Reminders** | All follow-ups for this person | roles with reminders.view |
-| **Files** | Phase 3 | roles with files.view |
+**Why dedicated tables (not flag-based polymorphism)**: independent indexes, RBAC, schema, AI tool
+clarity. See `CORE-FEATURES-ARCHITECTURE.md` §0 for the full rationale.
 
-### Why Overview tab instead of right sidebar
+**Permissions added with this rule**:
+- `messages.view`, `messages.send`, `messages.delete`, `messages.deleteAny`
 
-The app has a left sidebar + right AI chat panel. There is no space for a third panel.
-Everything that would go in a "right sidebar" goes into the Overview tab instead.
-The same Overview content is reused as a **PersonCard** (compact popover) on deal cards.
-
-### Overview tab content (complete list)
-
-```
-personCode badge (P-001) — clickable, copies to clipboard
-name + avatar + status/stage badge
-email, phone, WhatsApp number
-assignedTo user picker
-company link (if contact)
-tags (tag picker)
-custom fields (DynamicFieldRenderer — stage-aware)
-quick actions: Convert to Contact (if lead), Add Deal, Add Reminder, Add Note
-stale indicator (days since last contact, color from stage config)
-```
-
-### PersonCard (quick-view popover)
-
-Used on deal cards and anywhere a personCode appears. Shows a compact version of the
-Overview tab content. Has two buttons: "View Profile" (→ full profile page) and "Close".
-Built from the same data as the Overview tab — no separate query needed.
-
-```typescript
-// On a deal card:
-<PersonCodeBadge personCode={deal.personCode} />  // → links to full profile
-<Button onClick={() => setPersonCardOpen(true)}>Quick View</Button>
-<PersonCard personCode={deal.personCode} />  // popover with overview content
-```
-
-### Notes vs Messages vs Timeline (LOCKED)
-
-```
-Notes:    Agent-written text. Editable. Searchable. Shown in Notes tab.
-          AI briefing shown at top of Notes tab.
-          Stored in notes table. isActivityChat: false.
-
-Messages: Chat bubbles (human + AI on-behalf).
-          Stored in notes table with isActivityChat: true.
-          Shown in Messages tab only.
-
-Timeline: System log. activityLogs + reminders + stage changes + AI tool calls.
-          AI scans this for context. Not shown as chat.
-          Shown in Timeline tab only.
-```
-
-### Timeline UI spec (LOCKED)
-
-```
-- Vertical feed, newest first
-- Left: colored icon circle → vertical connector line → next entry
-- Center: event description + actor name + metadata
-- Right: relative timestamp ("2h ago", "Yesterday")
-- Color coding:
-    created      → blue    (#3b82f6)
-    stage_change → purple  (#8b5cf6)
-    note         → yellow  (#eab308)
-    reminder     → orange  (#f97316)
-    ai_action    → indigo  (#6366f1)
-    whatsapp     → green   (#22c55e)
-    system       → gray    (#6b7280)
-```
-
-### Role-based filtering on Timeline
-
-```
-Internal notes (isInternal: true):
-  → Visible to: owner, admin, roles with notes.viewInternal
-  → Hidden from: member, viewer, portal clients
-
-AI-generated entries (actorType: "ai"):
-  → Visible to all roles
-
-WhatsApp messages (Phase 3):
-  → Visible to: assigned agent + admin + owner
-```
+**Removed in this revision**: `notes.isActivityChat` field (no rows had it set — Phase 2 frontend
+hadn't been built).
 
 ---
 
-## RULE 3 — PLATFORM UNIFIED TIMELINE
+## RULE 3 — TIMELINE HAS TWO SCOPES: PERSON + ORG-WIDE
 
-There are TWO unified timeline scopes:
+Same component, two different query args:
 
-| Scope | Location | What it shows | Who sees it |
+| Scope | Where | Query | Permission |
 |---|---|---|---|
-| **Per-person timeline** | `/people/[personCode]` → Unified Timeline tab | Everything about this specific person | Roles with contacts.view (filtered by isInternal) |
-| **Platform/org timeline** | `/settings/activity-log` | Everything in the entire org | admin + owner only (activityLogs.viewOrg) |
+| **Per-person** | Profile page → Timeline tab | `timeline.getForPerson(orgId, personCode)` | `notes.view` (with `notes.viewInternal` filter applied) |
+| **Org-wide** | `/{orgSlug}/timeline` AND `/{orgSlug}/settings/activity-log` | `timeline.getForOrg(orgId, filter?)` | `activityLogs.viewOrg` (admin/owner) |
 
-The platform timeline is the org-wide audit log. It shows every action by every user on every entity.
-The per-person timeline is scoped to one person's personCode.
+**Backend already merges three sources**: `activityLogs` + `notes` (non-chat) + `reminders` and
+tags each entry with `_entryType` and `_color`. Frontend just renders.
 
-**Implementation**: Same `UnifiedTimeline` component, different query args:
-```typescript
-// Per-person:
-useQuery(api.timeline.getForPerson, { orgId, personCode })
-
-// Org-wide:
-useQuery(api.timeline.getForOrg, { orgId })  // admin only
-```
+**Custom UI**: Timeline visual is designed in-house — we do NOT copy any timeline component from a
+template. Backend gives the data, you design the look.
 
 ---
 
-## RULE 4 — STALENESS: CONFIGURABLE COLORS AND THRESHOLDS
+## RULE 4 — STALENESS IS CONFIGURABLE PER-STAGE (NEVER HARDCODED)
 
-### Decision: Staleness thresholds AND colors are configurable per pipeline stage, not hardcoded.
+Staleness thresholds AND colors are configurable per pipeline stage.
 
 ```
 ❌ BANNED: if (daysInStage > 7) → red border  (hardcoded threshold)
@@ -201,121 +125,83 @@ useQuery(api.timeline.getForOrg, { orgId })  // admin only
 ✅ REQUIRED: stage.staleColor from pipeline DB (or org-level defaults)
 ```
 
-**Schema addition to pipeline stages**:
+**Schema** (per pipeline stage):
 ```typescript
-// pipeline.stages[] — each stage object:
 {
   id: string,
   name: string,
   order: number,
-  staleAfterDays: number,      // e.g., 7 — configurable in Settings → Pipelines
-  staleColor: string,          // e.g., "#ef4444" — configurable
-  warningAfterDays: number,    // e.g., 5 — show warning before stale
-  warningColor: string,        // e.g., "#f59e0b"
+  staleAfterDays: number,
+  staleColor: string,
+  warningAfterDays: number,
+  warningColor: string,
   isFinal: boolean,
   finalType: "positive" | "negative" | "neutral",
 }
 ```
 
-**UI rendering**:
-```typescript
-// On a kanban card:
-const daysInStage = (Date.now() - deal.stageEnteredAt) / 86_400_000;
-const isStale = daysInStage > stage.staleAfterDays;
-const isWarning = daysInStage > stage.warningAfterDays && !isStale;
-
-// Border color:
-const borderColor = isStale ? stage.staleColor : isWarning ? stage.warningColor : "transparent";
-```
-
-**Settings → Pipelines**: Each stage has a "Stale after X days" input and a color picker.
-These are stored in the pipeline document in Convex. No hardcoded values anywhere.
-
-**Leads also have staleness** (even without pipeline stages):
-- `orgSettings.leadStaleAfterDays` — default 7 days
-- `orgSettings.leadStaleColor` — default red
-- Configurable in Settings → General
+**Leads also have staleness** (no pipeline stage):
+- `orgSettings.leadStaleAfterDays` (default 7)
+- `orgSettings.leadStaleColor` (default red)
 
 ---
 
-## RULE 5 — AI CAN DO EVERYTHING THE USER CAN DO
+## RULE 5 — AI CAN DO EVERYTHING THE USER CAN
 
-### Decision: AI is not confined to a subset of features. AI can do everything the user has permission to do.
+AI is not confined to a subset. AI capabilities = user permissions, filtered at the tool registry.
 
 ```
 AI capabilities = user's permissions (filtered at tool registry level)
 ```
 
-**What this means**:
-- If user has `pipelines.manage` → AI can add/remove/reorder stages
-- If user has `leads.create` → AI can create leads
-- If user has `org.editSettings` → AI can rename entities, change settings
-- If user has `deals.close` → AI can mark deals as won/lost
-- If user has `members.invite` → AI can invite team members
-
 **The tool registry enforces this**:
-```typescript
-// convex/ai/toolRegistry.ts
-// EVERY Convex mutation has a corresponding AI tool
-// The tool calls the SAME internal mutation
-// RBAC is checked inside the mutation — not in the tool
-// Tool registry filters which tools are shown to Claude based on user's permissions
-```
+- Every Convex mutation has a corresponding AI tool.
+- The tool calls the SAME internal mutation — RBAC checked inside.
+- Tool registry filters which tools are exposed to Claude based on user permissions.
 
-**AI workspace setup** (from code-architecture-v.md Module 33):
-- AI can set up pipelines, custom fields, roles, entity labels
-- AI can rename entities ("Call leads 'Inquiries' for our industry")
-- AI can create saved views, configure staleness thresholds
-- All via the same mutations the Settings UI uses
+**AI is cross-app, not entity-bound**. The AI assistant works across the entire workspace and
+also receives **route-specific context**:
+
+- AI knows the current route (`/{orgSlug}/messages/{conversationId}`, `/{orgSlug}/profile/P-001`,
+  `/{orgSlug}/{deal-slug}`, `/{orgSlug}/calendar`, `/{orgSlug}/settings/pipelines`).
+- AI receives the contextual entity (current personCode, dealCode, conversationId, calendarRange)
+  in the system prompt.
+- AI tool list is unfiltered by route — every cross-app tool is available everywhere — but the
+  prompt nudges toward route-relevant actions.
+- This is implemented by `core/inbox/ai/system-prompt-builder.ts` (Phase 3 module). Phase 2
+  exposes `useRouteContext()` hook in `core/inbox/ai/hooks/` for the prompt builder to consume.
 
 **Confirmation for destructive actions**:
-```
-AI always shows a preview + confirmation before:
-- Deleting records
-- Bulk updates (> 5 records)
+- Deletes
+- Bulk updates (>5 records)
 - Closing deals as won/lost
-- Changing org settings
+- Org settings changes
 - Inviting/removing members
-```
 
 ---
 
-## RULE 6 — DB-BACKED NAVIGATION (NO HARDCODED ROUTES)
+## RULE 6 — DB-BACKED NAVIGATION (NO HARDCODED ENTITY ROUTES)
 
 ```
 ❌ BANNED: href="/leads" hardcoded in nav config
 ✅ REQUIRED: href derived from orgSettings.entityLabels[slot].slug
 ```
 
-**Nav config pattern**:
+**Nav config pattern** (`core/shell/config/navigation.ts::buildNavigation`):
 ```typescript
-// core/shell/config/navigation.ts
-// entitySlot: "lead" | "contact" | "deal" | "company"
-// At render time: href = `/${orgSlug}/${labels[item.entitySlot].slug}`
-// Default slug: "leads", "contacts", "deals", "companies"
-// Org can change: "inquiries", "clients", "opportunities", "accounts"
+// At render time:
+href = `/${orgSlug}/${labels[item.entitySlot].slug}`
+// Default slug: "leads" / "contacts" / "deals" / "companies"
+// Org can rename: "inquiries" / "clients" / "opportunities" / "accounts"
 ```
 
-**Route resolution — `[entitySlug]` dynamic segment**:
-```typescript
-// app/[locale]/(private)/[orgSlug]/[entitySlug]/page.tsx
-// Catches ALL entity slugs — default and org-renamed
-// Next.js resolves named segments first:
-//   /profile → profile/page.tsx (wins)
-//   /settings → settings/layout.tsx (wins)
-//   /notifications → notifications/page.tsx (wins)
-//   /leads → [entitySlug]/page.tsx (caught here)
-//   /inquiries → [entitySlug]/page.tsx (caught here — org-renamed)
-// The page does a DB lookup: slug → entityType → renders correct view
-```
-
-**No separate /leads and /contacts directories.** One dynamic route handles all entity list views.
+**Route resolution** — `[entitySlug]` dynamic segment catches all entity slugs (default + renamed).
+Next.js resolves named segments first, so `/profile`, `/settings`, `/messages`, `/calendar`,
+`/reminders`, `/notes`, `/timeline`, `/notifications` are reserved (see Rule 12).
 
 ---
 
 ## RULE 7 — FOUR-LAYER AI SECURITY (LOCKED)
-
-From code-architecture-v.md Module 30:
 
 ```
 Layer 1: System prompt boundaries
@@ -337,11 +223,11 @@ Layer 4: Confirmation for destructive actions
 
 ---
 
-## RULE 8 — ONE FUNCTION THREE CALLERS (LOCKED)
+## RULE 8 — ONE FUNCTION, MANY CALLERS
 
-Every Convex mutation is written ONCE. Called identically by:
+Every Convex mutation is written ONCE. Same function called by:
 
-| Caller | Source field | actorType |
+| Caller | `source` field | `actorType` |
 |---|---|---|
 | UI (React) | `"manual"` | `"user"` |
 | AI tool | `"ai"` | `"ai"` |
@@ -355,32 +241,25 @@ The mutation doesn't care who called it. RBAC, dedup, logging, notifications —
 
 ## RULE 9 — CLIENT PORTAL READINESS (BUILD NOW, EXPOSE LATER)
 
-### Decision: Build the person detail page to support client portal from day one.
+Build the person detail page to support the client portal from day one.
 
-The client portal (Phase 9) shows a person their own data. The same PersonDetailPage component
-is used — but with a different RBAC context (portal_client role).
+**Implications**:
+- Every component on PersonDetailPage checks permissions before rendering.
+- `isInternal: true` notes hidden from `portal_client` role.
+- Deal values hidden unless `deals.viewValues` granted.
+- Same React component works for internal agents and portal clients.
+- No separate portal UI code — just different permissions.
 
-**What this means for the build**:
-- Every component on PersonDetailPage checks permissions before rendering
-- `isInternal: true` notes are hidden from portal_client role
-- Deal values hidden from portal_client unless `deals.viewValues` granted
-- The same React component works for both internal agents and portal clients
-- No separate portal UI code needed — just different permissions
-
-**RBAC gates on PersonDetailPage**:
+**Pattern**:
 ```typescript
-// Each section checks permission before rendering:
 {hasPermission("notes.viewInternal") && <InternalNotes />}
 {hasPermission("deals.viewValues") && <DealValue />}
 {hasPermission("reminders.view") && <RemindersTab />}
-{hasPermission("files.view") && <FilesTab />}
 ```
 
 ---
 
-## RULE 10 — ENTITY CARD COLORS AND VISUAL INDICATORS
-
-### Decision: All visual indicators (colors, badges, borders) are configurable, not hardcoded.
+## RULE 10 — VISUAL INDICATORS ARE CONFIGURABLE (NEVER HARDCODED)
 
 | Indicator | Source | Configurable in |
 |---|---|---|
@@ -391,21 +270,21 @@ is used — but with a different RBAC context (portal_client role).
 | Status badge colors | `orgSettings.statusColors` | Settings → General |
 | Lead source badge | `orgSettings.sourceColors` | Settings → General |
 
-**No hardcoded color values in components**. All colors come from DB.
+No hardcoded color values in components. All colors come from the DB.
 
 ---
 
 ## RULE 11 — VERTICAL SLICE BUILD ORDER (LOCKED)
 
-Build one module completely (backend hook → view → route) before starting the next.
+Build one module backend → hooks → view → route → done before starting the next.
 
 ```
-Slice 0: Shared primitives (DataTable, KanbanBoard, scaffolds, shared components)
-Slice 1: Leads list + Contacts list (separate list views, shared PersonDetailPage)
-Slice 2: PersonDetailPage (the unified person hub — replaces LeadDetailView + ContactDetailView)
+Slice 0: Shared primitives (DataTable, KanbanBoard, scaffolds, shared components) ✅
+Slice 1: Leads list + Contacts list (separate list views, shared profile detail page)
+Slice 2: ProfileDetailPage (the unified person hub)
 Slice 3: Companies list + detail
 Slice 4: Deals kanban + detail
-Slice 5: Unified Timeline component (used in PersonDetailPage)
+Slice 5: Workspace features — Messages, Notes, Calendar, Reminders, Timeline (this revision)
 Slice 6: Settings pages
 Slice 7: Dashboard home (real metrics)
 ```
@@ -414,36 +293,34 @@ Slice 7: Dashboard home (real metrics)
 
 ## RULE 12 — ROUTE STRUCTURE (FINAL)
 
-**URL pattern: `/{locale}/{orgSlug}/...`** — orgSlug comes directly after locale, no "dashboard" segment.
+URL pattern: `/{locale}/{orgSlug}/...` — `orgSlug` directly after locale, no `dashboard` segment.
 
 ```
 app/[locale]/
   (auth)/                     ← signin, signup, forgot-password, verify-email, join
   (private)/
     layout.tsx                ← auth guard (client-side useConvexAuth)
-    onboarding/
-      page.tsx                ← 3-step wizard
+    onboarding/page.tsx       ← 3-step wizard
     [orgSlug]/
       layout.tsx              ← org resolver + DashboardLayout + OnboardingGuard
-      page.tsx                ← Dashboard home  →  /{locale}/{orgSlug}
-      people/
-        page.tsx              ← Combined people list (leads + contacts, filterable)
-        [personCode]/
-          page.tsx            ← PersonDetailPage  →  /{locale}/{orgSlug}/people/P-001
-      leads/
-        page.tsx              ← Leads list view
-        [id]/page.tsx         ← Redirect to /people/[personCode]
-      contacts/
-        page.tsx              ← Contacts list view
-        [id]/page.tsx         ← Redirect to /people/[personCode]
-      companies/
-        page.tsx              ← Companies list
-        [id]/page.tsx         ← Company detail
-      deals/
-        page.tsx              ← Deals kanban (primary) + list toggle
-        [id]/page.tsx         ← Deal detail
-      notifications/
-        page.tsx              ← All notifications (infinite scroll)
+      page.tsx                ← Dashboard home  →  /{orgSlug}
+
+      // ── Workspace group (static slugs, reserved) ─────────────────────────
+      profile/                ← /{orgSlug}/profile (all-people list)
+        page.tsx
+        [personCode]/page.tsx ← /{orgSlug}/profile/P-001 (the person detail page)
+      messages/page.tsx       ← /{orgSlug}/messages (org-wide chat inbox)
+      calendar/page.tsx       ← /{orgSlug}/calendar
+      reminders/page.tsx      ← /{orgSlug}/reminders
+      notes/page.tsx          ← /{orgSlug}/notes
+      timeline/page.tsx       ← /{orgSlug}/timeline (org-wide audit feed)
+      notifications/page.tsx  ← /{orgSlug}/notifications
+
+      // ── CRM entity routes (dynamic, slug renamable per industry) ────────
+      [entitySlug]/page.tsx       ← /{orgSlug}/{leads|contacts|companies|deals}
+      [entitySlug]/[id]/page.tsx  ← redirect to /profile/[personCode] for people; deal/company detail otherwise
+
+      // ── Settings (sub-routes) ─────────────────────────────────────────────
       settings/
         general/page.tsx
         members/page.tsx
@@ -451,72 +328,83 @@ app/[locale]/
         billing/page.tsx
         pipelines/page.tsx
         appearance/page.tsx
-        record-codes/page.tsx ← Phase 2
-        ai/page.tsx           ← Phase 3
-        activity-log/page.tsx ← org-wide timeline (admin only)
-  (public)/                   ← landing page, pricing (deferred)
-  portal/[orgSlug]/           ← Phase 9 — client portal
+        record-codes/page.tsx     ← Phase 2
+        ai/page.tsx               ← Phase 3
+        activity-log/page.tsx     ← admin-only org-wide timeline (alias of /{orgSlug}/timeline)
+
+  (public)/                  ← landing page (deferred)
+  portal/[orgSlug]/          ← Phase 9 — client portal
 ```
 
-**Why no "dashboard" segment**: The decision is `/{locale}/{orgSlug}/...` — orgSlug directly after locale. This is cleaner, shorter URLs, and matches the architecture bible. The `(private)` is a route group (no URL segment). The `(auth)` group is also a route group (no URL segment).
+**Why no `dashboard` segment**: shorter URLs, matches the architecture bible. Route groups
+(`(private)`, `(auth)`) are URL-invisible.
+
+**Reserved slugs** (cannot be used as entity slugs): `messages`, `calendar`, `reminders`, `notes`,
+`timeline`, `profile` (in addition to the existing reserved set in
+`convex/_shared/reservedSlugs.ts`).
+
+**Profile slug is locked**: `/profile/[personCode]` (NOT `/people/[personCode]`).
 
 ---
 
-## RULE 13 — WHAT GOES ON THE PERSON DETAIL PAGE (COMPLETE LIST)
+## RULE 13 — WHAT GOES ON THE PROFILE DETAIL PAGE
 
-Everything about a person in one place:
+Tabs in order. Each tab embeds the matching feature panel from `core/comms/*` /
+`core/scheduling/*` (the same components also appear org-wide and on entity detail tabs).
 
-| Section | Tab/Location | Phase |
+| Tab | Source panel | Phase |
 |---|---|---|
-| Person header (name, personCode, status, avatar) | Always visible (sticky header) | 2 |
-| Contact info (email, phone, WhatsApp) | Right sidebar | 2 |
-| Assignment (assignedTo) | Right sidebar | 2 |
-| Company link | Right sidebar | 2 |
-| Tags | Right sidebar | 2 |
-| Custom fields (dynamic, stage-aware) | Right sidebar or Overview tab | 2 |
-| Activity Chat (human + AI messages) | Tab: Activity Chat | 2 |
-| Unified Timeline (everything logged) | Tab: Timeline | 2 |
-| Deals (all deals for this person) | Tab: Deals | 2 |
-| Reminders / Follow-ups | Tab: Reminders | 2 |
-| Notes (inline in Timeline) | Part of Timeline tab | 2 |
-| Files / Documents | Tab: Files | 3 |
-| AI context viewer (admin only) | Tab: AI Context | 3 |
-| WhatsApp thread | Tab: WhatsApp | 3 |
-| Email thread | Tab: Email | 5 |
+| Overview | `core/platform/profile/components/overview/*` (5 sub-cards: vitals, contact, company, tags, custom fields) | 2 |
+| Messages | `core/comms/messages/panels/MessagesPanel` | 2 |
+| Timeline | `core/comms/timeline/panels/PersonTimelinePanel` | 2 |
+| Notes | `core/comms/notes/panels/NotesPanel` (+ `AIBriefingCard` placeholder for Phase 3) | 2 |
+| Deals | `core/entities/_entities/deals/panels/PersonDealsPanel` | 2 (Slice 4) |
+| Reminders | `core/scheduling/reminders/panels/RemindersPanel` | 2 |
+| Calendar | `core/scheduling/calendar/panels/PersonCalendarPanel` | 2 |
+| Files | `core/data-io/files/panels/EntityFilesPanel` | 3 |
+| AI Context (admin) | `core/inbox/ai/panels/AIContextPanel` | 3 |
+| WhatsApp | `core/inbox/messaging/panels/WhatsAppPanel` | 3 |
+| Email | future | 5+ |
+
+**Sticky header** above tabs: name, avatar, personCode, status badge, quick actions
+(Convert / Add Deal / Add Reminder / Add Note).
 
 ---
 
-## RULE 14 — NOTES ARE IN THE TIMELINE, NOT A SEPARATE TAB
+## RULE 14 — *(SUPERSEDED)* — NOTES IS A SEPARATE TAB, NOT INSIDE TIMELINE
 
-```
-❌ WRONG: Separate "Notes" tab on person detail page
-✅ CORRECT: Notes appear inline in the Unified Timeline tab
-```
+Earlier Rule 14 said "Notes are in the timeline, not a separate tab." This is reversed.
 
-Notes are rendered as text bubbles within the timeline feed. The NoteComposer is at the bottom
-of the timeline. This is the decision from deep-plan.md Module 21.
+**Now**: Notes is a **separate tab** on the profile page (per Rule 13). Timeline is its own tab,
+fed by the `timeline.getForPerson` query that already merges `activityLogs + notes + reminders` —
+so notes still appear in the timeline as **read-only entries** there. The Notes tab is the
+**editable** surface for notes.
+
+The same `NotesPanel` is also embedded on Deal, Company, and Lead detail pages.
 
 ---
 
 ## RULE 15 — DEALS LIST AND KANBAN
 
-Deals have their own route (`/deals`) separate from the person page.
+Deals have their own route (`/{orgSlug}/{deal-slug}`) separate from the profile page.
 
 - Primary view: Kanban (grouped by pipeline stage)
 - Secondary view: List (toggle via `?view=list`)
 - Deal cards show: title, value (permission-gated), personCode, stage, assignee, stale indicator
-- Drag-drop between stages calls `deals.moveToStage()` — NOT generic update
+- Drag-drop between stages calls `deals.moveToStage()` — NOT generic `update()`
 - Won deal → confetti animation (canvas-confetti, client-side only)
 
 ---
 
-## RULE 16 — FOLLOW-UPS / REMINDERS
+## RULE 16 — REMINDERS / FOLLOW-UPS
 
-- Reminders are shown on the person detail page (Reminders tab)
-- Also shown on the dashboard (due today)
-- AI suggests follow-ups but NEVER auto-creates without user confirmation
-- `followUpCode` (FU-001) shown on reminder cards
-- Configurable defaults in Settings → Reminders (not hardcoded)
+- Reminders shown on the profile page (Reminders tab) AND on the dashboard (Due Today widget)
+  AND on the org-wide reminders page (`/{orgSlug}/reminders`).
+- AI suggests follow-ups but NEVER auto-creates without confirmation.
+- `followUpCode` (FU-001) shown on every reminder card.
+- Configurable defaults in Settings → Reminders (not hardcoded).
+- "Create event" from the calendar = create a **reminder** (calendar is a derived view, not its
+  own table — see Rule 2).
 
 ---
 
@@ -527,68 +415,75 @@ Deals have their own route (`/deals`) separate from the person page.
 ❌ Settings pages: NEVER wrapped in plan/tier gates
 ```
 
-Settings are always accessible to the right role regardless of plan.
-Plan gates apply to features (CSV import, AI, bulk actions) — not settings pages.
+Settings are always accessible to the right role regardless of plan. Plan gates apply to features
+(CSV import, AI, bulk actions) — not settings pages.
 
 ---
 
 ## RULE 18 — DYNAMIC FIELD DEFINITIONS
 
-Custom fields are defined in `fieldDefinitions` table. They are:
-- Stage-aware: `showInStages` array — field only shows when deal is in those stages
-- Grouped: `groupName` — fields grouped into sections on the form
-- Typed: text, number, date, select, multi-select, currency, url, email, phone
-- Required: `required: boolean` — validated on both frontend and backend
-- Sensitive: `sensitive: boolean` — hidden from AI system prompt
+Custom fields are defined in `fieldDefinitions` table:
+- Stage-aware: `showInStages[]` — field only shows when deal is in those stages.
+- Grouped: `groupName` — fields grouped into sections on the form.
+- Typed: text, number, date, select, multiselect, currency, url, email, phone, relation, file.
+- Required: validated on both frontend and backend.
+- Sensitive: hidden from AI system prompt.
 
-The `DynamicFieldRenderer` component renders whatever fields the backend returns.
-No hardcoded field names in components.
+`DynamicFieldRenderer` renders whatever fields the backend returns. No hardcoded field names.
 
 ---
 
-## RULE 19 — PERSONCODE IS THE STABLE IDENTIFIER EVERYWHERE
+## RULE 19 — `personCode` IS THE STABLE IDENTIFIER EVERYWHERE
 
 ```
 personCode (P-001) is used:
-  - As the URL slug for person detail pages: /people/P-001
+  - URL slug for profile pages: /profile/P-001
   - On every entity card (badge)
   - In AI conversations: "Update P-001, budget changed to 150K"
   - In WhatsApp: agent says "P-001" → AI resolves instantly
   - In activity logs: metadata.personCode
   - In deals: deal.personCode links back to the person
   - In reminders: reminder.personCode links to the person
+  - In messages: message.personCode for cross-entity threads
 ```
 
-personCode is IMMUTABLE after creation. Never changes. Never regenerated.
+`personCode` is IMMUTABLE after creation. Never changes. Never regenerated.
 
 ---
 
 ## RULE 20 — WHAT THE AI CAN DO (COMPLETE LIST)
 
-The AI can do everything the user has permission to do. This includes:
+The AI works across the entire workspace and is route-aware (Rule 5). It can do everything the
+user has permission to do:
 
-**CRM operations**: create/update/delete leads, contacts, companies, deals, notes, reminders, tags
-**Pipeline management**: add/remove/reorder stages, change stale thresholds
-**Field management**: create/update/delete custom fields
-**Workspace setup**: rename entities, configure settings, set up pipelines from templates
-**Analytics**: dashboard stats, pipeline health, forecast, morning briefing
-**Bulk operations**: bulk update (with mandatory confirmation)
-**Search**: by personCode, by name, by field value, semantic search
-**Role management**: create/update roles, assign permissions (admin only)
-**Member management**: invite members, change roles (admin only)
+**CRM operations**: create/update/delete leads, contacts, companies, deals, **messages**, notes,
+reminders, tags.
+**Pipeline management**: add/remove/reorder stages, change stale thresholds.
+**Field management**: create/update/delete custom fields.
+**Workspace setup**: rename entities, configure settings, set up pipelines from templates.
+**Analytics**: dashboard stats, pipeline health, forecast, morning briefing.
+**Bulk operations**: bulk update with mandatory confirmation.
+**Search**: by personCode, name, field value, semantic search.
+**Role management**: create/update roles, assign permissions (admin only).
+**Member management**: invite members, change roles (admin only).
 
 **AI CANNOT do** (regardless of permissions):
-- Access data from other orgs
-- Bypass the confirmation step for destructive actions
-- Send emails/WhatsApp without user approval (draft only)
-- Access internal notes if user doesn't have notes.viewInternal
+- Access data from other orgs.
+- Bypass the confirmation step for destructive actions.
+- Send emails/WhatsApp without user approval (draft only).
+- Access internal notes if the user doesn't have `notes.viewInternal`.
 
 ---
 
-## Summary: The 5 Things AI Agents Must Never Forget
+## Summary: What AI Agents Must Never Forget
 
-1. **No hardcoded entity labels** — always from `orgSettings.entityLabels`
-2. **No hardcoded route slugs** — always from `orgSettings.entityLabels[slot].slug`
-3. **Person detail page uses personCode as slug** — `/people/[personCode]`
-4. **Notes are in the timeline** — not a separate tab
-5. **AI can do everything the user can** — filtered at tool registry, not hardcoded subset
+1. **No hardcoded entity labels or slugs** — always from `orgSettings.entityLabels`.
+2. **Profile route is `/profile/[personCode]`** (locked).
+3. **Messages and Notes are separate tables** — `messages` and `notes`, never shared.
+4. **AI is cross-app and route-aware** — works everywhere, biases to current route context.
+5. **Workspace slugs (`messages`, `calendar`, `reminders`, `notes`, `timeline`, `profile`) are
+   reserved** — orgs cannot rename CRM entities to those names.
+6. **Timeline is a read-merge view** over activityLogs + notes + reminders. No timeline table.
+7. **Calendar is a read-merge view** over reminders + activityLogs + deal close dates. No
+   calendar table.
+8. **Custom UI for Timeline** — designed in-house, no template copy.

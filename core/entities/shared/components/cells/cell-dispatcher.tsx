@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import type { EntitySlot } from "@/core/entities/shared/types";
-import { useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
+import { useOrgDefaultCurrency } from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
 import { PersonCodeBadge } from "../../PersonCodeBadge";
 import { AssigneeCell } from "../AssigneeCell";
 import { CompanyCell } from "../CompanyCell";

@@ -54,7 +54,12 @@ interface AddLeadDrawerProps {
 
 type CompanyMode = "none" | "existing" | "new";
 
-const EMPTY_VALUES: EntityFormValues = { columnValues: {}, customValues: {}, fieldIdByName: {} };
+const EMPTY_VALUES: EntityFormValues = {
+	columnValues: {},
+	customValues: {},
+	joinValues: {},
+	fieldIdByName: {},
+};
 
 export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDrawerProps) {
 	const labels = useEntityLabels();
@@ -74,6 +79,9 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 	const createCompany = useMutation(api.crm.entities.companies.mutations.create);
 	const addPersonToCompany = useMutation(api.crm.entities.companies.mutations.addPerson);
 	const bulkSetCustom = useMutation(api.crm.fields.fieldValues.mutations.bulkSet);
+	const tagsByOrg = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
+	const createTag = useMutation(api.crm.shared.tags.mutations.create);
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
 
 	const companies = useQuery(
 		api.crm.entities.companies.queries.list,
@@ -173,6 +181,47 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 					toast.error("Couldn't save custom fields", {
 						description: err instanceof Error ? err.message : undefined,
 					});
+				}
+			}
+
+			// Step 3b — attach buffered tags. The tags input is a "join" field,
+			// so the user picks tag NAMES in the form and we wire the actual
+			// entityTags rows here (after we have a leadId to point them at).
+			if (orgId && leadId && values.joinValues.tags) {
+				const tagBuf = values.joinValues.tags;
+				const tagNames = (
+					Array.isArray(tagBuf)
+						? (tagBuf as unknown[]).filter(
+								(t): t is string => typeof t === "string" && t.trim().length > 0,
+							)
+						: typeof tagBuf === "string" && tagBuf.trim()
+							? [tagBuf]
+							: []
+				).map((s) => s.trim());
+				if (tagNames.length > 0) {
+					try {
+						const existingByName = new Map(
+							(tagsByOrg ?? []).map((t) => [t.name.toLowerCase(), t._id] as const),
+						);
+						for (const name of tagNames) {
+							let tagId = existingByName.get(name.toLowerCase());
+							if (!tagId) {
+								tagId = await createTag({ orgId, name });
+							}
+							if (tagId) {
+								await attachTag({
+									orgId,
+									tagId,
+									entityType: "lead",
+									entityId: leadId as string,
+								});
+							}
+						}
+					} catch (err) {
+						toast.error("Couldn't attach tags", {
+							description: err instanceof Error ? err.message : undefined,
+						});
+					}
 				}
 			}
 

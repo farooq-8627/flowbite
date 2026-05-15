@@ -39,6 +39,7 @@ export const ERRORS = {
 	INVALID_ARGS: "Invalid arguments provided.",
 	NOT_FOUND: "Resource not found.",
 	INTERNAL_ERROR: "An unexpected error occurred.",
+	RATE_LIMITED: "Too many requests. Please slow down and try again shortly.",
 
 	// ── AI (Phase 3) ──────────────────────────────────────────────────────────
 	// Thrown when the requesting user's role is not permitted to invoke a specific AI tool.

@@ -44,6 +44,7 @@ import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/
 import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 
 type CompanyRow = Record<string, unknown> & { id: string };
 
@@ -57,7 +58,10 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 
 	const companies = useQuery(api.crm.entities.companies.queries.list, orgId ? { orgId } : "skip");
 	const items = useMemo(
-		() => companies?.map((c) => ({ ...c, id: c._id as string })),
+		() =>
+			companies
+				?.map((c) => ({ ...c, id: c._id as string }))
+				.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0)),
 		[companies],
 	);
 
@@ -72,12 +76,25 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingCompany, setEditingCompany] = useState<Doc<"companies"> | null>(null);
 	const [search, setSearch] = useState("");
-	const [cardFields, setCardFields] = useState<string[]>(defaultCardFields);
-	const [groupBy, setGroupBy] = useState<string>("industry");
+	// Per-session view options — persisted to localStorage so they survive
+	// route changes and reloads. Stale entries that point at admin-hidden
+	// fields are filtered out by the EntityCard before render.
+	const [cardFields, setCardFields] = usePersistedState<string[]>(
+		"viewopts:company:cardFields",
+		[],
+	);
+	const [groupBy, setGroupBy] = usePersistedState<string>("viewopts:company:groupBy", "industry");
 
+	// Seed cardFields from the canonical visible-fields list on first load,
+	// then prune any stale entries that point at admin-hidden fields.
 	useEffect(() => {
-		setCardFields(defaultCardFields);
-	}, [defaultCardFields]);
+		setCardFields((prev) => {
+			if (!prev || prev.length === 0) return defaultCardFields;
+			const allowed = new Set(defaultCardFields);
+			const next = prev.filter((f) => allowed.has(f));
+			return next.length === prev.length ? prev : next;
+		});
+	}, [defaultCardFields, setCardFields]);
 
 	// Global quick-add listener — "New company" from anywhere opens Add drawer.
 	useQuickAddListener("create-company", () => setAddOpen(true));
@@ -429,7 +446,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 			{/* First-time coachmarks for the companies board. Fires once per device. */}
 			{view === "board" && (
 				<FirstTimeTour
-					id="companies-board-v1"
+					id="companies-board-v2"
 					steps={buildEntityBoardTour({
 						primaryActionVerb: "Edit",
 						groupedBy: "industry",

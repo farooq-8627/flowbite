@@ -19,6 +19,7 @@ import { PaperclipIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { PhoneInput } from "@/components/ui/phone-input";
 import {
 	Select,
 	SelectContent,
@@ -30,8 +31,11 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { CreateModeFileField } from "@/core/files/components/CreateModeFileField";
 import { FileUpload } from "@/core/files/components/FileUpload";
+import { useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
+import { cn } from "@/lib/utils";
+import { BufferedTagsPicker } from "../BufferedTagsPicker";
 import { PersonSelect } from "../PersonSelect";
-import { TagPicker } from "../TagPicker";
+import { TagsCell } from "../TagsCell";
 
 export type FieldDef = Doc<"fieldDefinitions">;
 
@@ -85,14 +89,15 @@ const KIND_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 		/>
 	),
 	phone: ({ field, value, onChange, disabled }) => (
-		<Input
+		<PhoneInput
 			id={inputId(field)}
-			type="tel"
 			value={(value as string | undefined) ?? ""}
-			onChange={(e) => onChange(e.target.value)}
-			placeholder="+1 555 123 4567"
+			onChange={(v) => onChange(v || undefined)}
+			placeholder="555 123 4567"
+			defaultCountry="US"
+			international
 			disabled={disabled}
-			className={inputClass}
+			className="w-full"
 		/>
 	),
 	status: ({ field, value, onChange, disabled }) => (
@@ -146,24 +151,41 @@ const KIND_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 			/>
 		);
 	},
-	tags: ({ orgId, value, onChange, disabled }) => (
-		<TagPicker
-			orgId={orgId}
-			value={Array.isArray(value) ? (value as string[]) : []}
-			onChange={onChange}
-			placeholder={disabled ? undefined : "Add tags…"}
-			disabled={disabled}
-		/>
-	),
-	currency: ({ field, value, onChange, disabled }) => (
-		<Input
+	tags: ({ orgId, slot, entityId, value, onChange, disabled }) => {
+		// Edit mode (entityId present) → DB-backed TagsCell, identical to the
+		// pencil affordance the user gets in the table cell. Single-tag
+		// semantics, lives in the entityTags join.
+		if (entityId && orgId && !disabled) {
+			return (
+				<div className="flex h-9 items-center">
+					<TagsCell orgId={orgId} entityType={slot} entityId={entityId} size="sm" />
+				</div>
+			);
+		}
+		// Create mode → buffer the tag NAME locally; parent attaches after
+		// the entity row is written. Same popover UI as TagsCell.
+		const single =
+			Array.isArray(value) && value.length > 0
+				? (value[0] as string)
+				: typeof value === "string"
+					? value
+					: undefined;
+		return (
+			<BufferedTagsPicker
+				orgId={orgId}
+				value={single}
+				onChange={(next) => onChange(next ? [next] : [])}
+				size="sm"
+			/>
+		);
+	},
+	currency: ({ field, value, onChange, disabled, orgId }) => (
+		<CurrencyInput
 			id={inputId(field)}
-			type="number"
-			step="0.01"
-			value={value === undefined || value === null ? "" : String(value)}
-			onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
+			value={value as number | undefined}
+			onChange={onChange}
 			disabled={disabled}
-			className={inputClass}
+			orgId={orgId}
 		/>
 	),
 	url: ({ field, value, onChange, disabled }) => (
@@ -369,6 +391,61 @@ function defaultInput({ field, value, onChange, disabled }: InputContext): React
 			disabled={disabled}
 			className={inputClass}
 		/>
+	);
+}
+
+/**
+ * CurrencyInput — money field with a separate currency-code prefix.
+ *
+ * Why split the code from the amount: typing "AED 25,000" into one Input
+ * mixes locale + value and breaks Number() parsing. Showing the org's
+ * default currency code as a prefix (read-only chip) keeps the amount
+ * input clean — `<input type="number">` semantics work as users expect.
+ *
+ * The code itself is dynamic — pulled from `orgs.settings.defaultCurrency`
+ * via `useOrgDefaultCurrency`. Workspaces in the UAE see "AED", workspaces
+ * in India see "INR", US workspaces see "USD", with no hardcoding.
+ */
+function CurrencyInput({
+	id,
+	value,
+	onChange,
+	disabled,
+	orgId,
+}: {
+	id: string;
+	value: number | undefined;
+	onChange: (v: unknown) => void;
+	disabled?: boolean;
+	orgId?: Id<"orgs">;
+}) {
+	const currencyCode = useOrgDefaultCurrency(orgId);
+	return (
+		<div
+			className={cn(
+				"flex h-9 items-stretch overflow-hidden rounded-[var(--radius)] border bg-background",
+				disabled && "opacity-60",
+			)}
+		>
+			<span
+				aria-hidden
+				className="inline-flex shrink-0 items-center border-e bg-muted/40 px-2 text-[11px] font-mono text-muted-foreground"
+			>
+				{currencyCode}
+			</span>
+			<Input
+				id={id}
+				type="number"
+				step="0.01"
+				inputMode="decimal"
+				value={value === undefined || value === null ? "" : String(value)}
+				onChange={(e) =>
+					onChange(e.target.value === "" ? undefined : Number(e.target.value))
+				}
+				disabled={disabled}
+				className="h-full flex-1 border-0 bg-transparent text-sm shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+			/>
+		</div>
 	);
 }
 

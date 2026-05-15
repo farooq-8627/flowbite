@@ -30,6 +30,7 @@
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation, requireOrgMember } from "../_functions/authenticated";
 import { ERRORS } from "../_shared/errors";
+import { enforceRateLimit, RATE_LIMITS } from "../_shared/rateLimit";
 
 /**
  * Generate a short-lived upload URL. Caller then POSTs the file bytes
@@ -59,6 +60,11 @@ export const record = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { userId } = await requireOrgMember(ctx, args.orgId);
+		await enforceRateLimit(ctx, {
+			scope: "files.record",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.upload,
+		});
 		const now = Date.now();
 		const fileId = await ctx.db.insert("files", {
 			orgId: args.orgId,

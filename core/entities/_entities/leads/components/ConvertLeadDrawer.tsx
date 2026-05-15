@@ -21,7 +21,7 @@
  */
 
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -37,6 +37,13 @@ interface LeadOption extends MultiSelectOption {
 	leadId: Id<"leads">;
 	personCode?: string;
 }
+
+// A stable reference for the default empty array so the open-effect's deps
+// don't churn when callers omit the `leadIds` prop. (Without this, every
+// parent render created a new `[]` → effect re-ran → setSelectedLeadIds([]) →
+// re-render → infinite loop. This is the root cause of "Maximum update depth
+// exceeded" coming from this drawer.)
+const EMPTY_LEAD_IDS: Id<"leads">[] = [];
 
 interface ConvertLeadDrawerProps {
 	open: boolean;
@@ -54,7 +61,7 @@ export function ConvertLeadDrawer({
 	open,
 	onOpenChange,
 	orgId,
-	leadIds: initialLeadIds = [],
+	leadIds: initialLeadIds = EMPTY_LEAD_IDS,
 	onConvert,
 }: ConvertLeadDrawerProps) {
 	const labels = useEntityLabels();
@@ -73,9 +80,18 @@ export function ConvertLeadDrawer({
 		orgId && createDeal ? { orgId, entityType: "deal" } : "skip",
 	);
 
-	// Re-seed selected ids when the drawer is (re)opened.
+	// Re-seed selected ids ONLY when the drawer transitions closed → open.
+	// We compare the previous `open` value via a ref so React state changes
+	// inside the drawer (which trigger parent re-renders that may pass a
+	// fresh `initialLeadIds` reference) don't blow away the user's selection.
+	const wasOpenRef = useRef(false);
 	useEffect(() => {
-		if (!open) return;
+		if (!open) {
+			wasOpenRef.current = false;
+			return;
+		}
+		if (wasOpenRef.current) return;
+		wasOpenRef.current = true;
 		setSelectedLeadIds(initialLeadIds.map((id) => id as string));
 		setCreateDeal(false);
 		setDealTitleByLead({});

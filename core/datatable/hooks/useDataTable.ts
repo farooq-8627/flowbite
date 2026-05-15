@@ -246,9 +246,14 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
 		getFacetedRowModel: getFacetedRowModel(),
 		getFacetedUniqueValues: getFacetedUniqueValues(),
 		getFacetedMinMaxValues: getFacetedMinMaxValues(),
-		manualPagination: true,
-		manualSorting: true,
-		manualFiltering: true,
+		// Client-side sort/filter/pagination — TanStack does the work since we
+		// already have the full dataset client-side. `manualSorting: true` was
+		// the reason every header click was a silent no-op before: with manual
+		// mode TanStack disables its internal sort and expects the caller to
+		// re-fetch sorted data, which we never did.
+		manualPagination: false,
+		manualSorting: false,
+		manualFiltering: false,
 	});
 
 	return { table, shallow, debounceMs, throttleMs };

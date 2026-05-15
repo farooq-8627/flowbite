@@ -31,7 +31,7 @@
  */
 
 import { useMutation } from "convex/react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -45,6 +45,12 @@ export interface EntityFormValues {
 	columnValues: Record<string, unknown>;
 	/** Values whose `storage === "fieldValues"` — bulkSet after creation / set per-edit. */
 	customValues: Record<string, unknown>;
+	/**
+	 * Values whose `storage === "join"` — attached via dedicated mutations
+	 * (e.g. `tags.attachToEntity`) by the parent form on submit. Keyed by
+	 * field NAME (e.g. `"tags"` → array of selected tag names).
+	 */
+	joinValues: Record<string, unknown>;
 	/** Map of field name → fieldId for resolving bulkSet payloads. */
 	fieldIdByName: Record<string, Id<"fieldDefinitions">>;
 }
@@ -104,10 +110,16 @@ export function EntityFieldForm({
 		() => customValuesForEntity ?? {},
 	);
 
-	// Track which entity we initialised for, so switching records refreshes.
+	// Track which keys the user has personally edited so we never clobber
+	// in-progress input when a reactive query resolves later. The set lives
+	// for the lifetime of one entity; switching records resets it.
+	const touchedRef = useRef<Set<string>>(new Set());
+
+	// Track which entity we initialised columns for, so switching records refreshes.
 	const initedFor = useRef<string | undefined>(entity?._id);
 	if (entity?._id && initedFor.current !== entity._id) {
 		initedFor.current = entity._id;
+		touchedRef.current = new Set();
 		const nextCol: Record<string, unknown> = {};
 		for (const f of formFields) {
 			if (f.storage === "column") nextCol[f.name] = entity[f.columnKey ?? f.name];
@@ -116,12 +128,47 @@ export function EntityFieldForm({
 		setCustomValues(customValuesForEntity ?? {});
 	}
 
+	// Reactive sync — when `customValuesForEntity` arrives or changes (e.g.
+	// the user just inline-saved a budget on the table and re-opens the edit
+	// drawer, OR the query resolved AFTER the form mounted), merge new keys
+	// in. Keys the user has actively edited stay protected via `touchedRef`.
+	// This is the one and only place where state mirrors the prop after the
+	// initial entity-id sync above.
+	useEffect(() => {
+		if (!customValuesForEntity) return;
+		setCustomValues((prev) => {
+			let changed = false;
+			const next = { ...prev };
+			for (const [key, value] of Object.entries(customValuesForEntity)) {
+				if (touchedRef.current.has(key)) continue;
+				if (next[key] !== value) {
+					next[key] = value;
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [customValuesForEntity]);
+
 	// Expose values to the parent for create-mode bulk persist.
 	if (registerGetValues) {
 		registerGetValues(() => {
 			const fieldIdByName: Record<string, Id<"fieldDefinitions">> = {};
-			for (const f of formFields) fieldIdByName[f.name] = f._id;
-			return { columnValues, customValues, fieldIdByName };
+			const customByStorage: Record<string, unknown> = {};
+			const joinByStorage: Record<string, unknown> = {};
+			for (const f of formFields) {
+				fieldIdByName[f.name] = f._id;
+				const v = customValues[f.name];
+				if (v === undefined) continue;
+				if (f.storage === "join") joinByStorage[f.name] = v;
+				else if (f.storage === "fieldValues" || !f.storage) customByStorage[f.name] = v;
+			}
+			return {
+				columnValues,
+				customValues: customByStorage,
+				joinValues: joinByStorage,
+				fieldIdByName,
+			};
 		});
 	}
 
@@ -129,10 +176,20 @@ export function EntityFieldForm({
 		(field: FieldDef, value: unknown) => {
 			if (field.storage === "column") {
 				setColumnValues((prev) => ({ ...prev, [field.name]: value }));
-			} else if (field.storage === "fieldValues" || !field.storage) {
+			} else if (
+				field.storage === "fieldValues" ||
+				field.storage === "join" ||
+				!field.storage
+			) {
+				// "join" fields (tags) buffer in customValues exactly like custom
+				// fieldValues — the parent extracts them at submit time and runs
+				// the appropriate join mutation (e.g. tags.attachToEntity).
+				touchedRef.current.add(field.name);
 				setCustomValues((prev) => ({ ...prev, [field.name]: value }));
-				// Edit-mode write-through for fieldValues.
-				if (entity?._id && orgId) {
+				// Edit-mode write-through is for `fieldValues` only — `join`
+				// fields own their own writes via dedicated cells (e.g. TagsCell)
+				// when an entity already exists.
+				if (field.storage === "fieldValues" && entity?._id && orgId) {
 					void setFieldValue({
 						orgId,
 						entityType: slot,
@@ -153,7 +210,9 @@ export function EntityFieldForm({
 	const valueFor = useCallback(
 		(field: FieldDef) => {
 			if (field.storage === "column") return columnValues[field.name];
-			if (field.storage === "fieldValues" || !field.storage) return customValues[field.name];
+			if (field.storage === "fieldValues" || field.storage === "join" || !field.storage) {
+				return customValues[field.name];
+			}
 			return undefined;
 		},
 		[columnValues, customValues],

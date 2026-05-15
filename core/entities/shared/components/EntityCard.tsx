@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +59,7 @@ import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
 import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import type { EntitySlot } from "@/core/entities/shared/types";
+import { formatCurrency, useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
 import { cn } from "@/lib/utils";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -161,6 +162,29 @@ export function EntityCard({
 	const params = useParams();
 	const orgSlug = params?.orgSlug as string | undefined;
 	const locale = params?.locale as string | undefined;
+	const currencyCode = useOrgDefaultCurrency(item.orgId);
+
+	// Effective card fields = caller's cardFields ∩ admin's visible fields.
+	// When admins hide a field in Settings → Modules → Lead → Fields, the
+	// `highlightFieldDefs` list (built from `useEntityFields(...).visibleFields`)
+	// stops including it. Filtering cardFields here means stale entries from
+	// localStorage drop out automatically — the user can't accidentally see a
+	// field the admin has hidden.
+	const adminAllowedNames = useMemo(() => {
+		if (!highlightFieldDefs) return null;
+		return new Set([
+			...highlightFieldDefs.map((d) => d.name),
+			// Pinned slots are always rendered when their cardFields key is set,
+			// even when the admin hasn't surfaced them in highlightFieldDefs.
+			...PINNED_NAMES,
+			"noAvatar",
+		]);
+	}, [highlightFieldDefs]);
+	const effectiveFields = useMemo(() => {
+		if (!cardFields) return [] as string[];
+		if (!adminAllowedNames) return cardFields;
+		return cardFields.filter((f) => adminAllowedNames.has(f));
+	}, [cardFields, adminAllowedNames]);
 
 	// Flash animation replay — toggling the class off-then-on in an effect
 	// forces the browser to re-run the CSS animation without re-mounting the
@@ -188,7 +212,11 @@ export function EntityCard({
 	// IMPORTANT: the array, when non-empty, is treated as the explicit allow-list
 	// for everything in it. Pieces that aren't first-class fields (avatar) default
 	// to ON unless the caller passes "noAvatar" in cardFields.
-	const fields = cardFields ?? [];
+	//
+	// We use `effectiveFields` (cardFields ∩ admin-visible) so admin-hidden
+	// fields can never be shown — even if a stale per-user entry survives in
+	// localStorage from before the admin hid it.
+	const fields = effectiveFields;
 	const showName =
 		fields.length === 0 || fields.includes("displayName") || fields.includes("name");
 	const showEmail = fields.includes("email") && !!item.email;
@@ -215,7 +243,7 @@ export function EntityCard({
 	const subtitle = isCompany
 		? (item.industry as string | undefined)
 		: isDeal
-			? formatDealSubtitle(item)
+			? formatDealSubtitle(item, currencyCode)
 			: showEmail
 				? (item.email as string | undefined)
 				: undefined;
@@ -273,7 +301,6 @@ export function EntityCard({
 								entityType={slot}
 								entityId={itemId}
 								size="xs"
-								max={2}
 								readOnlyAfterFirst
 							/>
 						</div>
@@ -315,6 +342,7 @@ export function EntityCard({
 						defs={highlightFieldDefs}
 						values={customFieldValues}
 						visibleFields={fields}
+						currencyCode={currencyCode}
 					/>
 				)}
 
@@ -434,10 +462,12 @@ function HighlightFieldStrip({
 	defs,
 	values,
 	visibleFields,
+	currencyCode,
 }: {
 	defs: Array<{ name: string; label: string; kind?: string; type?: string }>;
 	values: Record<string, unknown>;
 	visibleFields: string[];
+	currencyCode: string;
 }) {
 	// Filter: must be in cardFields (per-user toggle still applies), must NOT
 	// be a pinned slot (those have their own designed home), must have a
@@ -447,7 +477,7 @@ function HighlightFieldStrip({
 		.filter((d) => !PINNED_NAMES.has(d.name) && d.kind !== "displayName")
 		.map((d) => {
 			const raw = values[d.name];
-			const formatted = formatHighlightValue(raw, d);
+			const formatted = formatHighlightValue(raw, d, currencyCode);
 			if (formatted === null) return null;
 			return { name: d.name, label: d.label, value: formatted };
 		})
@@ -474,7 +504,11 @@ function HighlightFieldStrip({
 	);
 }
 
-function formatHighlightValue(raw: unknown, def: { kind?: string; type?: string }): string | null {
+function formatHighlightValue(
+	raw: unknown,
+	def: { kind?: string; type?: string },
+	currencyCode: string,
+): string | null {
 	if (raw === undefined || raw === null || raw === "") return null;
 	if (Array.isArray(raw)) {
 		if (raw.length === 0) return null;
@@ -483,17 +517,7 @@ function formatHighlightValue(raw: unknown, def: { kind?: string; type?: string 
 	if (def.kind === "currency" || def.type === "number") {
 		const num = Number(raw);
 		if (Number.isNaN(num)) return String(raw);
-		if (def.kind === "currency") {
-			try {
-				return new Intl.NumberFormat(undefined, {
-					style: "currency",
-					currency: "USD",
-					maximumFractionDigits: 0,
-				}).format(num);
-			} catch {
-				return String(num);
-			}
-		}
+		if (def.kind === "currency") return formatCurrency(num, currencyCode);
 		return String(num);
 	}
 	if (def.type === "date" && typeof raw === "number") {
@@ -628,24 +652,28 @@ function ShortcutCluster({
 				// Tour-tagged buttons skip the Tooltip — the FirstTimeTour explains
 				// the gesture once. We keep `aria-label` and a native `title` for a
 				// quiet hover hint.
-				const isTourTagged = s.variant === "primary";
+				const isPrimary = s.variant === "primary";
+				const tourTag = isPrimary
+					? "lead-card-convert"
+					: s.label.toLowerCase().includes("lost") ||
+							s.label.toLowerCase().includes("delete") ||
+							s.label.toLowerCase().includes("trash")
+						? "lead-card-lost"
+						: undefined;
 				const button = (
 					<Button
 						size="icon"
-						variant={s.variant === "primary" ? "default" : "ghost"}
+						variant={isPrimary ? "default" : "ghost"}
 						onClick={s.onSelect}
 						aria-label={s.label}
-						title={isTourTagged ? undefined : s.label}
-						data-tour={isTourTagged ? "lead-card-convert" : undefined}
-						className={cn(
-							"size-5",
-							s.variant !== "primary" && "opacity-70 hover:opacity-100",
-						)}
+						title={tourTag ? undefined : s.label}
+						data-tour={tourTag}
+						className={cn("size-5", !isPrimary && "opacity-70 hover:opacity-100")}
 					>
 						<s.icon className="size-3" />
 					</Button>
 				);
-				if (isTourTagged) return <span key={s.label}>{button}</span>;
+				if (tourTag) return <span key={s.label}>{button}</span>;
 				return (
 					<Tooltip key={s.label}>
 						<TooltipTrigger asChild>{button}</TooltipTrigger>
@@ -726,18 +754,10 @@ function formatDate(ts: number): string {
 	}
 }
 
-function formatDealSubtitle(item: EntityCardItem): string | undefined {
+function formatDealSubtitle(item: EntityCardItem, currencyCode: string): string | undefined {
 	const value = item.value as number | undefined;
 	if (typeof value === "number" && !Number.isNaN(value)) {
-		try {
-			return new Intl.NumberFormat(undefined, {
-				style: "currency",
-				currency: "USD",
-				maximumFractionDigits: 0,
-			}).format(value);
-		} catch {
-			return `$${value}`;
-		}
+		return formatCurrency(value, currencyCode);
 	}
 	return undefined;
 }

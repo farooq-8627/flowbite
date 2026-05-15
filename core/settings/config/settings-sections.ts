@@ -348,6 +348,24 @@ export function getSettingsSections(
 				...entityKeywords,
 			],
 		},
+		{
+			id: "appearance.tutorials",
+			groupId: "appearance",
+			label: "Tutorials",
+			description:
+				"Replay the first-time coachmarks that explain power gestures (drag-to-status, view options, etc.).",
+			keywords: [
+				"tutorial",
+				"tour",
+				"coachmark",
+				"replay",
+				"reset",
+				"onboarding",
+				"first-time",
+				"help",
+				"guide",
+			],
+		},
 
 		// ── Notifications ─────────────────────────────────────────────────────
 		{

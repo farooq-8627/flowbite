@@ -50,6 +50,7 @@ import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 
 type ContactRow = Record<string, unknown> & {
 	id: string;
@@ -69,11 +70,17 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	const contacts = useQuery(api.crm.entities.contacts.queries.list, orgId ? { orgId } : "skip");
 	const items = useMemo(
 		() =>
-			contacts?.map((c) => ({
-				...c,
-				id: c._id as string,
-				orgId,
-			})) as ContactRow[] | undefined,
+			contacts
+				?.map((c) => ({
+					...c,
+					id: c._id as string,
+					orgId,
+				}))
+				// Newest first by default — matches user expectation that just-
+				// added records appear at the top of the list.
+				.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0)) as
+				| ContactRow[]
+				| undefined,
 		[contacts, orgId],
 	);
 
@@ -90,12 +97,24 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingContact, setEditingContact] = useState<Doc<"contacts"> | null>(null);
 	const [search, setSearch] = useState("");
-	const [cardFields, setCardFields] = useState<string[]>(defaultCardFields);
-	const [groupBy, setGroupBy] = useState<string>("assignedTo");
+	// Persisted view options — survive route changes / reloads.
+	const [cardFields, setCardFields] = usePersistedState<string[]>(
+		"viewopts:contact:cardFields",
+		[],
+	);
+	const [groupBy, setGroupBy] = usePersistedState<string>(
+		"viewopts:contact:groupBy",
+		"assignedTo",
+	);
 
 	useEffect(() => {
-		setCardFields(defaultCardFields);
-	}, [defaultCardFields]);
+		setCardFields((prev) => {
+			if (!prev || prev.length === 0) return defaultCardFields;
+			const allowed = new Set(defaultCardFields);
+			const next = prev.filter((f) => allowed.has(f));
+			return next.length === prev.length ? prev : next;
+		});
+	}, [defaultCardFields, setCardFields]);
 
 	// Global quick-add listener — "New contact" from anywhere opens the
 	// Convert drawer (contacts can only be created via conversion).
@@ -298,7 +317,6 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 									entityType="contact"
 									entityId={id}
 									size="xs"
-									max={3}
 								/>
 							) : (
 								<span className="text-xs text-muted-foreground">—</span>
@@ -539,7 +557,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 			{/* First-time coachmarks for the contacts board. Fires once per device. */}
 			{view === "board" && (
 				<FirstTimeTour
-					id="contacts-board-v1"
+					id="contacts-board-v2"
 					steps={buildEntityBoardTour({
 						primaryActionVerb: "Edit",
 						groupedBy: "status",

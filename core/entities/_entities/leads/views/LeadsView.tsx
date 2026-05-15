@@ -15,6 +15,11 @@
  * - Double-click the convert shortcut → open convert drawer (with deal option).
  * - Lost shortcut (trash icon) → marks lead as lost.
  *
+ * View-options PERSISTENCE: every per-session knob (cardFields, revealed
+ * statuses, board groupBy axis) is mirrored to localStorage via
+ * `usePersistedState`. The state survives navigation and reload — the user
+ * decides when to change it; we never silently reset.
+ *
  * Search:
  *   - Wired into EntityPageLayout's toolbar search.
  *   - Matching cards move to the TOP of their column.
@@ -49,6 +54,7 @@ import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/
 import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AddLeadDrawer } from "../components/AddLeadDrawer";
 import { ConvertLeadDrawer } from "../components/ConvertLeadDrawer";
@@ -74,14 +80,24 @@ const LEAD_SEARCH_FIELDS = [
  * One-time coachmarks that play the first time a user sees the leads board.
  * Each step's `target` is matched against `data-tour="…"` on a DOM node.
  *
- * Bump the id ("leads-board-v1" → "leads-board-v2") when the steps change
- * meaningfully, so existing users see the new tour again.
+ * SCOPE: per-entity. The `id` carries the entity slug (`leads-board-v2`) so
+ * the contacts board / deals board / companies board run their own tours
+ * even on the same device. Adding view-options + lost-button steps bumped
+ * the version from v1 → v2 so users see the updated walkthrough.
+ *
+ * Bump the id again when the steps change meaningfully.
  */
 const LEADS_BOARD_TOUR_STEPS: TourStep[] = [
 	{
 		target: "lead-card-convert",
 		title: "Convert with one click",
 		body: "Click the + on a card to instantly convert the lead into a contact. Double-click to open the full convert form with the deal option.",
+		side: "top",
+	},
+	{
+		target: "lead-card-lost",
+		title: "Mark a lead as lost",
+		body: "The trash icon flags the lead as lost without deleting it — the record stays in the audit trail and can be unhidden from view options.",
 		side: "top",
 	},
 	{
@@ -93,7 +109,7 @@ const LEADS_BOARD_TOUR_STEPS: TourStep[] = [
 	{
 		target: "view-options-trigger",
 		title: "Tune what you see",
-		body: "Pick which fields appear on each card, change the group-by axis, and reveal hidden statuses like ‘converted’ or ‘lost’.",
+		body: "Pick which fields appear on cards, swap the group-by axis, and reveal hidden columns like Converted or Lost.",
 		side: "bottom",
 	},
 ];
@@ -124,22 +140,35 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingLead, setEditingLead] = useState<NonNullable<typeof items>[number] | null>(null);
 	const [search, setSearch] = useState("");
-	const [cardFields, setCardFields] = useState<string[]>(defaultCardFields);
-	const [revealedStatuses, setRevealedStatuses] = useState<string[]>([]);
-	const [groupBy, setGroupBy] = useState<string>(defaultGroupBy);
+
+	// Persisted view-options — survive navigation. Keyed by slot so each
+	// entity has its own persisted preferences (board fields for leads, board
+	// fields for contacts, etc.).
+	const [cardFields, setCardFields] = usePersistedState<string[]>("viewopts:lead:cardFields", []);
+	const [revealedStatuses, setRevealedStatuses] = usePersistedState<string[]>(
+		"viewopts:lead:revealedStatuses",
+		[],
+	);
+	const [groupBy, setGroupBy] = usePersistedState<string>(
+		"viewopts:lead:groupBy",
+		defaultGroupBy,
+	);
 
 	// All field metadata now flows through useEntityFields → useEntityColumns;
 	// view-options surfaces the same canonical list. No "extras" concept.
 	const { valuesByEntityId: customValuesByEntityId } = useEntityFieldValuesMap("lead", orgId);
 
-	// Keep the board cardFields + groupBy in sync with settings changes until
-	// the user overrides per-session.
+	// Seed cardFields from settings on first load. After hydration, treat the
+	// user's saved selection as canonical — but always keep it pruned to the
+	// CURRENT visible-field set (admin-hidden fields drop out automatically).
 	useEffect(() => {
-		setCardFields(defaultCardFields);
-	}, [defaultCardFields]);
-	useEffect(() => {
-		setGroupBy(defaultGroupBy);
-	}, [defaultGroupBy]);
+		setCardFields((prev) => {
+			if (!prev || prev.length === 0) return defaultCardFields;
+			const allowed = new Set(defaultCardFields);
+			const next = prev.filter((f) => allowed.has(f));
+			return next.length === prev.length ? prev : next;
+		});
+	}, [defaultCardFields, setCardFields]);
 
 	// ⌘⇧V toggles list/board
 	const scToggle = useShortcut("toggleView");
@@ -561,7 +590,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 
 			{/* First-time coachmarks for the leads board. Fires once per device. */}
 			{view === "board" && (rankedItems.items?.length ?? 0) > 0 && (
-				<FirstTimeTour id="leads-board-v1" steps={LEADS_BOARD_TOUR_STEPS} />
+				<FirstTimeTour id="leads-board-v2" steps={LEADS_BOARD_TOUR_STEPS} />
 			)}
 		</>
 	);

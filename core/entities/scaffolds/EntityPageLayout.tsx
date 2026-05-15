@@ -27,6 +27,7 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { Input } from "@/components/ui/input";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
@@ -34,6 +35,31 @@ import { cn } from "@/lib/utils";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { ViewToggleIcons } from "../shared/components/ViewToggleIcons";
 import type { ViewKind } from "../shared/types";
+
+/**
+ * Entity-layout tour — fires ONCE per device, at the first entity page the
+ * user opens (any of leads/contacts/deals/companies). Explains the chrome
+ * elements that look the same everywhere: the search box, the view toggle,
+ * and the View Options trigger. Per-entity tours stay focused on cards (drag
+ * to change status, click to convert, etc.).
+ *
+ * Bump the id (`entity-layout-v1` → `entity-layout-v2`) when these steps
+ * change meaningfully so existing users see the updated tour.
+ */
+const ENTITY_LAYOUT_TOUR_STEPS: TourStep[] = [
+	{
+		target: "view-toggle-board",
+		title: "Switch to a board",
+		body: "Tap the second icon to flip into a kanban-style board grouped by status / stage.",
+		side: "bottom",
+	},
+	{
+		target: "view-options-trigger",
+		title: "Tune what you see",
+		body: "Pick which fields appear on cards or in the table, change the group-by axis on the board, and reveal hidden columns.",
+		side: "bottom",
+	},
+];
 
 export type PrimaryActionConfig = {
 	label: string;
@@ -107,11 +133,15 @@ export function EntityPageLayout({
 							<SearchIcon className="pointer-events-none absolute start-2 size-3.5 text-muted-foreground" />
 							<Input
 								ref={searchRef}
-								type="search"
+								// type="text" (NOT "search") — browsers render their own
+								// clear "×" inside type="search" inputs, which collides
+								// with our own clear button on the right. Using "text"
+								// gives us full control over the affordance.
+								type="text"
 								value={search.value}
 								onChange={(e) => search.onChange(e.target.value)}
 								placeholder={search.placeholder ?? "Search…"}
-								className="h-7 w-48 ps-7 text-xs"
+								className="h-7 w-48 ps-7 pe-7 text-xs"
 							/>
 							{search.value && (
 								<button
@@ -175,6 +205,10 @@ export function EntityPageLayout({
 
 			{/* Body */}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+
+			{/* Global entity-layout tour — one-time, device-wide. Fires on the
+			    first entity page the user lands on. */}
+			<FirstTimeTour id="entity-layout-v1" steps={ENTITY_LAYOUT_TOUR_STEPS} />
 		</div>
 	);
 }

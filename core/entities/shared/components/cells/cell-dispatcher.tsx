@@ -11,6 +11,12 @@
  * Adding a new FIELD (common): no code change. Just insert a `fieldDefinitions`
  * row — it will pick up the type-default renderer or one of the existing
  * `kind` renderers.
+ *
+ * EMPTY CELLS — the "—" dash is replaced by a small `+` button whenever the
+ * field supports inline edit (most text/number/date/select/url/email/phone
+ * kinds). Clicking opens a tight popover with the field's input + Save /
+ * Enter saves. See `<InlineFieldEdit>`. Pinned UIs (tags, assignee, status,
+ * file pickers) keep their own affordances and don't go through the dash.
  */
 
 import { formatDistanceToNow } from "date-fns";
@@ -19,11 +25,13 @@ import { Badge } from "@/components/ui/badge";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import type { EntitySlot } from "@/core/entities/shared/types";
+import { useOrgDefaultCurrency } from "@/core/shared/hooks/useOrgDefaultCurrency";
 import { PersonCodeBadge } from "../../PersonCodeBadge";
 import { AssigneeCell } from "../AssigneeCell";
 import { CompanyCell } from "../CompanyCell";
 import { CopyField } from "../CopyField";
 import { TagsCell } from "../TagsCell";
+import { InlineFieldEdit, isInlineEditable } from "./InlineFieldEdit";
 
 export type FieldDef = Doc<"fieldDefinitions">;
 export type EntityRow = Record<string, unknown> & {
@@ -59,6 +67,21 @@ export function readFieldValue(
 	}
 }
 
+// ─── EmptyCell — `+` inline-edit button or "—" fallback ────────────────────
+
+/**
+ * Universal empty-cell renderer. Returns a `+` button (opens inline editor)
+ * when the field is inline-editable AND we have the keys to write back; else
+ * returns the dash placeholder.
+ */
+function EmptyCell({ slot, field, row }: CellContext): ReactNode {
+	const orgId = row.orgId;
+	const entityId = (row._id ?? row.id) as string;
+	const editable = isInlineEditable(field) && !!orgId && !!entityId;
+	if (!editable) return <span className="text-xs text-muted-foreground">—</span>;
+	return <InlineFieldEdit field={field} slot={slot} orgId={orgId!} entityId={entityId} />;
+}
+
 // ─── Kind-specific renderers ─────────────────────────────────────────────────
 
 const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
@@ -83,21 +106,17 @@ const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 		return <span className="font-medium">{(value as string | undefined) ?? "—"}</span>;
 	},
 
-	email: ({ field, row }) => (
-		<CopyField
-			value={row[field.columnKey ?? field.name] as string | undefined}
-			kind="email"
-			className="text-xs text-muted-foreground"
-		/>
-	),
+	email: ({ slot, field, row }) => {
+		const value = row[field.columnKey ?? field.name] as string | undefined;
+		if (!value) return <EmptyCell slot={slot} field={field} row={row} />;
+		return <CopyField value={value} kind="email" className="text-xs text-muted-foreground" />;
+	},
 
-	phone: ({ field, row }) => (
-		<CopyField
-			value={row[field.columnKey ?? field.name] as string | undefined}
-			kind="phone"
-			className="text-xs text-muted-foreground"
-		/>
-	),
+	phone: ({ slot, field, row }) => {
+		const value = row[field.columnKey ?? field.name] as string | undefined;
+		if (!value) return <EmptyCell slot={slot} field={field} row={row} />;
+		return <CopyField value={value} kind="phone" className="text-xs text-muted-foreground" />;
+	},
 
 	status: ({ slot, field, row }) => {
 		const status = row[field.columnKey ?? field.name] as string | undefined;
@@ -157,27 +176,19 @@ const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 		/>
 	),
 
-	currency: ({ field, row, customValues }) => {
+	currency: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
 		if (value === undefined || value === null || value === "") {
-			return <span className="text-xs text-muted-foreground">—</span>;
+			return <EmptyCell slot={slot} field={field} row={row} />;
 		}
 		const num = Number(value);
 		if (Number.isNaN(num)) return <span className="text-xs">{String(value)}</span>;
-		return (
-			<span className="text-xs font-medium">
-				{new Intl.NumberFormat(undefined, {
-					style: "currency",
-					currency: "USD",
-					maximumFractionDigits: 0,
-				}).format(num)}
-			</span>
-		);
+		return <CurrencyValue value={num} orgId={row.orgId} />;
 	},
 
-	url: ({ field, row, customValues }) => {
+	url: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
-		if (!value) return <span className="text-xs text-muted-foreground">—</span>;
+		if (!value) return <EmptyCell slot={slot} field={field} row={row} />;
 		return (
 			<a
 				href={String(value)}
@@ -206,17 +217,16 @@ const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 // ─── Type-default renderers (fallback when `kind` doesn't match) ─────────────
 
 const TYPE_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
-	number: ({ field, row, customValues }) => {
+	number: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
 		if (value === undefined || value === null || value === "") {
-			return <span className="text-xs text-muted-foreground">—</span>;
+			return <EmptyCell slot={slot} field={field} row={row} />;
 		}
 		return <span className="text-xs">{String(value)}</span>;
 	},
-	date: ({ field, row, customValues }) => {
+	date: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
-		if (typeof value !== "number")
-			return <span className="text-xs text-muted-foreground">—</span>;
+		if (typeof value !== "number") return <EmptyCell slot={slot} field={field} row={row} />;
 		return (
 			<span className="text-xs text-muted-foreground">
 				{new Date(value).toLocaleDateString()}
@@ -227,19 +237,19 @@ const TYPE_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 		const value = readFieldValue(field, row, customValues);
 		return <span className="text-xs">{value ? "Yes" : "No"}</span>;
 	},
-	select: ({ field, row, customValues }) => {
+	select: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
-		if (!value) return <span className="text-xs text-muted-foreground">—</span>;
+		if (!value) return <EmptyCell slot={slot} field={field} row={row} />;
 		return (
 			<Badge variant="outline" className="h-5 text-[10px] capitalize">
 				{String(value)}
 			</Badge>
 		);
 	},
-	multiselect: ({ field, row, customValues }) => {
+	multiselect: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
 		if (!Array.isArray(value) || value.length === 0) {
-			return <span className="text-xs text-muted-foreground">—</span>;
+			return <EmptyCell slot={slot} field={field} row={row} />;
 		}
 		return (
 			<div className="flex flex-wrap gap-1">
@@ -259,10 +269,10 @@ const TYPE_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 };
 
 /** Default text renderer — last-resort fallback for unrecognised kind+type. */
-function defaultRenderer({ field, row, customValues }: CellContext): ReactNode {
+function defaultRenderer({ slot, field, row, customValues }: CellContext): ReactNode {
 	const value = readFieldValue(field, row, customValues);
 	if (value === undefined || value === null || value === "") {
-		return <span className="text-xs text-muted-foreground">—</span>;
+		return <EmptyCell slot={slot} field={field} row={row} />;
 	}
 	if (Array.isArray(value)) return <span className="text-xs">{value.join(", ")}</span>;
 	return <span className="text-xs">{String(value)}</span>;
@@ -275,4 +285,24 @@ export function getCellRenderer(field: FieldDef): (ctx: CellContext) => ReactNod
 	if (field.kind && KIND_RENDERERS[field.kind]) return KIND_RENDERERS[field.kind];
 	if (TYPE_RENDERERS[field.type]) return TYPE_RENDERERS[field.type];
 	return defaultRenderer;
+}
+
+/**
+ * CurrencyValue — formats a number using the org's default currency code
+ * (e.g. AED / USD / EUR / INR). The hook subscribes to the org's settings
+ * doc so the cell re-renders the moment an admin saves a new currency.
+ */
+function CurrencyValue({ value, orgId }: { value: number; orgId?: Id<"orgs"> }) {
+	const code = useOrgDefaultCurrency(orgId);
+	let formatted: string;
+	try {
+		formatted = new Intl.NumberFormat(undefined, {
+			style: "currency",
+			currency: code,
+			maximumFractionDigits: 0,
+		}).format(value);
+	} catch {
+		formatted = `${code} ${value}`;
+	}
+	return <span className="text-xs font-medium tabular-nums">{formatted}</span>;
 }

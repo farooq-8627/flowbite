@@ -27,7 +27,12 @@ interface EditContactDrawerProps {
 	contact: Doc<"contacts"> | null;
 }
 
-const EMPTY: EntityFormValues = { columnValues: {}, customValues: {}, fieldIdByName: {} };
+const EMPTY: EntityFormValues = {
+	columnValues: {},
+	customValues: {},
+	joinValues: {},
+	fieldIdByName: {},
+};
 
 export function EditContactDrawer({ open, onOpenChange, orgId, contact }: EditContactDrawerProps) {
 	const labels = useEntityLabels();

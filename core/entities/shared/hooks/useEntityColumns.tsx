@@ -9,6 +9,9 @@
  *
  * EXTRAS THE HOOK ADDS:
  *   - "select" checkbox column (always first)
+ *   - "createdAt" sortable date column (always second-to-last) — surfaces
+ *     creation time so users can sort newest-first / oldest-first from the
+ *     header. Reads `_creationTime` directly from the Convex doc.
  *   - "actions" dropdown column (always last) — calls onEdit/onDelete and
  *     consumes any extra menu items the caller provides
  *
@@ -18,6 +21,7 @@
  */
 
 import type { ColumnDef } from "@tanstack/react-table";
+import { formatDistanceToNow } from "date-fns";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -99,6 +103,31 @@ export function useEntityColumns<TRow extends EntityRow>(
 				enableSorting: field.kind !== "tags" && field.storage !== "join",
 			});
 		}
+
+		// Created-at column — gives the user header-click sorting for "newest"
+		// and "oldest" without having to add a custom field. Pulled from the
+		// Convex `_creationTime` baked into every doc.
+		cols.push({
+			id: "createdAt",
+			accessorFn: (row: EntityRow) =>
+				(row as Record<string, unknown>)._creationTime as number | undefined,
+			meta: { label: "Created" },
+			header: ({ column }) => <DataTableColumnHeader column={column} title="Created" />,
+			cell: ({ getValue }) => {
+				const ts = getValue() as number | undefined;
+				if (!ts) return <span className="text-xs text-muted-foreground">—</span>;
+				return (
+					<span
+						className="text-xs text-muted-foreground"
+						title={new Date(ts).toLocaleString()}
+					>
+						{formatDistanceToNow(new Date(ts), { addSuffix: true })}
+					</span>
+				);
+			},
+			enableSorting: true,
+			sortDescFirst: true,
+		});
 
 		// Actions column — always last
 		if (onDelete || rowExtraActions) {

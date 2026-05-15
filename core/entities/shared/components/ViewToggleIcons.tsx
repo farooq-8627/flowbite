@@ -7,11 +7,17 @@
  * snug against each other (first gets `rounded-s`, second gets `rounded-e`,
  * divider between them). Keeps the underlying semantics (two discrete buttons
  * with `aria-pressed`) per D3 so a11y tools still see two switches.
+ *
+ * NO TOOLTIPS — explained once via the global entity-layout `<FirstTimeTour>`
+ * (anchors: `data-tour="view-toggle-list"` / `data-tour="view-toggle-board"`).
+ * Tooltips on these buttons re-fired on every hover after the user already
+ * understood them; the tour fires once per device and stays out of the way.
+ * `aria-label` keeps the controls accessible to screen readers and any
+ * native browser title hint.
  */
 
 import { LayoutGridIcon, ListIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import type { ViewKind } from "../types";
 
@@ -32,46 +38,42 @@ export function ViewToggleIcons({
 	return (
 		<div className="inline-flex h-8 items-center overflow-hidden rounded-[var(--radius)] border bg-background p-0.5">
 			{showBoard && (
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							aria-pressed={view === "board"}
-							onClick={() => onViewChange("board")}
-							className={cn(
-								"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
-								view === "board"
-									? "bg-accent text-accent-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							<LayoutGridIcon className="size-3.5" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Board view</TooltipContent>
-				</Tooltip>
+				<Button
+					variant="ghost"
+					size="icon"
+					aria-label="Board view"
+					title="Board view"
+					data-tour="view-toggle-board"
+					aria-pressed={view === "board"}
+					onClick={() => onViewChange("board")}
+					className={cn(
+						"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
+						view === "board"
+							? "bg-accent text-accent-foreground"
+							: "text-muted-foreground hover:text-foreground",
+					)}
+				>
+					<LayoutGridIcon className="size-3.5" />
+				</Button>
 			)}
 			{showList && (
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<Button
-							variant="ghost"
-							size="icon"
-							aria-pressed={view === "list"}
-							onClick={() => onViewChange("list")}
-							className={cn(
-								"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
-								view === "list"
-									? "bg-accent text-accent-foreground"
-									: "text-muted-foreground hover:text-foreground",
-							)}
-						>
-							<ListIcon className="size-3.5" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>List view</TooltipContent>
-				</Tooltip>
+				<Button
+					variant="ghost"
+					size="icon"
+					aria-label="List view"
+					title="List view"
+					data-tour="view-toggle-list"
+					aria-pressed={view === "list"}
+					onClick={() => onViewChange("list")}
+					className={cn(
+						"size-6 shrink-0 rounded-[calc(var(--radius)-2px)]",
+						view === "list"
+							? "bg-accent text-accent-foreground"
+							: "text-muted-foreground hover:text-foreground",
+					)}
+				>
+					<ListIcon className="size-3.5" />
+				</Button>
 			)}
 		</div>
 	);

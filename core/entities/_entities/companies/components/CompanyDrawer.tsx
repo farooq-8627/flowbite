@@ -27,6 +27,11 @@ import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-selec
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
+import {
+	CreateModeFileField,
+	FileBufferProvider,
+	useFileBuffer,
+} from "@/core/files/components/CreateModeFileField";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 
 type Mode = "add" | "edit";
@@ -61,6 +66,12 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 	const create = useMutation(api.crm.entities.companies.mutations.create);
 	const update = useMutation(api.crm.entities.companies.mutations.update);
 
+	// Buffered file uploads — files added during create are committed under
+	// scope="company" / scopeId=companyCode after the org row is written. For
+	// edit mode the same buffer commits using the existing companyCode so the
+	// pattern is symmetric. (Mirrors the wiring in AddLeadDrawer.)
+	const fileBuffer = useFileBuffer(orgId);
+
 	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
 	const availablePersons = useQuery(
 		api.crm.entities.companies.queries.listPersonsWithoutCompany,
@@ -70,6 +81,7 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 	// Populate from the doc when (re)opened.
 	useEffect(() => {
 		if (!open) return;
+		fileBuffer.reset();
 		if (mode === "edit" && company) {
 			setName(company.name ?? "");
 			setIndustry(company.industry ?? "");
@@ -83,14 +95,15 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 			setAssignees([]);
 			setPersonCodes([]);
 		}
-	}, [open, mode, company]);
+	}, [open, mode, company, fileBuffer]);
 
 	const handleSubmit = async () => {
 		if (!orgId || !name.trim()) return;
 		setIsSubmitting(true);
 		try {
+			let scopeId: string | undefined;
 			if (mode === "add") {
-				await create({
+				const created = await create({
 					orgId,
 					name: name.trim(),
 					industry: industry.trim() || undefined,
@@ -101,6 +114,7 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 						: undefined,
 					personCodes: personCodes.length ? personCodes : undefined,
 				});
+				scopeId = (created as { companyCode?: string } | undefined)?.companyCode;
 				toast.success(`${labels.company.singular} created`);
 			} else if (mode === "edit" && company) {
 				await update({
@@ -113,8 +127,20 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 					assignees: assignees as unknown as Id<"users">[],
 					personCodes,
 				});
+				scopeId = company.companyCode;
 				toast.success(`${labels.company.singular} updated`);
 			}
+
+			// Flush buffered file uploads to the company scope so they're
+			// reachable from the company detail view via files.queries.listByScope.
+			if (scopeId) {
+				try {
+					await fileBuffer.commitAll({ scope: "company", scopeId });
+				} catch {
+					// commitAll surfaces individual toasts.
+				}
+			}
+
 			onOpenChange(false);
 		} catch (err) {
 			toast.error(
@@ -173,109 +199,135 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 			submitLabel={mode === "add" ? "Create" : "Save"}
 			submitDisabled={!name.trim()}
 		>
-			<div className="flex flex-col gap-4">
-				{/* Identity */}
-				<section className="flex flex-col gap-2.5">
-					<div className="flex flex-col gap-1">
-						<Label className="text-[11px] font-medium leading-none">
-							Name
-							<span className="ms-0.5 text-destructive/60">*</span>
-						</Label>
-						<Input
-							value={name}
-							onChange={(e) => setName(e.target.value)}
-							placeholder={`${labels.company.singular} name`}
-							className="h-9 w-full text-sm"
-						/>
-					</div>
-					{/* Industry + Website paired (both short single-line) */}
-					<div className="grid grid-cols-2 gap-2.5">
+			<FileBufferProvider value={fileBuffer}>
+				<div className="flex flex-col gap-4">
+					{/* Identity */}
+					<section className="flex flex-col gap-2.5">
 						<div className="flex flex-col gap-1">
-							<Label className="text-[11px] font-medium leading-none">Industry</Label>
+							<Label className="text-[11px] font-medium leading-none">
+								Name
+								<span className="ms-0.5 text-destructive/60">*</span>
+							</Label>
 							<Input
-								value={industry}
-								onChange={(e) => setIndustry(e.target.value)}
-								placeholder="Technology"
+								value={name}
+								onChange={(e) => setName(e.target.value)}
+								placeholder={`${labels.company.singular} name`}
 								className="h-9 w-full text-sm"
 							/>
 						</div>
-						<div className="flex flex-col gap-1">
-							<Label className="text-[11px] font-medium leading-none">Website</Label>
-							<Input
-								value={website}
-								onChange={(e) => setWebsite(e.target.value)}
-								placeholder="https://…"
-								className="h-9 w-full text-sm"
-							/>
+						{/* Industry + Website paired (both short single-line) */}
+						<div className="grid grid-cols-2 gap-2.5">
+							<div className="flex flex-col gap-1">
+								<Label className="text-[11px] font-medium leading-none">
+									Industry
+								</Label>
+								<Input
+									value={industry}
+									onChange={(e) => setIndustry(e.target.value)}
+									placeholder="Technology"
+									className="h-9 w-full text-sm"
+								/>
+							</div>
+							<div className="flex flex-col gap-1">
+								<Label className="text-[11px] font-medium leading-none">
+									Website
+								</Label>
+								<Input
+									value={website}
+									onChange={(e) => setWebsite(e.target.value)}
+									placeholder="https://…"
+									className="h-9 w-full text-sm"
+								/>
+							</div>
 						</div>
-					</div>
-				</section>
+					</section>
 
-				{/* Team */}
-				<section className="flex flex-col gap-2.5">
-					<div className="flex items-center gap-2">
-						<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-							Team
-						</span>
-						<div className="h-px flex-1 bg-border" />
-					</div>
-					<div className="flex flex-col gap-1">
-						<Label className="text-[11px] font-medium leading-none">Assignees</Label>
-						<MultiSelect<UserOption>
-							value={assignees}
-							onChange={setAssignees}
-							options={memberOptions}
-							placeholder="Add team members…"
-							searchPlaceholder="Search members…"
-							emptyText="No members."
-							renderRow={(opt) => (
-								<>
-									<Avatar className="size-5 shrink-0">
-										<AvatarImage src={opt.avatarUrl} alt={opt.label} />
-										<AvatarFallback className="text-[8px]">
-											{opt.label.slice(0, 1).toUpperCase()}
-										</AvatarFallback>
-									</Avatar>
-									<div className="flex min-w-0 flex-col leading-tight">
-										<span className="truncate text-sm">{opt.label}</span>
-										{opt.subtitle && (
-											<span className="truncate text-[11px] text-muted-foreground">
-												{opt.subtitle}
-											</span>
-										)}
-									</div>
-								</>
-							)}
-						/>
-					</div>
-					<div className="flex flex-col gap-1">
-						<Label className="text-[11px] font-medium leading-none">People</Label>
-						<MultiSelect<PersonOption>
-							value={personCodes}
-							onChange={setPersonCodes}
-							options={personOptions}
-							placeholder={`Add ${labels.contact.plural.toLowerCase()} / ${labels.lead.plural.toLowerCase()}…`}
-							searchPlaceholder="Search by name or code…"
-							emptyText="No people without a company."
-							renderRow={(opt) => (
-								<>
-									<span className="inline-flex h-5 shrink-0 items-center rounded-[calc(var(--radius)-2px)] bg-primary/10 px-1.5 text-[9px] font-mono text-primary">
-										{opt.personCode}
-									</span>
-									<div className="flex min-w-0 flex-col leading-tight">
-										<span className="truncate text-sm">{opt.label}</span>
-										{opt.subtitle && (
-											<span className="truncate text-[11px] text-muted-foreground">
-												{opt.subtitle}
-											</span>
-										)}
-									</div>
-								</>
-							)}
-						/>
-					</div>
-				</section>
-			</div>
+					{/* Team */}
+					<section className="flex flex-col gap-2.5">
+						<div className="flex items-center gap-2">
+							<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+								Team
+							</span>
+							<div className="h-px flex-1 bg-border" />
+						</div>
+						<div className="flex flex-col gap-1">
+							<Label className="text-[11px] font-medium leading-none">
+								Assignees
+							</Label>
+							<MultiSelect<UserOption>
+								value={assignees}
+								onChange={setAssignees}
+								options={memberOptions}
+								placeholder="Add team members…"
+								searchPlaceholder="Search members…"
+								emptyText="No members."
+								renderRow={(opt) => (
+									<>
+										<Avatar className="size-5 shrink-0">
+											<AvatarImage src={opt.avatarUrl} alt={opt.label} />
+											<AvatarFallback className="text-[8px]">
+												{opt.label.slice(0, 1).toUpperCase()}
+											</AvatarFallback>
+										</Avatar>
+										<div className="flex min-w-0 flex-col leading-tight">
+											<span className="truncate text-sm">{opt.label}</span>
+											{opt.subtitle && (
+												<span className="truncate text-[11px] text-muted-foreground">
+													{opt.subtitle}
+												</span>
+											)}
+										</div>
+									</>
+								)}
+							/>
+						</div>
+						<div className="flex flex-col gap-1">
+							<Label className="text-[11px] font-medium leading-none">People</Label>
+							<MultiSelect<PersonOption>
+								value={personCodes}
+								onChange={setPersonCodes}
+								options={personOptions}
+								placeholder={`Add ${labels.contact.plural.toLowerCase()} / ${labels.lead.plural.toLowerCase()}…`}
+								searchPlaceholder="Search by name or code…"
+								emptyText="No people without a company."
+								renderRow={(opt) => (
+									<>
+										<span className="inline-flex h-5 shrink-0 items-center rounded-[calc(var(--radius)-2px)] bg-primary/10 px-1.5 text-[9px] font-mono text-primary">
+											{opt.personCode}
+										</span>
+										<div className="flex min-w-0 flex-col leading-tight">
+											<span className="truncate text-sm">{opt.label}</span>
+											{opt.subtitle && (
+												<span className="truncate text-[11px] text-muted-foreground">
+													{opt.subtitle}
+												</span>
+											)}
+										</div>
+									</>
+								)}
+							/>
+						</div>
+					</section>
+
+					{/* Files — buffered upload during create, committed on submit */}
+					{orgId && (
+						<section className="flex flex-col gap-2.5">
+							<div className="flex items-center gap-2">
+								<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+									Files
+								</span>
+								<div className="h-px flex-1 bg-border" />
+							</div>
+							<CreateModeFileField
+								orgId={orgId}
+								fieldKey="_default"
+								label="Files"
+								multiple
+							/>
+						</section>
+					)}
+				</div>
+			</FileBufferProvider>
 		</FormDrawer>
 	);
 }

@@ -28,7 +28,12 @@ interface EditLeadDrawerProps {
 	lead: Doc<"leads"> | null;
 }
 
-const EMPTY: EntityFormValues = { columnValues: {}, customValues: {}, fieldIdByName: {} };
+const EMPTY: EntityFormValues = {
+	columnValues: {},
+	customValues: {},
+	joinValues: {},
+	fieldIdByName: {},
+};
 
 export function EditLeadDrawer({ open, onOpenChange, orgId, lead }: EditLeadDrawerProps) {
 	const labels = useEntityLabels();

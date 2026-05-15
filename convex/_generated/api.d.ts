@@ -13,6 +13,7 @@ import type * as _functions_authenticated from "../_functions/authenticated.js";
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_permissions from "../_shared/permissions.js";
+import type * as _shared_rateLimit from "../_shared/rateLimit.js";
 import type * as _shared_recordCodes from "../_shared/recordCodes.js";
 import type * as _shared_reservedSlugs from "../_shared/reservedSlugs.js";
 import type * as _shared_types from "../_shared/types.js";
@@ -82,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "_shared/constants": typeof _shared_constants;
   "_shared/errors": typeof _shared_errors;
   "_shared/permissions": typeof _shared_permissions;
+  "_shared/rateLimit": typeof _shared_rateLimit;
   "_shared/recordCodes": typeof _shared_recordCodes;
   "_shared/reservedSlugs": typeof _shared_reservedSlugs;
   "_shared/types": typeof _shared_types;

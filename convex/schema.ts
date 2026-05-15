@@ -750,4 +750,28 @@ export default defineSchema({
 		.index("by_org_scope_field", ["orgId", "scope", "scopeId", "fieldKey"])
 		.index("by_storageId", ["storageId"])
 		.index("by_uploader", ["orgId", "uploadedBy"]),
+
+	// ── rateLimits ───────────────────────────────────────────────────────────
+	// Generic token-bucket counters used by `convex/_shared/rateLimit.ts`.
+	// One row per (scope, key) pair tracks the count of operations that have
+	// happened inside the current window. When `resetAt < now` the row is
+	// considered expired and gets reused with a fresh window.
+	//
+	//   scope  — which class of operation, e.g. "tags.create", "files.record".
+	//   key    — the principal identifier, typically `${userId}:${orgId}` or
+	//            `${ip}` for anonymous endpoints. The helper composes it.
+	//   count  — number of operations within the window so far.
+	//   resetAt — UNIX ms after which `count` is treated as 0.
+	//
+	// Indexed by (scope, key) so the helper performs ONE point read + one
+	// patch per check. Rows are never deleted by the helper — a periodic
+	// background cleanup can sweep `resetAt < now - day` rows if growth
+	// becomes a concern.
+	rateLimits: defineTable({
+		scope: v.string(),
+		key: v.string(),
+		count: v.number(),
+		resetAt: v.number(),
+		updatedAt: v.number(),
+	}).index("by_scope_key", ["scope", "key"]),
 });

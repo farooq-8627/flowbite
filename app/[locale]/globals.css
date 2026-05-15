@@ -268,18 +268,28 @@ html[data-font="source-code-pro"] body {
 /* ── Entity card flash highlight ─────────────────────────────────────────
  * Applied briefly when a search matches a card so the user can spot it at
  * a glance. The class is toggled off-then-on via JS (see EntityCard) so
- * the animation replays on each new search query. */
+ * the animation replays on each new search query.
+ *
+ * Visibility — animates the BORDER COLOUR (not a box-shadow / glow) so the
+ * highlight fits cleanly inside scroll containers without painting outside
+ * the card's footprint. The card's normal `border` is preserved; we just
+ * recolour it to `--primary` for ~1.5s and drift it back. Layout is never
+ * affected because we don't change border width. */
 @keyframes entity-card-flash {
-	0%,
-	100% {
-		box-shadow: 0 0 0 0 hsl(var(--ring) / 0);
+	0% {
+		border-color: var(--border);
 	}
-	30%,
-	70% {
-		box-shadow: 0 0 0 2px hsl(var(--ring) / 0.5);
+	10%,
+	60% {
+		border-color: var(--primary);
+	}
+	100% {
+		border-color: var(--border);
 	}
 }
 
 .entity-card-flash {
-	animation: entity-card-flash 1.4s ease-in-out both;
+	animation: entity-card-flash 1.6s ease-out both;
+	position: relative;
+	z-index: 1;
 }

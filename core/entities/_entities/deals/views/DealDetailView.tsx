@@ -48,10 +48,16 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import {
+	CreateModeFileField,
+	FileBufferProvider,
+	useFileBuffer,
+} from "@/core/files/components/CreateModeFileField";
 import type { KanbanColumnConfig } from "@/core/kanban/components/KanbanBoard";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
+import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 
 type DealRow = Record<string, unknown> & { id: string };
 
@@ -69,14 +75,23 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	const listColumns = defaultCardFields;
 	const canViewValues = useOrgPermission(orgId, "deals.viewValues");
 	const [search, setSearch] = useState("");
-	const [cardFields, setCardFields] = useState<string[]>(defaultCardFields);
-	const [groupBy, setGroupBy] = useState<string>("currentStageId");
+	// Persisted view options — survive route changes / reloads.
+	const [cardFields, setCardFields] = usePersistedState<string[]>("viewopts:deal:cardFields", []);
+	const [groupBy, setGroupBy] = usePersistedState<string>(
+		"viewopts:deal:groupBy",
+		"currentStageId",
+	);
 	const [stageFilter, setStageFilter] = useState<string | undefined>(undefined);
 	const [activeSavedViewId, setActiveSavedViewId] = useState<string | undefined>(undefined);
 
 	useEffect(() => {
-		setCardFields(defaultCardFields);
-	}, [defaultCardFields]);
+		setCardFields((prev) => {
+			if (!prev || prev.length === 0) return defaultCardFields;
+			const allowed = new Set(defaultCardFields);
+			const next = prev.filter((f) => allowed.has(f));
+			return next.length === prev.length ? prev : next;
+		});
+	}, [defaultCardFields, setCardFields]);
 
 	// Pipeline
 	const pipeline = useQuery(
@@ -93,7 +108,10 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	// Flat list (for list view)
 	const flatDeals = useQuery(api.crm.entities.deals.queries.list, orgId ? { orgId } : "skip");
 	const items = useMemo(
-		() => flatDeals?.map((d) => ({ ...d, id: d._id as string })),
+		() =>
+			flatDeals
+				?.map((d) => ({ ...d, id: d._id as string }))
+				.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0)),
 		[flatDeals],
 	);
 
@@ -495,7 +513,7 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 			{/* First-time coachmarks for the deals board. Fires once per device. */}
 			{view === "board" && (
 				<FirstTimeTour
-					id="deals-board-v1"
+					id="deals-board-v2"
 					steps={buildEntityBoardTour({
 						primaryActionVerb: "Edit",
 						groupedBy: "stage",
@@ -534,6 +552,16 @@ function AddDealDrawer({
 	const [assignee, setAssignee] = useState<PersonRef | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
+	// File buffer — bytes upload immediately to Convex storage and we commit
+	// the rows under scope="deal" / scopeId=dealCode after the deal row is
+	// created. Mirrors the AddLeadDrawer flow.
+	const fileBuffer = useFileBuffer(orgId);
+
+	// Reset the buffer when the drawer is closed so re-opening starts clean.
+	useEffect(() => {
+		if (!open) fileBuffer.reset();
+	}, [open, fileBuffer]);
+
 	const firstStageId = stages?.[0]?.id;
 	const hasPipeline = !!pipelineId && !!firstStageId;
 	const canSubmit = hasPipeline && !!title.trim() && !!person;
@@ -549,7 +577,7 @@ function AddDealDrawer({
 		if (!orgId || !pipelineId || !firstStageId || !canSubmit || !person) return;
 		setIsSubmitting(true);
 		try {
-			await onCreate({
+			const created = (await onCreate({
 				orgId,
 				title: title.trim(),
 				pipelineId,
@@ -559,7 +587,22 @@ function AddDealDrawer({
 				personCode: person.personCode,
 				...(person.type === "contact" ? { contactId: person.id as Id<"contacts"> } : {}),
 				source: "manual",
-			});
+			})) as { dealId?: Id<"deals">; dealCode?: string } | undefined;
+
+			// Commit any buffered files under the new deal scope. Tag the file
+			// with `person:<code>` so it also surfaces on the person profile.
+			if (created?.dealCode) {
+				try {
+					await fileBuffer.commitAll({
+						scope: "deal",
+						scopeId: created.dealCode,
+						tags: person?.personCode ? [`person:${person.personCode}`] : undefined,
+					});
+				} catch {
+					// commitAll surfaces individual toasts.
+				}
+			}
+
 			toast.success(`${labels.deal.singular} created`);
 			setTitle("");
 			setValue("");
@@ -585,102 +628,122 @@ function AddDealDrawer({
 			submitLabel="Create"
 			submitDisabled={!canSubmit}
 		>
-			{!hasPipeline ? (
-				<div className="flex flex-col items-start gap-3 rounded-[var(--radius)] border bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10">
-					<p className="font-medium">
-						No pipelines yet for {labels.deal.plural.toLowerCase()}.
-					</p>
-					<p className="text-xs text-muted-foreground">
-						Set up your first pipeline before creating a{" "}
-						{labels.deal.singular.toLowerCase()}. You'll define the stages it can move
-						through (e.g. New → Negotiation → Won).
-					</p>
-					<Link
-						href={settingsHref}
-						className="text-xs font-medium text-primary underline-offset-2 hover:underline"
-					>
-						Open Settings → Modules → {labels.deal.singular} → Pipelines →
-					</Link>
-				</div>
-			) : (
-				<div className="flex flex-col gap-4">
-					<section className="flex flex-col gap-2.5">
-						<div className="flex flex-col gap-1">
-							<Label
-								htmlFor="deal-title"
-								className="text-[11px] font-medium leading-none"
-							>
-								Title
-								<span className="ms-0.5 text-destructive/60">*</span>
-							</Label>
-							<Input
-								id="deal-title"
-								value={title}
-								onChange={(e) => setTitle(e.target.value)}
-								placeholder={`${labels.deal.singular} title`}
-								className="h-9 text-sm"
-							/>
-						</div>
-						<div className="flex flex-col gap-1">
-							<Label className="text-[11px] font-medium leading-none">
-								{labels.contact.singular} or {labels.lead.singular}
-								<span className="ms-0.5 text-destructive/60">*</span>
-							</Label>
-							<PersonSelect
-								scope="person"
-								value={person}
-								onChange={setPerson}
-								orgId={orgId}
-								placeholder={`Who is this ${labels.deal.singular.toLowerCase()} for?`}
-							/>
-							<p className="text-[10px] leading-snug text-muted-foreground">
-								Every {labels.deal.singular.toLowerCase()} belongs to a{" "}
-								{labels.contact.singular.toLowerCase()} or{" "}
-								{labels.lead.singular.toLowerCase()}.
-							</p>
-						</div>
-					</section>
-
-					<section className="flex flex-col gap-2.5">
-						<div className="flex items-center gap-2">
-							<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-								Details
-							</span>
-							<div className="h-px flex-1 bg-border" />
-						</div>
-						<div className="grid grid-cols-2 gap-2.5">
+			<FileBufferProvider value={fileBuffer}>
+				{!hasPipeline ? (
+					<div className="flex flex-col items-start gap-3 rounded-[var(--radius)] border bg-amber-50/40 p-4 text-sm dark:bg-amber-900/10">
+						<p className="font-medium">
+							No pipelines yet for {labels.deal.plural.toLowerCase()}.
+						</p>
+						<p className="text-xs text-muted-foreground">
+							Set up your first pipeline before creating a{" "}
+							{labels.deal.singular.toLowerCase()}. You'll define the stages it can
+							move through (e.g. New → Negotiation → Won).
+						</p>
+						<Link
+							href={settingsHref}
+							className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+						>
+							Open Settings → Modules → {labels.deal.singular} → Pipelines →
+						</Link>
+					</div>
+				) : (
+					<div className="flex flex-col gap-4">
+						<section className="flex flex-col gap-2.5">
 							<div className="flex flex-col gap-1">
 								<Label
-									htmlFor="deal-value"
+									htmlFor="deal-title"
 									className="text-[11px] font-medium leading-none"
 								>
-									Value
+									Title
+									<span className="ms-0.5 text-destructive/60">*</span>
 								</Label>
 								<Input
-									id="deal-value"
-									type="number"
-									value={value}
-									onChange={(e) => setValue(e.target.value)}
-									placeholder="0"
+									id="deal-title"
+									value={title}
+									onChange={(e) => setTitle(e.target.value)}
+									placeholder={`${labels.deal.singular} title`}
 									className="h-9 text-sm"
 								/>
 							</div>
 							<div className="flex flex-col gap-1">
 								<Label className="text-[11px] font-medium leading-none">
-									Assignee
+									{labels.contact.singular} or {labels.lead.singular}
+									<span className="ms-0.5 text-destructive/60">*</span>
 								</Label>
 								<PersonSelect
-									scope="user"
-									value={assignee}
-									onChange={setAssignee}
+									scope="person"
+									value={person}
+									onChange={setPerson}
 									orgId={orgId}
-									placeholder="Assign to…"
+									placeholder={`Who is this ${labels.deal.singular.toLowerCase()} for?`}
 								/>
+								<p className="text-[10px] leading-snug text-muted-foreground">
+									Every {labels.deal.singular.toLowerCase()} belongs to a{" "}
+									{labels.contact.singular.toLowerCase()} or{" "}
+									{labels.lead.singular.toLowerCase()}.
+								</p>
 							</div>
-						</div>
-					</section>
-				</div>
-			)}
+						</section>
+
+						<section className="flex flex-col gap-2.5">
+							<div className="flex items-center gap-2">
+								<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+									Details
+								</span>
+								<div className="h-px flex-1 bg-border" />
+							</div>
+							<div className="grid grid-cols-2 gap-2.5">
+								<div className="flex flex-col gap-1">
+									<Label
+										htmlFor="deal-value"
+										className="text-[11px] font-medium leading-none"
+									>
+										Value
+									</Label>
+									<Input
+										id="deal-value"
+										type="number"
+										value={value}
+										onChange={(e) => setValue(e.target.value)}
+										placeholder="0"
+										className="h-9 text-sm"
+									/>
+								</div>
+								<div className="flex flex-col gap-1">
+									<Label className="text-[11px] font-medium leading-none">
+										Assignee
+									</Label>
+									<PersonSelect
+										scope="user"
+										value={assignee}
+										onChange={setAssignee}
+										orgId={orgId}
+										placeholder="Assign to…"
+									/>
+								</div>
+							</div>
+						</section>
+
+						{/* Files — bytes upload now, rows commit on submit */}
+						{orgId && (
+							<section className="flex flex-col gap-2.5">
+								<div className="flex items-center gap-2">
+									<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+										Files
+									</span>
+									<div className="h-px flex-1 bg-border" />
+								</div>
+								<CreateModeFileField
+									orgId={orgId}
+									fieldKey="_default"
+									label="Files"
+									multiple
+								/>
+							</section>
+						)}
+					</div>
+				)}
+			</FileBufferProvider>
 		</FormDrawer>
 	);
 }

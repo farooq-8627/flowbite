@@ -22,7 +22,13 @@ export function useLeads(filters?: { status?: string; assignedTo?: Id<"users"> }
 	);
 
 	const normalized = useMemo(
-		() => items?.map((item) => ({ ...item, id: item._id as string })),
+		() =>
+			items
+				?.map((item) => ({ ...item, id: item._id as string }))
+				// Newest first by default — Convex returns results in insertion
+				// order, but the user expects "the lead I just added is on top".
+				// Stable sort by `_creationTime` desc.
+				.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0)),
 		[items],
 	);
 

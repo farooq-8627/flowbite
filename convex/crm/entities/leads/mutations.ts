@@ -10,6 +10,7 @@ import { orgMutation, requireOrgMember } from "../../../_functions/authenticated
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -32,6 +33,11 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.create");
+		await enforceRateLimit(ctx, {
+			scope: "leads.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		// Email dedup via index — O(log n)
 		if (args.email) {

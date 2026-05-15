@@ -2,7 +2,7 @@
 "use client";
 
 import type { Id } from "@/convex/_generated/dataModel";
-import { FileUpload } from "@/core/files/components/FileUpload";
+import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { useEntityLabels } from "@/core/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
 import { ProfileSection } from "./ProfileSection";
@@ -166,9 +166,15 @@ function DealsGroup({ personCode }: { personCode: string }) {
 }
 
 /**
- * FilesGroup — drag-and-drop attachments scoped to a single person
- * (scope="person", scopeId=personCode). Future passes will gate AI access to
- * these files through a per-person consent flag.
+ * FilesGroup — drag-and-drop attachments scoped to a single person.
+ *
+ * Uses the universal `<EntityFilesPanel>` which combines:
+ *   - direct person-scope files (scope="person", scopeId=personCode), and
+ *   - any file from another entity tagged `person:<personCode>` (e.g. a deal
+ *     attachment uploaded "for this person" surfaces here without dupes).
+ *
+ * Future passes will gate AI access to these files through a per-person
+ * consent flag.
  */
 function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs"> | undefined }) {
 	return (
@@ -176,15 +182,16 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 			<ProfileSection
 				id="files.attachments"
 				title="Attachments"
-				description="Drop files here — contracts, IDs, notes. Available to AI only with explicit consent (coming soon)."
+				description="Drop files here — contracts, IDs, notes. Files attached to deals/contacts that reference this person also appear here."
 			>
 				{orgId ? (
-					<FileUpload
+					<EntityFilesPanel
 						orgId={orgId}
-						scope="person"
-						scopeId={personCode}
-						label="Drop files here or click to browse"
-						emptyText="No files attached yet."
+						entityType="user"
+						entityId={personCode}
+						personCode={personCode}
+						uploadScope="person"
+						uploadScopeId={personCode}
 					/>
 				) : (
 					<div className="text-xs text-muted-foreground">Loading…</div>

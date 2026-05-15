@@ -2,7 +2,9 @@
 
 import { useQuery } from "convex/react";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { resetAllTours } from "@/components/ui/first-time-tour";
 import {
 	Select,
 	SelectContent,
@@ -269,6 +271,32 @@ export function AppearanceGroup() {
 					/>
 				</SettingsSection>
 			)}
+
+			<SettingsSection
+				id="appearance.tutorials"
+				title="Tutorials"
+				description="Show the first-time coachmarks again on this device."
+			>
+				<SettingsRow
+					label="Replay tutorials"
+					description="Restart the one-time guides that appear on the kanban board, settings, and other power features."
+				>
+					<Button
+						type="button"
+						variant="outline"
+						size="sm"
+						onClick={() => {
+							resetAllTours();
+							toast.success("Tutorials reset", {
+								description:
+									"Open any module to see its coachmarks again on next visit.",
+							});
+						}}
+					>
+						Replay
+					</Button>
+				</SettingsRow>
+			</SettingsSection>
 		</div>
 	);
 }

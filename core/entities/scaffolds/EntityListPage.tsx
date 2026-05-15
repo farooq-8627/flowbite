@@ -83,7 +83,13 @@ export function EntityListPage<TRow extends { id: string }>({
 		data: items ?? [],
 		columns,
 		pageCount: Math.ceil((items?.length ?? 0) / 25),
-		initialState: { pagination: { pageSize: 25, pageIndex: 0 } },
+		initialState: {
+			pagination: { pageSize: 25, pageIndex: 0 },
+			// Default sort: newest first. The "createdAt" column is appended by
+			// useEntityColumns and reads `_creationTime`. Header clicks override
+			// it; clearing the sort returns to this order.
+			sorting: [{ id: "createdAt", desc: true }] as never,
+		},
 		getRowId: (row) => row.id,
 	});
 

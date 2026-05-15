@@ -5,6 +5,7 @@ import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 
 export const create = orgMutation({
 	args: {
@@ -13,8 +14,13 @@ export const create = orgMutation({
 		color: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "tags.manage");
+		await enforceRateLimit(ctx, {
+			scope: "tags.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const existing = await ctx.db
 			.query("tags")

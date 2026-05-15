@@ -138,8 +138,23 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 		setFlashEpoch((e) => e + 1);
 	}, [search]);
 
-	// Mutations
-	const moveToStage = useMutation(api.crm.entities.deals.mutations.moveToStage);
+	// Mutations.
+	// `moveToStage` carries an optimistic update — the kanban card visually
+	// moves the moment the user releases the drag, then reconciles with the
+	// server response. Adds the "feels instant" UX without round-trip lag.
+	const moveToStage = useMutation(
+		api.crm.entities.deals.mutations.moveToStage,
+	).withOptimisticUpdate((store, args) => {
+		const list = store.getQuery(api.crm.entities.deals.queries.list, { orgId: args.orgId });
+		if (!list) return;
+		const now = Date.now();
+		const next = list.map((d) =>
+			d._id === args.dealId
+				? { ...d, currentStageId: args.stageId, stageEnteredAt: now, updatedAt: now }
+				: d,
+		);
+		store.setQuery(api.crm.entities.deals.queries.list, { orgId: args.orgId }, next);
+	});
 	const createDeal = useMutation(api.crm.entities.deals.mutations.create);
 
 	const [addOpen, setAddOpen] = useState(false);
@@ -560,7 +575,7 @@ function AddDealDrawer({
 	// Reset the buffer when the drawer is closed so re-opening starts clean.
 	useEffect(() => {
 		if (!open) fileBuffer.reset();
-	}, [open, fileBuffer]);
+	}, [open, fileBuffer.reset]);
 
 	const firstStageId = stages?.[0]?.id;
 	const hasPipeline = !!pipelineId && !!firstStageId;

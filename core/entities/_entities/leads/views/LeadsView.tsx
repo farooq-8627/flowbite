@@ -122,7 +122,17 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const { visibleFields } = useEntityFields("lead", orgId);
 	const defaultCardFields = useMemo(() => visibleFields.map((f) => f.name), [visibleFields]);
 	const { create, convert, remove } = useLeadMutations(orgId);
-	const updateLead = useMutation(api.crm.entities.leads.mutations.update);
+	const updateLead = useMutation(api.crm.entities.leads.mutations.update).withOptimisticUpdate(
+		(store, args) => {
+			const list = store.getQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId });
+			if (!list) return;
+			const now = Date.now();
+			const next = list.map((l) =>
+				l._id === args.leadId ? { ...l, ...args, updatedAt: now } : l,
+			);
+			store.setQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId }, next);
+		},
+	);
 
 	// Org-level staleness thresholds (falls back gracefully when not configured)
 	const org = useQuery(api.orgs.queries.get, orgId ? { orgId } : "skip");
@@ -195,8 +205,13 @@ export function LeadsView(_props: { orgSlug: string }) {
 		if (firstId) openConvertFor([firstId]);
 	});
 
+	// Batched tag lookup — used for both the tag column in the table and
+	// for board grouping by tag. One index read covers every lead in the org.
+	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "lead");
+
 	const { columns } = useEntityColumns<NonNullable<typeof items>[number]>("lead", orgId, {
 		customValuesByEntityId,
+		tagsByEntityId,
 		onDelete: async (row) => {
 			try {
 				await remove(row.id as Id<"leads">);
@@ -241,10 +256,6 @@ export function LeadsView(_props: { orgSlug: string }) {
 		}
 		return map;
 	}, [members]);
-
-	// Batched tag lookup — used for both the tag column in the table and
-	// for board grouping by tag. One index read covers every lead in the org.
-	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "lead");
 
 	const boardColumns: KanbanColumnConfig[] = useMemo(() => {
 		if (groupBy === "status") {

@@ -326,7 +326,17 @@ function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: strin
 	return (
 		<SidebarGroup className="py-1">
 			{group.label && (
-				<SidebarGroupLabel className="h-6 px-2">{group.label}</SidebarGroupLabel>
+				// `group-data-[collapsible=icon]:hidden` fully unmounts the
+				// label when the sidebar collapses to icon mode. The shadcn
+				// default uses `-mt-8 + opacity-0` to retract an h-8 label,
+				// but our `h-6` override breaks that math and the label leaks
+				// up into the workspace switcher area, blocking clicks. Using
+				// `display: none` (via `hidden`) is the unambiguous fix and
+				// matches the pattern already used elsewhere in the sidebar
+				// (menu-action, badge, sub-menu).
+				<SidebarGroupLabel className="h-6 px-2 group-data-[collapsible=icon]:hidden">
+					{group.label}
+				</SidebarGroupLabel>
 			)}
 			<SidebarGroupContent>
 				<SidebarMenu>
@@ -338,7 +348,7 @@ function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: strin
 								tooltip={item.title}
 								className="h-8"
 							>
-								<Link prefetch={false} href={item.url}>
+								<Link href={item.url}>
 									<item.icon />
 									<span>{item.title}</span>
 								</Link>

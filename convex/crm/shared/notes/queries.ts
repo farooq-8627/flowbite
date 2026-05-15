@@ -49,8 +49,9 @@ export const listForPerson = orgQuery({
 
 		const notes = await ctx.db
 			.query("notes")
-			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
-			.filter((q) => q.eq(q.field("personCode"), args.personCode))
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
 			.collect();
 
 		return notes.filter((n) => isAdmin || !n.isInternal);

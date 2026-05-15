@@ -63,9 +63,8 @@ export const getByCompanyCode = orgQuery({
 });
 
 /**
- * Return the (first) company a personCode belongs to, by scanning
- * `companies.personCodes[]`. Used for card badges, forms, and the
- * company-column in tables.
+ * Return the (first) company a personCode belongs to, via the indexed
+ * `companyMembers` join table. O(1) lookup instead of O(N) array scan.
  */
 export const getByPersonCode = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
@@ -73,15 +72,17 @@ export const getByPersonCode = orgQuery({
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
 
-		const all = await ctx.db
-			.query("companies")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		return (
-			all.find(
-				(c) => c.deletedAt === undefined && (c.personCodes ?? []).includes(args.personCode),
-			) ?? null
-		);
+		const link = await ctx.db
+			.query("companyMembers")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.first();
+		if (!link) return null;
+
+		const company = await ctx.db.get(link.companyId);
+		if (!company || company.deletedAt !== undefined) return null;
+		return company;
 	},
 });
 
@@ -89,6 +90,9 @@ export const getByPersonCode = orgQuery({
  * Persons (leads + contacts) that aren't yet attached to any company. Used
  * to populate the "persons without a company" multi-select inside the
  * Add/Edit Company drawers.
+ *
+ * Uses the `companyMembers` join table for O(1) membership checks instead
+ * of loading all companies + all leads + all contacts into memory.
  */
 export const listPersonsWithoutCompany = orgQuery({
 	args: { orgId: v.id("orgs") },
@@ -96,11 +100,15 @@ export const listPersonsWithoutCompany = orgQuery({
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
 
-		const [companies, leads, contacts] = await Promise.all([
-			ctx.db
-				.query("companies")
-				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-				.collect(),
+		// Get all personCodes that already belong to a company.
+		const memberLinks = await ctx.db
+			.query("companyMembers")
+			.withIndex("by_org_and_personCode", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		const taken = new Set(memberLinks.map((l) => l.personCode));
+
+		// Fetch leads + contacts (bounded per-org, acceptable).
+		const [leads, contacts] = await Promise.all([
 			ctx.db
 				.query("leads")
 				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
@@ -110,12 +118,6 @@ export const listPersonsWithoutCompany = orgQuery({
 				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
 				.collect(),
 		]);
-
-		const taken = new Set<string>();
-		for (const c of companies) {
-			if (c.deletedAt !== undefined) continue;
-			for (const pc of c.personCodes ?? []) taken.add(pc);
-		}
 
 		type Person = {
 			personCode: string;

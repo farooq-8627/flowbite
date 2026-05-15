@@ -144,7 +144,9 @@ export const remove = orgMutation({
 		// Remove all field values for this field
 		const values = await ctx.db
 			.query("fieldValues")
-			.withIndex("by_field", (q) => q.eq("orgId", args.orgId).eq("fieldId", args.fieldId))
+			.withIndex("by_field_and_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("fieldId", args.fieldId),
+			)
 			.collect();
 		await Promise.all(values.map((fv) => ctx.db.delete(fv._id)));
 

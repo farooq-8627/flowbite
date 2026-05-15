@@ -201,11 +201,10 @@ export function ShellLayout({
 	);
 
 	// ── Inject toolbar into the topnav slot (xl+) ────────────────────────────
-	// Includes every prop passed into ShellToolbar so stale closures can't leak.
-	// NavSlotProvider stores the slot in a ref and only notifies subscribers, so
-	// calling setSlot again is cheap and does not re-render the provider tree.
-	useEffect(() => {
-		setSlot(
+	// Memoize the toolbar element so setSlot only fires when meaningful data
+	// changes — not on every keystroke or scroll event.
+	const toolbarSlot = useMemo(
+		() => (
 			<ShellToolbar
 				sections={sectionsForGroup}
 				activeSectionId={resolvedSectionId}
@@ -216,18 +215,22 @@ export function ShellLayout({
 				searchPlaceholder={searchPlaceholder}
 				searchAriaLabel={searchAriaLabel}
 				className="hidden xl:flex w-full"
-			/>,
-		);
-	}, [
-		sectionsForGroup,
-		resolvedSectionId,
-		query,
-		isSearching,
-		handlePickSection,
-		searchPlaceholder,
-		searchAriaLabel,
-		setSlot,
-	]);
+			/>
+		),
+		[
+			sectionsForGroup,
+			resolvedSectionId,
+			query,
+			isSearching,
+			handlePickSection,
+			searchPlaceholder,
+			searchAriaLabel,
+		],
+	);
+
+	useEffect(() => {
+		setSlot(toolbarSlot);
+	}, [toolbarSlot, setSlot]);
 
 	useEffect(() => () => clearSlot(), [clearSlot]);
 

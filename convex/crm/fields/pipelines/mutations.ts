@@ -39,10 +39,12 @@ export const create = orgMutation({
 		if (args.isDefault) {
 			const existing = await ctx.db
 				.query("pipelines")
-				.withIndex("by_org_and_entity", (q) =>
-					q.eq("orgId", args.orgId).eq("entityType", args.entityType),
+				.withIndex("by_org_and_entity_and_default", (q) =>
+					q
+						.eq("orgId", args.orgId)
+						.eq("entityType", args.entityType)
+						.eq("isDefault", true),
 				)
-				.filter((q) => q.eq(q.field("isDefault"), true))
 				.first();
 			if (existing) {
 				await ctx.db.patch(existing._id, { isDefault: false, updatedAt: Date.now() });

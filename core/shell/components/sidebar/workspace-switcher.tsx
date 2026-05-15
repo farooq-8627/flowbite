@@ -78,7 +78,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 									.filter(({ org }) => org.slug !== currentOrgSlug)
 									.map(({ org }) => (
 										<DropdownMenuItem key={org._id} asChild>
-											<Link prefetch={false} href={`/${org.slug}`}>
+											<Link href={`/${org.slug}`}>
 												<Command className="size-4 shrink-0 opacity-50" />
 												<span className="flex-1 truncate">{org.name}</span>
 												<Check className="ms-auto size-4 shrink-0 opacity-0" />
@@ -90,13 +90,13 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 						)}
 						<DropdownMenuGroup>
 							<DropdownMenuItem asChild>
-								<Link prefetch={false} href="/onboarding">
+								<Link href="/onboarding">
 									<Plus className="size-4 shrink-0" />
 									Create workspace
 								</Link>
 							</DropdownMenuItem>
 							<DropdownMenuItem asChild>
-								<Link prefetch={false} href="/join">
+								<Link href="/join">
 									<UserPlus className="size-4 shrink-0" />
 									Join workspace
 								</Link>

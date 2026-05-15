@@ -1,30 +1,24 @@
 "use client";
 
 import { useConvexAuth } from "convex/react";
-import { usePathname, useRouter } from "next/navigation";
+import { redirect, usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { useEffect } from "react";
 
 /**
  * Auth guard for all private routes.
  * Redirects to /signin if not authenticated.
- * Matches the existing client-side auth pattern used in the app.
+ * Uses render-time redirect() for instant navigation — no useEffect delay.
  */
 export default function PrivateLayout({ children }: { children: ReactNode }) {
 	const { isAuthenticated, isLoading } = useConvexAuth();
-	const router = useRouter();
 	const pathname = usePathname();
 
-	useEffect(() => {
-		if (!isLoading && !isAuthenticated) {
-			// Extract locale from pathname (first segment)
-			const locale = pathname.split("/")[1] ?? "en";
-			router.replace(`/${locale}/signin`);
-		}
-	}, [isAuthenticated, isLoading, router, pathname]);
-
 	if (isLoading) return null;
-	if (!isAuthenticated) return null;
+
+	if (!isAuthenticated) {
+		const locale = pathname.split("/")[1] ?? "en";
+		redirect(`/${locale}/signin`);
+	}
 
 	return <>{children}</>;
 }

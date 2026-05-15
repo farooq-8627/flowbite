@@ -27,8 +27,6 @@ export const create = orgMutation({
 		assignedTo: v.optional(v.id("users")),
 		assignees: v.optional(v.array(v.id("users"))),
 		personCodes: v.optional(v.array(v.string())),
-		/** @deprecated — use `assignees`. Still accepted for back-compat. */
-		teamMembers: v.optional(v.array(v.id("users"))),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -47,7 +45,6 @@ export const create = orgMutation({
 			assignedTo: args.assignedTo,
 			assignees: args.assignees,
 			personCodes: args.personCodes,
-			teamMembers: args.teamMembers,
 			createdAt: now,
 			updatedAt: now,
 		});
@@ -88,7 +85,6 @@ export const update = orgMutation({
 		assignedTo: v.optional(v.id("users")),
 		assignees: v.optional(v.array(v.id("users"))),
 		personCodes: v.optional(v.array(v.string())),
-		teamMembers: v.optional(v.array(v.id("users"))),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -145,6 +141,14 @@ export const addPerson = orgMutation({
 			updatedAt: Date.now(),
 		});
 
+		// Maintain the indexed join table for O(1) lookups.
+		await ctx.db.insert("companyMembers", {
+			orgId: args.orgId,
+			personCode: args.personCode,
+			companyId: args.companyId,
+			createdAt: Date.now(),
+		});
+
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId,
@@ -183,6 +187,15 @@ export const removePerson = orgMutation({
 			personCodes: next,
 			updatedAt: Date.now(),
 		});
+
+		// Remove from the indexed join table.
+		const link = await ctx.db
+			.query("companyMembers")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.first();
+		if (link) await ctx.db.delete(link._id);
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

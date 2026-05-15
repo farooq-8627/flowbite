@@ -35,11 +35,13 @@ export const getDueToday = orgQuery({
 
 		const reminders = await ctx.db
 			.query("reminders")
-			.withIndex("by_org_and_due", (q) =>
-				q.eq("orgId", args.orgId).gte("dueAt", startOfDay.getTime()),
+			.withIndex("by_org_and_status_and_due", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("status", "pending")
+					.gte("dueAt", startOfDay.getTime())
+					.lte("dueAt", endOfDay.getTime()),
 			)
-			.filter((q) => q.lte(q.field("dueAt"), endOfDay.getTime()))
-			.filter((q) => q.eq(q.field("status"), "pending"))
 			.collect();
 
 		return isAdmin ? reminders : reminders.filter((r) => r.assignedTo === userId);

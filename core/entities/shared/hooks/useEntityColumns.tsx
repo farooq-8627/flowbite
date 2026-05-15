@@ -32,6 +32,7 @@ import {
 	type EntityRow,
 	type FieldDef,
 	getCellRenderer,
+	readFieldValue,
 } from "../components/cells/cell-dispatcher";
 import type { EntitySlot } from "../types";
 import { useEntityFields } from "./useEntityFields";
@@ -45,6 +46,8 @@ interface UseEntityColumnsOptions<TRow extends EntityRow> {
 	rowExtraActions?: (row: TRow) => ReactNode;
 	/** Optional set of column IDs (field names) the caller wants HIDDEN even though they exist. */
 	hiddenColumnIds?: Set<string>;
+	/** Batch tag data from useEntityTagsMap — enables sorting + eliminates per-row flash. */
+	tagsByEntityId?: Record<string, Array<{ _id: unknown; name: string; color?: string | null }>>;
 }
 
 export function useEntityColumns<TRow extends EntityRow>(
@@ -57,6 +60,7 @@ export function useEntityColumns<TRow extends EntityRow>(
 	const hiddenColumnIds = options?.hiddenColumnIds;
 	const onDelete = options?.onDelete;
 	const rowExtraActions = options?.rowExtraActions;
+	const tagsByEntityId = options?.tagsByEntityId;
 
 	const columns = useMemo<ColumnDef<TRow, unknown>[]>(() => {
 		const cols: ColumnDef<TRow, unknown>[] = [];
@@ -88,9 +92,23 @@ export function useEntityColumns<TRow extends EntityRow>(
 		for (const field of tableFields) {
 			if (hiddenColumnIds?.has(field.name)) continue;
 			const renderer = getCellRenderer(field);
+			// Use accessorFn (not accessorKey) so TanStack reads the value from
+			// the right place regardless of where it's stored. Custom fields
+			// (storage="fieldValues") live in `customValuesByEntityId`, NOT on
+			// the entity row itself — so an `accessorKey: "budget"` would
+			// resolve to undefined for every row and silently break sorting.
+			// `readFieldValue` knows the storage rules (column / fieldValues /
+			// join) and returns the right value for sort + filter comparisons.
 			cols.push({
 				id: field.name,
-				accessorKey: field.columnKey ?? field.name,
+				accessorFn: (row) => {
+					const r = row as EntityRow;
+					if (field.kind === "tags" && tagsByEntityId) {
+						const tags = tagsByEntityId[r.id];
+						return tags?.[0]?.name ?? null;
+					}
+					return readFieldValue(field, r, customValuesByEntityId?.[r.id]);
+				},
 				meta: { label: field.label },
 				header: ({ column }) => (
 					<DataTableColumnHeader column={column} title={field.label} />
@@ -98,9 +116,37 @@ export function useEntityColumns<TRow extends EntityRow>(
 				cell: ({ row }) => {
 					const r = row.original as EntityRow;
 					const customValues = customValuesByEntityId?.[r.id];
-					return renderer({ slot, field, row: r, customValues });
+					const prefetchedTags = field.kind === "tags" ? tagsByEntityId?.[r.id] : undefined;
+					return renderer({ slot, field, row: r, customValues, prefetchedTags });
 				},
-				enableSorting: field.kind !== "tags" && field.storage !== "join",
+				// Tags are sortable when batch data is provided; otherwise
+				// join-storage fields remain unsortable.
+				enableSorting: field.kind === "tags" ? !!tagsByEntityId : field.storage !== "join",
+				// Booleans + arrays don't sort meaningfully under the default
+				// "auto" comparator. Pick a sensible sortingFn per field type.
+				sortingFn:
+					field.type === "number" ||
+					field.kind === "currency" ||
+					field.kind === "relativeTime" ||
+					field.type === "date"
+						? "basic"
+						: field.type === "boolean"
+							? (a, b, id) => {
+									const av = a.getValue(id) ? 1 : 0;
+									const bv = b.getValue(id) ? 1 : 0;
+									return av - bv;
+								}
+							: field.type === "multiselect"
+								? (a, b, id) => {
+										const av = (a.getValue(id) as unknown[] | undefined) ?? [];
+										const bv = (b.getValue(id) as unknown[] | undefined) ?? [];
+										return av.length - bv.length;
+									}
+								: "alphanumeric",
+				// Undefined/null values always at the bottom regardless of
+				// asc/desc — keeps blank cells from polluting the top of a
+				// sorted list (common ask in CRM tables).
+				sortUndefined: "last",
 			});
 		}
 
@@ -156,7 +202,7 @@ export function useEntityColumns<TRow extends EntityRow>(
 		}
 
 		return cols;
-	}, [tableFields, customValuesByEntityId, hiddenColumnIds, onDelete, rowExtraActions, slot]);
+	}, [tableFields, customValuesByEntityId, hiddenColumnIds, onDelete, rowExtraActions, slot, tagsByEntityId]);
 
 	return { columns, fields: tableFields, isLoading };
 }

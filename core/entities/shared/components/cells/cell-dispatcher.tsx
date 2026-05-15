@@ -46,6 +46,8 @@ export interface CellContext {
 	row: EntityRow;
 	/** Custom-field values map for this row (only relevant for storage="fieldValues"). */
 	customValues?: Record<string, unknown>;
+	/** Pre-fetched tags for this row (from batch useEntityTagsMap). */
+	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
 }
 
 /** Read the value for a field from the right place based on `storage`. */
@@ -159,12 +161,13 @@ const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 		/>
 	),
 
-	tags: ({ slot, row }) => (
+	tags: ({ slot, row, prefetchedTags }) => (
 		<TagsCell
 			orgId={row.orgId}
 			entityType={slot}
 			entityId={(row._id ?? row.id) as string}
 			size="xs"
+			prefetchedTags={prefetchedTags}
 		/>
 	),
 

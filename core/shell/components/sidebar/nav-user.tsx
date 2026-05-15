@@ -104,7 +104,7 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 							</DropdownMenuItem>
 							{orgSlug && (
 								<DropdownMenuItem asChild>
-									<Link prefetch={false} href={`/${orgSlug}/settings`}>
+									<Link href={`/${orgSlug}/settings`}>
 										<Settings className="size-4 shrink-0" />
 										Settings
 									</Link>

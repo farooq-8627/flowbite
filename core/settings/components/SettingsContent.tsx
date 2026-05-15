@@ -1,3 +1,4 @@
+import { PermissionGate } from "@/components/rbac/PermissionGate";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { SettingsGroupId } from "../config/settings-nav";
 import type { OrgSettings } from "../types";
@@ -22,27 +23,43 @@ type Props = {
 /**
  * SettingsContent — dispatches to the correct group component.
  *
- * The scroll container, search filtering, and toolbar are provided by the
- * shared ShellLayout one level up. This component is intentionally small: the
- * active group decides what renders, everything else is the shell's concern.
- *
- * Search mode is handled by ShellLayout (wraps children in SearchFilterProvider
- * and calls `renderGroup` once per matching group). Individual <SettingsSection>
- * cards read that context and hide themselves if they don't match — so search
- * filtering here is automatic and invisible.
+ * Defense-in-depth: admin-only groups are wrapped in `<PermissionGate>` so
+ * even if a user navigates directly to `?group=workspace` via URL, the
+ * content won't render without the required permission. This supplements
+ * the group-level filtering in ShellLayout (which hides the nav item).
  */
 export function SettingsContent({ activeGroup, org, orgId, permissions }: Props) {
 	switch (activeGroup) {
 		case "workspace":
-			return <WorkspaceGroup org={org} orgId={orgId} />;
+			return (
+				<PermissionGate orgId={orgId} permission="org.editSettings">
+					<WorkspaceGroup org={org} orgId={orgId} />
+				</PermissionGate>
+			);
 		case "team":
-			return <TeamGroup orgId={orgId} permissions={permissions} />;
+			return (
+				<PermissionGate orgId={orgId} permission="members.view">
+					<TeamGroup orgId={orgId} permissions={permissions} />
+				</PermissionGate>
+			);
 		case "modules":
-			return <ModulesGroup org={org} orgId={orgId} />;
+			return (
+				<PermissionGate orgId={orgId} permission="org.editSettings">
+					<ModulesGroup org={org} orgId={orgId} />
+				</PermissionGate>
+			);
 		case "crm":
-			return <CRMGroup org={org} orgId={orgId} />;
+			return (
+				<PermissionGate orgId={orgId} permission="pipelines.manage">
+					<CRMGroup org={org} orgId={orgId} />
+				</PermissionGate>
+			);
 		case "ai":
-			return <AIGroup org={org} orgId={orgId} />;
+			return (
+				<PermissionGate orgId={orgId} permission="ai.manageTools">
+					<AIGroup org={org} orgId={orgId} />
+				</PermissionGate>
+			);
 		case "appearance":
 			return <AppearanceGroup />;
 		case "notifications":
@@ -50,9 +67,17 @@ export function SettingsContent({ activeGroup, org, orgId, permissions }: Props)
 		case "shortcuts":
 			return <ShortcutsGroup />;
 		case "billing":
-			return <BillingGroup org={org} orgId={orgId} />;
+			return (
+				<PermissionGate orgId={orgId} permission="org.viewBilling">
+					<BillingGroup org={org} orgId={orgId} />
+				</PermissionGate>
+			);
 		case "data":
-			return <DataGroup org={org} orgId={orgId} permissions={permissions} />;
+			return (
+				<PermissionGate orgId={orgId} permission="org.editSettings">
+					<DataGroup org={org} orgId={orgId} permissions={permissions} />
+				</PermissionGate>
+			);
 		default:
 			return null;
 	}

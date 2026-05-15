@@ -49,8 +49,9 @@ export const create = authenticatedMutation({
 		if (args.isDefault) {
 			const currentDefault = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
-				.filter((q) => q.eq(q.field("isDefault"), true))
+				.withIndex("by_orgId_and_isDefault", (q) =>
+					q.eq("orgId", args.orgId).eq("isDefault", true),
+				)
 				.first();
 			if (currentDefault) {
 				await ctx.db.patch(currentDefault._id, { isDefault: false, updatedAt: now });
@@ -113,8 +114,9 @@ export const update = authenticatedMutation({
 		if (args.isDefault) {
 			const currentDefault = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId", (q) => q.eq("orgId", role.orgId))
-				.filter((q) => q.eq(q.field("isDefault"), true))
+				.withIndex("by_orgId_and_isDefault", (q) =>
+					q.eq("orgId", role.orgId).eq("isDefault", true),
+				)
 				.first();
 			if (currentDefault && currentDefault._id !== args.roleId) {
 				await ctx.db.patch(currentDefault._id, { isDefault: false, updatedAt: now });
@@ -156,8 +158,9 @@ export const remove = authenticatedMutation({
 		// Reassign affected members to the org's default role
 		const defaultRole = await ctx.db
 			.query("orgRoles")
-			.withIndex("by_orgId", (q) => q.eq("orgId", role.orgId))
-			.filter((q) => q.eq(q.field("isDefault"), true))
+			.withIndex("by_orgId_and_isDefault", (q) =>
+				q.eq("orgId", role.orgId).eq("isDefault", true),
+			)
 			.first();
 		if (!defaultRole) throw new ConvexError("No default role found. Cannot delete role.");
 

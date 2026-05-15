@@ -23,26 +23,31 @@ This module provides the `@tanstack/react-table` v8 primitives that power every 
 core/datatable/
 ├── MODULE.md                         # this file
 ├── index.ts                          # barrel export
+├── config.ts                         # dataTableConfig (operators, page sizes)
+├── types.ts                          # Shared column + filter type definitions
 │
 ├── components/
-│   ├── DataTable.tsx                 # Root — TanStack Table + virtualization
-│   ├── DataTableToolbar.tsx          # Search + filters + view toggle + bulk action bar
-│   ├── DataTableColumnHeader.tsx     # Sortable column header with visibility toggle
+│   ├── DataTable.tsx                 # Root — TanStack Table instance
+│   ├── DataTableToolbar.tsx          # Search + filters + view toggle
+│   ├── DataTableColumnHeader.tsx     # Sortable column header
 │   ├── DataTablePagination.tsx       # Page controls + rows-per-page selector
 │   ├── DataTableRowActions.tsx       # Row-level action menu (3-dot)
-│   ├── DataTableBulkBar.tsx          # Floating bar when rows are selected
-│   ├── DataTableFacetFilter.tsx      # Multi-select filter chip (stage, assignee, tag)
+│   ├── DataTableViewOptions.tsx      # Column visibility toggle popover
+│   ├── DataTableFacetedFilter.tsx    # Multi-select filter chip (stage, assignee, tag)
 │   ├── DataTableDateFilter.tsx       # Date range filter (created, updated)
-│   ├── DataTableSkeleton.tsx         # Loading state — matches table dimensions
-│   └── DataTableEmpty.tsx            # Empty state — passes through caller's emptyState prop
+│   ├── DataTableSliderFilter.tsx     # Numeric range filter (e.g. deal value)
+│   └── DataTableSkeleton.tsx         # Loading state — matches table dimensions
 │
 ├── hooks/
-│   ├── useDataTable.ts               # Initialises TanStack Table instance
-│   ├── useColumnVisibility.ts        # Persists hidden columns to localStorage
-│   └── useTableFilters.ts            # Syncs filter state to URL search params
+│   └── useDataTable.ts               # Initialises TanStack Table + syncs state to URL via nuqs
 │
-└── types.ts                          # Shared column + filter type definitions
+└── utils/
+    └── data-table.ts                 # getCommonPinningStyles, getFilterOperators, getDefaultFilterOperator
 ```
+
+> **Note**: Column visibility is persisted via URL search params (nuqs) inside `useDataTable.ts`,
+> not in a separate `useColumnVisibility.ts` hook. Filter state is also URL-synced via nuqs
+> inside the same hook — there is no separate `useTableFilters.ts`.
 
 ---
 
@@ -145,6 +150,7 @@ export function DataTable<TData>({
           onClearSelection={() => setRowSelection({})}
         />
       )}
+      {/* Note: DataTableBulkBar is implemented inline in entity views, not as a shared component */}
 
       <div className="rounded-md border">
         <Table>
@@ -423,43 +429,23 @@ const bulkActions: BulkAction[] = [
 
 ---
 
-## Column Persistence
+## Column Persistence + Filter State — URL-Synced via nuqs
 
-Column visibility is persisted in localStorage, keyed by entity type:
-
-```typescript
-// core/datatable/hooks/useColumnVisibility.ts
-export function useColumnVisibility(entityType: string) {
-  const key = `orbitly:col-visibility:${entityType}`;
-  const [visibility, setVisibility] = useState<VisibilityState>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(key) ?? "{}");
-    } catch {
-      return {};
-    }
-  });
-
-  const persist = useCallback((v: VisibilityState) => {
-    setVisibility(v);
-    localStorage.setItem(key, JSON.stringify(v));
-  }, [key]);
-
-  return [visibility, persist] as const;
-}
-```
-
----
-
-## Filter State — Synced to URL
-
-Filter state lives in the URL as query params so filters are preserved on refresh and can be shared:
+Column visibility, sorting, filters, and pagination are all synced to URL search params via `nuqs` inside `useDataTable.ts`. This means filters are preserved on refresh and can be shared via URL.
 
 ```typescript
-// core/datatable/hooks/useTableFilters.ts
-// Syncs ColumnFiltersState <-> URL search params
-// e.g. ?stage=offer_mou&assignedTo=user_abc&createdAfter=2026-01-01
-// Uses useSearchParams + router.replace to update without navigation push
+// core/datatable/hooks/useDataTable.ts
+// Uses nuqs useQueryState / useQueryStates to sync:
+//   - sorting → ?sort=createdAt.desc
+//   - columnFilters → ?stage=offer_mou&assignedTo=user_abc
+//   - pagination → ?page=2&perPage=50
+//   - columnVisibility → ?cols=name,stage,assignee (hidden columns excluded)
+// No localStorage — URL is the single source of truth.
+import { useQueryState, useQueryStates } from "nuqs";
 ```
+
+> **Removed**: `useColumnVisibility.ts` (localStorage-based) and `useTableFilters.ts` (separate hook)
+> were planned but not built. The single `useDataTable.ts` hook handles all state via nuqs.
 
 ---
 

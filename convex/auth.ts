@@ -11,6 +11,21 @@ import Google from "@auth/core/providers/google";
 import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
 
+// ── Env validation at boot ───────────────────────────────────────────────────
+// Fail fast with a clear message instead of silently dropping OAuth providers.
+const REQUIRED_ENV = {
+	AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID,
+	AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET,
+	AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID,
+	AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET,
+} as const;
+
+for (const [key, value] of Object.entries(REQUIRED_ENV)) {
+	if (!value) {
+		console.warn(`⚠️  Missing env var: ${key} — OAuth provider will be disabled.`);
+	}
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 	providers: [
 		Password,

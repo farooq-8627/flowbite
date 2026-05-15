@@ -25,7 +25,15 @@
  */
 
 import { useMutation } from "convex/react";
-import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from "react";
+import {
+	createContext,
+	type ReactNode,
+	useCallback,
+	useContext,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -124,10 +132,16 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 		}));
 	}, []);
 
+	// Keep a ref to the latest filesByField so commitAll can read it without
+	// being recreated on every state change (which would destabilize the
+	// returned object and cause infinite loops in consumer useEffects).
+	const filesByFieldRef = useRef(filesByField);
+	filesByFieldRef.current = filesByField;
+
 	const commitAll = useCallback(
 		async (args: { scope: string; scopeId: string; tags?: string[] }) => {
 			if (!orgId) return;
-			const entries = Object.entries(filesByField);
+			const entries = Object.entries(filesByFieldRef.current);
 			for (const [fieldKey, files] of entries) {
 				for (const f of files) {
 					try {
@@ -151,7 +165,7 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 			}
 			setFilesByField({});
 		},
-		[orgId, filesByField, record],
+		[orgId, record],
 	);
 
 	const reset = useCallback(() => {

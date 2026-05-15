@@ -17,6 +17,17 @@ export const timestamps = { createdAt: v.number(), updatedAt: v.number() };
 export const softDelete = { deletedAt: v.optional(v.number()) };
 export const createdBy = { createdBy: v.id("users") };
 
+// AI-written context blob attached to leads, contacts, deals. Replaces v.any().
+// Persisted across lead → contact conversion (never recreated).
+export const aiContextValidator = v.optional(
+	v.object({
+		summary: v.optional(v.string()),
+		keyFacts: v.optional(v.array(v.string())),
+		lastUpdatedAt: v.optional(v.number()),
+		rawNotes: v.optional(v.string()),
+	}),
+);
+
 // ─── Platform Role validators ─────────────────────────────────────────────────
 //
 // Platform roles live on the `users` table (`users.platformRole`).

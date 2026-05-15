@@ -25,8 +25,9 @@ export const set = orgMutation({
 		const now = Date.now();
 		const existing = await ctx.db
 			.query("fieldValues")
-			.withIndex("by_field", (q) => q.eq("orgId", args.orgId).eq("fieldId", args.fieldId))
-			.filter((q) => q.eq(q.field("entityId"), args.entityId))
+			.withIndex("by_field_and_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("fieldId", args.fieldId).eq("entityId", args.entityId),
+			)
 			.first();
 
 		if (existing) {
@@ -64,8 +65,12 @@ export const bulkSet = orgMutation({
 
 				const existing = await ctx.db
 					.query("fieldValues")
-					.withIndex("by_field", (q) => q.eq("orgId", args.orgId).eq("fieldId", fieldId))
-					.filter((q) => q.eq(q.field("entityId"), args.entityId))
+					.withIndex("by_field_and_entity", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("fieldId", fieldId)
+							.eq("entityId", args.entityId),
+					)
 					.first();
 
 				if (existing) {

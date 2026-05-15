@@ -42,6 +42,13 @@ interface TagsCellProps {
 	 */
 	readOnlyAfterFirst?: boolean;
 	className?: string;
+	/**
+	 * Pre-fetched tags for this entity (from batch `useEntityTagsMap`).
+	 * When provided, skips the per-row `getTagsForEntity` query — eliminates
+	 * the flash-of-empty on first render caused by individual queries
+	 * restarting when columns rebuild.
+	 */
+	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
 }
 
 export function TagsCell({
@@ -51,23 +58,31 @@ export function TagsCell({
 	size = "xs",
 	readOnlyAfterFirst = false,
 	className,
+	prefetchedTags,
 }: TagsCellProps) {
 	const [open, setOpen] = useState(false);
 
 	const allTags = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
 	const attached = useQuery(
 		api.crm.shared.tags.queries.getTagsForEntity,
-		orgId ? { orgId, entityType, entityId } : "skip",
+		// Skip the per-row query when prefetched data is available
+		orgId && !prefetchedTags ? { orgId, entityType, entityId } : "skip",
 	);
 
 	const attach = useMutation(api.crm.shared.tags.mutations.attachToEntity);
 	const detach = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
 	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 
-	const attachedTags = useMemo(
-		() => (attached ?? []).filter((t): t is NonNullable<typeof t> => t !== null),
-		[attached],
-	);
+	const attachedTags = useMemo(() => {
+		if (prefetchedTags) {
+			return prefetchedTags.map((t) => ({
+				_id: t._id as Id<"tags">,
+				name: t.name,
+				color: (t.color ?? undefined) as string | undefined,
+			}));
+		}
+		return (attached ?? []).filter((t): t is NonNullable<typeof t> => t !== null);
+	}, [prefetchedTags, attached]);
 	const currentTag = attachedTags[0];
 	const currentId = currentTag?._id as string | undefined;
 

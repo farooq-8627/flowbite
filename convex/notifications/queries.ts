@@ -23,8 +23,9 @@ export const getSummary = authenticatedQuery({
 	handler: async (ctx) => {
 		const unread = await ctx.db
 			.query("notifications")
-			.withIndex("by_userId_and_read", (q) => q.eq("userId", ctx.userId).eq("read", false))
-			.filter((q) => q.eq(q.field("archivedAt"), undefined))
+			.withIndex("by_userId_and_read_and_archivedAt", (q) =>
+				q.eq("userId", ctx.userId).eq("read", false).eq("archivedAt", undefined),
+			)
 			.take(100);
 
 		const preview = await ctx.db

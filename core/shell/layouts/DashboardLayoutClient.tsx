@@ -5,11 +5,13 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { OrgProvider } from "@/core/shared/hooks/useCurrentOrg";
 import {
 	AIChatPanel,
 	AIChatPanelContent,
 } from "@/core/shell/components/ai-chat-panel/ai-chat-panel";
 import { GlobalEntityShortcuts } from "@/core/shell/components/GlobalEntityShortcuts";
+import { RouteProgress } from "@/core/shell/components/RouteProgress";
 import { AppSidebar } from "@/core/shell/components/sidebar/app-sidebar";
 import { SearchDialog } from "@/core/shell/components/sidebar/search-dialog";
 import { TopNav } from "@/core/shell/components/TopNav";
@@ -125,110 +127,113 @@ export function DashboardLayoutClient({
 
 	return (
 		<div className="flex h-screen w-full overflow-hidden">
-			<GlobalEntityShortcuts orgSlug={orgSlug} />
-			<SidebarProvider defaultOpen={initialSidebarOpen}>
-				<Suspense fallback={<SidebarSkeleton />}>
-					<AppSidebar
-						variant={variant}
-						collapsible={collapsible}
-						orgSlug={orgSlug}
-						side={isRTL ? "right" : "left"}
-					/>
-				</Suspense>
-				{/*
-				 * `min-w-0 min-h-0` on SidebarInset is load-bearing: without it the
-				 * flex item defaults to `min-width: auto` (= content min-width),
-				 * letting wide descendants (Kanban columns, tables) inflate the
-				 * shell beyond the viewport at xl+ breakpoints where the sidebar
-				 * is an inline flex sibling.
-				 *
-				 * The inner `<main data-page-scroll="true">` is the canonical
-				 * nested scroll container for every dashboard page — mirror of
-				 * `data-settings-scroll="true"` in settings. Views that need to
-				 * programmatically scroll should target this attribute, never
-				 * `window` or `document.body` (see CLAUDE.md: "Never use
-				 * Element.scrollIntoView() inside nested scroll containers").
-				 */}
-				<SidebarInset
-					className="flex min-h-0 min-w-0 flex-1 flex-col"
-					style={{
-						...insetMarginStyle,
-						transition: isDragging ? "none" : "margin 200ms ease",
-					}}
-				>
-					<NavSlotProvider>
-						<TopNav
-							onToggleChat={toggleChat}
-							onToggleSearch={() => setSearchOpen(true)}
+			<RouteProgress />
+			<OrgProvider orgSlug={orgSlug}>
+				<GlobalEntityShortcuts orgSlug={orgSlug} />
+				<SidebarProvider defaultOpen={initialSidebarOpen}>
+					<Suspense fallback={<SidebarSkeleton />}>
+						<AppSidebar
+							variant={variant}
+							collapsible={collapsible}
+							orgSlug={orgSlug}
+							side={isRTL ? "right" : "left"}
 						/>
-						<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
-						<main
-							data-page-scroll="true"
-							className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-						>
-							{children}
-						</main>
-					</NavSlotProvider>
-				</SidebarInset>
-			</SidebarProvider>
-
-			{/* Laptop (xl+) — inline AI Chat Panel */}
-			{!isBelowXl && (
-				<div
-					className="fixed top-0 h-full pointer-events-none z-40 transition-[left,right] duration-200 ease-linear"
-					style={chatPanelPositionStyle}
-				>
-					<SidebarProvider
-						open={chatOpen}
-						onOpenChange={(v) => {
-							setChatOpen(v);
-							// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable in Safari; sync document.cookie assignment is the cross-browser baseline.
-							document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`;
+					</Suspense>
+					{/*
+					 * `min-w-0 min-h-0` on SidebarInset is load-bearing: without it the
+					 * flex item defaults to `min-width: auto` (= content min-width),
+					 * letting wide descendants (Kanban columns, tables) inflate the
+					 * shell beyond the viewport at xl+ breakpoints where the sidebar
+					 * is an inline flex sibling.
+					 *
+					 * The inner `<main data-page-scroll="true">` is the canonical
+					 * nested scroll container for every dashboard page — mirror of
+					 * `data-settings-scroll="true"` in settings. Views that need to
+					 * programmatically scroll should target this attribute, never
+					 * `window` or `document.body` (see CLAUDE.md: "Never use
+					 * Element.scrollIntoView() inside nested scroll containers").
+					 */}
+					<SidebarInset
+						className="flex min-h-0 min-w-0 flex-1 flex-col"
+						style={{
+							...insetMarginStyle,
+							transition: isDragging ? "none" : "margin 200ms ease",
 						}}
-						disableKeyboardShortcut
-						style={
-							{
-								"--sidebar-width": `${chatWidth}px`,
-								"--sidebar-width-icon": `${chatWidth}px`,
-							} as React.CSSProperties
-						}
-						className="!w-0 !min-h-0"
 					>
-						{chatOpen && (
-							// Keyboard-only users don't need a resize gesture (the panel
-							// is toggled via the `cmd+/` shortcut), but a button is the
-							// correct semantics for an interactive element that triggers
-							// a mouse-driven resize — keeps screen readers happy and
-							// satisfies useFocusableInteractive + useSemanticElements.
-							<button
-								type="button"
-								className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none bg-transparent border-0 p-0"
-								style={gripPositionStyle}
-								onMouseDown={onMouseDown}
-								aria-label="Resize chat panel"
+						<NavSlotProvider>
+							<TopNav
+								onToggleChat={toggleChat}
+								onToggleSearch={() => setSearchOpen(true)}
+							/>
+							<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+							<main
+								data-page-scroll="true"
+								className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
 							>
-								<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
-							</button>
-						)}
-						<div className="pointer-events-auto">
-							<AIChatPanel side={isRTL ? "left" : "right"} />
-						</div>
-					</SidebarProvider>
-				</div>
-			)}
+								{children}
+							</main>
+						</NavSlotProvider>
+					</SidebarInset>
+				</SidebarProvider>
 
-			{/* Phones + iPads (< xl) — AI Chat Sheet */}
-			{isBelowXl && (
-				<AppSheet
-					open={chatOpen}
-					onOpenChange={setChatOpen}
-					title="AI Assistant"
-					side={isRTL ? "left" : "right"}
-					width={CHAT_SHEET_WIDTH}
-				>
-					<AIChatPanelContent />
-				</AppSheet>
-			)}
+				{/* Laptop (xl+) — inline AI Chat Panel */}
+				{!isBelowXl && (
+					<div
+						className="fixed top-0 h-full pointer-events-none z-40 transition-[left,right] duration-200 ease-linear"
+						style={chatPanelPositionStyle}
+					>
+						<SidebarProvider
+							open={chatOpen}
+							onOpenChange={(v) => {
+								setChatOpen(v);
+								// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable in Safari; sync document.cookie assignment is the cross-browser baseline.
+								document.cookie = `chat_panel_state=${v}; path=/; max-age=31536000`;
+							}}
+							disableKeyboardShortcut
+							style={
+								{
+									"--sidebar-width": `${chatWidth}px`,
+									"--sidebar-width-icon": `${chatWidth}px`,
+								} as React.CSSProperties
+							}
+							className="!w-0 !min-h-0"
+						>
+							{chatOpen && (
+								// Keyboard-only users don't need a resize gesture (the panel
+								// is toggled via the `cmd+/` shortcut), but a button is the
+								// correct semantics for an interactive element that triggers
+								// a mouse-driven resize — keeps screen readers happy and
+								// satisfies useFocusableInteractive + useSemanticElements.
+								<button
+									type="button"
+									className="group/handle pointer-events-auto fixed top-0 h-full z-50 w-4 flex items-center justify-center cursor-col-resize select-none bg-transparent border-0 p-0"
+									style={gripPositionStyle}
+									onMouseDown={onMouseDown}
+									aria-label="Resize chat panel"
+								>
+									<GripVertical className="size-3.5 text-muted-foreground opacity-0 group-hover/handle:opacity-60 transition-opacity" />
+								</button>
+							)}
+							<div className="pointer-events-auto">
+								<AIChatPanel side={isRTL ? "left" : "right"} />
+							</div>
+						</SidebarProvider>
+					</div>
+				)}
+
+				{/* Phones + iPads (< xl) — AI Chat Sheet */}
+				{isBelowXl && (
+					<AppSheet
+						open={chatOpen}
+						onOpenChange={setChatOpen}
+						title="AI Assistant"
+						side={isRTL ? "left" : "right"}
+						width={CHAT_SHEET_WIDTH}
+					>
+						<AIChatPanelContent />
+					</AppSheet>
+				)}
+			</OrgProvider>
 		</div>
 	);
 }

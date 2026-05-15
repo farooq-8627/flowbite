@@ -10,8 +10,7 @@
  *   - MultiSelect for assignees + people (no pill row above the trigger)
  *
  * SCHEMA NOTES:
- *   - `assignees[]` is the canonical multi-assignee field (replaces the old
- *     `teamMembers[]`).
+ *   - `assignees[]` is the canonical multi-assignee field.
  *   - `personCodes[]` is the canonical "who works at this company" join.
  *   - In edit mode, both arrays start populated from the doc and any change
  *     is written via `companies.mutations.update`.
@@ -86,7 +85,7 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 			setName(company.name ?? "");
 			setIndustry(company.industry ?? "");
 			setWebsite(company.website ?? "");
-			setAssignees(((company.assignees ?? company.teamMembers ?? []) as string[]).slice());
+			setAssignees(((company.assignees ?? []) as string[]).slice());
 			setPersonCodes((company.personCodes ?? []).slice());
 		} else if (mode === "add") {
 			setName("");
@@ -95,7 +94,8 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 			setAssignees([]);
 			setPersonCodes([]);
 		}
-	}, [open, mode, company, fileBuffer]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- fileBuffer.reset is stable (useCallback with [])
+	}, [open, mode, company, fileBuffer.reset]);
 
 	const handleSubmit = async () => {
 		if (!orgId || !name.trim()) return;

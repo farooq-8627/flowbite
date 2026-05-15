@@ -453,3 +453,68 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 - `.github/agents/base/context.md` - Current build state
 - `.github/agents/base/todos.md` - Active tasks
 - `PRODUCTION_GRADE_ANALYSIS.md` - Full production analysis
+
+---
+
+## RULE: Never put hook-returned objects in useEffect deps (max-update-depth prevention)
+
+This rule prevents the **#1 recurring bug** in this codebase: `Maximum update depth exceeded`.
+
+### The root cause pattern
+
+```tsx
+// ❌ BANNED — causes infinite loop
+const fileBuffer = useFileBuffer(orgId); // returns a new object ref when internal state changes
+useEffect(() => {
+  fileBuffer.reset(); // sets state → new fileBuffer ref → effect re-fires → ∞
+}, [open, fileBuffer]); // ← fileBuffer is unstable!
+```
+
+### The 3 rules
+
+| # | Rule | Why |
+|---|---|---|
+| 1 | **Never put a custom-hook return value in useEffect deps** | Custom hooks return new object references when their internal state changes. Putting the whole object in deps creates a feedback loop: effect fires → calls method → state changes → new ref → effect fires again. |
+| 2 | **If a useCallback needs to read state, use a ref** | `useCallback([state])` makes the callback unstable. Instead: `const stateRef = useRef(state); stateRef.current = state;` then read `stateRef.current` inside the callback. The callback stays stable (`[]` deps). |
+| 3 | **If useEffect must call a method from a hook, destructure the stable method** | `const { reset } = useFileBuffer(orgId);` — if `reset` is wrapped in `useCallback([], [])` it's stable. Put `reset` in deps, not the whole hook return. |
+
+### Safe patterns
+
+```tsx
+// ✅ CORRECT — destructure the stable method
+const { reset } = useFileBuffer(orgId);
+useEffect(() => {
+  if (!open) reset();
+}, [open, reset]); // reset is useCallback([], []) — stable
+
+// ✅ CORRECT — use a ref for state-dependent callbacks
+const filesByFieldRef = useRef(filesByField);
+filesByFieldRef.current = filesByField;
+const commitAll = useCallback(async (args) => {
+  const entries = Object.entries(filesByFieldRef.current); // reads via ref
+  // ...
+}, [orgId, record]); // no state in deps → stable
+
+// ✅ CORRECT — functional updater that returns prev when unchanged
+useEffect(() => {
+  setCardFields((prev) => {
+    const next = prev.filter(f => allowed.has(f));
+    return next.length === prev.length ? prev : next; // same ref = no re-render
+  });
+}, [defaultCardFields]);
+```
+
+### How to audit for this bug
+
+```bash
+# Find useEffect deps that include a custom hook return:
+grep -rn "useEffect.*\], \[.*[a-z].*\])" core/ --include="*.tsx" | grep -v "node_modules"
+# Then check: is the dep a hook return? Is it stable? Does the effect mutate it?
+```
+
+### When you see "Maximum update depth exceeded" in the console
+
+1. The **reported file:line** is usually a SYMPTOM, not the cause. React reports wherever it happens to be rendering when the limit is hit.
+2. Look for the **useEffect that's firing repeatedly** — add `console.count("effect X")` temporarily.
+3. Check: does the effect call setState on something that feeds back into its own deps (directly or via a hook-returned object)?
+4. Fix: remove the unstable dep, use a ref, or use a functional updater with same-reference bailout.

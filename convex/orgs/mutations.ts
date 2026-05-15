@@ -14,10 +14,16 @@
  */
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import type { Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions";
+import type { SystemRoleName } from "../_shared/permissions/catalog";
+import {
+	getDefaultPermissionsForRole,
+	getMissingPermissionsForRole,
+} from "../_shared/permissions/derive";
 import { logActivity } from "../activityLogs/helpers";
 import { seedFieldDefinitionsForOrg } from "../crm/fields/fieldDefinitions/internal";
 import { sendNotification } from "../notifications/helpers";
@@ -99,203 +105,62 @@ export const createOrg = authenticatedMutation({
 			updatedAt: now,
 		});
 
-		// Now patch with the real platformOrgId derived from the Convex ID
+		// Now patch with the real platformOrgId derived from the Convex ID.
+		// (R7: every patch includes updatedAt.)
 		const platformOrgId = buildPlatformOrgId(PLATFORM_PREFIX, orgId);
-		await ctx.db.patch(orgId, { platformOrgId });
+		await ctx.db.patch(orgId, { platformOrgId, updatedAt: now });
 
-		// ── Seed 3 system roles ──────────────────────────────────────────────
-		const ownerRoleId = await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Owner",
-			description: "Full access to all features and settings.",
-			permissions: [
-				"org.viewSettings",
-				"org.editName",
-				"org.editLogo",
-				"org.editSettings",
-				"org.viewBilling",
-				"org.delete",
-				"members.view",
-				"members.invite",
-				"members.cancelInvitation",
-				"members.remove",
-				"members.changeRole",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.delete",
-				"leads.assign",
-				"leads.qualify",
-				"leads.convert",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"contacts.delete",
-				"contacts.assign",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"companies.delete",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.delete",
-				"deals.assign",
-				"deals.changeStage",
-				"notes.view",
-				"notes.viewInternal",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"notes.deleteAny",
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-				"pipelines.view",
-				"pipelines.manage",
-				"fieldDefinitions.view",
-				"fieldDefinitions.manage",
-				"ai.use",
-				"ai.manageTools",
-				"ai.viewHistory",
-				"activityLogs.viewOrg",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: false,
-			color: "#6366f1",
-			createdAt: now,
-			updatedAt: now,
-		});
+		// ── Seed the 3 system roles ──────────────────────────────────────────
+		// Permissions come from the SSOT catalog (`convex/_shared/permissions/`).
+		// To grant a new permission to a role, edit `catalog.ts` — never edit
+		// this block.
+		const SYSTEM_ROLE_SEEDS: ReadonlyArray<{
+			name: SystemRoleName;
+			description: string;
+			color: string;
+			isDefault: boolean;
+		}> = [
+			{
+				name: "Owner",
+				description: "Full access to all features and settings.",
+				color: "#6366f1",
+				isDefault: false,
+			},
+			{
+				name: "Admin",
+				description: "Full operational access. Cannot manage billing or delete the org.",
+				color: "#3b82f6",
+				isDefault: false,
+			},
+			{
+				name: "Member",
+				description: "Standard access. Can create and update records, use AI.",
+				color: "#10b981",
+				isDefault: true,
+			},
+		];
 
-		await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Admin",
-			description: "Full operational access. Cannot manage billing or delete the org.",
-			permissions: [
-				"org.viewSettings",
-				"org.editLogo",
-				"org.editSettings",
-				"members.view",
-				"members.invite",
-				"members.cancelInvitation",
-				"members.remove",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.delete",
-				"leads.assign",
-				"leads.qualify",
-				"leads.convert",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"contacts.delete",
-				"contacts.assign",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"companies.delete",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.delete",
-				"deals.assign",
-				"deals.changeStage",
-				"notes.view",
-				"notes.viewInternal",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"notes.deleteAny",
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-				"pipelines.view",
-				"pipelines.manage",
-				"fieldDefinitions.view",
-				"fieldDefinitions.manage",
-				"ai.use",
-				"ai.manageTools",
-				"ai.viewHistory",
-				"activityLogs.viewOrg",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: false,
-			color: "#3b82f6",
-			createdAt: now,
-			updatedAt: now,
-		});
+		let ownerRoleId: Id<"orgRoles"> | null = null;
+		for (const seed of SYSTEM_ROLE_SEEDS) {
+			const roleId = await ctx.db.insert("orgRoles", {
+				orgId,
+				name: seed.name,
+				description: seed.description,
+				permissions: [...getDefaultPermissionsForRole(seed.name)],
+				isSystem: true,
+				isDefault: seed.isDefault,
+				color: seed.color,
+				createdAt: now,
+				updatedAt: now,
+			});
+			if (seed.name === "Owner") ownerRoleId = roleId;
+		}
 
-		await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Member",
-			description: "Standard access. Can create and update records, use AI.",
-			permissions: [
-				"members.view",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.qualify",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.changeStage",
-				"notes.view",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"pipelines.view",
-				"fieldDefinitions.view",
-				"ai.use",
-				"ai.viewHistory",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: true,
-			color: "#10b981",
-			createdAt: now,
-			updatedAt: now,
-		});
+		if (ownerRoleId === null) {
+			// Unreachable — Owner is always seeded above. Defensive throw so the
+			// type narrows for the orgMembers insert below.
+			throw new ConvexError("Owner role failed to seed.");
+		}
 
 		await ctx.db.insert("orgMembers", {
 			orgId,
@@ -1065,59 +930,23 @@ function getDefaultStages(industry: string, orgId: string) {
 }
 
 /**
- * One-time migration: Add missing tags/reminders/savedViews/notes.pin permissions
- * to existing system roles that were seeded before these permissions existed.
+ * Reconcile missing permissions on existing `orgRoles` rows.
  *
- * Run via Convex dashboard: `npx convex run orgs/mutations:backfillRolePermissions`
+ * Drives off the SSOT permission catalog: for every system role, computes the
+ * diff between what the catalog says it should have and what's currently on
+ * the row, then patches in only the missing keys. Idempotent — running it
+ * twice in a row patches zero rows the second time. Custom roles are
+ * untouched (they're owner-curated, not catalog-driven).
+ *
+ * USAGE: `npx convex run orgs/mutations:backfillRolePermissions`
  */
 export const backfillRolePermissions = internalMutation({
 	args: {},
 	handler: async (ctx) => {
-		const MISSING_BY_ROLE: Record<string, string[]> = {
-			Owner: [
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-			],
-			Admin: [
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-			],
-			Member: [
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-			],
-		};
-
 		const allRoles = await ctx.db.query("orgRoles").collect();
 		let patched = 0;
 		for (const role of allRoles) {
-			const toAdd = MISSING_BY_ROLE[role.name];
-			if (!toAdd) continue;
-			const current = new Set(role.permissions);
-			const additions = toAdd.filter((p) => !current.has(p));
+			const additions = getMissingPermissionsForRole(role.name, role.permissions);
 			if (additions.length === 0) continue;
 			await ctx.db.patch(role._id, {
 				permissions: [...role.permissions, ...additions],

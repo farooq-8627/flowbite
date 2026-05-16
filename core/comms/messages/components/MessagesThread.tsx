@@ -22,7 +22,7 @@
  * + status flags and lazy-loads older messages as the user scrolls up.
  */
 import { useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
@@ -86,25 +86,80 @@ export function MessagesThread(props: MessagesThreadProps) {
 			: "skip",
 	);
 
-	const conversation: Doc<"conversations"> | null =
+	const liveConversation: Doc<"conversations"> | null =
 		"conversationId" in props && props.conversationId
 			? (convoForId?.conversation ?? null)
 			: (byEntity?.conversation ?? null);
 
+	// User-intent key — what the parent is asking us to render. Used both for
+	// the SWR cache invalidation rules and for resetting the reply target on
+	// intent change.
+	const intentKey =
+		"conversationId" in props && props.conversationId
+			? `c:${String(props.conversationId)}`
+			: `e:${(props as MessagesThreadByEntityProps).entityType ?? ""}:${(props as MessagesThreadByEntityProps).entityId ?? ""}:${(props as MessagesThreadByEntityProps).threadId ?? ""}`;
+	const isConversationMode = "conversationId" in props && Boolean(props.conversationId);
+
 	// Step 2 — paginated thread feed. Skipped while conversation is null.
 	const paginated = useMessagesForConversationPaginated({
 		orgId,
-		conversationId: conversation?._id,
+		conversationId: liveConversation?._id,
 		initialNumItems: 30,
 	});
-	// `usePaginatedQuery` returns an empty array while skipped or loading;
-	// distinguish that from "loaded with zero messages" via `status`.
-	const messages: Doc<"messages">[] | undefined =
-		conversation && paginated.status !== "LoadingFirstPage"
-			? (paginated.results as Doc<"messages">[])
-			: conversation
-				? undefined
-				: [];
+	const liveMessages: Doc<"messages">[] | undefined =
+		paginated.status === "LoadingFirstPage"
+			? undefined
+			: (paginated.results as Doc<"messages">[]);
+
+	// ─── Stale-while-revalidate render cache ─────────────────────────────────
+	// When the user switches threads, the new conversation's `getById` and
+	// the new pagination's first page both go through a brief loading window.
+	// Without intervention the entire thread blanks back to a "Loading…"
+	// header + "Loading messages…" body for every single switch — a UX
+	// regression on top of otherwise-live subscriptions.
+	//
+	// We cache the last successfully-rendered { conversation, messages } pair
+	// across this MessagesThread instance and render it as a stale fallback
+	// while the next thread's queries hydrate. The moment fresh data arrives
+	// we swap atomically. Convex's own query cache makes "switch back to a
+	// recent thread" instant, so this fallback only fires for cold threads.
+	//
+	// Live subscriptions are untouched — `useQuery` / `usePaginatedQuery`
+	// keep streaming updates; we only override which snapshot the JSX renders
+	// during the brief loading window. Mutating `stableRef.current` during
+	// render is safe because the render output is derived from it on the same
+	// pass, so the component remains idempotent.
+	//
+	// Cache rule: in conversation-mode (org-wide inbox) the cache is reused
+	// across intent changes — that's the SWR feature. In entity-mode (embedded
+	// panel) the cache is only reused for the SAME entity intent, so an entity
+	// without a conversation yet never inherits the previous entity's chat.
+	const stableRef = useRef<{
+		intentKey: string;
+		conversation: Doc<"conversations">;
+		messages: Doc<"messages">[];
+	} | null>(null);
+	const isCurrentReady = liveConversation !== null && liveMessages !== undefined;
+	if (isCurrentReady) {
+		stableRef.current = {
+			intentKey,
+			conversation: liveConversation,
+			messages: liveMessages,
+		};
+	}
+	const cacheUsable =
+		stableRef.current !== null &&
+		(isConversationMode || stableRef.current.intentKey === intentKey);
+	const conversation: Doc<"conversations"> | null = isCurrentReady
+		? liveConversation
+		: cacheUsable
+			? (stableRef.current?.conversation ?? null)
+			: null;
+	const messages: Doc<"messages">[] | undefined = isCurrentReady
+		? liveMessages
+		: cacheUsable
+			? stableRef.current?.messages
+			: undefined;
 
 	const canLoadOlder = paginated.status === "CanLoadMore" || paginated.status === "LoadingMore";
 	const isLoadingOlder = paginated.status === "LoadingMore";
@@ -143,24 +198,28 @@ export function MessagesThread(props: MessagesThreadProps) {
 	);
 
 	const [replyTo, setReplyTo] = useState<Doc<"messages"> | null>(null);
-	// Clear reply target when the conversation switches. Listing the id as a
-	// dep is INTENTIONAL even though the body doesn't read it — biome is
-	// over-eager here.
-	const conversationKey = conversation?._id;
+	// Reset the reply target when the user's INTENT changes (sidebar selection
+	// or new entity coords). Tracking the displayed conversation here would
+	// feel laggy: the chip would linger across the SWR window. The intent key
+	// (declared above with the cache rules) fires the reset immediately on
+	// click.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: dep is the trigger, not a read
 	useEffect(() => {
 		setReplyTo(null);
-	}, [conversationKey]);
+	}, [intentKey]);
 
 	// Mark-read.
 	const markRead = useMarkConversationRead();
 	// `paginated.results` is newest-first; the first element is the latest message.
-	const lastMessageId = (paginated.results as Doc<"messages">[] | undefined)?.[0]?._id;
+	// Use the LIVE conversation (not the stale display fallback) so we don't
+	// repeatedly mark conversation A as read while it briefly lingers on
+	// screen during a switch to B.
+	const liveLastMessageId = (paginated.results as Doc<"messages">[] | undefined)?.[0]?._id;
 	// biome-ignore lint/correctness/useExhaustiveDependencies: see MessageList for rationale
 	useEffect(() => {
-		if (!conversation) return;
-		void markRead({ orgId, conversationId: conversation._id }).catch(() => {});
-	}, [conversation, lastMessageId, markRead, orgId]);
+		if (!liveConversation) return;
+		void markRead({ orgId, conversationId: liveConversation._id }).catch(() => {});
+	}, [liveConversation, liveLastMessageId, markRead, orgId]);
 
 	// No conversation yet, but we have entity coords → composer that auto-creates.
 	if (!conversation && "entityType" in props && props.entityType && props.entityId) {

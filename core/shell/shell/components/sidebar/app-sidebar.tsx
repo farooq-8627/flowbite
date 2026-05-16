@@ -136,16 +136,28 @@ function SidebarFooterUtils() {
 
 	/**
 	 * Smooth transition fix:
-	 * flex-direction is not animatable. Instead we use a grid with
-	 * grid-template-columns: when expanded → 3 equal columns (row),
-	 * when collapsed → 1 column (stack). grid-template-columns IS animatable.
+	 *   flex-direction is not animatable. Instead we use a grid with
+	 *   grid-template-columns: when expanded → 3 equal columns (row),
+	 *   when collapsed → 1 column (stack). grid-template-columns IS animatable.
+	 *
+	 * Close-jump fix (2026-05-16):
+	 *   Originally `padding` was NOT listed in `transition` — it snapped
+	 *   instantly at t=0 from `4px 8px` to `4px 0` while the sidebar was
+	 *   still fully visible, which read as a "jump" on close (on open the
+	 *   sidebar is offscreen during the change so the snap is invisible).
+	 *   Also `grid-template-columns` used `ease` while the sidebar slide is
+	 *   `ease-linear` 200ms, so the inner layout drifted out of sync with
+	 *   the slide. Both are now `linear 200ms` to match the sidebar's own
+	 *   timing exactly — the buttons compress in lockstep with the slide
+	 *   instead of jerking inward before it.
 	 */
 	return (
 		<div
 			style={{
 				display: "grid",
 				gridTemplateColumns: isExpanded ? "repeat(3, 1fr)" : "1fr",
-				transition: "grid-template-columns 200ms ease",
+				transition:
+					"grid-template-columns 200ms linear, padding 200ms linear",
 				padding: isExpanded ? "4px 8px" : "4px 0",
 				justifyItems: "center",
 				gap: "2px",
@@ -326,17 +338,22 @@ function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: strin
 	return (
 		<SidebarGroup className="py-0.5">
 			{group.label && (
-				// `group-data-[collapsible=icon]:hidden` fully unmounts the
-				// label when the sidebar collapses to icon mode. The shadcn
-				// default uses `-mt-8 + opacity-0` to retract an h-8 label,
-				// but our smaller label height breaks that math and the label
-				// leaks up into the workspace switcher area, blocking clicks.
-				// Using `display: none` (via `hidden`) is the unambiguous fix.
+				// Smooth retraction in icon mode (close-jump fix 2026-05-16):
+				//   The shadcn primitive's default uses `-mt-8 + opacity-0` to
+				//   retract an `h-8` label. Our labels are `h-5` (5px tall),
+				//   so `-mt-8` overshoots by ~12px and the label leaks UP into
+				//   the workspace switcher area, blocking clicks. The earlier
+				//   fix used `display: none` (`hidden`) which IS unambiguous —
+				//   but `display` is not animatable, so on close the label
+				//   snapped to invisible at t=0 while the sidebar was still
+				//   fully visible, contributing to the perceived "jump."
 				//
-				// Sizing — labels are intentionally small and quiet so the
-				// nav items dominate visually. Use logical px-* via cn so
-				// it composes with shadcn's own classes from the primitive.
-				<SidebarGroupLabel className="h-5 px-2 text-[10px] font-medium tracking-normal text-sidebar-foreground/55 group-data-[collapsible=icon]:hidden">
+				//   New approach: keep the smooth `transition-[margin,opacity]`
+				//   from the primitive but match the math to our height
+				//   (`-mt-5` for an `h-5` label). `pointer-events-none`
+				//   prevents the now-invisible-but-still-rendered label from
+				//   intercepting clicks intended for the workspace switcher.
+				<SidebarGroupLabel className="h-5 px-2 text-[10px] font-medium tracking-normal text-sidebar-foreground/55 group-data-[collapsible=icon]:-mt-5 group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-events-none">
 					{group.label}
 				</SidebarGroupLabel>
 			)}

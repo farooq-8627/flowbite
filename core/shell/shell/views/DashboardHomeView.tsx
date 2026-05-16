@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
+import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
 import { FileUpload } from "@/core/data-io/files/components/FileUpload";
 import { type EntityLabels, useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
@@ -234,6 +235,7 @@ export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
 
 				<GetStartedCard dismissedCards={dismissedCards} labels={labels} />
 				<MetricCards memberCount={stats.memberCount} labels={labels} />
+				<MessagesPreviewWidget orgId={currentOrg.org._id} orgSlug={orgSlug} />
 				<RecentActivity activity={stats.recentActivity} />
 				<OrgDocsVault orgId={currentOrg.org._id} />
 			</div>

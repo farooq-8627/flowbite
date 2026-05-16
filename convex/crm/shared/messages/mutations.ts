@@ -67,11 +67,23 @@ export const send = orgMutation({
 		threadId: v.optional(v.string()),
 		// Body:
 		content: v.string(),
-		authorType: v.optional(v.union(v.literal("user"), v.literal("ai"), v.literal("system"))),
+		authorType: v.optional(
+			v.union(v.literal("user"), v.literal("ai"), v.literal("system"), v.literal("contact")),
+		),
 		onBehalfOf: v.optional(v.id("users")),
 		replyToId: v.optional(v.id("messages")),
 		attachments: v.optional(v.array(v.id("files"))),
 		mentions: v.optional(v.array(v.id("users"))),
+		// Phase 3 transport metadata — see schema comment.
+		channel: v.optional(
+			v.union(
+				v.literal("internal"),
+				v.literal("whatsapp"),
+				v.literal("email"),
+				v.literal("sms"),
+			),
+		),
+		authorPersonCode: v.optional(v.string()),
 		// Idempotency:
 		idempotencyKey: v.optional(v.string()),
 	},
@@ -86,7 +98,16 @@ export const send = orgMutation({
 		});
 
 		const trimmed = args.content.trim();
-		if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
+		const hasAttachments = (args.attachments?.length ?? 0) > 0;
+		// Body must contain SOMETHING — text OR attachments. File-only sends
+		// (e.g. "send these 3 photos with no caption") are valid; pure empty
+		// sends are not.
+		if (trimmed.length === 0 && !hasAttachments) {
+			throw new ConvexError({
+				code: "INVALID_ARGS",
+				message: "Message must contain text, attachments, or both.",
+			});
+		}
 
 		// Resolve conversation — either by id or by (entityType, entityId).
 		let conversationId: Id<"conversations">;
@@ -150,6 +171,8 @@ export const send = orgMutation({
 			replyToId: args.replyToId,
 			attachments: args.attachments,
 			mentions: args.mentions,
+			channel: args.channel,
+			authorPersonCode: args.authorPersonCode,
 			idempotencyKey: args.idempotencyKey,
 			createdAt: now,
 			updatedAt: now,

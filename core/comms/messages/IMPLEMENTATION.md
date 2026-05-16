@@ -433,3 +433,205 @@ about 8 hours. Everything after is polish.
 - Architecture context: `CORE-FEATURES-ARCHITECTURE.md` §0 (why six tables)
 - Frontend rules: `FRONTEND-DECISIONS.md` Rules 2, 13, 14
 - Donor template: `/Users/shaikumarfarooq/Clones/Orbitly/shadboard/full-kit/src/app/[lang]/(dashboard-layout)/apps/chat/`
+
+
+---
+
+## 10. UI build status — 2026-05-16
+
+> Source of truth for what shipped vs. what's deferred. **Append-only** — do
+> not edit earlier sections in place; if a decision changes, add a new
+> sub-section below with a date stamp.
+
+### 10.1 What was built (in this sprint)
+
+All ten Tier-A/B/C UI tasks from §6 landed. The user-facing chat is
+end-to-end usable on a fresh org for the first time.
+
+| Step | Component | File |
+|---|---|---|
+| A1 | `NewConversationDialog` (multi-entity picker → `ensureForEntity`) | `core/comms/messages/components/NewConversationDialog.tsx` |
+| A2 | `ParticipantsDialog` (add / remove / leave + member search) | `core/comms/messages/components/ParticipantsDialog.tsx` |
+| A3 | `MessagesPanel` (embedded thread for profile / deal / company tabs) | `core/comms/messages/components/MessagesPanel.tsx` |
+| B1 | Edit / Reply / Delete dropdown on `MessageBubble` + inline edit | `core/comms/messages/components/MessageBubble.tsx` |
+| B2 | Notification level segmented control (All / Mentions / Mute) | `core/comms/messages/components/ThreadHeader.tsx` |
+| B3 | `@` mentions picker (caret-aware, keyboard-navigable) | `core/comms/messages/components/MessageInput.tsx` |
+| B4 | Date dividers in `MessageList` (Today / Yesterday / weekday / date) | `core/comms/messages/components/MessageList.tsx` |
+| C1 | 12-emoji reactions popover + reaction pills | `core/comms/messages/components/MessageBubble.tsx` |
+| C2 | File / image attachments (3-step upload) | `core/comms/messages/components/MessageInput.tsx` + `core/comms/messages/components/MessageBubble.tsx` |
+| C3 | `MessagesPreviewWidget` (top-5 dashboard widget) | `core/comms/messages/components/MessagesPreviewWidget.tsx` |
+
+`MessagesThread` was rewritten to lift reply-target state out of
+`MessageBubble` and pass it to both `MessageList` (`onReply`) and
+`MessageInput` (`replyTo` + `onClearReply`) — the chip in the composer now
+survives scroll and conversation switches reset it cleanly.
+
+`MessagesPanel` is mounted in
+`core/platform/profile/views/ProfileContent.tsx::MessagesGroup`, replacing
+the previous placeholder. The pattern is the same for future deal /
+company detail views — pass `entityType + entityId`.
+
+`MessagesPreviewWidget` is mounted in
+`core/shell/shell/views/DashboardHomeView.tsx` between `MetricCards` and
+`RecentActivity`.
+
+### 10.2 Phase-3 readiness — schema extensions (additive, no migration)
+
+To unblock the WhatsApp integration without a separate refactor later, the
+`messages` table was extended with three optional fields and an enlarged
+authorType union. Every new field is `v.optional(...)` and the union grew
+by adding a literal — both are backwards compatible with existing rows.
+
+```ts
+// convex/schema/crmShared.ts (additions only — see file for context)
+
+authorType: v.union(
+  v.literal("user"),
+  v.literal("ai"),
+  v.literal("system"),
+  v.literal("contact"), // NEW — inbound external (lead/contact w/o users row)
+),
+
+// NEW — Phase-3 transport metadata:
+channel: v.optional(
+  v.union(
+    v.literal("internal"),
+    v.literal("whatsapp"),
+    v.literal("email"),
+    v.literal("sms"),
+  ),
+),
+
+// NEW — sender's personCode when authorType === "contact":
+authorPersonCode: v.optional(v.string()),
+```
+
+`messages.send` accepts `channel` and `authorPersonCode` in its args and
+forwards them into the row. Idempotency is unchanged — webhook handlers
+should pass `idempotencyKey: "whatsapp:" + waMessageId` so retries collapse
+under the existing `(orgId, conversationId, idempotencyKey)` index.
+
+| New field | Set when | Read by |
+|---|---|---|
+| `channel: "whatsapp"` | (a) Inbound webhook upserts a message; (b) outbound — composer toggle adds it before send | (a) UI: `<MessageBubble>` shows a "WhatsApp" badge; (b) outbound worker dispatches to WhatsApp Cloud API |
+| `authorType: "contact"` | Inbound only | UI: shows the lead's name (resolved via `authorPersonCode`) instead of an org-member name |
+| `authorPersonCode` | Inbound only | UI display + future analytics |
+
+### 10.3 Phase-3 wiring (NOT BUILT YET — concrete plan)
+
+These three pieces are the only remaining work to make WhatsApp messages
+flow into the same `messages` table the chat UI already renders. None
+require schema changes.
+
+1. **Inbound webhook** at `convex/integrations/whatsapp/webhook.ts`:
+   - Verify Meta signature.
+   - Resolve sender by phone number → `crm.contacts.queries.getByPhone`
+     (add this query if missing — search `contacts.normalizedPhone`).
+   - For each message in the webhook payload:
+     - Find or auto-create the `person` conversation for this contact's
+       personCode (`getOrCreateConversation`).
+     - Call `messages.send` (via `internalMutation` wrapper that bypasses
+       RBAC — this is system-level) with:
+       ```ts
+       {
+         orgId,
+         entityType: "person",
+         entityId: contact.personCode,
+         content: msg.text.body,
+         authorType: "contact",
+         authorPersonCode: contact.personCode,
+         authorId: <contact.assignedTo OR system bot user>,
+         channel: "whatsapp",
+         idempotencyKey: `whatsapp:${msg.id}`,
+         replyToId: msg.context?.id ? <map to local id> : undefined,
+       }
+       ```
+   - Inbound media attachments: download via WhatsApp media URL → upload via
+     `files.mutations.record` → push id into `attachments[]` of the message.
+
+2. **Outbound worker** at `trigger/whatsapp-out.ts`:
+   - Watch for new rows in `messages` where `channel === "whatsapp"` and
+     `authorType !== "contact"` and there's no delivery-status flag yet.
+   - POST to WhatsApp Cloud API with the contact's phone, content, and any
+     attachments (re-uploaded as media).
+   - Optional follow-up: store the WA message id back on the row so we can
+     correlate webhook delivery receipts. Add a small optional field
+     `externalMessageId` later if needed (still backwards-compatible).
+
+3. **Composer toggle**: a small switch in `MessageInput` that appears only
+   when the conversation entity has a phone number. Toggling it causes the
+   `send` call to include `channel: "whatsapp"`. The toggle is the **only**
+   UI change needed — everything else is already wired.
+
+### 10.4 Files panel + attachments interop
+
+`MessageInput.tsx::handleFiles` records every uploaded message attachment
+in the `files` table with:
+
+- `scope = <conversation.entityType>` (mapped to a valid file scope:
+  lead/contact/person → `person`; deal → `deal`; company → `company`)
+- `scopeId = <conversation.entityId>`
+- `tags = ["message:<scope>:<scopeId>"]`
+
+This means message attachments **automatically surface** in the entity's
+Files tab via the existing `EntityFilesPanel` (which reads both
+direct-scope + tagged files). No separate "message files" plumbing needed.
+
+Project / task threads disable the attachment button until Phase 4 because
+those scopes aren't in the files `VALID_SCOPES` list yet.
+
+### 10.5 Verification
+
+- `pnpm typecheck` ✅ clean
+- `pnpm lint-check` ✅ clean (biome strict mode)
+- Format passes biome with `--write`
+- No new permission catalog keys were added (everything we needed was
+  already seeded). The Phase-3 `messages.sendOnBehalf` permission is
+  intentionally deferred to the AI-tool sprint that will use it; adding it
+  prematurely would require a backfill on idle data.
+
+
+---
+
+## 11. UI build status — 2026-05-17 (batch 3)
+
+> Polish pass. Append-only — see §10 for batches 1 and 2.
+
+### 11.1 What shipped
+
+| Step | Component | File |
+|---|---|---|
+| D1 | Consecutive-message grouping (WhatsApp/Telegram) — `showHeader` prop on `MessageBubble`, computed by `MessageList` via 5-min/same-author/same-day window | `MessageList.tsx`, `MessageBubble.tsx` |
+| D2 | Exact clock-time everywhere in chat — `lib/datetime.ts` (`formatChatTime`, `formatChatDateTime`, `formatChatSidebarTime`) | `lib/datetime.ts` (NEW), `MessageBubble.tsx`, `MessagesSidebar.tsx` |
+| D3 | Member-link 404 fix — every chat avatar / participant click now routes to `/{orgSlug}/settings?group=team#team.members`; self-avatars are unclickable | `ThreadHeader.tsx`, `MessageBubble.tsx`, `ParticipantsDialog.tsx` |
+| D4 | Mobile People button is icon-only; iPad gets the notification dropdown (segmented control breakpoint moved from `sm` to `lg`) | `ThreadHeader.tsx` |
+| D5 | `MediaViewerModal` — single close X (`showCloseButton={false}` on `DialogContent`) and real fullscreen via `requestFullscreen()` on the stage element; `RotateCcw` for explicit "Reset zoom" | `MediaViewerModal.tsx` |
+| D6 | Forward action — new `<ForwardDialog>` (multi-select, fan-out `useSendMessage`); attachments re-referenced (org-scoped); body prefixed with "↪ Forwarded" | `ForwardDialog.tsx` (NEW), `MessageBubble.tsx` |
+| D7 | Stale-while-revalidate on conversation switch via `useDeferredValue` + `startTransition` | `MessagesInboxView.tsx` |
+| D8 | RTL-safe Sheet — `side="start" \| "end"` resolves to physical `left`/`right` from `document.documentElement.dir` | `components/ui/sheet.tsx`, `MessagesInboxView.tsx` |
+| D9 | Mobile-sheet search-vs-X overlap fix — `showCloseButton={false}` on the sheet wrapping the sidebar | `MessagesInboxView.tsx` |
+| D10 | Audio MIME backfill — idempotent migration adds `"audio"` to non-empty `allowedMimeCategories` arrays | `convex/_migrations/allowAudioUploads.ts` (NEW) |
+
+### 11.2 Future hooks (Phase 3 / AI / Connections / WhatsApp)
+
+A consolidated list of hooks left in place so future sprints don't re-discover
+the wiring points:
+
+1. **Per-org `timeFormat: "12h" \| "24h"`.** `lib/datetime.ts` accepts `opts.hour12`. Add `org.settings.timeFormat?` to the schema; consumers read it and forward. Locale-aware fallback already works.
+2. **AI `messages.send` tool.** `messages.send` mutation already accepts `authorType: "ai"` + `onBehalfOf`. Add a tool entry under `convex/ai/tools/...`. UI is ready (`<ChatAvatar isAI />`).
+3. **WhatsApp inbound webhook.** `convex/integrations/whatsapp/webhook.ts` calls internal `messages.send` with `channel: "whatsapp"`, `authorType: "contact"`, `authorPersonCode: contact.personCode`, `idempotencyKey: "whatsapp:" + msg.id`. `MessageBubble` already shows the channel badge.
+4. **WhatsApp outbound worker.** `trigger/whatsapp-out.ts` watches for `channel: "whatsapp"` rows where `authorType !== "contact"` and posts to WhatsApp Cloud API. The composer toggle is the only UI piece needed.
+5. **Forward chained into `<NewConversationDialog>`** for forwarding to brand-new entities.
+6. **Cross-channel forward routing** so a forward into a WhatsApp thread defaults to WhatsApp. Trivial wiring once the channel toggle exists.
+7. **External / portal participants forward (Phase 9).** Today the org boundary blocks forwarding to client-portal users. Needs `conversationMembers.userKind`.
+8. **Slack / Teams bridge** uses the same channel mechanism — `channel: "slack" \| "teams"` flows through `messages.send` unchanged.
+9. **Per-member detail page link.** When the route exists, switch the avatar `senderHref` and `ParticipantsDialog` `onClick` to point there. Centralised in three components.
+10. **Per-message delivery status / read receipts (WhatsApp).** Schema-additive (optional `deliveryStatus` field). UI surfaces in `<MessageBubble>` next to the timestamp.
+
+### 11.3 Verification
+
+- `pnpm typecheck` ✅ clean
+- `pnpm lint-check` ✅ clean (biome strict)
+- All 11 modified files biome-formatted with `--write`
+- Migration `_migrations/allowAudioUploads:run` is idempotent and dry-run-able
+  via the sibling `:runDryRun` action.

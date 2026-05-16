@@ -153,8 +153,36 @@ export const messages = defineTable({
 
 	content: v.string(),
 	authorId: v.id("users"),
-	authorType: v.union(v.literal("user"), v.literal("ai"), v.literal("system")),
+	authorType: v.union(
+		v.literal("user"),
+		v.literal("ai"),
+		v.literal("system"),
+		// Phase 3 (WhatsApp): inbound messages from a lead/contact who has no
+		// `users` row. `authorId` still points to a real org user (the entity
+		// assignee or a designated bot user) for accountability + RBAC; the
+		// real sender is identified by `authorPersonCode`.
+		v.literal("contact"),
+	),
 	onBehalfOf: v.optional(v.id("users")),
+
+	// ── Phase 3 / WhatsApp transport metadata (additive — no migration) ──────
+	/**
+	 * Transport that delivered this message. `internal` = native chat in this
+	 * app. `whatsapp` / `email` / `sms` = synced from an external integration.
+	 * Outbound: org user types in our composer with channel="whatsapp" → a
+	 *   trigger.dev worker forwards the message to WhatsApp Cloud API.
+	 * Inbound: webhook arrives → resolves the lead/contact by phone → upserts
+	 *   into `messages` with channel="whatsapp" + authorType="contact".
+	 */
+	channel: v.optional(
+		v.union(v.literal("internal"), v.literal("whatsapp"), v.literal("email"), v.literal("sms")),
+	),
+	/**
+	 * Sender's personCode when `authorType === "contact"` (lead/contact who
+	 * messaged us via WhatsApp/email). Empty for normal user/ai/system rows —
+	 * those are attributed via `authorId`.
+	 */
+	authorPersonCode: v.optional(v.string()),
 
 	replyToId: v.optional(v.id("messages")),
 	attachments: v.optional(v.array(v.id("files"))),

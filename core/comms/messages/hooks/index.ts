@@ -15,7 +15,7 @@
  */
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -105,6 +105,36 @@ export function useMessagesForConversation(args: {
 	);
 }
 
+/**
+ * Cursor-paginated thread feed used by the live chat UI.
+ *
+ * Returns `{ results, status, loadMore, isLoading }`:
+ *   - `results` — accumulated newest-first messages across all loaded pages.
+ *     `MessageList` reverses these once on the client for chronological DOM
+ *     order.
+ *   - `status` — "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted".
+ *   - `loadMore(n)` — fetch the next older page; called by the list when the
+ *     user scrolls near the top.
+ *
+ * 2026-05-17 (batch 5): replaces the legacy `useMessagesForConversation` for
+ * the chat surface so threads with hundreds of messages don't fetch everything
+ * up-front. The non-paginated hook is kept for callers that just need a
+ * one-shot small slice (e.g. previews, inbox-bound widgets).
+ */
+export function useMessagesForConversationPaginated(args: {
+	orgId?: Id<"orgs">;
+	conversationId?: Id<"conversations">;
+	initialNumItems?: number;
+}) {
+	return usePaginatedQuery(
+		api.crm.shared.messages.queries.listForConversationPaginated,
+		args.orgId && args.conversationId
+			? { orgId: args.orgId, conversationId: args.conversationId }
+			: "skip",
+		{ initialNumItems: args.initialNumItems ?? 30 },
+	);
+}
+
 /** Active members of a conversation (for the avatar row). */
 export function useConversationParticipants(args: {
 	orgId?: Id<"orgs">;
@@ -145,6 +175,16 @@ export function useMessagesForPerson(args: {
 /** Send a message. Pass `idempotencyKey` for retry safety on flaky networks. */
 export function useSendMessage() {
 	return useMutation(api.crm.shared.messages.mutations.send);
+}
+
+/**
+ * Get-or-create a conversation for an entity. Returns the conversation id.
+ * Used by `NewConversationDialog` so the sidebar selection state can flip
+ * to the new thread immediately (before the first message exists). Repeat
+ * calls for the same (entityType, entityId, threadId?) return the same id.
+ */
+export function useEnsureConversation() {
+	return useMutation(api.crm.shared.conversations.mutations.ensureForEntity);
 }
 
 /** Edit own message (within 15-min edit window). */

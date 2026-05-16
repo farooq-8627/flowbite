@@ -2,14 +2,16 @@
  * Messages queries — convex/crm/shared/messages/queries.ts
  *
  * Read APIs (newest-first by default; soft-deleted rows hidden):
- *   - listForConversation:   the canonical thread feed (most callers)
- *   - listForEntity:         convenience — finds the convo, lists messages
- *   - listForPerson:         personCode-keyed cross-conversation feed
- *   - listInbox:             org-wide newest, filtered (legacy/admin)
- *   - listRecent:            dashboard widget
- *   - getById:               one message + author / reply ref
+ *   - listForConversation:           the canonical thread feed (legacy, capped take)
+ *   - listForConversationPaginated:  cursor-based feed used by the live chat UI
+ *   - listForEntity:                 convenience — finds the convo, lists messages
+ *   - listForPerson:                 personCode-keyed cross-conversation feed
+ *   - listInbox:                     org-wide newest, filtered (legacy/admin)
+ *   - listRecent:                    dashboard widget
+ *   - getById:                       one message + author / reply ref
  */
 
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
 import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
@@ -48,6 +50,59 @@ export const listForConversation = orgQuery({
 			.order("desc")
 			.take(cap);
 		return rows.filter((m) => m.deletedAt === undefined);
+	},
+});
+
+/**
+ * Cursor-paginated thread feed for the chat surface.
+ *
+ * 2026-05-17 (batch 5): the live chat UI uses this instead of `listForConversation`
+ * so long threads load in pages of 30 (initial), with `loadMore` fetching older
+ * messages on demand. New messages still appear reactively in the first page —
+ * Convex's reactive paginate keeps the latest page warm.
+ *
+ * Soft-deleted rows are filtered AFTER `.paginate()` returns. The cursor is
+ * computed from the index, not from the filtered result, so pagination
+ * advancement stays correct even when some rows are hidden — the visible page
+ * just contains slightly fewer rows than `numItems` requested. Acceptable in
+ * exchange for not having to re-design the index.
+ */
+export const listForConversationPaginated = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		conversationId: v.id("conversations"),
+		paginationOpts: paginationOptsValidator,
+	},
+	handler: async (ctx, args) => {
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.view");
+
+		const conversation = await ctx.db.get(args.conversationId);
+		if (!conversation || conversation.orgId !== args.orgId) {
+			return { page: [], isDone: true, continueCursor: "" };
+		}
+
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: args.conversationId,
+			userId,
+		});
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		if (!myMembership && !canModerate) {
+			return { page: [], isDone: true, continueCursor: "" };
+		}
+
+		const result = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", args.conversationId),
+			)
+			.order("desc")
+			.paginate(args.paginationOpts);
+
+		return {
+			...result,
+			page: result.page.filter((m) => m.deletedAt === undefined),
+		};
 	},
 });
 

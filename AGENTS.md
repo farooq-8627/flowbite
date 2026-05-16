@@ -64,6 +64,69 @@ Never hardcode the app name, description, URL, or platform prefix in user-visibl
 
 For Convex functions (not Next.js), use `process.env.VARIABLE_NAME` directly — Convex reads from the Convex dashboard environment variables, not `.env.local`. Never hardcode platform names or prefixes in Convex functions.
 
+## RULE: Convex schema/data changes — migrate IN THE SAME MESSAGE, never defer
+
+> **The non-negotiable rule:** If you change anything in Convex that breaks
+> existing data — schemas, validators, table fields, indexes, enum values,
+> permission keys, reserved slugs, or any data shape consumers depend on — you
+> MUST handle the full migration / cleanup / backfill in **the same message
+> that introduces the change**. Do not push a schema change and "fix it later".
+> Do not leave the deployment in a state where Convex's schema validator can
+> reject existing rows or where a query/mutation will crash on legacy data.
+
+### What counts as a breaking change (and triggers this rule)
+
+| Change | Breaks if you don't migrate |
+|---|---|
+| Adding a required (non-optional) field to a table | Existing rows fail schema validation. |
+| Removing a field that's not optional | Existing rows fail schema validation. |
+| Narrowing a validator (e.g. `v.string()` → `v.union(v.literal("a"), v.literal("b"))`) | Existing rows with other values fail. |
+| Renaming a field | All readers reference the old name; new writers use the new name; data forks. |
+| Changing an index's key columns or order | Existing queries silently return wrong/empty results. |
+| Removing or renaming an index | Any query using `.withIndex(...)` referencing it breaks at runtime. |
+| Splitting one table into two (e.g. `notes.isActivityChat` → new `messages` table) | Old rows still exist in the source table; consumers see duplicates or stale data. |
+| Adding a new permission key to `_shared/permissions/catalog.ts` | Existing role docs miss the key — every gated mutation rejects them until backfilled. |
+| Adding a reserved slug | Existing orgs may already use the slug as an entity slug — must reject + rename. |
+| Adding a new notification preference key | Existing users miss the key in their preferences — UI form breaks or notifications never fire. |
+| Renaming an entity code prefix (e.g. `P-` → `PER-`) | Every cross-table reference (deals.personCode, messages.personCode, activityLogs) is now stale. |
+| Tightening a unique index | Existing duplicate rows must be deduped or the index creation will fail in production. |
+
+### What you MUST deliver in the same message as the change
+
+1. **The schema change itself** — `convex/schema/*.ts`, `convex/_shared/permissions/catalog.ts`, `convex/_shared/reservedSlugs.ts`, `convex/_shared/notificationKeys.ts`, etc.
+2. **A migration function** — typically an internal mutation in `convex/_migrations/<descriptive-name>.ts` (or extend an existing migration file) that:
+   - Iterates affected rows in batches (use `paginationOpts` for large tables).
+   - Backfills new fields with sensible defaults.
+   - Renames fields by reading old + writing new + clearing old in one patch.
+   - Splits/copies rows into new tables when restructuring.
+   - Is **idempotent** — safe to run twice. Skip rows that already match the new shape.
+3. **Caller updates** — every query, mutation, action, AI tool, and frontend hook that referenced the old shape, names, or indexes is updated in the same diff. No orphaned references.
+4. **Permission catalog & defaults** — new permissions added to the catalog AND added to the right role's default set. Run the seed-permissions backfill mutation if existing role docs need them.
+5. **Verification step** — explicitly state in the response:
+   - "I read X consumers and updated all of them."
+   - "I ran the migration on the dev deployment and confirmed N rows updated."
+   - "Schema typecheck passes (`pnpm typecheck`)."
+   - If the migration cannot run yet (e.g. it's part of a multi-step rollout), say so explicitly and document the next required step.
+
+### Workflow before ending the message
+
+Before considering the change "done":
+- [ ] Schema validators accept every existing row in the dev DB (or the migration was run and now they do).
+- [ ] Every reader/writer of the changed shape was updated.
+- [ ] `pnpm typecheck` passes.
+- [ ] `pnpm dev` (Convex push) succeeds without "schema validation failed" errors.
+- [ ] If any step couldn't be completed in this session, the response calls it out as a blocker — never silently shipped.
+
+### Examples of compliance vs failure
+
+✅ **Compliant**: "Adding `messages.subscribe` permission. Updated catalog.ts, added it to Owner/Admin defaults, wrote `convex/_migrations/2026-05-16-add-messages-subscribe-perm.ts` to backfill existing role docs, updated `useAddParticipants` to gate on it, ran migration in dev — 4 role docs updated."
+
+❌ **Non-compliant**: "Renamed `notes.isActivityChat` to `notes.messageKind`. Will write the migration in a follow-up." — DO NOT do this. Existing rows still have `isActivityChat`, every query reading them now fails the validator. Either rename + migrate atomically, or don't rename at all this message.
+
+### Why this rule exists
+
+Skipped migrations don't surface immediately — they surface when a real user hits the affected codepath in production. By then the team has shipped 10 more things on top of the broken assumption, and rolling back is expensive. **The cheapest moment to fix a migration is the moment you decide on the schema change.** This rule moves all migration cost to that moment, not later.
+
 ---
 
 # 🔒 LOCKED ARCHITECTURAL DECISIONS — DO NOT REVISIT

@@ -2,6 +2,7 @@
 "use client";
 
 import type { Id } from "@/convex/_generated/dataModel";
+import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
@@ -101,9 +102,9 @@ function MessagesGroup({ personCode }: { personCode: string }) {
 			<ProfileSection
 				id="messages.thread"
 				title="Conversation"
-				description="Human messages and AI on-behalf replies."
+				description="Human messages and AI on-behalf replies — synced with WhatsApp and email when those channels are wired up."
 			>
-				<PlaceholderRow personCode={personCode} label="Message thread" />
+				<MessagesPanel entityType="person" entityId={personCode} />
 			</ProfileSection>
 		</div>
 	);

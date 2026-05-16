@@ -1,67 +1,137 @@
 "use client";
 
 /**
- * MessagesInboxView — org-wide messages page (placeholder, no UI yet).
+ * MessagesInboxView — org-wide messages page (`/{orgSlug}/messages`).
  *
- * UI Architecture (locked in CORE-FEATURES-ARCHITECTURE.md §3.1, confirmed 2026-05-16):
- *   - **Sidebar** (conversation list) and **Main section** (active thread) are
- *     INDEPENDENT components. Org-wide page composes both. Profile/Deal/Company
- *     tabs embed only the Main thread (no sidebar — there is no horizontal space).
+ * Composes the locked Sidebar/Main split (CORE-FEATURES-ARCHITECTURE.md §3.1):
+ *   - `<MessagesSidebar>`: conversation list, filter dropdown, search.
+ *   - `<MessagesThread>`:  active thread (header + list + composer).
+ *   - `<MessagesEmptyState>`: shown before the user picks a thread.
  *
- * Status: backend wired (production-grade conversations + multi-participant fan-out).
- * UI pending — see `core/comms/messages/IMPLEMENTATION.md`.
+ * 2026-05-16 update — mobile sidebar via existing `Sheet` primitive:
+ *   - At `md+` the sidebar is inline (`hidden md:flex`).
+ *   - Below `md` the sidebar lives inside a `<Sheet>` opened by a hamburger
+ *     in `ThreadHeader` / `MessagesEmptyState`. Selecting a conversation
+ *     auto-closes the Sheet so the user lands on the thread.
+ *
+ * 2026-05-17 update (per user direction):
+ *   - The Sheet now uses logical `side="start"` so it slides in from the
+ *     correct edge under RTL automatically.
+ *   - The Sheet's built-in close X was overlapping the sidebar's search
+ *     button. We disable it (`showCloseButton={false}`) — the Sheet is
+ *     dismissable via overlay tap, Escape, or selecting a conversation.
+ *   - Stale-while-revalidate on conversation switch: the previous selection
+ *     is kept rendered while the new conversation's queries hydrate, so
+ *     there's no full-blank loading flicker. We use the React `startTransition`
+ *     primitive to keep the new selection responsive.
+ *
+ * Page-local UI state (selected conversation, sheet open) is plain
+ * `useState` per FRONTEND-DECISIONS Rule 1 — never Zustand for ephemeral
+ * page state.
  */
-import { useState } from "react";
+import { Menu } from "lucide-react";
+import { startTransition, useDeferredValue, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
-	type ChatEntityType,
-	useConversationForEntity,
-	useInbox,
-} from "@/core/comms/messages/hooks";
+	Sheet,
+	SheetContent,
+	SheetDescription,
+	SheetHeader,
+	SheetTitle,
+} from "@/components/ui/sheet";
+import type { Id } from "@/convex/_generated/dataModel";
+import { MessagesEmptyState } from "@/core/comms/messages/components/MessagesEmptyState";
+import { MessagesSidebar } from "@/core/comms/messages/components/MessagesSidebar";
+import { MessagesThread } from "@/core/comms/messages/components/MessagesThread";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 export function MessagesInboxView() {
-	const { orgId, orgSlug } = useCurrentOrg();
-	const conversations = useInbox({ orgId, filter: "all" });
+	const { orgId, isLoading } = useCurrentOrg();
+	const [selected, setSelected] = useState<Id<"conversations"> | null>(null);
+	const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
-	// Page-local UI state. Lifted, not zustand — see FRONTEND-DECISIONS Rule 4.
-	const [selected, setSelected] = useState<{
-		entityType: ChatEntityType;
-		entityId: string;
-	} | null>(null);
+	// Stale-while-revalidate on conversation switch: `useDeferredValue` keeps
+	// the previous selection rendered (so the thread doesn't blank out)
+	// while the new selection's queries hydrate. This is React's official
+	// SWR-for-rendering primitive — no third-party library needed.
+	const renderedSelection = useDeferredValue(selected);
 
-	const thread = useConversationForEntity({
-		orgId,
-		entityType: selected?.entityType ?? "person",
-		entityId: selected?.entityId ?? "",
-	});
+	if (isLoading || !orgId) {
+		return (
+			<div className="flex h-full items-center justify-center p-8">
+				<p className="text-sm text-muted-foreground">Loading workspace…</p>
+			</div>
+		);
+	}
+
+	const handleSelect = (id: Id<"conversations">) => {
+		// Mark this state update as a transition so React keeps the previous
+		// thread on screen while the new conversation's queries warm up.
+		startTransition(() => {
+			setSelected(id);
+		});
+		setMobileSheetOpen(false);
+	};
 
 	return (
-		<div data-status="messages-inbox-pending-ui" className="p-6">
-			<h1 className="text-xl font-semibold">Messages</h1>
-			<p className="text-sm text-muted-foreground">
-				Backend connected — {conversations?.length ?? 0} conversation
-				{(conversations?.length ?? 0) === 1 ? "" : "s"}, UI pending.
-			</p>
-			<pre className="mt-4 max-h-[40vh] overflow-auto rounded-[var(--radius)] border bg-muted p-3 text-xs">
-				{JSON.stringify(
-					{
-						orgSlug,
-						conversationCount: conversations?.length,
-						selected,
-						threadConversation: thread?.conversation?._id ?? null,
-						messageCount: thread?.messages?.length ?? 0,
-					},
-					null,
-					2,
+		<div className="flex h-full min-h-0 w-full overflow-hidden">
+			{/* Desktop sidebar — inline at md+ */}
+			<MessagesSidebar
+				orgId={orgId}
+				selectedConversationId={renderedSelection}
+				onSelect={handleSelect}
+				className="hidden w-72 shrink-0 md:flex"
+			/>
+
+			{/* Mobile sidebar — Sheet at <md */}
+			<Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+				<SheetContent
+					side="start"
+					showCloseButton={false}
+					className="w-80 max-w-[85vw] gap-0 p-0"
+					aria-describedby={undefined}
+				>
+					<SheetHeader className="sr-only">
+						<SheetTitle>Conversations</SheetTitle>
+						<SheetDescription>Pick a conversation or start a new one.</SheetDescription>
+					</SheetHeader>
+					<MessagesSidebar
+						orgId={orgId}
+						selectedConversationId={renderedSelection}
+						onSelect={handleSelect}
+						className="h-full w-full"
+					/>
+				</SheetContent>
+			</Sheet>
+
+			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
+				{renderedSelection ? (
+					<MessagesThread
+						orgId={orgId}
+						conversationId={renderedSelection}
+						onOpenSidebar={() => setMobileSheetOpen(true)}
+					/>
+				) : (
+					<div className="flex h-full flex-1 flex-col">
+						<header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4 md:hidden">
+							<Button
+								type="button"
+								size="icon"
+								variant="ghost"
+								className="size-8"
+								onClick={() => setMobileSheetOpen(true)}
+								aria-label="Open conversation list"
+							>
+								<Menu className="size-4" aria-hidden="true" />
+							</Button>
+							<span className="text-sm font-semibold text-foreground">Messages</span>
+						</header>
+						<div className="flex flex-1 items-center justify-center">
+							<MessagesEmptyState />
+						</div>
+					</div>
 				)}
-			</pre>
-			{/* When UI lands:
-			    <MessagesSidebar conversations={conversations} onSelect={setSelected} />
-			    <MessagesThread orgId={orgId} entityType={selected?.entityType} entityId={selected?.entityId} thread={thread} />
-			*/}
-			<button type="button" onClick={() => setSelected(null)} className="sr-only">
-				reset
-			</button>
+			</div>
 		</div>
 	);
 }

@@ -4,8 +4,8 @@
 > + the 8-group `core/` regroup. They ship as org-wide pages, embedded panels in
 > Profile/Deal/Company tabs, and dashboard widgets.
 >
-> **Status.** Backend + hooks + routes done; UI is pending.
-> **Last Updated.** 2026-05-16
+> **Status.** Messages feature is **complete** (backend + UI + panel + widget + Phase-3 hooks). Notes / Calendar / Reminders / Timeline UIs are still pending.
+> **Last Updated.** 2026-05-17
 
 ---
 
@@ -17,7 +17,8 @@
 | 2. Convex backend modules | ✅ done | `crm/shared/messages/{queries,mutations}.ts` and `crm/shared/calendar/queries.ts`. |
 | 3. Folder regroup of `core/` into 8 groups | ✅ done | 73 files re-imported in one pass; pnpm typecheck green. |
 | 4. Feature skeletons + hooks + thin route wrappers | ✅ done | 5 features (messages, notes, timeline, reminders, calendar) wired end-to-end through placeholder views. |
-| 5. UI for each feature | ⬜ pending | This doc's remaining sections detail what's still to build. |
+| 5a. Messages UI | ✅ done (2026-05-17) | Sidebar + thread + composer + voice notes + lightbox + mobile sheet + consecutive grouping + exact times + forward + RTL Sheet + SWR conversation switch + audio MIME backfill migration. See `core/comms/messages/STATE.md`. |
+| 5b. Notes / Calendar / Reminders / Timeline UI | ⬜ pending | This doc's remaining sections detail what's still to build. |
 
 Reading order for the next session:
 1. `FRONTEND-DECISIONS.md` (rules — esp. Rule 2, 12, 13, 14, 16, 20).

@@ -108,3 +108,30 @@ export const getUrl = orgQuery({
 		return await ctx.storage.getUrl(args.storageId);
 	},
 });
+
+/**
+ * Fetch a small batch of files by id (used for message attachments — typically
+ * 0–3 files per message). Returns each file with a short-lived signed URL.
+ * Skips rows that don't exist, are deleted, or belong to another org.
+ */
+export const listByIds = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		ids: v.array(v.id("files")),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+		if (args.ids.length === 0) return [];
+		const rows = await Promise.all(args.ids.map((id) => ctx.db.get(id)));
+		const valid = rows.filter(
+			(f): f is NonNullable<typeof f> =>
+				f !== null && f.orgId === args.orgId && f.deletedAt === undefined,
+		);
+		return await Promise.all(
+			valid.map(async (f) => ({
+				...f,
+				url: await ctx.storage.getUrl(f.storageId),
+			})),
+		);
+	},
+});

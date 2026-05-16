@@ -17,6 +17,7 @@ import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
 import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
+import { applyOrgStat } from "../_shared/orgStats";
 import { requireRole } from "../_shared/permissions";
 import { invitationRoleValidator } from "../_shared/validators";
 import { logActivity } from "../activityLogs/helpers";
@@ -143,6 +144,7 @@ export const accept = authenticatedMutation({
 				updatedAt: now,
 				joinedAt: now,
 			});
+			await applyOrgStat(ctx, invitation.orgId, "members.active", +1);
 		} else {
 			const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 			const roleDoc = await ctx.db
@@ -162,6 +164,7 @@ export const accept = authenticatedMutation({
 				invitedBy: invitation.invitedBy,
 				joinedAt: now,
 			});
+			await applyOrgStat(ctx, invitation.orgId, "members.active", +1);
 		}
 
 		// Mark invitation as accepted

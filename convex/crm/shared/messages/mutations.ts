@@ -1,62 +1,147 @@
 /**
- * Messages Mutations — convex/crm/shared/messages/mutations.ts
+ * Messages mutations — convex/crm/shared/messages/mutations.ts
  *
- * Send chat-style messages, mark read, delete. Per FRONTEND-DECISIONS Rule 2,
- * messages live in their own dedicated `messages` table.
+ * Production-grade chat-message API. Key properties:
  *
- * Mutations:
- *   - send:        Insert a message + log activity + notify watchers (best-effort).
- *   - markRead:    Mark one message as read (and append the reader to readBy[]).
- *   - markAllRead: Mark every message in a thread as read for the current user.
- *   - remove:      Delete one message (own message OR `messages.deleteAny`).
- *
- * STATUS: IMPLEMENTED (Phase 2 backend).
+ *   • Conversation-aware: every message is tied to a `conversationId`. The
+ *     `send` mutation auto-creates the conversation on first use via
+ *     `getOrCreateConversation` from the `conversations` module.
+ *   • Multi-participant fan-out: notifications go to **every** active
+ *     conversation member (except the sender), filtered by each member's
+ *     `notificationLevel` ("all" / "mentions" / "none"). The entity assignee
+ *     is auto-added as a participant on first send.
+ *   • Mentions: `@<userId>` mentions parsed from `args.mentions[]`. Mentioned
+ *     users are auto-added as participants and receive a `message_mention`
+ *     notification regardless of their level (always wins).
+ *   • Idempotent: callers may pass `idempotencyKey`. If the same
+ *     (orgId, conversationId, idempotencyKey) message exists, return its id.
+ *   • Edit + soft-delete: messages are soft-deleted; queries hide rows with
+ *     `deletedAt` set. Edits are time-windowed (15 min by default).
  */
+
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
 import type { MutationCtx } from "../../../_generated/server";
+import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
 import { ERRORS } from "../../../_shared/errors";
+import { isNotificationPreferenceEnabled } from "../../../_shared/notificationKeys";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
+import {
+	ensureMember,
+	getConversationOrThrow,
+	getMyMembership,
+	getOrCreateConversation,
+	listActiveMembers,
+} from "../conversations/internal";
+
+const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+// ─── send ────────────────────────────────────────────────────────────────────
 
 /**
- * Send a message on an entity thread.
+ * Send a message into a conversation thread.
  *
- * Canonical pattern:
- *   requireOrgMember → requireRole("messages.send") → insert → logActivity →
- *   sendNotification to thread watchers (assignee + others).
+ * Either pass `conversationId` (existing thread) OR `entityType + entityId`
+ * (auto-create / find). Mutually exclusive — provide one set.
  *
- * `authorType` defaults to "user". For AI on-behalf, pass `"ai"` and `onBehalfOf`.
- * For system-generated messages (e.g. "Stage moved to Closed Won"), pass `"system"`.
+ * Fan-out:
+ *   1. Sender is auto-added as participant if not already.
+ *   2. Entity assignee is auto-added (auto-discoverable for lead/contact/
+ *      deal/company; skipped for project/task in Phase 2).
+ *   3. Mentioned users are auto-added with `joinReason: "mention"`.
+ *   4. Notifications fan out to every active member except the sender,
+ *      filtered by each member's `notificationLevel`. Mentions always notify.
  */
 export const send = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
-		entityType: v.string(),
-		entityId: v.string(),
-		personCode: v.optional(v.string()),
+		// Either:
+		conversationId: v.optional(v.id("conversations")),
+		// Or (auto-create):
+		entityType: v.optional(entityTypeForChatValidator),
+		entityId: v.optional(v.string()),
 		threadId: v.optional(v.string()),
+		// Body:
 		content: v.string(),
 		authorType: v.optional(v.union(v.literal("user"), v.literal("ai"), v.literal("system"))),
 		onBehalfOf: v.optional(v.id("users")),
 		replyToId: v.optional(v.id("messages")),
 		attachments: v.optional(v.array(v.id("files"))),
+		mentions: v.optional(v.array(v.id("users"))),
+		// Idempotency:
+		idempotencyKey: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		const { member, userId, org } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.send");
+		await enforceRateLimit(ctx, {
+			orgId: args.orgId,
+			scope: "messages.send",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const trimmed = args.content.trim();
 		if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
 
+		// Resolve conversation — either by id or by (entityType, entityId).
+		let conversationId: Id<"conversations">;
+		let entityType: typeof args.entityType;
+		let entityId: string;
+		if (args.conversationId) {
+			const convo = await getConversationOrThrow(ctx, args.conversationId, args.orgId);
+			conversationId = convo._id;
+			entityType = convo.entityType;
+			entityId = convo.entityId;
+		} else if (args.entityType && args.entityId) {
+			conversationId = await getOrCreateConversation(ctx, {
+				orgId: args.orgId,
+				entityType: args.entityType,
+				entityId: args.entityId,
+				threadId: args.threadId,
+				creatorId: userId,
+			});
+			entityType = args.entityType;
+			entityId = args.entityId;
+		} else {
+			throw new ConvexError({
+				code: "INVALID_ARGS",
+				message: "send requires either conversationId or (entityType + entityId)",
+			});
+		}
+
+		// Idempotency check — if the same key already produced a message in
+		// this conversation, return its id without inserting again.
+		if (args.idempotencyKey) {
+			const existing = await ctx.db
+				.query("messages")
+				.withIndex("by_org_and_idempotency", (q) =>
+					q
+						.eq("orgId", args.orgId)
+						.eq("conversationId", conversationId)
+						.eq("idempotencyKey", args.idempotencyKey),
+				)
+				.first();
+			if (existing) return existing._id;
+		}
+
 		const now = Date.now();
+		const personCode =
+			entityType === "lead" || entityType === "contact" || entityType === "person"
+				? entityId
+				: undefined;
+
+		// 1. Insert the message row.
 		const messageId = await ctx.db.insert("messages", {
 			orgId: args.orgId,
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
+			conversationId,
+			entityType: entityType ?? "person",
+			entityId,
+			personCode,
 			threadId: args.threadId,
 			content: trimmed,
 			authorId: userId,
@@ -64,142 +149,196 @@ export const send = orgMutation({
 			onBehalfOf: args.onBehalfOf,
 			replyToId: args.replyToId,
 			attachments: args.attachments,
-			status: "sent",
-			readBy: [userId], // sender always counts as having read
+			mentions: args.mentions,
+			idempotencyKey: args.idempotencyKey,
 			createdAt: now,
+			updatedAt: now,
+		});
+
+		// 2. Update the conversation summary (denormalised for inbox query).
+		await ctx.db.patch(conversationId, {
+			lastMessageAt: now,
+			lastMessagePreview: trimmed.slice(0, 200),
+			lastMessageAuthorId: userId,
+			updatedAt: now,
+		});
+
+		// 3. Ensure the sender is a participant (auto-join). Already-a-member
+		//    is a no-op.
+		await ensureMember(ctx, {
+			orgId: args.orgId,
+			conversationId,
+			userId,
+			role: "participant",
+			joinReason: "auto",
+		});
+
+		// 4. Auto-add the entity assignee (if discoverable) on first message.
+		const assigneeId = await resolveEntityAssignee(ctx, {
+			orgId: args.orgId,
+			entityType: entityType ?? "person",
+			entityId,
+		});
+		if (assigneeId && assigneeId !== userId) {
+			await ensureMember(ctx, {
+				orgId: args.orgId,
+				conversationId,
+				userId: assigneeId,
+				role: "participant",
+				joinReason: "auto",
+			});
+		}
+
+		// 5. Auto-add mentioned users.
+		const mentionedSet = new Set<string>();
+		for (const mentionedId of args.mentions ?? []) {
+			if (mentionedId === userId) continue;
+			await ensureMember(ctx, {
+				orgId: args.orgId,
+				conversationId,
+				userId: mentionedId,
+				role: "participant",
+				joinReason: "mention",
+			});
+			mentionedSet.add(String(mentionedId));
+		}
+
+		// Pre-resolve the sender's display name (cheaper than lookup-per-recipient
+		// inside the fan-out loop).
+		const senderUser = ctx.user; // injected by orgMutation wrapper
+		const senderDisplay =
+			senderUser?.name?.split(" ")[0] ?? senderUser?.email?.split("@")[0] ?? "Someone";
+
+		// 6. Fan-out notifications to every active member.
+		const members = await listActiveMembers(ctx, conversationId);
+		for (const m of members) {
+			if (m.userId === userId) continue; // never notify sender
+
+			const isMentioned = mentionedSet.has(String(m.userId));
+			const level = m.notificationLevel;
+
+			// Mentions always notify (highest priority), regardless of level.
+			if (!isMentioned) {
+				if (level === "none") continue;
+				if (level === "mentions") continue; // not mentioned, mute everything else
+			}
+
+			// Honour user's per-key preference too.
+			const recipientUser = await ctx.db.get(m.userId);
+			const prefKey = isMentioned ? "message_mention" : "message_received";
+			if (!isNotificationPreferenceEnabled(recipientUser?.notificationPreferences, prefKey)) {
+				continue;
+			}
+
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: m.userId,
+				type: isMentioned ? "message.mention" : "message.received",
+				title: isMentioned ? `${senderDisplay} mentioned you` : "New message",
+				body: trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed,
+				entityType,
+				entityId,
+				actionUrl: actionUrlFor(entityType, entityId),
+				metadata: {
+					conversationId: String(conversationId),
+					messageId: String(messageId),
+					personCode: personCode ?? "",
+				},
+			});
+		}
+
+		// 7. Activity log (single row per send — fan-out lives in notifications).
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			actorType: args.authorType === "ai" ? "ai" : "user",
+			action: "message_sent",
+			entityType: entityType ?? "person",
+			entityId,
+			personCode,
+			description: `Message sent: ${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}`,
+			metadata: { messageId: String(messageId), conversationId: String(conversationId) },
+		});
+
+		// Avoid the "unused" lint on `org` — surface it for the future where we
+		// might use org settings here (e.g. message-edit-window override).
+		void org;
+
+		return messageId;
+	},
+});
+
+// ─── update / soft-delete / reactions ────────────────────────────────────────
+
+export const update = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		messageId: v.id("messages"),
+		content: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+
+		const message = await ctx.db.get(args.messageId);
+		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+
+		// Edit window: own message + within 15 min, OR moderator.
+		const isOwn = message.authorId === userId;
+		const canEditOwn = hasPermission(member.permissions, "messages.editOwn");
+		const canEditAny = hasPermission(member.permissions, "messages.deleteAny"); // moderator
+
+		const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
+		if (!(canEditAny || (isOwn && canEditOwn && within))) {
+			throw new ConvexError(ERRORS.FORBIDDEN);
+		}
+
+		const trimmed = args.content.trim();
+		if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
+
+		const now = Date.now();
+		await ctx.db.patch(args.messageId, {
+			content: trimmed,
+			editedAt: now,
 			updatedAt: now,
 		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId,
-			actorType: args.authorType === "ai" ? "ai" : "user",
-			action: "message_sent",
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			description: `Message sent: ${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}`,
-			metadata: { messageId },
-		});
-
-		// Best-effort notification to entity assignee (if any).
-		await notifyEntityWatchers(ctx, {
-			orgId: args.orgId,
-			entityType: args.entityType,
-			entityId: args.entityId,
-			senderId: userId,
-			messageId,
-			content: trimmed,
-			personCode: args.personCode,
-		});
-
-		return messageId;
-	},
-});
-
-/**
- * Mark a single message as read by the current user.
- *
- * Adds the user to `readBy[]` if not already present. If every member with access
- * has read the message, transitions `status` to "read".
- */
-export const markRead = orgMutation({
-	args: { orgId: v.id("orgs"), messageId: v.id("messages") },
-	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "messages.view");
-
-		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const readers = new Set(message.readBy ?? []);
-		if (readers.has(userId)) return; // idempotent
-		readers.add(userId);
-
-		// Transition to "delivered" or "read" — pragmatic: any non-author read marks
-		// the message as read for the thread. Multi-party read tracking lives in readBy[].
-		const nextStatus = message.authorId === userId ? message.status : "read";
-
-		await ctx.db.patch(args.messageId, {
-			readBy: [...readers],
-			status: nextStatus,
-			updatedAt: Date.now(),
+			action: "message_edited",
+			entityType: message.entityType,
+			entityId: message.entityId,
+			personCode: message.personCode,
+			description: "Message edited",
+			metadata: { messageId: String(args.messageId) },
 		});
 	},
 });
 
-/**
- * Mark every unread message in a thread as read by the current user.
- *
- * Use this when the user opens a conversation — bulk sets readBy.
- */
-export const markAllRead = orgMutation({
-	args: {
-		orgId: v.id("orgs"),
-		entityType: v.string(),
-		entityId: v.string(),
-	},
-	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "messages.view");
-
-		const messages = await ctx.db
-			.query("messages")
-			.withIndex("by_entity", (q) =>
-				q
-					.eq("orgId", args.orgId)
-					.eq("entityType", args.entityType)
-					.eq("entityId", args.entityId),
-			)
-			.collect();
-
-		const now = Date.now();
-		let touched = 0;
-
-		for (const m of messages) {
-			const readers = new Set(m.readBy ?? []);
-			if (readers.has(userId)) continue;
-			readers.add(userId);
-			await ctx.db.patch(m._id, {
-				readBy: [...readers],
-				status: m.authorId === userId ? m.status : "read",
-				updatedAt: now,
-			});
-			touched++;
-		}
-
-		return { marked: touched };
-	},
-});
-
-/**
- * Delete a message.
- *
- * Allowed when:
- *   - The caller is the author (`messages.delete` permission), OR
- *   - The caller has `messages.deleteAny` (admin moderation).
- */
 export const remove = orgMutation({
 	args: { orgId: v.id("orgs"), messageId: v.id("messages") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 
 		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId) {
+		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
 			throw new ConvexError(ERRORS.NOT_FOUND);
 		}
 
 		const isOwn = message.authorId === userId;
-		const canDeleteOwn = hasPermission(member.permissions, "messages.delete");
+		const canDeleteOwn = hasPermission(member.permissions, "messages.deleteOwn");
 		const canDeleteAny = hasPermission(member.permissions, "messages.deleteAny");
-
 		if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
 
-		await ctx.db.delete(args.messageId);
+		const now = Date.now();
+		await ctx.db.patch(args.messageId, {
+			deletedAt: now,
+			updatedAt: now,
+		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -209,86 +348,101 @@ export const remove = orgMutation({
 			entityId: message.entityId,
 			personCode: message.personCode,
 			description: "Message deleted",
-			metadata: { messageId: args.messageId },
+			metadata: { messageId: String(args.messageId) },
 		});
 	},
 });
 
-// ─── Internal helpers ────────────────────────────────────────────────────────
-
 /**
- * Notify the entity's primary assignee (if any) that a new message arrived.
- *
- * Best-effort — silently no-ops if the entity isn't found, has no assignee, or
- * the assignee is the sender themselves.
- *
- * Entity types covered: "lead" | "contact" | "deal" | "company" | "person".
- * Future entity types fall through silently.
+ * Toggle a reaction by the current user. If the (userId, emoji) pair already
+ * exists on the message, it's removed; otherwise added.
  */
-async function notifyEntityWatchers(
-	ctx: MutationCtx,
+export const toggleReaction = orgMutation({
 	args: {
-		orgId: Id<"orgs">;
-		entityType: string;
-		entityId: string;
-		senderId: Id<"users">;
-		messageId: Id<"messages">;
-		content: string;
-		personCode?: string;
+		orgId: v.id("orgs"),
+		messageId: v.id("messages"),
+		emoji: v.string(),
 	},
-): Promise<void> {
-	let assignedTo: Id<"users"> | undefined;
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.send");
 
-	if (args.entityType === "lead") {
+		const message = await ctx.db.get(args.messageId);
+		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+
+		const reactions = message.reactions ?? [];
+		const existing = reactions.find(
+			(r) => String(r.userId) === String(userId) && r.emoji === args.emoji,
+		);
+
+		const next = existing
+			? reactions.filter(
+					(r) => !(String(r.userId) === String(userId) && r.emoji === args.emoji),
+				)
+			: [...reactions, { userId, emoji: args.emoji, createdAt: Date.now() }];
+
+		await ctx.db.patch(args.messageId, {
+			reactions: next,
+			updatedAt: Date.now(),
+		});
+	},
+});
+
+// ─── Helpers (file-local) ────────────────────────────────────────────────────
+
+async function resolveEntityAssignee(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; entityType: string; entityId: string },
+): Promise<Id<"users"> | undefined> {
+	if (args.entityType === "lead" || args.entityType === "person") {
 		const lead = await ctx.db
 			.query("leads")
 			.withIndex("by_org_and_personCode", (q) =>
 				q.eq("orgId", args.orgId).eq("personCode", args.entityId),
 			)
 			.first();
-		assignedTo = lead?.assignedTo;
-	} else if (args.entityType === "contact") {
+		if (lead?.assignedTo) return lead.assignedTo;
+	}
+	if (args.entityType === "contact" || args.entityType === "person") {
 		const contact = await ctx.db
 			.query("contacts")
 			.withIndex("by_org_and_personCode", (q) =>
 				q.eq("orgId", args.orgId).eq("personCode", args.entityId),
 			)
 			.first();
-		assignedTo = contact?.assignedTo;
-	} else if (args.entityType === "deal") {
+		if (contact?.assignedTo) return contact.assignedTo;
+	}
+	if (args.entityType === "deal") {
 		const deal = await ctx.db
 			.query("deals")
 			.withIndex("by_org_and_dealCode", (q) =>
 				q.eq("orgId", args.orgId).eq("dealCode", args.entityId),
 			)
 			.first();
-		assignedTo = deal?.assignedTo;
-	} else if (args.entityType === "company") {
+		if (deal?.assignedTo) return deal.assignedTo;
+	}
+	if (args.entityType === "company") {
 		const company = await ctx.db
 			.query("companies")
 			.withIndex("by_org_and_companyCode", (q) =>
 				q.eq("orgId", args.orgId).eq("companyCode", args.entityId),
 			)
 			.first();
-		assignedTo = company?.assignedTo;
+		if (company?.assignedTo) return company.assignedTo;
 	}
-
-	if (!assignedTo || assignedTo === args.senderId) return;
-
-	const preview = args.content.length > 120 ? `${args.content.slice(0, 117)}…` : args.content;
-
-	await sendNotification(ctx, {
-		orgId: args.orgId,
-		userId: assignedTo,
-		type: "message.received",
-		title: "New message",
-		body: preview,
-		entityType: args.entityType,
-		entityId: args.entityId,
-		actionUrl: args.personCode ? `/profile/${args.personCode}` : undefined,
-		metadata: {
-			messageId: args.messageId,
-			personCode: args.personCode ?? "",
-		},
-	});
+	// project / task assignee discovery lives in their own modules (Phase 4).
+	return undefined;
 }
+
+function actionUrlFor(entityType: string | undefined, entityId: string): string | undefined {
+	if (entityType === "deal") return `/deals/${entityId}`;
+	if (entityType === "company") return `/companies/${entityId}`;
+	if (entityType === "lead" || entityType === "contact" || entityType === "person")
+		return `/profile/${entityId}`;
+	return undefined;
+}
+
+// Suppress getMyMembership lint (re-exported for tests).
+export const __internal = { getMyMembership };

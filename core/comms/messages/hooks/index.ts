@@ -1,10 +1,17 @@
 /**
- * Messages hooks — wrap Convex queries + mutations for the messages module.
+ * Messages + conversations hooks — wrap Convex queries + mutations.
  *
- * Status: IMPLEMENTED (Phase 2 backend wiring).
+ * Status: Production-grade — conversation-aware, multi-participant,
+ * per-user read state via `conversationMembers.lastReadAt`.
  *
  * Convention: each hook either returns data (queries) or a callable (mutations).
  * Pass `"skip"` automatically when args are not yet available.
+ *
+ * Sidebar/Main split (locked):
+ *   - `useInbox()`         — for the sidebar (conversation list + unread badges)
+ *   - `useConversation()`  — for the main pane (one thread + its messages)
+ *   These are intentionally separate so the profile/deal/company embedded
+ *   panel can use only `useConversation` (no sidebar).
  */
 "use client";
 
@@ -12,13 +19,58 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-// ─── Read hooks ──────────────────────────────────────────────────────────────
+/** Closed union mirroring the backend `entityTypeForChatValidator`. */
+export type ChatEntityType =
+	| "lead"
+	| "contact"
+	| "deal"
+	| "company"
+	| "person"
+	| "project"
+	| "task";
 
-/** All messages on an entity thread (newest first). Used by `MessagesPanel`. */
-export function useMessagesForEntity(args: {
+// ─── Inbox (sidebar) ────────────────────────────────────────────────────────
+
+/** Per-user inbox: every conversation the caller is in. Used by `MessagesSidebar`. */
+export function useInbox(args: {
 	orgId?: Id<"orgs">;
-	entityType: string;
+	filter?: "all" | "unread" | "archived";
+	limit?: number;
+}) {
+	return useQuery(
+		api.crm.shared.conversations.queries.listForUser,
+		args.orgId
+			? {
+					orgId: args.orgId,
+					filter: args.filter ?? "all",
+					limit: args.limit,
+				}
+			: "skip",
+	);
+}
+
+/** Total unread badge count across all my conversations. Used by sidebar nav. */
+export function useTotalUnread(args: { orgId?: Id<"orgs"> }) {
+	return useQuery(
+		api.crm.shared.conversations.queries.getMyTotalUnread,
+		args.orgId ? { orgId: args.orgId } : "skip",
+	);
+}
+
+// ─── Single conversation (main pane) ────────────────────────────────────────
+
+/**
+ * Fetch a conversation and its messages by entity. Auto-resolves the conversation
+ * id from (entityType, entityId, threadId?). Returns `{ conversation, messages }`.
+ *
+ * Used by **both** the org-wide inbox (after sidebar selection) and the
+ * profile/deal/company embedded panel.
+ */
+export function useConversationForEntity(args: {
+	orgId?: Id<"orgs">;
+	entityType: ChatEntityType;
 	entityId: string;
+	threadId?: string;
 	limit?: number;
 }) {
 	return useQuery(
@@ -28,11 +80,53 @@ export function useMessagesForEntity(args: {
 					orgId: args.orgId,
 					entityType: args.entityType,
 					entityId: args.entityId,
+					threadId: args.threadId,
 					limit: args.limit,
 				}
 			: "skip",
 	);
 }
+
+/** Messages of an existing conversation (when you have the conversationId already). */
+export function useMessagesForConversation(args: {
+	orgId?: Id<"orgs">;
+	conversationId?: Id<"conversations">;
+	limit?: number;
+}) {
+	return useQuery(
+		api.crm.shared.messages.queries.listForConversation,
+		args.orgId && args.conversationId
+			? {
+					orgId: args.orgId,
+					conversationId: args.conversationId,
+					limit: args.limit,
+				}
+			: "skip",
+	);
+}
+
+/** Active members of a conversation (for the avatar row). */
+export function useConversationParticipants(args: {
+	orgId?: Id<"orgs">;
+	conversationId?: Id<"conversations">;
+}) {
+	return useQuery(
+		api.crm.shared.conversations.queries.listParticipants,
+		args.orgId && args.conversationId
+			? { orgId: args.orgId, conversationId: args.conversationId }
+			: "skip",
+	);
+}
+
+/** Recent messages across the org — feeds the dashboard `MessagesPreviewWidget`. */
+export function useRecentMessages(args: { orgId?: Id<"orgs">; limit?: number }) {
+	return useQuery(
+		api.crm.shared.messages.queries.listRecent,
+		args.orgId ? { orgId: args.orgId, limit: args.limit ?? 5 } : "skip",
+	);
+}
+
+// ─── Person scope (profile page) ────────────────────────────────────────────
 
 /** All messages tied to a personCode across entity types. Used in the profile Messages tab. */
 export function useMessagesForPerson(args: {
@@ -46,52 +140,58 @@ export function useMessagesForPerson(args: {
 	);
 }
 
-/** Org-wide inbox — one row per active conversation. Used by `MessagesInboxView`. */
-export function useMessagesInbox(args: {
-	orgId?: Id<"orgs">;
-	filter?: "all" | "unread" | "ai" | "mine";
-	limit?: number;
-	scanLimit?: number;
-}) {
-	return useQuery(
-		api.crm.shared.messages.queries.listInbox,
-		args.orgId
-			? {
-					orgId: args.orgId,
-					filter: args.filter ?? "all",
-					limit: args.limit,
-					scanLimit: args.scanLimit,
-				}
-			: "skip",
-	);
-}
+// ─── Mutations ──────────────────────────────────────────────────────────────
 
-/** Recent messages across the org — feeds the dashboard `MessagesPreviewWidget`. */
-export function useRecentMessages(args: { orgId?: Id<"orgs">; limit?: number }) {
-	return useQuery(
-		api.crm.shared.messages.queries.listRecent,
-		args.orgId ? { orgId: args.orgId, limit: args.limit ?? 5 } : "skip",
-	);
-}
-
-// ─── Write hooks ─────────────────────────────────────────────────────────────
-
-/** Send a message. Returns `(args) => Promise<messageId>`. */
+/** Send a message. Pass `idempotencyKey` for retry safety on flaky networks. */
 export function useSendMessage() {
 	return useMutation(api.crm.shared.messages.mutations.send);
 }
 
-/** Mark one message as read (per-user, idempotent). */
-export function useMarkMessageRead() {
-	return useMutation(api.crm.shared.messages.mutations.markRead);
+/** Edit own message (within 15-min edit window). */
+export function useEditMessage() {
+	return useMutation(api.crm.shared.messages.mutations.update);
 }
 
-/** Mark every message in a thread as read. */
-export function useMarkAllMessagesRead() {
-	return useMutation(api.crm.shared.messages.mutations.markAllRead);
-}
-
-/** Delete a message — own-message + `messages.delete`, OR `messages.deleteAny`. */
+/** Soft-delete a message — own + `messages.deleteOwn`, OR `messages.deleteAny`. */
 export function useDeleteMessage() {
 	return useMutation(api.crm.shared.messages.mutations.remove);
+}
+
+/** Toggle a 👍/👎/etc. reaction on a message. */
+export function useToggleReaction() {
+	return useMutation(api.crm.shared.messages.mutations.toggleReaction);
+}
+
+/** Mark a conversation as read up to `now` (per-user). */
+export function useMarkConversationRead() {
+	return useMutation(api.crm.shared.conversations.mutations.markRead);
+}
+
+/** Add participants to a conversation (owner-only or `messages.subscribe`). */
+export function useAddParticipants() {
+	return useMutation(api.crm.shared.conversations.mutations.addParticipants);
+}
+
+/** Remove a participant. Self-removal allowed for any member. */
+export function useRemoveParticipant() {
+	return useMutation(api.crm.shared.conversations.mutations.removeParticipant);
+}
+
+/** Self-leave a conversation. Idempotent. */
+export function useLeaveConversation() {
+	return useMutation(api.crm.shared.conversations.mutations.leave);
+}
+
+/** Update my notification level on a conversation: all / mentions / none. */
+export function useUpdateNotificationLevel() {
+	return useMutation(api.crm.shared.conversations.mutations.updateNotificationLevel);
+}
+
+/** Archive / unarchive a conversation (org-level — affects inbox visibility). */
+export function useArchiveConversation() {
+	return useMutation(api.crm.shared.conversations.mutations.archive);
+}
+
+export function useUnarchiveConversation() {
+	return useMutation(api.crm.shared.conversations.mutations.unarchive);
 }

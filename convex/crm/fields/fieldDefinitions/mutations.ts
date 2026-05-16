@@ -6,6 +6,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { seedFieldDefinitionsForOrg } from "./internal";
@@ -141,14 +142,25 @@ export const remove = orgMutation({
 			});
 		}
 
-		// Remove all field values for this field
+		// Bounded cascade: take up to 500 fieldValues per call. If we hit the cap,
+		// schedule a continuation via internalMutation. Same pattern as tags.
+		const CASCADE_BATCH = 500;
 		const values = await ctx.db
 			.query("fieldValues")
 			.withIndex("by_field_and_entity", (q) =>
 				q.eq("orgId", args.orgId).eq("fieldId", args.fieldId),
 			)
-			.collect();
+			.take(CASCADE_BATCH);
 		await Promise.all(values.map((fv) => ctx.db.delete(fv._id)));
+
+		if (values.length === CASCADE_BATCH) {
+			await ctx.scheduler.runAfter(
+				0,
+				internal.crm.fields.fieldDefinitions.internal.purgeFieldDefinitionCascade,
+				{ orgId: args.orgId, fieldId: args.fieldId },
+			);
+			return; // field row deleted by the continuation when cascade finishes
+		}
 
 		await ctx.db.delete(args.fieldId);
 	},

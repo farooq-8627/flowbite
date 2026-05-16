@@ -87,6 +87,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, { label: string; descripti
 	ai: { label: "AI Assistant" },
 	activityLogs: { label: "Activity Logs" },
 	notifications: { label: "Notifications" },
+	files: { label: "Files" },
 };
 
 /** Module render order in the role-editor UI. */
@@ -107,6 +108,7 @@ export const PERMISSION_MODULE_ORDER: readonly string[] = [
 	"ai",
 	"activityLogs",
 	"notifications",
+	"files",
 ];
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
@@ -399,13 +401,27 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
 	},
 	{
+		key: "messages.viewAll",
+		module: "messages",
+		label: "View all conversations (moderation)",
+		description: "See every conversation in the org, even ones you aren't a member of.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
 		key: "messages.send",
 		module: "messages",
 		label: "Send messages",
 		defaultRoles: ["Owner", "Admin", "Member"],
 	},
 	{
-		key: "messages.delete",
+		key: "messages.editOwn",
+		module: "messages",
+		label: "Edit own messages",
+		description: "Edit messages within the configured edit window.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "messages.deleteOwn",
 		module: "messages",
 		label: "Delete own messages",
 		defaultRoles: ["Owner", "Admin", "Member"],
@@ -416,6 +432,19 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Delete any message",
 		description: "Moderator-level — remove other members' messages.",
 		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "messages.subscribe",
+		module: "messages",
+		label: "Manage conversation participants",
+		description: "Add, remove, and re-invite people on a conversation.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "conversations.archive",
+		module: "messages",
+		label: "Archive conversations",
+		defaultRoles: ["Owner", "Admin", "Member"],
 	},
 
 	// ── Reminders ────────────────────────────────────────────────────────────
@@ -560,6 +589,34 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		module: "notifications",
 		label: "Mark notifications read",
 		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
+	},
+
+	// ── Files ────────────────────────────────────────────────────────────────
+	{
+		key: "files.view",
+		module: "files",
+		label: "View files",
+		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
+	},
+	{
+		key: "files.upload",
+		module: "files",
+		label: "Upload files",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "files.delete",
+		module: "files",
+		label: "Delete own files",
+		description: "Delete files the user uploaded.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "files.deleteAny",
+		module: "files",
+		label: "Delete any file",
+		description: "Moderator-level — remove other members' files.",
+		defaultRoles: ["Owner", "Admin"],
 	},
 ] as const;
 

@@ -3,6 +3,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -51,11 +52,27 @@ export const remove = orgMutation({
 		const tag = await ctx.db.get(args.tagId);
 		if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
+		// Bounded cascade: take up to 500 entityTags per call. If we hit the cap,
+		// schedule a follow-up cleanup pass via internalMutation. This keeps the
+		// transaction well under the 16MB function-call limit on high-volume tags.
+		const CASCADE_BATCH = 500;
 		const entityTags = await ctx.db
 			.query("entityTags")
 			.withIndex("by_tag", (q) => q.eq("orgId", args.orgId).eq("tagId", args.tagId))
-			.collect();
+			.take(CASCADE_BATCH);
 		await Promise.all(entityTags.map((et) => ctx.db.delete(et._id)));
+
+		// If the cascade may not be done, leave the tag row in place and queue
+		// a continuation. The tag becomes "orphan" — UI hides it because the
+		// entityTags rows are still being cleaned up — and a sweep finishes
+		// the job. This is the same pattern shadcn-store uses.
+		if (entityTags.length === CASCADE_BATCH) {
+			await ctx.scheduler.runAfter(0, internal.crm.shared.tags.internal.purgeTagCascade, {
+				orgId: args.orgId,
+				tagId: args.tagId,
+			});
+			return; // tag row deleted by the continuation when cascade finishes
+		}
 
 		await ctx.db.delete(args.tagId);
 	},

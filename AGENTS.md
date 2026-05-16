@@ -66,6 +66,41 @@ For Convex functions (not Next.js), use `process.env.VARIABLE_NAME` directly —
 
 ---
 
+# 🔒 LOCKED ARCHITECTURAL DECISIONS — DO NOT REVISIT
+
+> These 10 decisions are settled. Do not reopen unless the user explicitly says so.
+> Folded in from `PROJECT_ANALYSIS.md` (deleted) on 2026-05-16.
+
+| # | Decision |
+|---|---|
+| 1 | **Convex** for all server state; **Zustand** for UI-only state. Never use Zustand for data fetched from Convex. |
+| 2 | Entity labels + slugs are NEVER hardcoded — always DB-backed via `orgs.settings.entityLabels`. |
+| 3 | `useEntityLabels()` is the one canonical hook for entity labels. Re-exported from `core/shell/shared/hooks/` for back-compat. |
+| 4 | Single `/settings` route with `?group=` query param — no sub-routes under settings. |
+| 5 | Per-section save in settings — no global save button. Each section is its own form + mutation. |
+| 6 | Appearance preferences = per-user (cookies), zero org impact. Apply via `<PreferencesInitializer />` + `ThemeBootScript`. |
+| 7 | Org-wide activity log lives at `/{locale}/{orgSlug}/timeline` and `/{orgSlug}/settings/activity-log` — NOT a separate top-level route. |
+| 8 | Person detail page uses `personCode` as slug: `/profile/P-001`. ONE page for lead + contact (resolved by `crm.people.queries.getByPersonCode`). |
+| 9 | The 4 entity scaffolds (`EntityListPage`, `EntityDetailPage`, `EntityFormDialog`, `EntityCard`) handle ALL entities — including the 2 optional industry slots (entity5/entity6). |
+| 10 | `Element.scrollIntoView()` is BANNED inside the dashboard shell — causes layout shift in nested scroll containers. Use `scrollToSection` from `core/platform/settings/hooks/useSettingsSearch.ts` instead. |
+
+# 🔒 BACKEND DECISIONS LOCKED 2026-05-16 (audit pass)
+
+| # | Decision |
+|---|---|
+| 11 | **Six independent tables** for cross-cutting concerns: `notes`, `messages`, `notifications`, `activityLogs`, `reminders`, `files`. Timeline + Calendar are read-merge views, no tables. (Was previously `notes.isActivityChat` flag — removed.) |
+| 12 | **`personCode` is the stable identity**. Generated only at lead creation, passed through `convertToContact`, never regenerated. Used in URLs, AI prompts, WhatsApp, activity logs, deals, reminders, messages. |
+| 13 | **Permission catalog SSOT** at `convex/_shared/permissions/catalog.ts`. Add a permission ONCE; derives seed-permissions, runtime checks, role-editor UI, backfill, and tests. |
+| 14 | **Reserved slugs SSOT** at `convex/_shared/reservedSlugs.ts`. Imported everywhere — never inlined in any mutation. |
+| 15 | **Notification preference keys SSOT** at `convex/_shared/notificationKeys.ts`. Drives schema validator, mutation validator, and UI form. |
+| 16 | **No hardcoded permission lists anywhere** — every consumer (mutations, tests, seed flows, UI gates) imports from `getDefaultPermissionsForRole(role)` or per-key `requireRole(member.permissions, key)`. |
+| 17 | **Canonical mutation pattern** (BUILD-ORDER.md §"CONVEX CANONICAL MUTATION PATTERN"): RBAC → dedup → record code → DB → logActivity (with personCode for person-related) → sendNotification → AI rebuild → return. Every public mutation that creates rows must add a rate limit. |
+| 18 | **File uploads**: max-size and allowed-mime categories come from `org.settings.fileUpload` — NOT hardcoded. Scope/scopeId validated on every record. Ownership or `files.deleteAny` permission required to delete. |
+| 19 | **Convex folder layout**: kept logically grouped by domain via `convex/_arch.md`; physical structure stays flat at the top level so the public `api.X` paths don't break. CRM domain physically grouped under `crm/{entities,fields,people,shared}`. |
+| 20 | **Sentry/PostHog DSNs come from env vars** — never hardcoded. `SENTRY_DSN`, `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST`. If unset, providers no-op gracefully. |
+
+---
+
 # 🔴 CRITICAL SESSION RULES (NON-NEGOTIABLE — read before anything else)
 
 ## ⛔ RULE 0: UPDATE STATE.md BEFORE ENDING EVERY SESSION (NON-NEGOTIABLE)

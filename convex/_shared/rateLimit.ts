@@ -54,6 +54,7 @@
  * - https://github.com/get-convex/convex-helpers/issues/233 (no built-in helper)
  */
 import { ConvexError } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { ERRORS } from "./errors";
 
@@ -91,13 +92,34 @@ export const RATE_LIMITS = {
  * (scope, key), increments it, and throws a `ConvexError(ERRORS.RATE_LIMITED)`
  * when the configured limit is exceeded.
  *
+ * Per-tenant overrides:
+ *   When `options.orgId` is provided, the helper consults
+ *   `org.settings.rateLimits` for a matching scope override before falling
+ *   back to the caller-supplied (preset) max/periodMs. Pass `orgId` from the
+ *   mutation handler so each tenant's policy is honoured.
+ *
  * Concurrency note: Convex mutations run with optimistic transactions, so two
  * parallel mutations targeting the same (scope, key) row will each see the
  * pre-write state and one of them will retry. That's acceptable — both will
  * still settle on a valid count (off-by-one at worst is fine for throttling).
  */
-export async function enforceRateLimit(ctx: MutationCtx, options: RateLimitOptions): Promise<void> {
-	const { scope, key, max, periodMs } = options;
+export async function enforceRateLimit(
+	ctx: MutationCtx,
+	options: RateLimitOptions & { orgId?: Id<"orgs"> },
+): Promise<void> {
+	const { scope, key, orgId } = options;
+	let { max, periodMs } = options;
+
+	// Per-tenant override lookup — single ctx.db.get if orgId provided.
+	if (orgId) {
+		const org = await ctx.db.get(orgId);
+		const override = org?.settings?.rateLimits?.find((r) => r.scope === scope);
+		if (override) {
+			max = override.max;
+			periodMs = override.periodMs;
+		}
+	}
+
 	const now = Date.now();
 
 	const existing = await ctx.db

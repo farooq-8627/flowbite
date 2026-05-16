@@ -8,22 +8,30 @@
  *     INDEPENDENT components. Org-wide page composes both. Profile/Deal/Company
  *     tabs embed only the Main thread (no sidebar — there is no horizontal space).
  *
- * Status: backend wired (`useMessagesInbox`, `useMessagesForEntity`). UI pending.
+ * Status: backend wired (production-grade conversations + multi-participant fan-out).
+ * UI pending — see `core/comms/messages/IMPLEMENTATION.md`.
  */
 import { useState } from "react";
-import { useMessagesForEntity, useMessagesInbox } from "@/core/comms/messages/hooks";
+import {
+	type ChatEntityType,
+	useConversationForEntity,
+	useInbox,
+} from "@/core/comms/messages/hooks";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 export function MessagesInboxView() {
 	const { orgId, orgSlug } = useCurrentOrg();
-	const conversations = useMessagesInbox({ orgId, filter: "all" });
+	const conversations = useInbox({ orgId, filter: "all" });
 
 	// Page-local UI state. Lifted, not zustand — see FRONTEND-DECISIONS Rule 4.
-	const [selected, setSelected] = useState<{ entityType: string; entityId: string } | null>(null);
+	const [selected, setSelected] = useState<{
+		entityType: ChatEntityType;
+		entityId: string;
+	} | null>(null);
 
-	const messages = useMessagesForEntity({
+	const thread = useConversationForEntity({
 		orgId,
-		entityType: selected?.entityType ?? "",
+		entityType: selected?.entityType ?? "person",
 		entityId: selected?.entityId ?? "",
 	});
 
@@ -40,7 +48,8 @@ export function MessagesInboxView() {
 						orgSlug,
 						conversationCount: conversations?.length,
 						selected,
-						threadCount: messages?.length,
+						threadConversation: thread?.conversation?._id ?? null,
+						messageCount: thread?.messages?.length ?? 0,
 					},
 					null,
 					2,
@@ -48,7 +57,7 @@ export function MessagesInboxView() {
 			</pre>
 			{/* When UI lands:
 			    <MessagesSidebar conversations={conversations} onSelect={setSelected} />
-			    <MessagesThread orgId={orgId} entityType={selected?.entityType} entityId={selected?.entityId} messages={messages} />
+			    <MessagesThread orgId={orgId} entityType={selected?.entityType} entityId={selected?.entityId} thread={thread} />
 			*/}
 			<button type="button" onClick={() => setSelected(null)} className="sr-only">
 				reset

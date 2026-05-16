@@ -12,7 +12,9 @@
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
+import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -31,6 +33,11 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.create");
+		await enforceRateLimit(ctx, {
+			scope: "companies.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const companyCode = await generateEntityCode(ctx, args.orgId, "company");
 		const now = Date.now();
@@ -58,6 +65,8 @@ export const create = orgMutation({
 			description: `Company created: ${args.name}`,
 			metadata: { companyCode },
 		});
+
+		await applyOrgStat(ctx, args.orgId, "companies.active", +1);
 
 		if (args.assignedTo && args.assignedTo !== userId) {
 			await sendNotification(ctx, {
@@ -218,7 +227,20 @@ export const softDelete = orgMutation({
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		await ctx.db.patch(args.companyId, { deletedAt: Date.now(), updatedAt: Date.now() });
+		const now = Date.now();
+		await ctx.db.patch(args.companyId, { deletedAt: now, updatedAt: now });
+		if (!company.deletedAt) {
+			await applyOrgStat(ctx, args.orgId, "companies.active", -1);
+		}
+
+		// Clean up the indexed join table — leave no stale companyMembers rows.
+		const memberLinks = await ctx.db
+			.query("companyMembers")
+			.withIndex("by_org_and_company", (q) =>
+				q.eq("orgId", args.orgId).eq("companyId", args.companyId),
+			)
+			.collect();
+		await Promise.all(memberLinks.map((link) => ctx.db.delete(link._id)));
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -227,7 +249,10 @@ export const softDelete = orgMutation({
 			entityType: "company",
 			entityId: args.companyId,
 			description: `Company deleted: ${company.name}`,
-			metadata: { companyCode: company.companyCode },
+			metadata: {
+				companyCode: company.companyCode,
+				cleanedMemberLinks: memberLinks.length,
+			},
 		});
 	},
 });

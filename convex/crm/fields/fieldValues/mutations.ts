@@ -3,10 +3,36 @@
  *
  * Set/update field values for any entity record.
  * Upsert pattern: if a value exists for (entityId, fieldId), update it; else insert.
+ *
+ * Permission model:
+ *   set/bulkSet require write permission on the target entity. The mutation
+ *   derives the permission key from `args.entityType` (e.g. `"deal"` →
+ *   `deals.update`). Unknown entity types fall back to `fieldDefinitions.manage`
+ *   (admin-only).
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
+import { requireRole } from "../../../_shared/permissions";
+
+/**
+ * Map an entityType to the permission key required to write field values for it.
+ * Falls back to `fieldDefinitions.manage` for unknown types — admin-only by default.
+ */
+function permissionForEntity(entityType: string): string {
+	switch (entityType) {
+		case "lead":
+			return "leads.update";
+		case "contact":
+			return "contacts.update";
+		case "company":
+			return "companies.update";
+		case "deal":
+			return "deals.update";
+		default:
+			return "fieldDefinitions.manage";
+	}
+}
 
 export const set = orgMutation({
 	args: {
@@ -17,7 +43,8 @@ export const set = orgMutation({
 		value: v.any(),
 	},
 	handler: async (ctx, args) => {
-		await requireOrgMember(ctx, args.orgId);
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, permissionForEntity(args.entityType));
 
 		const field = await ctx.db.get(args.fieldId);
 		if (!field || field.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
@@ -55,7 +82,8 @@ export const bulkSet = orgMutation({
 		values: v.array(v.object({ fieldId: v.id("fieldDefinitions"), value: v.any() })),
 	},
 	handler: async (ctx, args) => {
-		await requireOrgMember(ctx, args.orgId);
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, permissionForEntity(args.entityType));
 
 		const now = Date.now();
 		await Promise.all(

@@ -1,18 +1,69 @@
 # Phase 2 — CRM Core Progress
 
-> Updated: 2026-05-15
-> Status: **Backend 100% COMPLETE · Frontend Slice 1 COMPLETE · All Audit Fixes COMPLETE**
+> Updated: 2026-05-16
+> Status: **Backend 100% COMPLETE · Frontend Slice 1 COMPLETE · 2026-05-16 Audit Pass DONE**
 
 ---
 
-## Verification
+## Verification (2026-05-16 audit pass)
 
 | Check | Result |
 |---|---|
 | `pnpm typecheck` | ✅ 0 errors |
-| `pnpm exec biome check .` | ✅ 0 issues across 442 files |
-| `pnpm exec vitest run --config vitest.convex.config.ts` | ✅ 85 pass + 1 skipped |
+| `pnpm exec biome check .` | ✅ 0 issues across 474 files |
+| `pnpm test` | ✅ 100 pass + 1 skipped (5 test files) |
 | `npx convex codegen` | ✅ succeeds |
+
+---
+
+## 2026-05-16 — Backend Audit Pass
+
+> Comprehensive sweep against `BUILD-ORDER.md` canonical mutation pattern,
+> `FRONTEND-DECISIONS.md` 20 rules, RBAC SSOT, multi-tenancy. All 20 P0+P1
+> findings landed and tested. See AGENTS.md decisions #11–20 for the locked
+> outcomes.
+
+### P0 fixes (security / SSOT drift)
+- ✅ Legacy `orgs.create` rewritten — no hardcoded permission lists; uses `getDefaultPermissionsForRole()` SSOT.
+- ✅ Reserved-slug validation centralized — `_shared/reservedSlugs.ts` is the only source; `orgs.createOrg` + `orgs.update` import it.
+- ✅ Notes mutations use the correct catalog perms (`notes.deleteAny`, `notes.pin`) — no more `notes.viewInternal` proxy.
+- ✅ Reminders mutations gate on assignee OR `reminders.manage`.
+- ✅ Files mutations validate scope, scopeId, max-size, and mime-type from `org.settings.fileUpload` (NOT hardcoded).
+- ✅ Files added: `files.upload`, `files.delete`, `files.deleteAny` permissions in catalog.
+- ✅ Files: ownership check on `remove` and `updateTags` (uploader OR `files.deleteAny`).
+- ✅ FieldValues `set`/`bulkSet` gate on `<entityType>.update` permission.
+- ✅ Notification preference keys centralized in `_shared/notificationKeys.ts` SSOT — derives schema validator + mutation arg validator.
+
+### P1 fixes (audit trail / canonical pattern)
+- ✅ `notes.update`, `togglePin`, `remove` now call `logActivity`.
+- ✅ `reminders.complete`, `update`, `remove` now call `logActivity` (and notify on complete-by-non-assignee).
+- ✅ `files.record`, `updateTags`, `remove` now call `logActivity`.
+- ✅ `deals.closeAsDone` now calls `sendNotification("deal.won" | "deal.lost")` per the assignee's notification preferences.
+- ✅ `companies.softDelete` now cleans up `companyMembers` join rows.
+- ✅ `messages.markAllRead` capped at `.take(500)` instead of unbounded `.collect()`.
+- ✅ Rate limits added: `messages.send`, `notes.create`, `reminders.create`, `deals.create`, `contacts.create`, `companies.create`, `files.generateUploadUrl`. Existing: `leads.create`, `tags.create`, `files.record`.
+- ✅ `INDUSTRY_STAGES` extracted from `orgs/mutations.ts` into `orgs/templates/pipelineStages.ts`.
+
+### Test coverage added
+- ✅ `convex/crm-hardening.test.ts` — 15 new tests covering messages, files, fieldValues permission gates, companies cleanup, deals notifications, reminders permission boundaries.
+- ✅ `_test/helpers.ts::seedOrgMember` rewritten to use SSOT permissions.
+
+### Production wiring
+- ✅ Sentry DSN moved to env (`NEXT_PUBLIC_SENTRY_DSN` / `SENTRY_DSN`); no-ops gracefully if unset.
+- ✅ Sentry org/project moved to env (`SENTRY_ORG` / `SENTRY_PROJECT`); source-map upload skipped if `SENTRY_AUTH_TOKEN` is missing.
+- ✅ `next.config.ts` configured to no-op Sentry source-map upload outside CI.
+- ✅ `.env.example` updated with all required + optional env vars documented.
+- ✅ PostHog already wired correctly via `components/providers/PostHogProvider.tsx` — no-ops gracefully if `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN` is unset.
+- ✅ `package.json` test script fixed (`vitest run --config vitest.convex.config.ts`).
+
+### Cleanup
+- ✅ Deleted `app/[locale]/sentry-example-page/` (test page no longer needed).
+- ✅ Deleted `convex/_migrations/cleanup.ts` — already-applied teamMembers→assignees migration.
+- ✅ Deleted `CLAUDE.md`, `PROJECT_ANALYSIS.md`, `SETTINGS_CODE_ARCHITECTURE.md`, `SETTINGS_FRONTEND_PLAN.md` (superseded; unique content extracted to AGENTS.md).
+- ✅ Deleted `.kiro/agents/base/*` (10 files — exact duplicates of `.github/agents/base/*`).
+- ✅ Deleted `.kiro/PLAN.md` (early planning doc, superseded).
+- ✅ Created `convex/_arch.md` — logical-group reference for the flat backend layout.
+- ✅ Locked the 10 architectural decisions + 10 backend audit decisions into AGENTS.md.
 
 ---
 

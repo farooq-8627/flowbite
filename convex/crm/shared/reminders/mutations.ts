@@ -3,11 +3,20 @@
  * STATUS: IMPLEMENTED
  *
  * followUpCode auto-generated (FU-001). Every reminder MUST have a personCode.
+ *
+ * Permission model:
+ *   - create:   `reminders.create`
+ *   - complete: assignee OR `reminders.manage`
+ *   - update:   assignee OR `reminders.manage`
+ *   - remove:   assignee OR `reminders.manage`
+ *
+ * Every mutation logs activity.
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -28,6 +37,11 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "reminders.create");
+		await enforceRateLimit(ctx, {
+			scope: "reminders.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
 		const now = Date.now();
@@ -54,8 +68,9 @@ export const create = orgMutation({
 			action: "reminder_created",
 			entityType: args.entityType,
 			entityId: args.entityId,
+			personCode: args.personCode,
 			description: `Reminder set: ${args.title}`,
-			metadata: { followUpCode, personCode: args.personCode },
+			metadata: { followUpCode, reminderId },
 		});
 
 		if (args.assignedTo !== userId) {
@@ -66,12 +81,22 @@ export const create = orgMutation({
 				title: `New reminder: ${args.title}`,
 				entityType: args.entityType,
 				entityId: args.entityId,
+				metadata: { followUpCode, personCode: args.personCode },
 			});
 		}
 
 		return { reminderId, followUpCode };
 	},
 });
+
+/** Authorization helper: assignee can act, OR a member with `reminders.manage`. */
+function canActOnReminder(
+	member: { permissions: string[] },
+	userId: string,
+	reminderAssignedTo: string,
+): boolean {
+	return reminderAssignedTo === userId || hasPermission(member.permissions, "reminders.manage");
+}
 
 export const complete = orgMutation({
 	args: { orgId: v.id("orgs"), reminderId: v.id("reminders") },
@@ -80,12 +105,36 @@ export const complete = orgMutation({
 
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
-		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
+		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
+			throw new ConvexError(ERRORS.FORBIDDEN);
+		}
 
 		const now = Date.now();
 		await ctx.db.patch(args.reminderId, { status: "completed", completedAt: now });
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "reminder_completed",
+			entityType: reminder.entityType,
+			entityId: reminder.entityId,
+			personCode: reminder.personCode,
+			description: `Reminder completed: ${reminder.title}`,
+			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+		});
+
+		// Notify the original creator if they aren't the assignee/actor.
+		if (reminder.assignedTo !== userId) {
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: reminder.assignedTo,
+				type: "reminder.completed",
+				title: `Reminder completed: ${reminder.title}`,
+				entityType: reminder.entityType,
+				entityId: reminder.entityId,
+				metadata: { followUpCode: reminder.followUpCode },
+			});
+		}
 	},
 });
 
@@ -103,9 +152,9 @@ export const update = orgMutation({
 
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
-		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
+		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
+			throw new ConvexError(ERRORS.FORBIDDEN);
+		}
 
 		const { orgId: _o, reminderId: _r, ...updates } = args;
 		const patch = Object.fromEntries(
@@ -113,6 +162,17 @@ export const update = orgMutation({
 		);
 
 		await ctx.db.patch(args.reminderId, patch);
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "reminder_updated",
+			entityType: reminder.entityType,
+			entityId: reminder.entityId,
+			personCode: reminder.personCode,
+			description: `Reminder updated: ${reminder.title}`,
+			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+		});
 	},
 });
 
@@ -123,10 +183,21 @@ export const remove = orgMutation({
 
 		const reminder = await ctx.db.get(args.reminderId);
 		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
-		if (reminder.assignedTo !== userId && !isAdmin) throw new ConvexError(ERRORS.FORBIDDEN);
+		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
+			throw new ConvexError(ERRORS.FORBIDDEN);
+		}
 
 		await ctx.db.delete(args.reminderId);
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "reminder_deleted",
+			entityType: reminder.entityType,
+			entityId: reminder.entityId,
+			personCode: reminder.personCode,
+			description: `Reminder deleted: ${reminder.title}`,
+			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+		});
 	},
 });

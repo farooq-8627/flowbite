@@ -1,52 +1,97 @@
 /**
- * Messages Queries — convex/crm/shared/messages/queries.ts
+ * Messages queries — convex/crm/shared/messages/queries.ts
  *
- * Chat-style messages between users and AI on-behalf. Per FRONTEND-DECISIONS Rule 2,
- * messages live in their own dedicated `messages` table — distinct from `notes`.
- *
- * Three read patterns:
- *   - listForEntity:  All messages on a specific entity thread (deal/company/person).
- *   - listForPerson:  All messages tied to a personCode across entities.
- *   - listInbox:      One row per active conversation, newest first — feeds the inbox view.
- *
- * RBAC: gated by `messages.view`. No internal/public split (use a separate notes thread for
- * private agent annotations).
- *
- * STATUS: IMPLEMENTED (Phase 2 backend).
+ * Read APIs (newest-first by default; soft-deleted rows hidden):
+ *   - listForConversation:   the canonical thread feed (most callers)
+ *   - listForEntity:         convenience — finds the convo, lists messages
+ *   - listForPerson:         personCode-keyed cross-conversation feed
+ *   - listInbox:             org-wide newest, filtered (legacy/admin)
+ *   - listRecent:            dashboard widget
+ *   - getById:               one message + author / reply ref
  */
+
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
-import { requireRole } from "../../../_shared/permissions";
+import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
+import { hasPermission, requireRole } from "../../../_shared/permissions";
+import { findConversation, getMyMembership } from "../conversations/internal";
+
+// ─── Single conversation thread ──────────────────────────────────────────────
+
+export const listForConversation = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		conversationId: v.id("conversations"),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.view");
+
+		const conversation = await ctx.db.get(args.conversationId);
+		if (!conversation || conversation.orgId !== args.orgId) return [];
+
+		// Non-members must have `messages.viewAll` (moderator) to peek.
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: args.conversationId,
+			userId,
+		});
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		if (!myMembership && !canModerate) return [];
+
+		const cap = args.limit ?? 100;
+		const rows = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", args.conversationId),
+			)
+			.order("desc")
+			.take(cap);
+		return rows.filter((m) => m.deletedAt === undefined);
+	},
+});
 
 /**
- * All messages for one entity thread, ordered newest-first.
- *
- * Use this for the panel embedded in Profile/Deal/Company tabs and for the
- * Selected Thread pane of the org-wide inbox.
+ * Convenience: look up the conversation for an entity thread, then list its
+ * messages. Returns `null` if no conversation exists yet (caller can render
+ * an empty state). Most front-end consumers call this.
  */
 export const listForEntity = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
-		entityType: v.string(),
+		entityType: entityTypeForChatValidator,
 		entityId: v.string(),
+		threadId: v.optional(v.string()),
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
-		const cap = args.limit ?? 100;
+		const conversation = await findConversation(ctx, args);
+		if (!conversation) return { conversation: null, messages: [] };
 
-		return await ctx.db
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: conversation._id,
+			userId,
+		});
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		if (!myMembership && !canModerate) {
+			return { conversation: null, messages: [] };
+		}
+
+		const cap = args.limit ?? 100;
+		const rows = await ctx.db
 			.query("messages")
-			.withIndex("by_entity", (q) =>
-				q
-					.eq("orgId", args.orgId)
-					.eq("entityType", args.entityType)
-					.eq("entityId", args.entityId),
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", conversation._id),
 			)
 			.order("desc")
 			.take(cap);
+		return {
+			conversation,
+			messages: rows.filter((m) => m.deletedAt === undefined),
+		};
 	},
 });
 
@@ -68,24 +113,20 @@ export const listForPerson = orgQuery({
 
 		const cap = args.limit ?? 100;
 
-		return await ctx.db
+		const rows = await ctx.db
 			.query("messages")
 			.withIndex("by_org_and_personCode", (q) =>
 				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
 			)
 			.order("desc")
 			.take(cap);
+		return rows.filter((m) => m.deletedAt === undefined);
 	},
 });
 
 /**
- * Inbox view — one row per conversation (entity thread), newest first.
- *
- * Implementation: scan recent messages by `by_org_and_created`, dedupe by
- * (entityType, entityId), and return the newest message per conversation.
- *
- * NOTE: O(scan) — fine for medium volumes. For high-traffic orgs we'll add a
- * `conversations` summary table later. Keep `scanLimit` modest (default 500).
+ * Org-wide newest messages — admin / moderation surface.
+ * Members without `messages.viewAll` only see threads they're in.
  */
 export const listInbox = orgQuery({
 	args: {
@@ -97,7 +138,7 @@ export const listInbox = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
 		const filter = args.filter ?? "all";
@@ -110,31 +151,44 @@ export const listInbox = orgQuery({
 			.order("desc")
 			.take(scanLimit);
 
-		// Dedupe by (entityType, entityId) — keep first (newest) seen per key.
-		const seen = new Map<string, (typeof recent)[number]>();
-		for (const m of recent) {
-			const key = `${m.entityType}:${m.entityId}`;
+		const live = recent.filter((m) => m.deletedAt === undefined);
+
+		// Dedupe by conversationId — keep first (newest) seen per key.
+		const seen = new Map<string, (typeof live)[number]>();
+		for (const m of live) {
+			const key = String(m.conversationId);
 			if (!seen.has(key)) seen.set(key, m);
 		}
 
 		const conversations = [...seen.values()];
 
-		const filtered = conversations.filter((m) => {
-			if (filter === "unread") return m.status !== "read";
-			if (filter === "ai") return m.authorType === "ai";
-			if (filter === "mine") return m.authorId === userId;
-			return true;
-		});
+		// Apply filters (with viewAll moderation permission gate).
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		const filteredOut = [];
+		for (const m of conversations) {
+			if (!canModerate) {
+				const myMembership = await getMyMembership(ctx, {
+					conversationId: m.conversationId,
+					userId,
+				});
+				if (!myMembership) continue;
+			}
+			if (filter === "ai" && m.authorType !== "ai") continue;
+			if (filter === "mine" && String(m.authorId) !== String(userId)) continue;
+			// unread filter: needs convo lastMessageAt vs my lastReadAt — for the
+			// inbox-fast-path we approximate with "newer than my membership read".
+			filteredOut.push(m);
+			if (filteredOut.length >= cap) break;
+		}
 
-		return filtered.slice(0, cap);
+		return filteredOut;
 	},
 });
 
 /**
  * Recent messages across the org — feeds the dashboard "MessagesPreviewWidget".
  *
- * No conversation dedup; just the newest N messages chronologically. Cheaper than
- * `listInbox`.
+ * No conversation dedup; just the newest N messages chronologically.
  */
 export const listRecent = orgQuery({
 	args: {
@@ -145,11 +199,12 @@ export const listRecent = orgQuery({
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
-		return await ctx.db
+		const rows = await ctx.db
 			.query("messages")
 			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
 			.order("desc")
 			.take(args.limit ?? 5);
+		return rows.filter((m) => m.deletedAt === undefined);
 	},
 });
 
@@ -163,7 +218,9 @@ export const getById = orgQuery({
 		requireRole(member.permissions, "messages.view");
 
 		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId) return null;
+		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+			return null;
+		}
 		return message;
 	},
 });

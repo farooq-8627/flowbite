@@ -1,21 +1,34 @@
-// This file configures the initialization of Sentry on the browser.
-// The config you add here will be used whenever a user loads a page in their browser.
-// https://docs.sentry.io/platforms/javascript/guides/nextjs/
-
+/**
+ * Sentry — browser config.
+ *
+ * DSN, environment, and traces sample rate are read from env vars. If
+ * `NEXT_PUBLIC_SENTRY_DSN` is unset (e.g. local dev without Sentry), Sentry
+ * no-ops gracefully — no errors are shipped, no console noise.
+ *
+ * Required envs (production):
+ *   - NEXT_PUBLIC_SENTRY_DSN
+ * Optional:
+ *   - NEXT_PUBLIC_SENTRY_ENVIRONMENT (defaults to NODE_ENV)
+ *   - NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE (defaults to 0.1 in prod, 1 in dev)
+ *
+ * Source: https://docs.sentry.io/platforms/javascript/guides/nextjs/
+ */
 import * as Sentry from "@sentry/nextjs";
 
-Sentry.init({
-	dsn: "https://4aa33635555da8baf6ef772e20034ba8@o4511118921760768.ingest.us.sentry.io/4511118932443136",
+const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const environment = process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? process.env.NODE_ENV;
+const isProd = environment === "production";
 
-	// Define how likely traces are sampled. Adjust this value in production, or use tracesSampler for greater control.
-	tracesSampleRate: 1,
-
-	// Enable logs to be sent to Sentry
-	enableLogs: true,
-
-	// Enable sending user PII (Personally Identifiable Information)
-	sendDefaultPii: true,
-
-	// Setting this option to true will print useful information to the console while you're setting up Sentry.
-	debug: false,
-});
+if (dsn) {
+	Sentry.init({
+		dsn,
+		environment,
+		tracesSampleRate: Number(
+			process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? (isProd ? 0.1 : 1),
+		),
+		// Send PII in dev (eases debugging); off in prod for privacy unless explicit.
+		sendDefaultPii: !isProd || process.env.NEXT_PUBLIC_SENTRY_SEND_PII === "true",
+		enableLogs: !isProd,
+		debug: false,
+	});
+}

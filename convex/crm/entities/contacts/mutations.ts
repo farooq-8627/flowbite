@@ -10,7 +10,9 @@ import { orgMutation, requireOrgMember } from "../../../_functions/authenticated
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import { ERRORS } from "../../../_shared/errors";
+import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -34,6 +36,11 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "contacts.create");
+		await enforceRateLimit(ctx, {
+			scope: "contacts.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		// Email dedup via index — O(log n)
 		if (args.email) {
@@ -80,6 +87,12 @@ export const create = orgMutation({
 			personCode,
 			description: `Contact created: ${args.displayName}`,
 		});
+
+		// Counter increment when this is a *direct* contact creation. Conversion
+		// from lead handles its own counter rebalance in `leads.convertToContact`.
+		if (!args.leadId) {
+			await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
+		}
 
 		if (args.assignedTo && args.assignedTo !== userId) {
 			await sendNotification(ctx, {
@@ -165,6 +178,9 @@ export const softDelete = orgMutation({
 		if (!contact || contact.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		await ctx.db.patch(args.contactId, { deletedAt: Date.now(), updatedAt: Date.now() });
+		if (!contact.deletedAt) {
+			await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+		}
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -226,6 +242,12 @@ export const revertToLead = orgMutation({
 		});
 		// Soft-delete the contact.
 		await ctx.db.patch(args.contactId, { deletedAt: now, updatedAt: now });
+
+		// Counter rebalance: contact leaves "active", lead returns to "open".
+		if (!contact.deletedAt) {
+			await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+		}
+		await applyOrgStat(ctx, args.orgId, "leads.open", +1);
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

@@ -3,13 +3,16 @@
  * STATUS: IMPLEMENTED
  *
  * dealCode auto-generated (D-001). Stage moves via moveToStage only.
- * closeAsDone is the only way to set wonAt/lostAt.
+ * closeAsDone is the only way to set wonAt/lostAt. closeAsDone fires the
+ * `deal_won` notification preference for the assignee on positive close.
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
+import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
+import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
@@ -33,6 +36,11 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.create");
+		await enforceRateLimit(ctx, {
+			scope: "deals.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		// Validate pipeline belongs to org
 		const pipeline = await ctx.db.get(args.pipelineId);
@@ -79,6 +87,12 @@ export const create = orgMutation({
 			description: `Deal created: ${args.title}`,
 		});
 
+		// Counter increments — open deal + pipeline value.
+		await applyOrgStat(ctx, args.orgId, "deals.open", +1);
+		if (args.value && args.value > 0) {
+			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", +args.value);
+		}
+
 		if (args.assignedTo && args.assignedTo !== userId) {
 			await sendNotification(ctx, {
 				orgId: args.orgId,
@@ -124,6 +138,14 @@ export const update = orgMutation({
 		const patch = Object.fromEntries(
 			Object.entries(updates).filter(([, val]) => val !== undefined),
 		);
+
+		// Pipeline-value drift: if `value` is being changed, rebalance the counter.
+		if (args.value !== undefined && args.value !== (deal.value ?? 0)) {
+			const delta = (args.value ?? 0) - (deal.value ?? 0);
+			if (!deal.wonAt && !deal.lostAt) {
+				await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", delta);
+			}
+		}
 
 		await ctx.db.patch(args.dealId, { ...patch, updatedAt: Date.now() });
 
@@ -243,6 +265,18 @@ export const closeAsDone = orgMutation({
 
 		await ctx.db.patch(args.dealId, patch);
 
+		// Counter rebalance: leaving the open pool. Pipeline-value drops by
+		// the deal's current value.
+		await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+		if (deal.value && deal.value > 0) {
+			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+		}
+		if (args.finalType === "positive") {
+			await applyOrgStat(ctx, args.orgId, "deals.won", +1);
+		} else if (args.finalType === "negative") {
+			await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
+		}
+
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId,
@@ -252,6 +286,27 @@ export const closeAsDone = orgMutation({
 			personCode: deal.personCode,
 			description: `Deal ${args.finalType === "positive" ? "won" : "lost"}: ${deal.title}`,
 		});
+
+		// Notify the assignee on win/loss (matches the user's `deal_won` /
+		// `deal_stage_changed` notification preferences). Skip if the actor
+		// is the assignee themselves.
+		if (deal.assignedTo && deal.assignedTo !== userId) {
+			const isWon = args.finalType === "positive";
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: deal.assignedTo,
+				type: isWon ? "deal.won" : "deal.lost",
+				title: isWon ? `Deal won: ${deal.title}` : `Deal closed lost: ${deal.title}`,
+				body: args.outcomeReason ? args.outcomeReason : undefined,
+				entityType: "deal",
+				entityId: args.dealId,
+				metadata: {
+					dealCode: deal.dealCode,
+					value: deal.value ?? 0,
+					currency: deal.currency ?? "",
+				},
+			});
+		}
 	},
 });
 
@@ -265,6 +320,14 @@ export const softDelete = orgMutation({
 		if (!deal || deal.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		await ctx.db.patch(args.dealId, { deletedAt: Date.now(), updatedAt: Date.now() });
+
+		// Counter rebalance: only decrement if the deal was open before deletion.
+		if (!deal.wonAt && !deal.lostAt && !deal.deletedAt) {
+			await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+			if (deal.value && deal.value > 0) {
+				await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+			}
+		}
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

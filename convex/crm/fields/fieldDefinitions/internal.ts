@@ -1,20 +1,21 @@
 /**
- * Field Definitions — Internal Seeding Helper
+ * Field Definitions — Internal helpers
  *
- * Single, idempotent seeder for `fieldDefinitions` rows. Used by:
+ * Idempotent seeder + bounded-cascade cleanup. Called by:
  *   - `orgs.mutations.updateOrgIndustry` (onboarding step 2 — production path)
  *   - `fieldDefinitions.mutations.ensureForOrg` (lazy fallback, called by
  *     useEntityFields when it sees zero rows for an existing org)
- *   - `fieldDefinitions.migrations.seedAllOrgs` (internal action — one-shot to
- *     fix existing dev orgs after deploying dynamic fields)
- *
- * Idempotent contract: re-running NEVER duplicates; it only inserts
- * (entityType, name) pairs that don't yet exist.
+ *   - `fieldDefinitions.mutations.remove` (cascade continuation when a field
+ *     has > 500 fieldValues attached)
  */
 
+import { v } from "convex/values";
+import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
-import type { MutationCtx } from "../../../_generated/server";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { getDefaultFieldDefinitions } from "../../../orgs/templates/fields";
+
+const CASCADE_BATCH = 500;
 
 /**
  * Seed missing field definitions for a (orgId, industry).
@@ -71,3 +72,40 @@ export async function seedFieldDefinitionsForOrg(
 	}
 	return inserted;
 }
+
+/**
+ * Bounded continuation: deletes the next 500 fieldValues for the given field.
+ * Reschedules itself if more remain. Removes the fieldDefinition row when
+ * the cascade is complete.
+ */
+export const purgeFieldDefinitionCascade = internalMutation({
+	args: { orgId: v.id("orgs"), fieldId: v.id("fieldDefinitions") },
+	handler: async (ctx, args) => {
+		const values = await ctx.db
+			.query("fieldValues")
+			.withIndex("by_field_and_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("fieldId", args.fieldId),
+			)
+			.take(CASCADE_BATCH);
+
+		if (values.length === 0) {
+			const field = await ctx.db.get(args.fieldId);
+			if (field) await ctx.db.delete(args.fieldId);
+			return { remaining: 0, removed: true };
+		}
+
+		await Promise.all(values.map((fv) => ctx.db.delete(fv._id)));
+
+		if (values.length === CASCADE_BATCH) {
+			await ctx.scheduler.runAfter(
+				0,
+				internal.crm.fields.fieldDefinitions.internal.purgeFieldDefinitionCascade,
+				{ orgId: args.orgId, fieldId: args.fieldId },
+			);
+		} else {
+			const field = await ctx.db.get(args.fieldId);
+			if (field) await ctx.db.delete(args.fieldId);
+		}
+		return { remaining: values.length, removed: values.length < CASCADE_BATCH };
+	},
+});

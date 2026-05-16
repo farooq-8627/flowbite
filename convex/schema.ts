@@ -55,8 +55,10 @@ export default defineSchema({
 	fieldDefinitions: crmFields.fieldDefinitions,
 	fieldValues: crmFields.fieldValues,
 
-	// CRM — shared (notes, messages, reminders, tags, savedViews)
+	// CRM — shared (notes, conversations, messages, reminders, tags, savedViews)
 	notes: crmShared.notes,
+	conversations: crmShared.conversations,
+	conversationMembers: crmShared.conversationMembers,
 	messages: crmShared.messages,
 	reminders: crmShared.reminders,
 	tags: crmShared.tags,
@@ -64,10 +66,11 @@ export default defineSchema({
 	savedViews: crmShared.savedViews,
 	companyMembers: crmShared.companyMembers,
 
-	// System (notifications, activity logs, files)
+	// System (notifications, activity logs, files, orgStats)
 	notifications: system.notifications,
 	activityLogs: system.activityLogs,
 	files: system.files,
+	orgStats: system.orgStats,
 
 	// AI (Phase 3)
 	aiConversations: ai.aiConversations,

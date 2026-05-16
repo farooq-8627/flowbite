@@ -1,12 +1,17 @@
 /**
- * Org mutations.
+ * Org mutations — convex/orgs/mutations.ts
  *
  * PATTERN:
  *   - All public mutations use `authenticatedMutation` or `orgMutation` (Rule R2).
- *   - Role checks use `requireRole()` / `requireMinRole()` from permissions.ts.
+ *   - Role checks use `requireRole()` from the SSOT permissions catalog.
  *   - Every mutation calls `logActivity()` after DB writes (audit trail).
  *   - Member-affecting mutations call `sendNotification()` for the affected user.
  *   - Every patch includes `updatedAt: Date.now()` (Rule R7).
+ *   - Reserved slug list lives in `_shared/reservedSlugs.ts` — NEVER inlined.
+ *   - System-role permissions come from `getDefaultPermissionsForRole(name)` —
+ *     NEVER hardcoded.
+ *   - Industry pipeline stages come from `templates/pipelineStages.ts` —
+ *     NEVER inlined.
  *
  * Sources:
  * - https://github.com/get-convex/convex-saas/blob/main/convex/organizations.ts
@@ -15,36 +20,104 @@
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
 import type { Id } from "../_generated/dataModel";
-import { internalMutation } from "../_generated/server";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
+import { applyOrgStat } from "../_shared/orgStats";
 import { requireRole } from "../_shared/permissions";
 import type { SystemRoleName } from "../_shared/permissions/catalog";
 import {
 	getDefaultPermissionsForRole,
 	getMissingPermissionsForRole,
 } from "../_shared/permissions/derive";
+import { RESERVED_SLUGS, validateSlug } from "../_shared/reservedSlugs";
 import { logActivity } from "../activityLogs/helpers";
 import { seedFieldDefinitionsForOrg } from "../crm/fields/fieldDefinitions/internal";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
+import { getDefaultStages } from "./templates/pipelineStages";
 
 // Platform prefix is read from env — never hardcoded.
-// Set CONVEX_PLATFORM_PREFIX in your Convex environment variables.
+// Set PLATFORM_PREFIX in your Convex environment variables.
 const PLATFORM_PREFIX = process.env.PLATFORM_PREFIX ?? "ORB";
 
 /** Zero-padded sequential-style ID: ORB-00001 */
 function buildPlatformOrgId(prefix: string, orgId: string): string {
-	// Use last 5 chars of Convex ID as a stable short identifier
 	const short = orgId.slice(-5).toUpperCase();
 	return `${prefix}-${short}`;
 }
 
+// ─── System role seed metadata ────────────────────────────────────────────────
+// Permissions for each role come from `getDefaultPermissionsForRole()` (SSOT).
+// Only display metadata lives here. Adding a permission to a role = edit
+// `_shared/permissions/catalog.ts`, never this file.
+const SYSTEM_ROLE_SEEDS: ReadonlyArray<{
+	name: SystemRoleName;
+	description: string;
+	color: string;
+	isDefault: boolean;
+}> = [
+	{
+		name: "Owner",
+		description: "Full access to all features and settings.",
+		color: "#6366f1",
+		isDefault: false,
+	},
+	{
+		name: "Admin",
+		description: "Full operational access. Cannot manage billing or delete the org.",
+		color: "#3b82f6",
+		isDefault: false,
+	},
+	{
+		name: "Member",
+		description: "Standard access. Can create and update records, use AI.",
+		color: "#10b981",
+		isDefault: true,
+	},
+];
+
+/**
+ * Seed the 3 system roles (Owner, Admin, Member) for a freshly created org.
+ * Returns the Owner roleId for the inserter to wire up the creator's
+ * orgMembers row. Permissions come from the SSOT catalog.
+ */
+async function seedSystemRoles(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	now: number,
+): Promise<Id<"orgRoles">> {
+	let ownerRoleId: Id<"orgRoles"> | null = null;
+	for (const seed of SYSTEM_ROLE_SEEDS) {
+		const roleId = await ctx.db.insert("orgRoles", {
+			orgId,
+			name: seed.name,
+			description: seed.description,
+			permissions: [...getDefaultPermissionsForRole(seed.name)],
+			isSystem: true,
+			isDefault: seed.isDefault,
+			color: seed.color,
+			createdAt: now,
+			updatedAt: now,
+		});
+		if (seed.name === "Owner") ownerRoleId = roleId;
+	}
+	if (ownerRoleId === null) {
+		// Unreachable — Owner is always seeded above.
+		throw new ConvexError("Owner role failed to seed.");
+	}
+	return ownerRoleId;
+}
+
+// ─── createOrg — onboarding step 1 (canonical creator) ───────────────────────
+
 /**
  * Create a new org during onboarding (Step 1).
- * - Validates slug uniqueness; if taken, suggests next available (GitHub-style).
+ * - Validates slug format + reservation via SSOT (`_shared/reservedSlugs.ts`).
+ * - Throws ORG_SLUG_TAKEN if slug is in use.
  * - Sets platformOrgId from env-driven prefix.
- * - Creates owner membership.
+ * - Seeds the 3 system roles using `getDefaultPermissionsForRole()` SSOT.
+ * - Inserts owner orgMembers row.
  * - Does NOT mark onboardingCompleted — that happens in markOnboardingComplete.
  */
 export const createOrg = authenticatedMutation({
@@ -55,43 +128,16 @@ export const createOrg = authenticatedMutation({
 	handler: async (ctx, args) => {
 		const now = Date.now();
 
-		// Validate slug format
 		const cleanSlug = args.slug
 			.toLowerCase()
 			.replace(/[^a-z0-9-]/g, "")
 			.slice(0, 48);
-		if (!cleanSlug) throw new ConvexError("Invalid slug.");
 
-		// Reserved slugs — these are static route segments in the app
-		const RESERVED_SLUGS = [
-			"platform",
-			"api",
-			"admin",
-			"billing",
-			"auth",
-			"onboarding",
-			"profile",
-			"settings",
-			"notifications",
-			"signin",
-			"signup",
-			"pricing",
-			"portal",
-			"join",
-			"dashboard",
-			"app",
-			"help",
-			"support",
-			"docs",
-			"status",
-		];
-		if (RESERVED_SLUGS.includes(cleanSlug)) {
-			throw new ConvexError(
-				`Slug "${cleanSlug}" is reserved. Please choose a different one.`,
-			);
+		const validation = validateSlug(cleanSlug);
+		if (!validation.valid) {
+			throw new ConvexError(validation.reason);
 		}
 
-		// Check exact slug — if taken, throw so UI can show error
 		const existing = await getOrgBySlug(ctx, cleanSlug);
 		if (existing) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
 
@@ -99,68 +145,16 @@ export const createOrg = authenticatedMutation({
 			name: args.name.trim(),
 			slug: cleanSlug,
 			plan: DEFAULT_ORG_PLAN,
-			platformOrgId: "", // filled in below after we have the ID
+			platformOrgId: "",
 			onboardingStep: 0,
 			createdAt: now,
 			updatedAt: now,
 		});
 
-		// Now patch with the real platformOrgId derived from the Convex ID.
-		// (R7: every patch includes updatedAt.)
 		const platformOrgId = buildPlatformOrgId(PLATFORM_PREFIX, orgId);
 		await ctx.db.patch(orgId, { platformOrgId, updatedAt: now });
 
-		// ── Seed the 3 system roles ──────────────────────────────────────────
-		// Permissions come from the SSOT catalog (`convex/_shared/permissions/`).
-		// To grant a new permission to a role, edit `catalog.ts` — never edit
-		// this block.
-		const SYSTEM_ROLE_SEEDS: ReadonlyArray<{
-			name: SystemRoleName;
-			description: string;
-			color: string;
-			isDefault: boolean;
-		}> = [
-			{
-				name: "Owner",
-				description: "Full access to all features and settings.",
-				color: "#6366f1",
-				isDefault: false,
-			},
-			{
-				name: "Admin",
-				description: "Full operational access. Cannot manage billing or delete the org.",
-				color: "#3b82f6",
-				isDefault: false,
-			},
-			{
-				name: "Member",
-				description: "Standard access. Can create and update records, use AI.",
-				color: "#10b981",
-				isDefault: true,
-			},
-		];
-
-		let ownerRoleId: Id<"orgRoles"> | null = null;
-		for (const seed of SYSTEM_ROLE_SEEDS) {
-			const roleId = await ctx.db.insert("orgRoles", {
-				orgId,
-				name: seed.name,
-				description: seed.description,
-				permissions: [...getDefaultPermissionsForRole(seed.name)],
-				isSystem: true,
-				isDefault: seed.isDefault,
-				color: seed.color,
-				createdAt: now,
-				updatedAt: now,
-			});
-			if (seed.name === "Owner") ownerRoleId = roleId;
-		}
-
-		if (ownerRoleId === null) {
-			// Unreachable — Owner is always seeded above. Defensive throw so the
-			// type narrows for the orgMembers insert below.
-			throw new ConvexError("Owner role failed to seed.");
-		}
+		const ownerRoleId = await seedSystemRoles(ctx, orgId, now);
 
 		await ctx.db.insert("orgMembers", {
 			orgId,
@@ -169,7 +163,9 @@ export const createOrg = authenticatedMutation({
 			joinedAt: now,
 		});
 
-		// Set as default org if user has none
+		// Counter — workspace creator is the first active member.
+		await applyOrgStat(ctx, orgId, "members.active", +1);
+
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, { defaultOrgId: orgId, updatedAt: now });
 		}
@@ -201,9 +197,78 @@ export const suggestSlug = authenticatedMutation({
 	},
 });
 
+// ─── create — convenience wrapper (used by tests + settings page) ────────────
+
+/**
+ * Convenience org creator. Auto-generates a unique slug if not provided,
+ * skips strict slug validation (tests use freeform names), and marks
+ * onboardingCompleted on the user.
+ *
+ * Internally delegates the role-seeding to the same SSOT path as `createOrg`.
+ * NEVER hardcodes permission lists — every role's permissions come from the
+ * SSOT catalog via `getDefaultPermissionsForRole()`.
+ */
+export const create = authenticatedMutation({
+	args: {
+		name: v.string(),
+		slug: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const base = args.slug ?? generateSlug(args.name);
+		const slug = await ensureUniqueSlug(ctx, base);
+
+		const orgId = await ctx.db.insert("orgs", {
+			name: args.name,
+			slug,
+			plan: DEFAULT_ORG_PLAN,
+			platformOrgId: "",
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		await ctx.db.patch(orgId, {
+			platformOrgId: buildPlatformOrgId(PLATFORM_PREFIX, orgId),
+			updatedAt: now,
+		});
+
+		const ownerRoleId = await seedSystemRoles(ctx, orgId, now);
+
+		await ctx.db.insert("orgMembers", {
+			orgId,
+			userId: ctx.userId,
+			roleId: ownerRoleId,
+			joinedAt: now,
+		});
+
+		await applyOrgStat(ctx, orgId, "members.active", +1);
+
+		if (!ctx.user.defaultOrgId) {
+			await ctx.db.patch(ctx.userId, {
+				defaultOrgId: orgId,
+				onboardingCompleted: true,
+				updatedAt: now,
+			});
+		}
+
+		await logActivity(ctx, {
+			orgId,
+			userId: ctx.userId,
+			action: "created",
+			entityType: ENTITY_TYPES.ORG,
+			entityId: orgId,
+			description: `Created organization "${args.name}"`,
+		});
+
+		return orgId;
+	},
+});
+
+// ─── Onboarding step 2 + 3 ────────────────────────────────────────────────────
+
 /**
  * Update org industry + team size (onboarding Step 2).
- * Requires the calling user to be the org owner.
+ * Requires the calling user to be an active member of the org.
  */
 export const updateOrgIndustry = authenticatedMutation({
 	args: {
@@ -224,7 +289,7 @@ export const updateOrgIndustry = authenticatedMutation({
 			updatedAt: now,
 		});
 
-		// Seed default pipeline for this industry (idempotent)
+		// Seed default pipeline (idempotent)
 		const existingPipeline = await ctx.db
 			.query("pipelines")
 			.withIndex("by_org_and_default", (q) => q.eq("orgId", args.orgId).eq("isDefault", true))
@@ -243,8 +308,7 @@ export const updateOrgIndustry = authenticatedMutation({
 			});
 		}
 
-		// Seed default fieldDefinitions for this industry (idempotent — only inserts
-		// system rows the org doesn't already have for the given entityType+name).
+		// Seed default fieldDefinitions (idempotent)
 		await seedFieldDefinitionsForOrg(ctx, args.orgId, args.industry, now);
 
 		await logActivity(ctx, {
@@ -290,253 +354,13 @@ export const markOnboardingComplete = authenticatedMutation({
 	},
 });
 
-/**
- * Create a new org (legacy / settings page use).
- * @deprecated Use createOrg for onboarding. This remains for settings-page org creation.
- */
-export const create = authenticatedMutation({
-	args: {
-		name: v.string(),
-		slug: v.optional(v.string()),
-	},
-	handler: async (ctx, args) => {
-		const now = Date.now();
-		const base = args.slug ?? generateSlug(args.name);
-		const slug = await ensureUniqueSlug(ctx, base);
-
-		const orgId = await ctx.db.insert("orgs", {
-			name: args.name,
-			slug,
-			plan: DEFAULT_ORG_PLAN,
-			platformOrgId: buildPlatformOrgId(PLATFORM_PREFIX, "tmp"),
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		const platformOrgId = buildPlatformOrgId(PLATFORM_PREFIX, orgId);
-		await ctx.db.patch(orgId, { platformOrgId });
-
-		// Seed owner role for this org
-		const ownerRoleId = await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Owner",
-			description: "Full access.",
-			permissions: [
-				"org.viewSettings",
-				"org.editName",
-				"org.editLogo",
-				"org.editSettings",
-				"org.viewBilling",
-				"org.delete",
-				"members.view",
-				"members.invite",
-				"members.cancelInvitation",
-				"members.remove",
-				"members.changeRole",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.delete",
-				"leads.assign",
-				"leads.qualify",
-				"leads.convert",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"contacts.delete",
-				"contacts.assign",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"companies.delete",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.delete",
-				"deals.assign",
-				"deals.changeStage",
-				"notes.view",
-				"notes.viewInternal",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"notes.deleteAny",
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-				"pipelines.view",
-				"pipelines.manage",
-				"fieldDefinitions.view",
-				"fieldDefinitions.manage",
-				"ai.use",
-				"ai.manageTools",
-				"ai.viewHistory",
-				"activityLogs.viewOrg",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: false,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Admin",
-			description: "Full operational access.",
-			permissions: [
-				"org.viewSettings",
-				"org.editLogo",
-				"org.editSettings",
-				"members.view",
-				"members.invite",
-				"members.cancelInvitation",
-				"members.remove",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.delete",
-				"leads.assign",
-				"leads.qualify",
-				"leads.convert",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"contacts.delete",
-				"contacts.assign",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"companies.delete",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.delete",
-				"deals.assign",
-				"deals.changeStage",
-				"notes.view",
-				"notes.viewInternal",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"notes.deleteAny",
-				"notes.pin",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.manage",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"savedViews.createOrg",
-				"savedViews.delete",
-				"pipelines.view",
-				"pipelines.manage",
-				"fieldDefinitions.view",
-				"fieldDefinitions.manage",
-				"ai.use",
-				"ai.manageTools",
-				"ai.viewHistory",
-				"activityLogs.viewOrg",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: false,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await ctx.db.insert("orgRoles", {
-			orgId,
-			name: "Member",
-			description: "Standard access.",
-			permissions: [
-				"members.view",
-				"members.leave",
-				"leads.view",
-				"leads.create",
-				"leads.update",
-				"leads.qualify",
-				"contacts.view",
-				"contacts.create",
-				"contacts.update",
-				"companies.view",
-				"companies.create",
-				"companies.update",
-				"deals.view",
-				"deals.create",
-				"deals.update",
-				"deals.changeStage",
-				"notes.view",
-				"notes.create",
-				"notes.updateOwn",
-				"notes.deleteOwn",
-				"reminders.view",
-				"reminders.create",
-				"reminders.manage",
-				"tags.view",
-				"tags.attach",
-				"savedViews.view",
-				"savedViews.createPersonal",
-				"pipelines.view",
-				"fieldDefinitions.view",
-				"ai.use",
-				"ai.viewHistory",
-				"activityLogs.viewOwn",
-				"notifications.viewOwn",
-				"notifications.markRead",
-			],
-			isSystem: true,
-			isDefault: true,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await ctx.db.insert("orgMembers", {
-			orgId,
-			userId: ctx.userId,
-			roleId: ownerRoleId,
-			joinedAt: now,
-		});
-
-		if (!ctx.user.defaultOrgId) {
-			await ctx.db.patch(ctx.userId, {
-				defaultOrgId: orgId,
-				onboardingCompleted: true,
-				updatedAt: now,
-			});
-		}
-
-		await logActivity(ctx, {
-			orgId,
-			userId: ctx.userId,
-			action: "created",
-			entityType: ENTITY_TYPES.ORG,
-			entityId: orgId,
-			description: `Created organization "${args.name}"`,
-		});
-
-		return orgId;
-	},
-});
+// ─── update — settings page edits ─────────────────────────────────────────────
 
 /**
- * Update org settings (name, slug, currency/timezone). Requires `org.editSettings`.
+ * Update org settings (name, slug, currency/timezone, modules, etc.).
+ * Requires `org.editSettings`.
+ *
+ * Slug + entity-label slugs validated against `RESERVED_SLUGS` (SSOT).
  */
 export const update = orgMutation({
 	args: {
@@ -625,32 +449,10 @@ export const update = orgMutation({
 			if (existing && existing._id !== orgId) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
 		}
 
-		// Validate entity label slugs against reserved route segments
+		// Validate entity label slugs against the SSOT reserved-slug set.
 		if (directUpdates.entityLabels) {
-			const RESERVED_ROUTE_SEGMENTS = [
-				"profile",
-				"settings",
-				"notifications",
-				"join",
-				"dashboard",
-				"app",
-				"help",
-				"support",
-				"docs",
-				"status",
-				"platform",
-				"api",
-				"admin",
-				"billing",
-				"auth",
-				"onboarding",
-				"signin",
-				"signup",
-				"pricing",
-				"portal",
-			];
 			for (const [, label] of Object.entries(directUpdates.entityLabels)) {
-				if (label?.slug && RESERVED_ROUTE_SEGMENTS.includes(label.slug)) {
+				if (label?.slug && RESERVED_SLUGS.has(label.slug.toLowerCase())) {
 					throw new ConvexError(
 						`Entity slug "${label.slug}" conflicts with a reserved route. Choose a different slug.`,
 					);
@@ -662,10 +464,6 @@ export const update = orgMutation({
 		const patchData: Record<string, unknown> = { ...directUpdates, updatedAt: now };
 		if (newSettings) {
 			const org = await ctx.db.get(orgId);
-			// `orgs.settings` is typed as an optional object but the nested
-			// objects we deep-merge (codePrefixes, reminderDefaults) are
-			// optional too. Assert the shape once so both spreads below are
-			// type-safe without repeating the cast.
 			const existing: {
 				codePrefixes?: Record<string, string | undefined>;
 				reminderDefaults?: Record<string, unknown>;
@@ -675,7 +473,6 @@ export const update = orgMutation({
 			patchData.settings = {
 				...existing,
 				...newSettings,
-				// Deep merge nested objects
 				...(newSettings.codePrefixes && {
 					codePrefixes: {
 						...existing.codePrefixes,
@@ -709,6 +506,8 @@ export const update = orgMutation({
 		});
 	},
 });
+
+// ─── Member management ───────────────────────────────────────────────────────
 
 /**
  * Remove a member from the org (soft-delete). Requires `members.remove`.
@@ -755,6 +554,8 @@ export const removeMember = orgMutation({
 		}
 
 		await ctx.db.patch(targetMember._id, { deletedAt: now });
+		// Counter — leaving the active pool.
+		await applyOrgStat(ctx, args.orgId, "members.active", -1);
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -765,7 +566,6 @@ export const removeMember = orgMutation({
 			description: `Removed member from organization`,
 		});
 
-		// Notify the removed user (not the actor)
 		if (args.userId !== ctx.userId) {
 			await sendNotification(ctx, {
 				orgId: args.orgId,
@@ -802,7 +602,6 @@ export const updateMemberRole = orgMutation({
 		if (!targetMember || targetMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 
-		// Validate the new role belongs to this org
 		const newRoleDoc = await ctx.db.get(args.roleId);
 		if (!newRoleDoc || newRoleDoc.orgId !== args.orgId) {
 			throw new ConvexError("Role not found in this organization.");
@@ -862,72 +661,7 @@ export const deleteOrg = orgMutation({
 	},
 });
 
-// ─── Pipeline seeding helper ──────────────────────────────────────────────────
-
-type StageInput = {
-	name: string;
-	color: string;
-	isFinal?: boolean;
-	finalType?: "positive" | "negative" | "neutral";
-	staleAfterDays?: number;
-};
-
-const INDUSTRY_STAGES: Record<string, StageInput[]> = {
-	"real-estate": [
-		{ name: "New Inquiry", color: "#3b82f6" },
-		{ name: "Viewing", color: "#8b5cf6", staleAfterDays: 3 },
-		{ name: "Offer / MOU", color: "#f59e0b", staleAfterDays: 5 },
-		{ name: "Under Contract", color: "#10b981" },
-		{ name: "Closed Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	technology: [
-		{ name: "Prospecting", color: "#3b82f6" },
-		{ name: "Qualified", color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Demo", color: "#f59e0b" },
-		{ name: "Proposal", color: "#f97316", staleAfterDays: 5 },
-		{ name: "Negotiation", color: "#10b981" },
-		{ name: "Closed Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Closed Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	finance: [
-		{ name: "Lead", color: "#3b82f6" },
-		{ name: "Discovery", color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Proposal", color: "#f59e0b" },
-		{ name: "Due Diligence", color: "#f97316" },
-		{ name: "Closed", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-	healthcare: [
-		{ name: "Inquiry", color: "#3b82f6" },
-		{ name: "Assessment", color: "#8b5cf6" },
-		{ name: "Proposal", color: "#f59e0b" },
-		{ name: "Contract", color: "#10b981" },
-		{ name: "Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
-	],
-};
-
-const DEFAULT_STAGE_SET: StageInput[] = [
-	{ name: "New", color: "#3b82f6" },
-	{ name: "Contacted", color: "#8b5cf6", staleAfterDays: 7 },
-	{ name: "Proposal", color: "#f59e0b" },
-	{ name: "Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-	{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
-];
-
-function getDefaultStages(industry: string, orgId: string) {
-	const set: StageInput[] = INDUSTRY_STAGES[industry] ?? DEFAULT_STAGE_SET;
-	return set.map((s, i) => ({
-		id: `stage_${orgId.slice(-6)}_${i}`,
-		name: s.name,
-		order: i,
-		color: s.color,
-		isFinal: s.isFinal,
-		finalType: s.finalType,
-		staleAfterDays: s.staleAfterDays,
-	}));
-}
+// ─── Maintenance ──────────────────────────────────────────────────────────────
 
 /**
  * Reconcile missing permissions on existing `orgRoles` rows.

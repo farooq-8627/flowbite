@@ -9,6 +9,7 @@ import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
+import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generatePersonCode } from "../../../_shared/recordCodes";
@@ -84,6 +85,10 @@ export const create = orgMutation({
 			personCode,
 			description: `Lead created: ${args.displayName}`,
 		});
+
+		// Counter increment (DB-driven dashboard).
+		await applyOrgStat(ctx, args.orgId, "leads.open", +1);
+		await applyOrgStat(ctx, args.orgId, "leads.total", +1);
 
 		if (args.assignedTo && args.assignedTo !== userId) {
 			await sendNotification(ctx, {
@@ -187,12 +192,13 @@ export const convertToContact = orgMutation({
 		});
 
 		// Propagate tags lead → contact so users don't lose labels on convert.
+		// Bounded at 200 — typical lead has 0–10 tags; 200 is generous.
 		const leadTagLinks = await ctx.db
 			.query("entityTags")
 			.withIndex("by_entity", (q) =>
 				q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.leadId),
 			)
-			.collect();
+			.take(200);
 		await Promise.all(
 			leadTagLinks.map((link) =>
 				ctx.db.insert("entityTags", {
@@ -211,6 +217,10 @@ export const convertToContact = orgMutation({
 			contactId,
 			updatedAt: now,
 		});
+
+		// Counter rebalance — lead leaves "open" pool, contact joins "active".
+		await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+		await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -260,6 +270,11 @@ export const softDelete = orgMutation({
 		if (!lead || lead.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
 		await ctx.db.patch(args.leadId, { deletedAt: Date.now(), updatedAt: Date.now() });
+
+		// Counter: only decrement "open" if it WAS still open (not converted, not deleted).
+		if (!lead.deletedAt && !lead.convertedAt) {
+			await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+		}
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

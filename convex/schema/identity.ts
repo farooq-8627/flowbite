@@ -9,6 +9,7 @@
 
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
+import { notificationPreferencesValidator } from "../_shared/notificationKeys";
 import { orgScoped, softDelete, timestamps } from "../_shared/validators";
 
 export const users = defineTable({
@@ -24,33 +25,7 @@ export const users = defineTable({
 	lastActiveAt: v.optional(v.number()),
 	dismissedCards: v.optional(v.array(v.string())),
 	preferredLanguage: v.optional(v.string()),
-	notificationPreferences: v.optional(
-		v.object({
-			// Group: CRM
-			lead_assigned: v.optional(v.boolean()),
-			lead_converted: v.optional(v.boolean()),
-			contact_assigned: v.optional(v.boolean()),
-			deal_assigned: v.optional(v.boolean()),
-			deal_stage_changed: v.optional(v.boolean()),
-			deal_won: v.optional(v.boolean()),
-			deal_stale: v.optional(v.boolean()),
-			// Group: Reminders
-			reminder_due: v.optional(v.boolean()),
-			reminder_overdue: v.optional(v.boolean()),
-			// Group: AI
-			ai_action_completed: v.optional(v.boolean()),
-			ai_workspace_setup: v.optional(v.boolean()),
-			// Group: Team
-			member_invited: v.optional(v.boolean()),
-			member_joined: v.optional(v.boolean()),
-			role_changed: v.optional(v.boolean()),
-			// Group: System
-			billing_trial_ending: v.optional(v.boolean()),
-			billing_suspended: v.optional(v.boolean()),
-			csv_import_complete: v.optional(v.boolean()),
-			csv_import_failed: v.optional(v.boolean()),
-		}),
-	),
+	notificationPreferences: v.optional(notificationPreferencesValidator),
 	platformRole: v.optional(v.literal("super_admin")),
 	preferences: v.optional(
 		v.object({
@@ -156,6 +131,18 @@ export const orgs = defineTable({
 					allowedMimeCategories: v.optional(v.array(v.string())),
 					maxSizeMb: v.optional(v.number()),
 				}),
+			),
+			// Per-tenant rate-limit overrides. Each entry overrides the matching
+			// preset in `_shared/rateLimit.ts::RATE_LIMITS`. Unset = inherit.
+			// Use sparingly — tightening for abusive orgs, loosening for trusted.
+			rateLimits: v.optional(
+				v.array(
+					v.object({
+						scope: v.string(), // e.g. "messages.send"
+						max: v.number(),
+						periodMs: v.number(),
+					}),
+				),
 			),
 		}),
 	),

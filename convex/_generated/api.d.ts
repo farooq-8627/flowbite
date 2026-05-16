@@ -10,9 +10,11 @@
 
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
-import type * as _migrations_cleanup from "../_migrations/cleanup.js";
 import type * as _shared_constants from "../_shared/constants.js";
+import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
+import type * as _shared_notificationKeys from "../_shared/notificationKeys.js";
+import type * as _shared_orgStats from "../_shared/orgStats.js";
 import type * as _shared_permissions_catalog from "../_shared/permissions/catalog.js";
 import type * as _shared_permissions_derive from "../_shared/permissions/derive.js";
 import type * as _shared_permissions_helpers from "../_shared/permissions/helpers.js";
@@ -46,6 +48,9 @@ import type * as crm_fields_pipelines_mutations from "../crm/fields/pipelines/mu
 import type * as crm_fields_pipelines_queries from "../crm/fields/pipelines/queries.js";
 import type * as crm_people_queries from "../crm/people/queries.js";
 import type * as crm_shared_calendar_queries from "../crm/shared/calendar/queries.js";
+import type * as crm_shared_conversations_internal from "../crm/shared/conversations/internal.js";
+import type * as crm_shared_conversations_mutations from "../crm/shared/conversations/mutations.js";
+import type * as crm_shared_conversations_queries from "../crm/shared/conversations/queries.js";
 import type * as crm_shared_messages_mutations from "../crm/shared/messages/mutations.js";
 import type * as crm_shared_messages_queries from "../crm/shared/messages/queries.js";
 import type * as crm_shared_notes_mutations from "../crm/shared/notes/mutations.js";
@@ -54,6 +59,7 @@ import type * as crm_shared_reminders_mutations from "../crm/shared/reminders/mu
 import type * as crm_shared_reminders_queries from "../crm/shared/reminders/queries.js";
 import type * as crm_shared_savedViews_mutations from "../crm/shared/savedViews/mutations.js";
 import type * as crm_shared_savedViews_queries from "../crm/shared/savedViews/queries.js";
+import type * as crm_shared_tags_internal from "../crm/shared/tags/internal.js";
 import type * as crm_shared_tags_mutations from "../crm/shared/tags/mutations.js";
 import type * as crm_shared_tags_queries from "../crm/shared/tags/queries.js";
 import type * as crm_shared_timeline_queries from "../crm/shared/timeline/queries.js";
@@ -74,6 +80,7 @@ import type * as orgs_helpers from "../orgs/helpers.js";
 import type * as orgs_mutations from "../orgs/mutations.js";
 import type * as orgs_queries from "../orgs/queries.js";
 import type * as orgs_templates_fields from "../orgs/templates/fields.js";
+import type * as orgs_templates_pipelineStages from "../orgs/templates/pipelineStages.js";
 import type * as schema_ai from "../schema/ai.js";
 import type * as schema_crmEntities from "../schema/crmEntities.js";
 import type * as schema_crmFields from "../schema/crmFields.js";
@@ -94,9 +101,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
-  "_migrations/cleanup": typeof _migrations_cleanup;
   "_shared/constants": typeof _shared_constants;
+  "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;
+  "_shared/notificationKeys": typeof _shared_notificationKeys;
+  "_shared/orgStats": typeof _shared_orgStats;
   "_shared/permissions/catalog": typeof _shared_permissions_catalog;
   "_shared/permissions/derive": typeof _shared_permissions_derive;
   "_shared/permissions/helpers": typeof _shared_permissions_helpers;
@@ -130,6 +139,9 @@ declare const fullApi: ApiFromModules<{
   "crm/fields/pipelines/queries": typeof crm_fields_pipelines_queries;
   "crm/people/queries": typeof crm_people_queries;
   "crm/shared/calendar/queries": typeof crm_shared_calendar_queries;
+  "crm/shared/conversations/internal": typeof crm_shared_conversations_internal;
+  "crm/shared/conversations/mutations": typeof crm_shared_conversations_mutations;
+  "crm/shared/conversations/queries": typeof crm_shared_conversations_queries;
   "crm/shared/messages/mutations": typeof crm_shared_messages_mutations;
   "crm/shared/messages/queries": typeof crm_shared_messages_queries;
   "crm/shared/notes/mutations": typeof crm_shared_notes_mutations;
@@ -138,6 +150,7 @@ declare const fullApi: ApiFromModules<{
   "crm/shared/reminders/queries": typeof crm_shared_reminders_queries;
   "crm/shared/savedViews/mutations": typeof crm_shared_savedViews_mutations;
   "crm/shared/savedViews/queries": typeof crm_shared_savedViews_queries;
+  "crm/shared/tags/internal": typeof crm_shared_tags_internal;
   "crm/shared/tags/mutations": typeof crm_shared_tags_mutations;
   "crm/shared/tags/queries": typeof crm_shared_tags_queries;
   "crm/shared/timeline/queries": typeof crm_shared_timeline_queries;
@@ -158,6 +171,7 @@ declare const fullApi: ApiFromModules<{
   "orgs/mutations": typeof orgs_mutations;
   "orgs/queries": typeof orgs_queries;
   "orgs/templates/fields": typeof orgs_templates_fields;
+  "orgs/templates/pipelineStages": typeof orgs_templates_pipelineStages;
   "schema/ai": typeof schema_ai;
   "schema/crmEntities": typeof schema_crmEntities;
   "schema/crmFields": typeof schema_crmFields;

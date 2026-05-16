@@ -18,6 +18,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, it } from "vitest";
 import { api } from "./_generated/api";
+import { getDefaultPermissionsForRole } from "./_shared/permissions/derive";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -50,32 +51,11 @@ async function seedOrg(t: ReturnType<typeof convexTest>, userId: string) {
 			createdAt: now,
 			updatedAt: now,
 		});
-		// Seed owner role
+		// Permissions come from the SSOT catalog — never hardcode.
 		const ownerRoleId = await ctx.db.insert("orgRoles", {
 			orgId: id,
 			name: "Owner",
-			permissions: [
-				"leads.create",
-				"leads.view",
-				"leads.update",
-				"leads.delete",
-				"leads.convert",
-				"contacts.create",
-				"contacts.view",
-				"contacts.update",
-				"contacts.delete",
-				"deals.create",
-				"deals.view",
-				"deals.update",
-				"deals.delete",
-				"deals.changeStage",
-				"deals.close",
-				"notes.view",
-				"notes.viewInternal",
-				"notes.create",
-				"activityLogs.viewOrg",
-				"activityLogs.viewOwn",
-			],
+			permissions: [...getDefaultPermissionsForRole("Owner")],
 			isSystem: true,
 			isDefault: false,
 			createdAt: now,
@@ -98,8 +78,8 @@ async function seedViewerMember(t: ReturnType<typeof convexTest>, orgId: string,
 		const viewerRoleId = await ctx.db.insert("orgRoles", {
 			orgId,
 			name: "Viewer",
-			permissions: ["leads.view", "contacts.view", "deals.view"],
-			isSystem: false,
+			permissions: [...getDefaultPermissionsForRole("Viewer")],
+			isSystem: true,
 			isDefault: false,
 			createdAt: now,
 			updatedAt: now,

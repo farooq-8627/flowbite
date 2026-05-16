@@ -92,3 +92,35 @@ export const files = defineTable({
 	.index("by_org_scope_field", ["orgId", "scope", "scopeId", "fieldKey"])
 	.index("by_storageId", ["storageId"])
 	.index("by_uploader", ["orgId", "uploadedBy"]);
+
+/**
+ * Denormalised aggregate counters per org. One row per (orgId, key).
+ *
+ * Production-grade replacement for the older "scan + reduce" dashboard query
+ * pattern. Every CRUD that should affect a count calls `applyOrgStat()` from
+ * `_shared/orgStats.ts`. Reads are O(1) per key.
+ *
+ * Keys (extend as new modules ship):
+ *   - "members.active"        — active orgMembers count (excludes soft-deleted)
+ *   - "leads.open"            — leads where !deletedAt && !convertedAt
+ *   - "leads.total"           — every lead row created (audit, never decremented)
+ *   - "contacts.active"       — contacts where !deletedAt
+ *   - "deals.open"            — deals where !deletedAt && !wonAt && !lostAt
+ *   - "deals.won"             — closed-as-positive count
+ *   - "deals.lost"            — closed-as-negative count
+ *   - "deals.pipelineValue"   — sum(value) of open deals (currency-naïve, see note)
+ *   - "companies.active"      — companies where !deletedAt
+ *
+ * Currency note: pipelineValue is summed in the org's `defaultCurrency`. We
+ * do not multi-currency-convert; if a deal stores a different currency, its
+ * value still contributes — matches existing behaviour.
+ *
+ * Drift-recovery: a `recomputeOrgStats` internal mutation rebuilds the row
+ * from the source-of-truth tables; called from a sparse cron in Phase 3.
+ */
+export const orgStats = defineTable({
+	...orgScoped,
+	key: v.string(),
+	value: v.number(),
+	updatedAt: v.number(),
+}).index("by_org_and_key", ["orgId", "key"]);

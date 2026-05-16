@@ -20,6 +20,7 @@
 import { v } from "convex/values";
 import { authenticatedQuery, orgQuery, superAdminQuery } from "../_functions/authenticated";
 import { internalQuery } from "../_generated/server";
+import { readAllOrgStats } from "../_shared/orgStats";
 import { getOrgById, getUserOrgs } from "./helpers";
 
 /**
@@ -288,7 +289,17 @@ export const getEntityLabels = orgQuery({
 
 /**
  * Get dashboard stats for the current org.
- * Single parallel query — no N+1. Returns real CRM metrics.
+ *
+ * READS DENORMALISED COUNTERS (production-grade)
+ * ──────────────────────────────────────────────
+ * The aggregate counts live in the `orgStats` table, written by every CRM
+ * mutation via `applyOrgStat`. This query is O(1 + members) — no scan over
+ * leads/contacts/deals. Drift recovery via the `_shared/orgStats:recompute`
+ * internal action (Phase 3 cron stub).
+ *
+ * Recent activity stays as a small index lookup on activityLogs.
+ * Reminders-due-today still reads off `by_org_and_status_and_due` — accurate
+ * to the minute because reminders are time-based, not counter-friendly.
  */
 export const getDashboardStats = orgQuery({
 	args: { orgId: v.id("orgs") },
@@ -305,55 +316,39 @@ export const getDashboardStats = orgQuery({
 		if (!org) return null;
 
 		const now = Date.now();
+		const oneDayMs = 86_400_000;
 
-		const [memberCount, leads, contacts, deals, remindersDueToday, recentActivity] =
-			await Promise.all([
-				ctx.db
-					.query("orgMembers")
-					.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
-					.take(200)
-					.then((m) => m.filter((x) => x.deletedAt === undefined).length),
-				ctx.db
-					.query("leads")
-					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-					.take(1000)
-					.then((rows) => rows.filter((r) => !r.deletedAt && !r.convertedAt)),
-				ctx.db
-					.query("contacts")
-					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-					.take(1000)
-					.then((rows) => rows.filter((r) => !r.deletedAt)),
-				ctx.db
-					.query("deals")
-					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-					.take(1000)
-					.then((rows) => rows.filter((r) => !r.deletedAt)),
-				ctx.db
-					.query("reminders")
-					.withIndex("by_org_and_due", (q) =>
-						q.eq("orgId", args.orgId).lte("dueAt", now + 86_400_000),
-					)
-					.take(100)
-					.then((rows) => rows.filter((r) => r.status === "pending").length),
-				ctx.db
-					.query("activityLogs")
-					.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
-					.order("desc")
-					.take(10),
-			]);
-
-		const openDeals = deals.filter((d) => !d.wonAt && !d.lostAt);
-		const pipelineValue = openDeals.reduce((sum, d) => sum + (d.value ?? 0), 0);
+		const [stats, remindersDueToday, recentActivity] = await Promise.all([
+			readAllOrgStats(ctx, args.orgId),
+			ctx.db
+				.query("reminders")
+				.withIndex("by_org_and_status_and_due", (q) =>
+					q
+						.eq("orgId", args.orgId)
+						.eq("status", "pending")
+						.lte("dueAt", now + oneDayMs),
+				)
+				.take(100)
+				.then((rows) => rows.length),
+			ctx.db
+				.query("activityLogs")
+				.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
+				.order("desc")
+				.take(10),
+		]);
 
 		return {
 			orgName: org.name,
 			industry: org.industry ?? "default",
 			plan: org.plan,
-			memberCount,
-			leadCount: leads.length,
-			contactCount: contacts.length,
-			dealCount: openDeals.length,
-			pipelineValue,
+			memberCount: stats["members.active"] ?? 0,
+			leadCount: stats["leads.open"] ?? 0,
+			contactCount: stats["contacts.active"] ?? 0,
+			dealCount: stats["deals.open"] ?? 0,
+			pipelineValue: stats["deals.pipelineValue"] ?? 0,
+			dealsWon: stats["deals.won"] ?? 0,
+			dealsLost: stats["deals.lost"] ?? 0,
+			companiesCount: stats["companies.active"] ?? 0,
 			currency: org.settings?.defaultCurrency ?? "USD",
 			remindersDueToday,
 			recentActivity,

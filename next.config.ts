@@ -26,10 +26,11 @@ export default withNextIntl(
 	withSentryConfig(nextConfig, {
 		// For all available options, see:
 		// https://www.npmjs.com/package/@sentry/webpack-plugin#options
-
-		org: "reimaginy",
-
-		project: "javascript-nextjs",
+		// Org/project come from env so the project doesn't ship with one team's
+		// hardcoded slug. Source-map upload is skipped if either is unset.
+		org: process.env.SENTRY_ORG,
+		project: process.env.SENTRY_PROJECT,
+		authToken: process.env.SENTRY_AUTH_TOKEN,
 
 		// Only print logs for uploading source maps in CI
 		silent: !process.env.CI,
@@ -39,6 +40,12 @@ export default withNextIntl(
 
 		// Upload a larger set of source maps for prettier stack traces (increases build time)
 		widenClientFileUpload: true,
+
+		// Skip source-map upload entirely if Sentry isn't configured for this build.
+		disableLogger: true,
+		sourcemaps: {
+			disable: !process.env.SENTRY_AUTH_TOKEN,
+		},
 
 		// Route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
 		// This can increase your server load as well as your hosting bill.

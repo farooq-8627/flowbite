@@ -15,7 +15,7 @@ import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -26,6 +26,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
+import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { CompanyDrawer } from "@/core/entities/_entities/companies/components/CompanyDrawer";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
@@ -195,8 +196,92 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 			if (!grouped[key]) grouped[key] = [];
 			grouped[key].push(item);
 		}
+		// Sort each column by sortOrder asc with search-match boost so
+		// dragged-to-position cards stick.
+		const matched = rankedItems.matchedIds;
+		for (const key of Object.keys(grouped)) {
+			grouped[key].sort((a, b) => {
+				const aMatch = matched.has(a.id);
+				const bMatch = matched.has(b.id);
+				if (aMatch !== bMatch) return aMatch ? -1 : 1;
+				const aKey =
+					(a as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((a as { _creationTime?: number })._creationTime ?? 0);
+				const bKey =
+					(b as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((b as { _creationTime?: number })._creationTime ?? 0);
+				return aKey - bKey;
+			});
+		}
 		return grouped;
-	}, [rankedItems.items, boardColumns, groupBy]);
+	}, [rankedItems.items, rankedItems.matchedIds, boardColumns, groupBy]);
+
+	// Drag card → persist position via sortOrder + (when groupBy is one of
+	// the writable axes) update the column-field. Cross-column move and
+	// in-column reorder dispatch through the same callback.
+	const updateCompany = useMutation(api.crm.entities.companies.mutations.update);
+	const handleCardMove = useCallback(
+		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
+			if (!orgId) return;
+			const destBefore = itemsByColumnId[toCol] ?? [];
+			let itemsAfter: typeof destBefore;
+			if (fromCol === toCol) {
+				const oldIndex = destBefore.findIndex((it) => it.id === itemId);
+				if (oldIndex < 0) {
+					itemsAfter = destBefore;
+				} else {
+					const copy = destBefore.slice();
+					const [moved] = copy.splice(oldIndex, 1);
+					copy.splice(newIndex, 0, moved);
+					itemsAfter = copy;
+				}
+			} else {
+				const movedItem = (rankedItems.items ?? []).find((it) => it.id === itemId);
+				if (!movedItem) return;
+				const copy = destBefore.slice();
+				copy.splice(newIndex, 0, movedItem as (typeof destBefore)[number]);
+				itemsAfter = copy;
+			}
+			const sortOrder = computeSortOrderForDrop(
+				itemsAfter as Array<{ id: string; sortOrder?: number; _creationTime?: number }>,
+				newIndex,
+			);
+
+			try {
+				const baseArgs = {
+					orgId,
+					companyId: itemId as Id<"companies">,
+					sortOrder,
+				};
+				if (fromCol === toCol) {
+					await updateCompany(baseArgs);
+				} else if (groupBy === "industry") {
+					await updateCompany({
+						...baseArgs,
+						industry: toCol === "uncategorized" ? undefined : toCol,
+					});
+				} else if (groupBy === "assignedTo") {
+					await updateCompany({
+						...baseArgs,
+						assignedTo: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"users">),
+					});
+				} else if (groupBy === "size") {
+					await updateCompany({
+						...baseArgs,
+						size: toCol === NO_GROUP_KEY ? undefined : toCol,
+					});
+				} else {
+					// Custom groupBy — only persist position.
+					await updateCompany(baseArgs);
+				}
+			} catch (err) {
+				toast.error("Couldn't update", {
+					description: err instanceof Error ? err.message : undefined,
+				});
+			}
+		},
+		[orgId, updateCompany, groupBy, itemsByColumnId, rankedItems.items],
+	);
 
 	// List columns
 	const columns: ColumnDef<CompanyRow, unknown>[] = useMemo(() => {
@@ -433,7 +518,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 						highlightEpoch={flashEpoch}
 					/>
 				)}
-				onCardMove={async () => {}}
+				onCardMove={handleCardMove}
 				onColumnReorder={onColumnReorder}
 				emptyTitle={`No ${labels.company.plural.toLowerCase()} yet`}
 				emptyDescription={`Add your first ${labels.company.singular.toLowerCase()} to get started.`}

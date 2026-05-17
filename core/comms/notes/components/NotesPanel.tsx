@@ -3,11 +3,16 @@
 /**
  * NotesPanel — embedded sticky board for an entity tab.
  *
- * Used inside Profile / Deal / Company tabs. Self-contained:
+ * Used inside Profile / Deal / Company / Project tabs. Self-contained:
  *   - Loads notes for `(entityType, entityId)` via `useNotesForEntity`.
  *   - Loads org members for the author map.
  *   - Loads current user + membership for RBAC.
- *   - Renders a single category Kanban with per-column +-button.
+ *   - Renders `NotesSingleBoard` (single canvas, sticky-note layout).
+ *
+ * Cards inside this embed expose BOTH the category dot picker and the
+ * entity-attach `+` button (`pickers="both"`) — there's no column-based
+ * filtering here, so the user picks category from the card and can
+ * re-attach the note to a different record from the same place.
  *
  * Adding a note here from a profile tab automatically appears on the
  * org-wide page — both views read the same `notes` table.
@@ -20,7 +25,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { useNoteCategories, useNotesForEntity } from "../hooks";
-import { NotesCategoryKanban } from "./NotesCategoryKanban";
+import { NotesSingleBoard } from "./NotesSingleBoard";
 
 export interface NotesPanelProps {
 	entityType: string;
@@ -51,9 +56,9 @@ export function NotesPanel({ entityType, entityId, personCode, className }: Note
 	const permissions = (myMembership?.permissions ?? []) as ReadonlyArray<string>;
 	const canCreate = permissions.includes("notes.create");
 
-	// Auto-focus claim mirrors NotesView. The kanban hands us the new id when
-	// a column `+` button creates a card; we forward it back through
-	// `autoFocusNoteId`, and clear it once NoteCard signals consumed.
+	// Auto-focus claim: the single board hands us the new id when the `+`
+	// button creates a card; we forward it back through `autoFocusNoteId`
+	// and clear it once `NoteCard` signals consumed.
 	const [autoFocusNoteId, setAutoFocusNoteId] = useState<string | null>(null);
 
 	return (
@@ -64,7 +69,7 @@ export function NotesPanel({ entityType, entityId, personCode, className }: Note
 				</div>
 			)}
 			<div className="flex min-h-[400px] min-w-0 flex-1">
-				<NotesCategoryKanban
+				<NotesSingleBoard
 					notes={notes}
 					categories={categories}
 					authorsById={authorsById}

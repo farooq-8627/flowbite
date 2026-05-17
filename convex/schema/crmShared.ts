@@ -91,13 +91,10 @@ export const noteCategories = defineTable({
  *     seeded; in steady-state every row has one (set by `notes.create` if the
  *     caller didn't pass it). The 2026-05-17 migration backfills every legacy
  *     row from the old `color` enum.
- *   - `color` (optional, deprecated) — legacy fixed enum. KEPT in the schema
- *     so existing rows still validate. The migration can clear it after
- *     `categoryId` is populated; consumers MUST NOT read this field.
- *   - `type` (optional, deprecated) — legacy semantic classification. Same
- *     deal as `color`: removed from the public API; only kept so legacy rows
- *     pass schema validation until the cleanup migration finishes.
  *   - `title` (optional) — short label (≤80 chars). Most cards are body-only.
+ *   - The legacy `color` + `type` enum fields were dropped from the schema
+ *     on 2026-05-17 after the cleanup migration zeroed them out. Categories
+ *     are the single axis now.
  *
  * For chat-style messages between users (or AI on-behalf), use the dedicated
  * `messages` table — never repurpose this one.
@@ -110,32 +107,24 @@ export const notes = defineTable({
 	title: v.optional(v.string()),
 	content: v.string(),
 	categoryId: v.optional(v.id("noteCategories")),
-	/** @deprecated use `categoryId`. Kept optional for legacy rows + migration. */
-	color: v.optional(
-		v.union(
-			v.literal("yellow"),
-			v.literal("blue"),
-			v.literal("green"),
-			v.literal("pink"),
-			v.literal("purple"),
-			v.literal("gray"),
-		),
-	),
-	/** @deprecated removed in v2. Kept optional for legacy rows + migration. */
-	type: v.optional(
-		v.union(
-			v.literal("general"),
-			v.literal("follow_up"),
-			v.literal("blocker"),
-			v.literal("decision"),
-			v.literal("idea"),
-			v.literal("ai_summary"),
-		),
-	),
 	authorId: v.id("users"),
 	authorType: v.string(),
 	isPinned: v.boolean(),
 	isInternal: v.boolean(),
+	/**
+	 * Free-position kanban order, ascending = top of column.
+	 *
+	 * Optional in the schema so legacy rows pass validation while the
+	 * `_migrations/seedSortOrder.ts` backfill populates them. Once every
+	 * row carries a value, the field is treated as required by the UI
+	 * (queries fall back to `-createdAt` when absent — same visible order).
+	 *
+	 * Allocation strategy: gap-based integers (multiples of 1024). Inserting
+	 * between A=1024 and B=2048 gives K=1536 (one mutation, no batch
+	 * rewrites). When two neighbours are adjacent (gap < 2), the column is
+	 * cheap to renumber on the next move.
+	 */
+	sortOrder: v.optional(v.number()),
 	embedding: v.optional(v.array(v.float64())),
 	...timestamps,
 })

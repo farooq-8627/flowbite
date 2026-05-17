@@ -37,6 +37,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
+import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
 import { getStatusColor, LEAD_STATUSES } from "@/core/entities/shared/config/defaults";
@@ -368,42 +369,116 @@ export function LeadsView(_props: { orgSlug: string }) {
 					grouped[tag.name].push(item);
 				}
 			}
-			return grouped;
+		} else {
+			for (const item of rankedItems.items) {
+				const raw = (item as Record<string, unknown>)[groupBy];
+				const key = raw ? String(raw) : NO_GROUP_KEY;
+				if (!grouped[key]) grouped[key] = [];
+				grouped[key].push(item);
+			}
 		}
 
-		for (const item of rankedItems.items) {
-			const raw = (item as Record<string, unknown>)[groupBy];
-			const key = raw ? String(raw) : NO_GROUP_KEY;
-			if (!grouped[key]) grouped[key] = [];
-			grouped[key].push(item);
+		// Sort each column by sortOrder (asc) so dragged-to-position cards
+		// show up exactly where the user dropped them. `rankBySearch`
+		// already floats search matches to the top; we preserve that for
+		// the matched IDs, then fall back to sortOrder for the rest.
+		const matched = rankedItems.matchedIds;
+		for (const key of Object.keys(grouped)) {
+			grouped[key].sort((a, b) => {
+				const aMatch = matched.has(a.id);
+				const bMatch = matched.has(b.id);
+				if (aMatch !== bMatch) return aMatch ? -1 : 1;
+				const aKey =
+					(a as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((a as { _creationTime?: number })._creationTime ?? 0);
+				const bKey =
+					(b as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((b as { _creationTime?: number })._creationTime ?? 0);
+				return aKey - bKey;
+			});
 		}
 		return grouped;
-	}, [rankedItems.items, boardColumns, groupBy, tagsByEntityId]);
+	}, [rankedItems.items, rankedItems.matchedIds, boardColumns, groupBy, tagsByEntityId]);
 
-	// Drag card → update whichever field is the current groupBy
+	// Drag card → update whichever field is the current groupBy + persist
+	// the dropped position (sortOrder). Free-position semantics: the user
+	// can drop a card at any index inside any column, including reordering
+	// within the same column. Cross-column move and in-column reorder are
+	// dispatched through the same mutation — the kanban primitive emits
+	// (itemId, fromCol, toCol, newIndex) for both. The destination column's
+	// post-drop items array is reconstructed from `itemsByColumnId` so we
+	// can compute a midpoint sortOrder between the dropped card's new
+	// neighbours.
 	const handleCardMove = useCallback(
-		async (itemId: string, _from: string, to: string) => {
+		async (
+			itemId: string,
+			fromCol: string,
+			toCol: string,
+			newIndex: number,
+		) => {
 			if (!orgId) return;
+			// Reconstruct the destination column AFTER the drop so we can
+			// read the two cards on either side of `newIndex`. The kanban
+			// primitive has already mutated its visible state via
+			// `arrayMove`; we replicate that here without mutating React
+			// state (purely for the neighbour lookup).
+			const destBefore = itemsByColumnId[toCol] ?? [];
+			let itemsAfter: typeof destBefore;
+			if (fromCol === toCol) {
+				const oldIndex = destBefore.findIndex((it) => it.id === itemId);
+				if (oldIndex < 0) {
+					itemsAfter = destBefore;
+				} else {
+					const copy = destBefore.slice();
+					const [moved] = copy.splice(oldIndex, 1);
+					copy.splice(newIndex, 0, moved);
+					itemsAfter = copy;
+				}
+			} else {
+				const movedItem = (rankedItems.items ?? []).find((it) => it.id === itemId);
+				if (!movedItem) return;
+				const copy = destBefore.slice();
+				copy.splice(newIndex, 0, movedItem as (typeof destBefore)[number]);
+				itemsAfter = copy;
+			}
+
+			// Compute the midpoint sortOrder so the card sticks at the
+			// dropped position when the page re-renders from a fresh query
+			// result.
+			const sortOrder = computeSortOrderForDrop(
+				itemsAfter as Array<{ id: string; sortOrder?: number; _creationTime?: number }>,
+				newIndex,
+			);
+
 			try {
-				if (groupBy === "status") {
-					await updateLead({ orgId, leadId: itemId as Id<"leads">, status: to });
+				const baseArgs = {
+					orgId,
+					leadId: itemId as Id<"leads">,
+					sortOrder,
+				};
+				if (fromCol === toCol) {
+					// In-column reorder — only sortOrder changes.
+					await updateLead(baseArgs);
+				} else if (groupBy === "status") {
+					await updateLead({ ...baseArgs, status: toCol });
 				} else if (groupBy === "assignedTo") {
 					await updateLead({
-						orgId,
-						leadId: itemId as Id<"leads">,
-						assignedTo: to === NO_GROUP_KEY ? undefined : (to as Id<"users">),
+						...baseArgs,
+						assignedTo: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"users">),
 					});
 				} else if (groupBy === "source") {
-					await updateLead({ orgId, leadId: itemId as Id<"leads">, source: to });
+					await updateLead({ ...baseArgs, source: toCol });
+				} else {
+					// Custom groupBy — only persist position, not the field.
+					await updateLead(baseArgs);
 				}
-				// Unknown/custom groupBy — no-op (drag is visual only).
 			} catch (err) {
 				toast.error("Couldn't update", {
 					description: err instanceof Error ? err.message : undefined,
 				});
 			}
 		},
-		[orgId, updateLead, groupBy],
+		[orgId, updateLead, groupBy, itemsByColumnId, rankedItems.items],
 	);
 
 	const leadLookup = useMemo(() => {

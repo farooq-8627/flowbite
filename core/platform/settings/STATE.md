@@ -1,7 +1,7 @@
 # Settings — State
 
 > Updated: 2026-05-17
-> Status: ~93% Complete — dynamic entity labels wired through every settings group; Module Visibility shipped; **Note Categories editor shipped**.
+> Status: ~94% Complete — dynamic entity labels wired through every settings group; Module Visibility shipped; **Note Categories editor shipped**; **CRM group absorbed Notes/Reminders/Follow-ups/Timeline** (Notes top-level group removed).
 
 ## ✅ Completed
 
@@ -16,7 +16,8 @@
 | RoleEditor | `components/groups/team/RoleEditor.tsx` | ✅ PermissionMatrix calls `useEntityLabels()` + `getPermissionModules(labels)` — every permission label follows the workspace's renamed entities. Labels bind to checkboxes via htmlFor. |
 | permissions-catalog | `config/permissions-catalog.ts` | ✅ Exports `getPermissionModules(labels)` factory. Static `PERMISSION_MODULES` kept as English-default fallback. |
 | settings-sections | `config/settings-sections.ts` | ✅ Exports `getSettingsSections(labels)` factory. Adds `workspace.modules` entry. Descriptions + keywords interpolate current labels so search matches both the English defaults AND the renamed terms. |
-| CRMGroup | `components/groups/CRMGroup.tsx` | Tabs + Tags description already dynamic. Keydown handler refactored to block statement (no comma operator). Now mounts `NoteCategoriesSection`. |
+| CRMGroup | `components/groups/CRMGroup.tsx` | ✅ Rewritten 2026-05-17 to absorb the deleted top-level Notes group: thin tabs at top → Tags / Notes / Reminders / Follow-ups / Timeline. Each tab renders one section (id prefixed `notes.*` for cross-cutting concerns to keep deep-links + search keywords stable). Wires `shell:section-active` / `shell:section-requested` like `ModulesGroup`. Tags extracted to `crm/TagsSection.tsx`. |
+| TagsSection (CRM) | `components/groups/crm/TagsSection.tsx` | ✅ Extracted from old `CRMGroup.tsx`. Description still reflects the workspace's renamed entity labels (e.g. "inquiries, clients, and opportunities"). |
 | **NoteCategoriesSection** *(new 2026-05-17)* | `components/groups/crm/NoteCategoriesSection.tsx` | Owners/admins manage the org's sticky-note categories — create / rename / recolour / archive / set default / reorder via chevrons. Permission gate: `notes.categories.manage`. Dynamic text-color override (auto-derived from luminance unless set). |
 | AIGroup | `components/groups/AIGroup.tsx` | Context + usage |
 | AppearanceGroup | `components/groups/AppearanceGroup.tsx` | Theme + layout cookies |
@@ -48,3 +49,11 @@
 - **Search keywords inherit both spellings.** `getSettingsSections(labels)` seeds keywords with *both* the English defaults and the current renamed terms, so Fuse still finds "leads" for muscle-memory while also matching "inquiries" after a rename.
 - **Permission keys did NOT change.** The backend contract (`leads.view`, `contacts.create`, etc.) is preserved. Only the UI strings follow the workspace's renames.
 - **Biome config is targeted, not a blanket disable.** Overrides in `biome.json` exempt only the cases where the rule is architecturally wrong for the file (shadcn-gen UI, logger utility, test fixtures, CSS theme enforcement) — with clear scope comments in the source. All our own code is lint-clean without suppressions except where truly necessary (Kanban primitive generic slot, react-hook-form/zod bridge).
+
+## Architecture Notes (2026-05-17 — CRM absorbs Notes group)
+
+- **One settings group for cross-cutting CRM concerns.** The standalone "Notes" group was removed; its four sub-sections (Note Categories, Reminder Defaults, Follow-up Defaults, Timeline Display) were folded into the existing **CRM** group as additional tabs alongside Tags. CRMGroup now uses the same `nuqs ?tab=…` + thin-button-row pattern as `ModulesGroup` and the old `NotesGroup`, so the visual + URL contracts are identical.
+- **Section ids are NOT renamed.** The folded sections keep their `notes.*` prefix (`notes.categories`, `notes.reminders`, `notes.followups`, `notes.timeline`). Only the **`groupId`** in `settings-sections.ts` flipped from `"notes"` to `"crm"`. Reasoning: deep-links (`/settings?group=notes` → user bookmarks), the topnav sub-group pill highlight (`shell:section-active` event payload), and search-index keywords all reference these ids — renaming them would break those without adding any value. The historical prefix is now just a stable identity, not a group label.
+- **`SettingsGroupId` lost `"notes"`.** Anyone navigating to `?group=notes` now falls through to `DEFAULT_GROUP` ("workspace"). The settings-search and topnav hide the group entry entirely. No backend implications — this is pure UI taxonomy.
+- **`NotesGroup.tsx` deleted; `TagsSection` extracted.** The CRMGroup file was getting too dense (Tags inline + Note tabs + Reminders + …), so Tags now lives at `groups/crm/TagsSection.tsx` and CRMGroup is purely a tab-dispatcher. Each `notes.*` sub-section file under `groups/notes/` was untouched — they import their `id`s from the section registry, not from the group, so moving them under CRM was a one-line `groupId` change.
+- **Notes view: icon-toggle, not text tabs.** `NotesView.tsx`'s "Category | Board" text-pill (`NotesViewTabs`) was replaced with a two-icon pill (`NotesViewToggle`: `Columns3Icon` for Category, `LayoutGridIcon` for Board), styled identically to the shared `ViewToggleIcons` widget. The shared `ViewToggleIcons` is hidden on this page by passing `views={[]}` to `EntityPageLayout` — `EntityPageLayout` was updated to skip rendering the view-toggle when `views.length === 0`, so other consumers are unaffected.

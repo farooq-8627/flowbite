@@ -1,322 +1,166 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
-import { Plus, X } from "lucide-react";
-import { useState } from "react";
-import { toast } from "sonner";
-import { z } from "zod/v4";
-import { Badge } from "@/components/ui/badge";
+/**
+ * CRMGroup — Settings → CRM.
+ *
+ * Mirrors `ModulesGroup`'s sub-tab pattern: a thin horizontal tab toolbar at
+ * the top of the group, where each tab maps to ONE sub-section of the
+ * CRM-wide settings family. Selecting a tab renders only that sub-section's
+ * editor.
+ *
+ *   • Tags        — shared CRM tags (legacy CRM-group content)
+ *   • Notes       — sticky-note categories editor
+ *   • Reminders   — workspace defaults for the reminders system
+ *   • Follow-ups  — placeholder for the upcoming Follow-ups module
+ *   • Timeline    — placeholder for the upcoming Timeline module
+ *
+ * The Notes / Reminders / Follow-ups / Timeline tabs used to live under their
+ * own top-level "Notes" settings group; they were folded into CRM (2026-05-17)
+ * because they're cross-cutting CRM-record concerns — there's no clean
+ * separation between "notes" and the records they hang off. Each section id
+ * stays prefixed with `notes.*` (e.g. `notes.categories`, `notes.reminders`)
+ * so existing deep-links, the topnav pill highlight, and search keywords
+ * keep working.
+ *
+ * The active tab is persisted in the URL as `?tab=<slug>` (via `nuqs`), same
+ * convention as `ModulesGroup`. An unknown slug falls back to "tags".
+ */
+
+import { useQuery } from "convex/react";
+import { parseAsStringEnum, useQueryState } from "nuqs";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useSettingsForm } from "../../hooks/useSettingsForm";
+import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
-import { SettingsFormRow } from "../shared/SettingsFormRow";
-import { SettingsSaveButton } from "../shared/SettingsSaveButton";
-import { SettingsSection } from "../shared/SettingsSection";
-import { NoteCategoriesSection } from "./crm/NoteCategoriesSection";
+import { NoteCategoriesSection } from "./notes/NoteCategoriesSection";
+import { RemindersSection } from "./notes/RemindersSection";
+import { FollowupsSection } from "./notes/FollowupsSection";
+import { TimelineSection } from "./notes/TimelineSection";
+import { TagsSection } from "./crm/TagsSection";
 
-// ────────────────────────────────────────────────────────────────────────────
-// ────────────────────────────────────────────────────────────────────────────
-// Tags (manage)
-// ────────────────────────────────────────────────────────────────────────────
+const CRM_TABS = ["tags", "notes", "reminders", "followups", "timeline"] as const;
+type CRMTab = (typeof CRM_TABS)[number];
 
-// 18 curated palette colours + a native custom colour picker fallback. Pairs
-// are evenly spaced across the hue wheel so adjacent tags remain distinguishable.
-const TAG_COLORS = [
-	"#ef4444", // red
-	"#f97316", // orange
-	"#f59e0b", // amber
-	"#eab308", // yellow
-	"#84cc16", // lime
-	"#22c55e", // green
-	"#10b981", // emerald
-	"#14b8a6", // teal
-	"#06b6d4", // cyan
-	"#0ea5e9", // sky
-	"#3b82f6", // blue
-	"#6366f1", // indigo
-	"#8b5cf6", // violet
-	"#a855f7", // purple
-	"#d946ef", // fuchsia
-	"#ec4899", // pink
-	"#f43f5e", // rose
-	"#64748b", // slate
-];
+const TAB_LABELS: Record<CRMTab, string> = {
+	tags: "Tags",
+	notes: "Notes",
+	reminders: "Reminders",
+	followups: "Follow-ups",
+	timeline: "Timeline",
+};
 
-function TagsSection({
-	orgId,
-	labels,
-}: {
-	orgId: Id<"orgs">;
-	labels: ReturnType<typeof resolveEntityLabels>;
-}) {
-	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, { orgId });
-	const create = useMutation(api.crm.shared.tags.mutations.create);
-	const remove = useMutation(api.crm.shared.tags.mutations.remove);
-
-	const [newTag, setNewTag] = useState("");
-	const [newColor, setNewColor] = useState(TAG_COLORS[0]);
-
-	const handleCreate = async () => {
-		const name = newTag.trim();
-		if (!name) return;
-		try {
-			await create({ orgId, name, color: newColor });
-			toast.success(`Added tag "${name}"`);
-			setNewTag("");
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to add tag");
-		}
-	};
-
-	// Dynamic description — "leads, contacts, and deals" reflects the org's
-	// renamed labels (e.g. "inquiries, clients, and opportunities").
-	const tagsDescription = `Shared tags for categorizing ${labels.lead.plural.toLowerCase()}, ${labels.contact.plural.toLowerCase()}, and ${labels.deal.plural.toLowerCase()}.`;
-
-	return (
-		<SettingsSection id="crm.tags" title="Tags" description={tagsDescription}>
-			<div className="flex flex-col gap-4 py-2">
-				<div className="flex flex-wrap gap-2">
-					{tags === undefined ? null : tags.length === 0 ? (
-						<span className="text-xs text-muted-foreground">No tags yet.</span>
-					) : (
-						tags.map((t) => (
-							<Badge
-								key={t._id}
-								variant="secondary"
-								className="gap-1 ps-2 pe-1 py-0.5"
-								style={
-									t.color
-										? { backgroundColor: `${t.color}20`, color: t.color }
-										: undefined
-								}
-							>
-								{t.name}
-								<button
-									type="button"
-									className="rounded hover:bg-foreground/10 p-0.5"
-									aria-label={`Remove ${t.name}`}
-									onClick={async () => {
-										try {
-											await remove({ orgId, tagId: t._id });
-										} catch (err) {
-											toast.error(
-												err instanceof Error
-													? err.message
-													: "Failed to remove tag",
-											);
-										}
-									}}
-								>
-									<X className="size-3" />
-								</button>
-							</Badge>
-						))
-					)}
-				</div>
-
-				<div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-					<Input
-						placeholder="Enter tag name"
-						value={newTag}
-						onChange={(e) => setNewTag(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") {
-								e.preventDefault();
-								handleCreate();
-							}
-						}}
-						className="sm:max-w-xs"
-					/>
-					<div className="flex items-center gap-1 flex-wrap">
-						{TAG_COLORS.map((c) => (
-							<button
-								key={c}
-								type="button"
-								aria-label={`Use color ${c}`}
-								onClick={() => setNewColor(c)}
-								className="size-4 rounded-full border border-transparent transition-transform hover:scale-110"
-								style={{
-									backgroundColor: c,
-									outline: newColor === c ? "2px solid var(--ring)" : undefined,
-									outlineOffset: newColor === c ? "1px" : undefined,
-								}}
-							/>
-						))}
-						<label
-							className="group/custom relative inline-flex size-4 cursor-pointer items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-[9px] text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
-							title="Custom color"
-							aria-label="Custom color picker"
-						>
-							<span aria-hidden>+</span>
-							<input
-								type="color"
-								value={newColor ?? "#3b82f6"}
-								onChange={(e) => setNewColor(e.target.value)}
-								className="absolute inset-0 size-full cursor-pointer opacity-0"
-							/>
-						</label>
-					</div>
-					<Button size="sm" onClick={handleCreate} disabled={!newTag.trim()}>
-						<Plus className="size-4" /> Add tag
-					</Button>
-				</div>
-			</div>
-		</SettingsSection>
-	);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Reminder Defaults
-// ────────────────────────────────────────────────────────────────────────────
-
-const reminderSchema = z.object({
-	followUpWindowHours: z.coerce.number().int().min(1).max(720),
-	staleAlertDays: z.coerce.number().int().min(1).max(365),
-	morningBriefingEnabled: z.boolean(),
-	rentAlertEnabled: z.boolean(),
-	rentAlertDays: z.coerce.number().int().min(1).max(90),
-});
-
-function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
-	const update = useMutation(api.orgs.mutations.update);
-	const defaults = org.settings?.reminderDefaults ?? {};
-
-	const { form, isSubmitting, isDirty, handleSubmit } = useSettingsForm({
-		schema: reminderSchema,
-		values: {
-			followUpWindowHours: defaults.followUpWindowHours ?? 24,
-			staleAlertDays: defaults.staleAlertDays ?? 14,
-			morningBriefingEnabled: defaults.morningBriefingEnabled ?? true,
-			rentAlertEnabled: defaults.rentAlertEnabled ?? false,
-			rentAlertDays: defaults.rentAlertDays ?? 30,
-		},
-		onSubmit: async (data) => {
-			await update({
-				orgId,
-				settings: {
-					reminderDefaults: data,
-				},
-			});
-		},
-	});
-
-	const rentEnabled = form.watch("rentAlertEnabled");
-	const isRealEstate = (org.industry ?? "").toLowerCase() === "real-estate";
-
-	return (
-		<SettingsSection
-			id="crm.reminders"
-			title="Reminder Defaults"
-			description="Default timing for automated reminders across the workspace."
-		>
-			<Form {...form}>
-				<form onSubmit={handleSubmit}>
-					<SettingsFormRow
-						control={form.control}
-						name="followUpWindowHours"
-						label="Follow-up window"
-						description="Hours after a reminder is due before it's marked overdue."
-					>
-						{(field) => <Input type="number" min={1} max={720} {...field} />}
-					</SettingsFormRow>
-					<SettingsFormRow
-						control={form.control}
-						name="staleAlertDays"
-						label="Deal stale after"
-						description="Number of days without activity before a deal is flagged stale."
-					>
-						{(field) => <Input type="number" min={1} max={365} {...field} />}
-					</SettingsFormRow>
-					<FormField
-						control={form.control}
-						name="morningBriefingEnabled"
-						render={({ field }) => (
-							<FormItem className="flex items-center justify-between py-4 sm:gap-6">
-								<div className="space-y-0.5">
-									<FormLabel className="text-sm font-medium">
-										Morning briefing
-									</FormLabel>
-									<p className="text-xs text-muted-foreground">
-										Receive a daily digest of today's reminders and due deals.
-									</p>
-								</div>
-								<FormControl>
-									<Switch
-										checked={field.value}
-										onCheckedChange={field.onChange}
-									/>
-								</FormControl>
-							</FormItem>
-						)}
-					/>
-					{isRealEstate && (
-						<>
-							<FormField
-								control={form.control}
-								name="rentAlertEnabled"
-								render={({ field }) => (
-									<FormItem className="flex items-center justify-between py-4 sm:gap-6">
-										<div className="space-y-0.5">
-											<FormLabel className="text-sm font-medium">
-												Rent alert
-											</FormLabel>
-											<p className="text-xs text-muted-foreground">
-												Alert when rent payments are approaching their due
-												date.
-											</p>
-										</div>
-										<FormControl>
-											<Switch
-												checked={field.value}
-												onCheckedChange={field.onChange}
-											/>
-										</FormControl>
-									</FormItem>
-								)}
-							/>
-							{rentEnabled && (
-								<SettingsFormRow
-									control={form.control}
-									name="rentAlertDays"
-									label="Rent alert window"
-									description="Days before due date to send a rent alert."
-								>
-									{(field) => <Input type="number" min={1} max={90} {...field} />}
-								</SettingsFormRow>
-							)}
-						</>
-					)}
-					<SettingsSaveButton
-						isSubmitting={isSubmitting}
-						isDirty={isDirty}
-						onReset={() => form.reset()}
-					/>
-				</form>
-			</Form>
-		</SettingsSection>
-	);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// Export
-// ────────────────────────────────────────────────────────────────────────────
+/**
+ * Map every sub-tab to the canonical settings-section id. Used to keep the
+ * topnav sub-group pill highlight synced with the active tab via the
+ * `shell:section-active` event.
+ *
+ * Note: the section ids preserve their historical `notes.*` prefix even
+ * though they now live under CRM — the prefix is part of the public deep-
+ * link contract (URLs, AI tool hooks, search index keywords).
+ */
+const SECTION_ID_BY_TAB: Record<CRMTab, string> = {
+	tags: "crm.tags",
+	notes: "notes.categories",
+	reminders: "notes.reminders",
+	followups: "notes.followups",
+	timeline: "notes.timeline",
+};
 
 export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const labels = resolveEntityLabels(org.entityLabels);
+
 	const myMembership = useQuery(api.orgs.queries.getMyMembership, { orgId });
 	const canManageNoteCategories =
 		myMembership?.permissions?.includes("notes.categories.manage") ?? false;
+
+	const [tab, setTab] = useQueryState(
+		"tab",
+		parseAsStringEnum(CRM_TABS as unknown as string[]).withDefault("tags"),
+	);
+	const activeTab: CRMTab = tab as CRMTab;
+
+	// Tell the shell which sub-group pill to highlight whenever the tab
+	// changes. Same contract `ModulesGroup` uses — the shell listens for
+	// `shell:section-active` and updates `activeSectionId`.
+	useEffect(() => {
+		const sectionId = SECTION_ID_BY_TAB[activeTab];
+		window.dispatchEvent(new CustomEvent("shell:section-active", { detail: { sectionId } }));
+	}, [activeTab]);
+
+	// Listen for shell sub-group pill clicks. When the toolbar dispatches
+	// `shell:section-requested` for one of our section ids, switch the
+	// active tab so the requested section actually renders. The shell then
+	// retries its scroll-to-section with a small delay → the new element is
+	// in the DOM and the smooth scroll fires.
+	useEffect(() => {
+		function onRequested(e: Event) {
+			const id = (e as CustomEvent<{ sectionId: string }>).detail?.sectionId;
+			if (!id) return;
+			// Map section id → tab. Try exact match first, then prefix-based fallback
+			// so future ids like `crm.tags.something` or `notes.timeline.events`
+			// still land on the right tab.
+			const target = (Object.keys(SECTION_ID_BY_TAB) as CRMTab[]).find((t) => {
+				const sid = SECTION_ID_BY_TAB[t];
+				return id === sid || id.startsWith(`${sid}.`);
+			});
+			if (!target) return;
+			if (target !== tab) setTab(target);
+		}
+		window.addEventListener("shell:section-requested", onRequested as EventListener);
+		return () =>
+			window.removeEventListener("shell:section-requested", onRequested as EventListener);
+	}, [tab, setTab]);
+
 	return (
-		<div className="grid gap-6">
-			<TagsSection orgId={orgId} labels={labels} />
-			<NoteCategoriesSection orgId={orgId} canManage={canManageNoteCategories} />
-			<RemindersSection org={org} orgId={orgId} />
+		<div className="flex flex-col gap-4">
+			{/* Thin horizontal sub-tab toolbar — same pattern as ModulesGroup. */}
+			<div
+				role="tablist"
+				aria-label="CRM settings"
+				className="flex w-full items-center gap-0.5 rounded-[var(--radius)] border bg-background p-0.5"
+			>
+				{CRM_TABS.map((t) => {
+					const active = activeTab === t;
+					return (
+						<Button
+							key={t}
+							role="tab"
+							aria-selected={active}
+							type="button"
+							variant="ghost"
+							size="sm"
+							onClick={() => setTab(t)}
+							className={cn(
+								"h-7 flex-1 rounded-[calc(var(--radius)-2px)] px-2 text-xs font-medium",
+								active
+									? "bg-accent text-accent-foreground"
+									: "text-muted-foreground hover:text-foreground",
+							)}
+						>
+							{TAB_LABELS[t]}
+						</Button>
+					);
+				})}
+			</div>
+
+			{/* Active-tab content — render exactly one sub-section. The id on
+			    the wrapper matches the canonical section id so scroll-to-anchor
+			    + the shell's IntersectionObserver land on the right element. */}
+			<div
+				id={SECTION_ID_BY_TAB[activeTab]}
+				className="grid gap-4 scroll-mt-4 rounded-[var(--radius)]"
+			>
+				{activeTab === "tags" && <TagsSection orgId={orgId} labels={labels} />}
+				{activeTab === "notes" && (
+					<NoteCategoriesSection orgId={orgId} canManage={canManageNoteCategories} />
+				)}
+				{activeTab === "reminders" && <RemindersSection org={org} orgId={orgId} />}
+				{activeTab === "followups" && <FollowupsSection />}
+				{activeTab === "timeline" && <TimelineSection />}
+			</div>
 		</div>
 	);
 }

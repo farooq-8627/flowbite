@@ -28,6 +28,8 @@
 | S12 | Lazy load group data | Pipelines/fields/tags/members only fetched when that group is active |
 | S13 | Activity Log NOT in settings | Lives at `/{locale}/{orgSlug}/activity` as a full page |
 | S14 | Reserved slugs | Org slugs validated against `RESERVED_SLUGS` set in `convex/_shared/reservedSlugs.ts` |
+| S15 | Notes group with tabbed sub-sections (2026-05-17) | Settings → Notes uses the same thin-button-row tab pattern as `ModulesGroup`. Each tab is its own sub-section: Categories / Reminders / Follow-ups / Timeline. Active tab persists in URL via `?tab=<slug>` (`nuqs` `parseAsStringEnum`). Topnav sub-group pill stays in sync via `shell:section-active` / `shell:section-requested` events — same plumbing ModulesGroup uses. CRM group keeps Tags only; note-categories + reminder-defaults moved out. |
+| S16 | CRM group absorbs Notes/Reminders/Follow-ups/Timeline (2026-05-17, supersedes S15) | The standalone "Notes" settings group was removed; its four sub-sections (Categories, Reminders, Follow-ups, Timeline) were folded into the CRM group as additional tabs alongside Tags. Reasoning: notes/reminders/timeline are cross-cutting CRM-record concerns, not a separate domain. Section ids stay prefixed with `notes.*` (`notes.categories`, `notes.reminders`, `notes.followups`, `notes.timeline`) — preserved so existing deep-links, the topnav pill highlight, and search keywords keep working. `NotesGroup.tsx` deleted; `CRMGroup.tsx` rewritten to use the same tabbed pattern as `ModulesGroup`. `TagsSection` extracted to `groups/crm/TagsSection.tsx`. `SettingsGroupId` no longer includes `"notes"`. |
 | S15 | Backend security | `orgMutation` + `requireRole(member.permissions, key)` — never rely on builder name |
 
 ## Rules

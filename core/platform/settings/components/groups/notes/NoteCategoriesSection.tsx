@@ -114,7 +114,7 @@ export function NoteCategoriesSection({ orgId, canManage }: NoteCategoriesSectio
 
 	return (
 		<SettingsSection
-			id="crm.noteCategories"
+			id="notes.categories"
 			title="Note Categories"
 			description="The colored buckets sticky-notes group into. Create your own to match how your team works (Urgent, Today, Demo Scheduled, …)."
 		>

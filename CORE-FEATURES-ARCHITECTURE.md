@@ -18,7 +18,8 @@
 | 3. Folder regroup of `core/` into 8 groups | ✅ done | 73 files re-imported in one pass; pnpm typecheck green. |
 | 4. Feature skeletons + hooks + thin route wrappers | ✅ done | 5 features (messages, notes, timeline, reminders, calendar) wired end-to-end through placeholder views. |
 | 5a. Messages UI | ✅ done (2026-05-17) | Sidebar + thread + composer + voice notes + lightbox + mobile sheet + consecutive grouping + exact times + forward + RTL Sheet + SWR conversation switch + audio MIME backfill migration. See `core/comms/messages/STATE.md`. |
-| 5b. Notes / Calendar / Reminders / Timeline UI | ⬜ pending | This doc's remaining sections detail what's still to build. |
+| 5b. Notes UI | ✅ done (2026-05-17) | Category Kanban + free-position drag-drop with persisted `sortOrder` + list ↔ board view toggle + per-card category & entity picker (context-aware) + ⋮ menu "Set reminder" wired to `useCreateReminder`. See `core/comms/notes/STATE.md`. |
+| 5c. Calendar / Reminders / Timeline UI | ⬜ pending | This doc's remaining sections detail what's still to build. The `reminders.create` backend is fully wired and is already used by the note → reminder dialog; the Reminders UI just needs to render the existing rows. |
 
 Reading order for the next session:
 1. `FRONTEND-DECISIONS.md` (rules — esp. Rule 2, 12, 13, 14, 16, 20).

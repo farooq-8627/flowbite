@@ -125,6 +125,8 @@ export const update = orgMutation({
 		phone: v.optional(v.string()),
 		companyId: v.optional(v.id("companies")),
 		assignedTo: v.optional(v.id("users")),
+		/** Optional kanban position. See `leads.update.sortOrder`. */
+		sortOrder: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);

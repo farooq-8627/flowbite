@@ -286,10 +286,18 @@ export function getSettingsSections(
 			description: `Shared tags for categorizing ${pluralTriplet}.`,
 			keywords: ["label", "color", "categorize", "group", "mark", ...entityKeywords],
 		},
+
+		// ── CRM → Notes (sticky notes / reminders / followups / timeline) ────
+		// All of these were originally a top-level "Notes" group; they were
+		// folded into CRM (2026-05-17) because they're cross-cutting CRM
+		// concerns — there's no clean separation between "notes" and the
+		// records they hang off. Each subsection is a CRMGroup tab. The id
+		// prefix (`notes.*`) is preserved so existing deep-links, topnav
+		// pill IDs, and search-keyword references keep working.
 		{
-			id: "crm.noteCategories",
+			id: "notes.categories",
 			groupId: "crm",
-			label: "Note Categories",
+			label: "Categories",
 			description:
 				"Coloured buckets that sticky-notes group into (Urgent, Today, Demo Scheduled, …). Used by the Notes board and per-entity panels.",
 			keywords: [
@@ -307,12 +315,28 @@ export function getSettingsSections(
 			permission: "notes.categories.manage",
 		},
 		{
-			id: "crm.reminders",
+			id: "notes.reminders",
 			groupId: "crm",
 			label: "Reminder Defaults",
 			description:
 				"Default timing for automated reminders, morning briefings, and stale-deal alerts.",
 			keywords: ["follow-up", "stale", "briefing", "alert", "due date", "overdue", "rent"],
+		},
+		{
+			id: "notes.followups",
+			groupId: "crm",
+			label: "Follow-up Defaults",
+			description:
+				"Default cadences for follow-up nudges sent from sticky notes and entity panels. UI ships when the Follow-ups module lands.",
+			keywords: ["follow-up", "cadence", "nudge", "sla", "reminder"],
+		},
+		{
+			id: "notes.timeline",
+			groupId: "crm",
+			label: "Timeline Display",
+			description:
+				"Choose which event types surface on entity and org-wide timelines. UI ships when the Timeline module lands.",
+			keywords: ["timeline", "activity", "events", "feed", "audit"],
 		},
 
 		// ── AI ────────────────────────────────────────────────────────────────

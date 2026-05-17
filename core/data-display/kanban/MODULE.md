@@ -430,3 +430,14 @@ When `features/project-management/` is built in Phase 8, the SAME `KanbanBoard` 
 | 1 | Some boards (notes) want a `+` directly inside the column header, not as a footer pill. | Added `addCardSlot?: "footer" \| "header"` to `KanbanBoard` (default `"footer"`, no behaviour change for existing entity boards). When set to `"header"`, the small `+` icon button is rendered inside `KanbanColumnHeader` next to the actions menu, gated by `canAddToColumn(...)`. |
 | 2 | New cards from the `+` should appear at the TOP of the column. | Added `renderColumnTop?: (columnId: string) => React.ReactNode` slot. Renders above the items list, inside the same scroll container, before any card. Notes uses it for the `InlineNoteCard` composer; the empty-state fallback only shows when both `items` and `renderColumnTop` are empty. |
 | 3 | Header `+` must not start a column drag. | Wrapped in a `pointerdown / click / keydown` event-stopping div, same pattern entity-card menu uses to avoid kicking off `KanbanItem` drags. |
+
+
+## 2026-05-17 (final) — Free-position drag-drop with persisted `sortOrder`
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | The `onCardMove` callback signature gains a `newIndex` argument. | Was `(itemId, fromCol, toCol)` → now `(itemId, fromCol, toCol, newIndex)`. The wrapper `KanbanBoard.tsx::onValueChange` builds a snapshot of every item's previous (column, index) BEFORE the change, then walks the new state and emits `onCardMove` for every item whose (column, index) pair differs — single pass, handles cross-column AND in-column reorders. |
+| 2 | Consumers compute `sortOrder` from the dropped card's two neighbours. | New helper `core/data-display/kanban/utils/sort-order.ts::computeSortOrderForDrop(itemsAfterDrop, newIndex)` returns a midpoint integer (gap-based: top = `min - 1024`, bottom = `max + 1024`, between = `(a+b)/2`). The notes board uses it via `useSetNoteCategory` / `useReorderNote`; the leads board uses it via `updateLead`; the deals board via `moveToStage` / `updateDeal`. |
+| 3 | New cards still land at the top of their column. | The notes `create` mutation calls a small `topOfColumnSortOrder` helper that subtracts 1024 from the column's current minimum `sortOrder`. Equivalent logic lives in `setCategory` when called without an explicit `sortOrder` (so the dropdown category picker also lands the card at the top of the new column). |
+| 4 | The `findColumnForItem` helper inside `KanbanBoard.tsx` is now unused — removed. | Snapshot-based diffing replaces it cleanly. |
+| 5 | Pinned-first ordering on notes is dropped. | Pin remains as a visual flag on the card; ordering is purely `sortOrder asc`. Users move pinned notes to the top by dragging them. |

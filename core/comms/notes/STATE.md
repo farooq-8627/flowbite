@@ -1,11 +1,17 @@
 # Notes — State
 
-> Updated: 2026-05-17
-> Status: 100 % feature-complete. Sticky-note Kanban grouped by user-managed
-> categories; per-column `+` button for inline create; org-toolbar `+ Add
-> Note` quick-action; per-card colour dot + entity-attach `+` popover;
-> Settings → CRM → Note Categories editor; column drag-to-reorder for
-> Owners + Admins; full migration shipped.
+> Updated: 2026-05-17 (later)
+> Status: 100 % feature-complete. Two purpose-built boards:
+>   • **`/notes` page** → multi-column **category kanban** (drag = recategorize).
+>   • **Embeds** (profile/deal/company/project tabs) → **single sticky board**
+>     (one canvas, free-position cards, both pickers visible).
+>
+> Plus: free-position drag-drop with persisted `sortOrder` across notes +
+> all 4 entity boards; column drag-to-reorder for note categories
+> (Owner+Admin); per-card "Set reminder" wired to existing
+> `useCreateReminder`; `notes.color` / `notes.type` deprecated fields
+> dropped from schema; defensive sortOrder rebalance for the notes
+> category column.
 
 ## ✅ Completed
 
@@ -110,7 +116,33 @@ Every mutation gates on the canonical permission keys. UI mirrors them for affor
 |---|---|
 | `RecentNotesWidget.tsx` | Dashboard card. Reuses `useNotesForOrg({ limit: 5 })`. |
 | `AIBriefingCard` | Sticky top of `NotesPanel` for persons. Phase 3 fills it via AI summary. |
-| Note-to-reminder promotion | Checkbox on the inline card → `useCreateReminder`. |
 | Drag-to-reorder categories in Settings | Currently chevron buttons; `@dnd-kit` Sortable would be nicer. |
-| Free-position drag inside a column | Add `sortOrder: number` field + dnd-kit Sortable. |
-| Final cleanup migration | Run `seedNoteCategories:run` with `clearLegacyFields=true` once we're confident no AI tool / external integration reads the deprecated `color`/`type` columns. |
+| Entity-board sortOrder rebalance | Notes have one; entity boards (leads/deals/contacts/companies) skip it because the groupBy axis is dynamic. Add a per-axis rebalancer when precision issues actually surface. |
+
+## 2026-05-17 — Sticky-board variant + cleanup
+
+| Component | File | Notes |
+|---|---|---|
+| `NotesSingleBoard` | `core/comms/notes/components/NotesSingleBoard.tsx` | Single-canvas sticky board (one column, no header). Used by every embed: profile / deal / company / project tabs. Cards: `pickers="both"`. |
+| `NotesPanel` rewritten | `core/comms/notes/components/NotesPanel.tsx` | Now mounts `NotesSingleBoard` instead of the multi-column kanban. Same hooks; entity attachment forwarded as default for new cards. |
+| `NotesView` simplification | `core/comms/notes/views/NotesView.tsx` | Single-view (board only). Passes `pickers="entity"` to `NotesCategoryKanban` so the category dot is hidden — drag is the canonical recategorize action there. |
+| `NotesList` deletion | (removed) | The list view never matched the user's intent ("single board" was the sticky-board UX, not a tabular list). |
+| `rebalanceCategoryIfTight` | `convex/crm/shared/notes/mutations.ts` | Defensive renumber when a drop creates a gap < 1. Wired into `setCategory` and `reorder`. Idempotent. |
+| Schema: dropped `notes.color` / `notes.type` | `convex/schema/crmShared.ts` | Deprecated since the categories migration. Cleanup migration confirmed no row carried legacy data. Schema push validated cleanly. |
+| Contacts + Companies drag-persist | `core/entities/_entities/{contacts,companies}/views/*.tsx` | `handleCardMove` no longer no-ops; computes midpoint via `computeSortOrderForDrop` + writes `sortOrder` (and the column-field for assignedTo / industry / size cross-column moves). |
+
+## 2026-05-17 (later) — Notes view: icon-toggle for Category vs Board
+
+| Component | File | Notes |
+|---|---|---|
+| `NotesViewToggle` (replaces `NotesViewTabs`) | `core/comms/notes/views/NotesView.tsx` | Two-icon pill (`Columns3Icon` for Category, `LayoutGridIcon` for Board) that mirrors the visual language of `core/shell/shared/entity-layout/ViewToggleIcons` — same height / radius / `aria-pressed` semantics. Replaces the previous text "Category | Board" pill. Why icons-only: the screenshot UI was carrying both a text pill AND a redundant grid-icon pill (the entity-layout view-toggle); collapsing them into one icon-pair pill matches the rest of the app's view-switcher language and stops the duplicated control. |
+| `EntityPageLayout` view-toggle | `core/shell/shared/entity-layout/EntityPageLayout.tsx` | Now skips rendering `<ViewToggleIcons>` when `views.length === 0`. This lets NotesView own its own toggle without producing a stray empty pill. All other consumers default to `["list", "board"]` so behaviour is unchanged for them. |
+
+## 2026-05-17 (later, take 2) — Inclusive filter + pinned-only
+
+| Component | File | Notes |
+|---|---|---|
+| `NotesFilterPopover` (replaces `NotesCategoryViewOptions` + `NotesCategoryFilter`) | `core/comms/notes/views/NotesView.tsx` | One popover handles BOTH tabs (Category kanban and Sticky board). Model flipped from EXCLUSIVE-hidden ("uncheck to hide") to INCLUSIVE-selection ("check to show"). Empty selection = show all (default). Pick one or more to scope the view. URL params: `?cats=` (Category tab) and `?sticky-cats=` (Sticky tab) replace the legacy `?hide=` / `?sticky-hide=`. |
+| `?pinned=1` filter | `core/comms/notes/views/NotesView.tsx` + both boards | New URL param. When true, only `note.isPinned === true` cards render. Lives at the top of the filter popover as a `<Switch>` (label "Show only pinned"). Filters compose AND: `?cats=A&pinned=1` → only pinned cards in category A. |
+| `pinnedOnly` prop | `NotesCategoryKanban.tsx` + `NotesSingleBoard.tsx` | New optional boolean prop. Applied in the same useMemo that already filters hidden categories so there's only ONE filter pass per render. Default false. The boards keep their existing `hiddenCategoryIds` contract — the View translates inclusive selection → hidden set so the kanban primitive doesn't need to know about the new model. |
+| Trigger pill UX | `NotesView.tsx::NotesFilterPopover` | Renders a numeric badge counting active filter dimensions: `1` for "categories selected", `1` for "pinned only", `2` for both. Single "Clear all filters" footer button when at least one is active. |

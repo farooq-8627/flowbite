@@ -40,6 +40,61 @@
 | **View categories** | `notes.categories.view` |
 | **Manage categories** | `notes.categories.manage` |
 
+## 2026-05-17 — Free drag-drop + list/board toggle + reminder wiring
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Free-position drag-and-drop on the notes board (and on the entity boards). The user must be able to drop a card at ANY index inside ANY column and have it persist. New cards still land at the top of their column. | Added `notes.sortOrder` (optional `number`) + same field on `leads`, `contacts`, `companies`, `deals`. Atomic migration `_migrations/seedSortOrder.ts` backfills every row with `-_creationTime` so the day-one order matches the legacy "newest first" behaviour. Allocation is gap-based: new cards subtract 1024 from the column's current minimum (top); drops between two cards take the midpoint. |
+| 2 | Pinned-first ordering is dropped. | The pin chip remains as a visual flag, but it no longer affects column order. Users move important notes to the top by dragging them. The legacy "isPinned ? -1 : 1" sort in `listForEntity / listForPerson / listForOrg` is replaced with a single `sortOrder asc` (fallback `-_creationTime`). |
+| 3 | One mutation handles drag (cross-column + in-column) cleanly. | `notes.setCategory(noteId, categoryId, sortOrder?)` covers the cross-column case (with optimistic update on category + sortOrder); a sibling `notes.reorder(noteId, sortOrder)` handles the in-column fast-path. The kanban dispatches based on `fromCol === toCol`. |
+| 4 | Bring back the per-card category picker, alongside the entity picker — but make visibility context-aware. | New `NoteCard.pickers: 'category' \| 'entity' \| 'both'` prop. `NotesPanel` (embedded inside profile / deal / company tabs, where the entity is locked by context) passes `'category'`. `NotesView` (org-wide) leaves the default `'both'` so both pickers render. |
+| 5 | Cards can be promoted into reminders without leaving the board. | Added a `Set reminder` action to the ⋮ menu that opens `NoteReminderDialog` — a tiny modal with a title input (prefilled from the note body, capped at 80 chars) and a `datetime-local` due-date picker (default tomorrow 9 am local). Submit fires the existing `useCreateReminder` hook, which writes to the `reminders` table and logs activity. The full Reminders module UI (panel, detail page) is still pending; every reminder created here will surface in those views automatically once they ship. |
+| 6 | The notes page needs both a board and a list view. | `NotesView` now passes `views=["list", "board"]` to `EntityPageLayout`, with the active view persisted to `localStorage` via `viewopts:notes:view`. Added `NotesList.tsx` — a flat-list rendering of the same `useNotesForOrg` data; both views stay in sync because they read the same query. |
+
+### Schema change summary
+
+```ts
+// notes (and leads/contacts/companies/deals)
+sortOrder: v.optional(v.number())  // gap-based fractional position
+```
+
+No new indexes — the boards rarely exceed a few hundred rows per column, so sorting in-memory after the index pull is cheaper than maintaining an extra compound index.
+
+### Migration verification (dev deployment, 2026-05-17)
+
+```
+$ npx convex run _migrations/seedSortOrder:run
+{ rowsScanned: 14, rowsPatched: 14, rowsAlreadyMigrated: 0,
+  perTable: { leads: 6/6, contacts: 3/3, companies: 1/1, notes: 4/4, deals: 0/0 } }
+$ npx convex run _migrations/seedSortOrder:run    # idempotent
+{ rowsScanned: 14, rowsPatched: 0, rowsAlreadyMigrated: 14, ... }
+```
+
+All affected query/mutation consumers (`useSetNoteCategory`, `useReorderNote`, `LeadsView::handleCardMove`, `DealsView::handleCardMove`, etc.) ship in the same diff. No orphaned references.
+
+
+## 2026-05-17 (final-final) — Single sticky board for embeds + cleanup
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | The org-wide `/notes` page is the **only** place that uses the multi-column category kanban. Embedded contexts (profile / deal / company / project tabs) use a NEW component: `NotesSingleBoard`. | Single canvas, no column header, sticky-note feel. Cards reorder freely via `sortOrder`. Used by `NotesPanel` for every entity-tab embed. The list-view I had briefly added is gone — the user's "single board" was always a sticky-board, not a list. |
+| 2 | The note card surfaces different pickers depending on which board it lives in. | `NoteCard.pickers` prop now drives this: `NotesCategoryKanban` (org-wide) passes `"entity"` (category picker is hidden because column drag IS the category change); `NotesSingleBoard` (embed) passes `"both"` so the user can pick category AND entity from the card itself. |
+| 3 | Defensive rebalance: when a drop creates a tight neighbour gap (`< 1`), renumber the destination column with 1024-step gaps. | `rebalanceCategoryIfTight()` lives next to `topOfColumnSortOrder` in `notes/mutations.ts`. Called from `setCategory` and `reorder` after the patch. Idempotent — bails when the column is already well-spaced. Keeps `sortOrder` from drifting into floating-point precision territory after dozens of consecutive midpoint inserts. |
+| 4 | Legacy `notes.color` and `notes.type` fields are gone from the schema. | The cleanup migration confirmed every existing row had already been migrated (no legacy data). Schema push validated cleanly. Consumers were already off `color`/`type`. |
+| 5 | Contacts + Companies boards persist drag positions. | `ContactDetailView.handleCardMove` and `CompaniesView.handleCardMove` are no longer no-ops — they compute the midpoint sortOrder via `computeSortOrderForDrop` and call `updateContact` / `updateCompany`. Cross-column moves also update the column-field (`assignedTo` for contacts; `assignedTo` / `industry` / `size` for companies). |
+
+
+## 2026-05-17 (extra) — Tab pattern unification + sticky-tab on /notes
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Replace the shadcn `Tabs` component on `/notes` with the same thin-button-row pattern `ModulesGroup` uses, and persist via `nuqs` (`?tab=category\|board`) instead of `usePersistedState`. | One tab UI vocabulary across the app. Deep-links share the active view. Default = `category`; an unknown slug falls back via `parseAsStringEnum`. The tab row sits in `toolbarExtras` between the filter popover and the view-toggle — exactly the position the user described. |
+| 2 | Sticky board (`NotesSingleBoard`) gets its own tab on `/notes`, rendered with 2D drag (CSS grid `auto-fill, minmax(220px,1fr)` + dnd-kit `rectSortingStrategy`). | Wall-style sticky-note layout. Cards reorder freely horizontally and vertically. Fed by the same `useNotesForOrg` query as the category tab — both stay live-synced on edit/drag/category-change. The `+ Add Note` toolbar button works on either tab; the new card auto-focuses regardless of which board renders it. |
+| 3 | Sticky board surfaces a category filter popover (multi-select, badge counter on the trigger). The category tab keeps its column-visibility popover. | Tab-aware tooling without duplicating the toolbar. |
+| 4 | Search highlight reuses the same `matchedNoteIds` + `highlightEpoch` flow already in `NoteCard`. | Same flash UX on both tabs. No parallel implementation. |
+| 5 | List view (`NotesList`) is gone for good. | Was a misread of the earlier ask — the "single board" was always meant to be the sticky-board layout. |
+
+
 ## Decisions
 
 | # | Decision | Outcome |

@@ -28,9 +28,10 @@ import {
 	KanbanBoard,
 	type KanbanColumnConfig,
 } from "@/core/data-display/kanban/components/KanbanBoard";
+import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { useCreateNote, useReorderNoteCategories, useSetNoteCategory } from "../hooks";
+import { useCreateNote, useReorderNote, useReorderNoteCategories, useSetNoteCategory } from "../hooks";
 import { NoteCard } from "./NoteCard";
 
 /**
@@ -55,6 +56,18 @@ interface NotesCategoryKanbanProps {
 	className?: string;
 	/** Optional: hidden category ids (view-options). */
 	hiddenCategoryIds?: ReadonlyArray<Id<"noteCategories">>;
+	/**
+	 * When true, only pinned cards (`note.isPinned`) are rendered. Applied
+	 * after the hidden-categories filter so pin + category filters compose
+	 * (AND — both must match for a card to show).
+	 */
+	pinnedOnly?: boolean;
+	/**
+	 * Which corner pickers each card should render. Default `"both"` for
+	 * the org-wide page; `"category"` for embedded panels where the entity
+	 * is locked by context. See `NoteCard.pickers`.
+	 */
+	pickers?: "category" | "entity" | "both";
 	/**
 	 * Note id to mount in edit-mode + auto-focused on the next render. The
 	 * parent sets this after a `createNote` mutation returns. The kanban
@@ -92,6 +105,8 @@ export function NotesCategoryKanban({
 	canManageCategories = false,
 	className,
 	hiddenCategoryIds = [],
+	pinnedOnly = false,
+	pickers = "both",
 	autoFocusNoteId,
 	onAutoFocusConsumed,
 	onCreatedNote,
@@ -99,6 +114,7 @@ export function NotesCategoryKanban({
 	highlightEpoch,
 }: NotesCategoryKanbanProps) {
 	const setCategory = useSetNoteCategory();
+	const reorderNote = useReorderNote();
 	const reorderCategories = useReorderNoteCategories();
 	const createNote = useCreateNote();
 
@@ -127,41 +143,82 @@ export function NotesCategoryKanban({
 			for (const c of visibleCategories) map[String(c._id)] = [];
 		}
 		for (const n of notes ?? []) {
+			// Pinned-only filter runs before bucketing — non-pinned cards
+			// never make it into a column when the user has flipped the
+			// "Show only pinned" switch in the filter popover.
+			if (pinnedOnly && !n.isPinned) continue;
 			const key = n.categoryId ? String(n.categoryId) : null;
 			if (key !== null && map[key] !== undefined) {
 				map[key].push({ id: String(n._id), note: n });
 			}
 		}
-		// Sort priority: search matches first, then pinned, then newest.
-		// Matches override pinned so the user can scan results top-down even
-		// if a non-matching note happens to be pinned. When no search is
-		// active the match group is empty and the original pinned-first /
-		// newest order is preserved.
+		// Sort priority within each column:
+		//   1. search matches (so the user scans hits top-down even if a
+		//      non-matching note happens to be pinned),
+		//   2. sortOrder asc (the user-chosen drag-drop position).
+		// Pinned-first is no longer an ordering signal — pin is purely a
+		// visual flag now; users move pinned cards to the top by dragging.
 		const matched = matchedNoteIds ?? new Set<string>();
 		for (const key of Object.keys(map)) {
 			map[key].sort((a, b) => {
 				const aMatch = matched.has(a.id);
 				const bMatch = matched.has(b.id);
 				if (aMatch !== bMatch) return aMatch ? -1 : 1;
-				if (a.note.isPinned !== b.note.isPinned) return a.note.isPinned ? -1 : 1;
-				return b.note.createdAt - a.note.createdAt;
+				const aKey = a.note.sortOrder ?? -a.note._creationTime;
+				const bKey = b.note.sortOrder ?? -b.note._creationTime;
+				return aKey - bKey;
 			});
 		}
 		return map;
-	}, [notes, visibleCategories, matchedNoteIds]);
+	}, [notes, visibleCategories, matchedNoteIds, pinnedOnly]);
 
-	async function handleCardMove(itemId: string, _from: string, to: string) {
+	async function handleCardMove(itemId: string, fromCol: string, toCol: string, newIndex: number) {
 		const note = (notes ?? []).find((n) => String(n._id) === itemId);
 		if (!note) return;
+
+		// Reconstruct the destination column AFTER the drop so we can find
+		// the two cards on either side of `newIndex` and compute the
+		// midpoint sortOrder.
+		const destBefore = itemsByColumnId[toCol] ?? [];
+		let itemsAfter: NoteItem[];
+		if (fromCol === toCol) {
+			const oldIndex = destBefore.findIndex((it) => it.id === itemId);
+			if (oldIndex < 0) {
+				itemsAfter = destBefore;
+			} else {
+				const copy = destBefore.slice();
+				const [moved] = copy.splice(oldIndex, 1);
+				copy.splice(newIndex, 0, moved);
+				itemsAfter = copy;
+			}
+		} else {
+			const moved = { id: itemId, note };
+			const copy = destBefore.slice();
+			copy.splice(newIndex, 0, moved);
+			itemsAfter = copy;
+		}
+		const sortOrder = computeSortOrderForDrop(
+			itemsAfter.map((it) => ({
+				id: it.id,
+				sortOrder: it.note.sortOrder,
+				_creationTime: it.note._creationTime,
+			})),
+			newIndex,
+		);
+
 		try {
-			// Optimistic: `useSetNoteCategory` patches `listForOrg` immediately.
-			// The card stays in the dropped column even before the server
-			// confirms — same UX as the entity boards.
-			await setCategory({
-				orgId: note.orgId,
-				noteId: note._id,
-				categoryId: to as Id<"noteCategories">,
-			});
+			if (fromCol === toCol) {
+				// In-column reorder fast-path — only sortOrder changes.
+				await reorderNote({ orgId: note.orgId, noteId: note._id, sortOrder });
+			} else {
+				// Cross-column move — categoryId + sortOrder atomically.
+				await setCategory({
+					orgId: note.orgId,
+					noteId: note._id,
+					categoryId: toCol as Id<"noteCategories">,
+					sortOrder,
+				});
+			}
 		} catch (err) {
 			toast.mutationError(err, "Couldn't move note.");
 		}
@@ -239,6 +296,7 @@ export function NotesCategoryKanban({
 				permissions={permissions}
 				orgSlug={orgSlug}
 				isDragging={isDragging}
+				pickers={pickers}
 				autoFocus={isAutoFocusTarget}
 				onAutoFocusConsumed={isAutoFocusTarget ? onAutoFocusConsumed : undefined}
 				isHighlighted={isMatch}

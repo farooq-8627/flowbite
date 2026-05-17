@@ -24,6 +24,11 @@ export const leads = defineTable({
 	convertedAt: v.optional(v.number()),
 	contactId: v.optional(v.id("contacts")),
 	companyId: v.optional(v.id("companies")),
+	/**
+	 * Free-position kanban order. See `notes.sortOrder` for the gap-based
+	 * allocation strategy. Optional during the migration window.
+	 */
+	sortOrder: v.optional(v.number()),
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
@@ -50,6 +55,8 @@ export const contacts = defineTable({
 	companyId: v.optional(v.id("companies")),
 	companyCode: v.optional(v.string()),
 	assignedTo: v.optional(v.id("users")),
+	/** Free-position kanban order. See `notes.sortOrder`. */
+	sortOrder: v.optional(v.number()),
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
@@ -83,6 +90,8 @@ export const companies = defineTable({
 	assignedTo: v.optional(v.id("users")),
 	assignees: v.optional(v.array(v.id("users"))),
 	personCodes: v.optional(v.array(v.string())),
+	/** Free-position kanban order. See `notes.sortOrder`. */
+	sortOrder: v.optional(v.number()),
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
@@ -114,6 +123,8 @@ export const deals = defineTable({
 	lostAt: v.optional(v.number()),
 	outcomeReason: v.optional(v.string()),
 	expectedCloseDate: v.optional(v.number()),
+	/** Free-position kanban order. See `notes.sortOrder`. */
+	sortOrder: v.optional(v.number()),
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,

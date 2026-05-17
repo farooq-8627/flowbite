@@ -27,6 +27,11 @@ type Props = {
  * even if a user navigates directly to `?group=workspace` via URL, the
  * content won't render without the required permission. This supplements
  * the group-level filtering in ShellLayout (which hides the nav item).
+ *
+ * NOTE: There is no longer a top-level `notes` group — Note Categories,
+ * Reminders, Follow-ups, and Timeline live inside the CRM group as tabs
+ * (see CRMGroup.tsx). Section ids preserve their `notes.*` prefix so
+ * deep-links and search keywords stay stable.
  */
 export function SettingsContent({ activeGroup, org, orgId, permissions }: Props) {
 	switch (activeGroup) {

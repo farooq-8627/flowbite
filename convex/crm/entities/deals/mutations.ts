@@ -124,6 +124,8 @@ export const update = orgMutation({
 		currency: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
 		expectedCloseDate: v.optional(v.number()),
+		/** Optional kanban position. See `leads.update.sortOrder`. */
+		sortOrder: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -166,6 +168,13 @@ export const moveToStage = orgMutation({
 		orgId: v.id("orgs"),
 		dealId: v.id("deals"),
 		stageId: v.string(),
+		/**
+		 * Optional kanban position within the destination stage. The deals
+		 * board's drag handler computes the midpoint between the two
+		 * neighbours and passes it here so the drop is atomic with the stage
+		 * change.
+		 */
+		sortOrder: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -195,11 +204,13 @@ export const moveToStage = orgMutation({
 		}
 
 		const now = Date.now();
-		await ctx.db.patch(args.dealId, {
+		const patch: Record<string, unknown> = {
 			currentStageId: args.stageId,
 			stageEnteredAt: now,
 			updatedAt: now,
-		});
+		};
+		if (args.sortOrder !== undefined) patch.sortOrder = args.sortOrder;
+		await ctx.db.patch(args.dealId, patch);
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

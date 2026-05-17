@@ -27,7 +27,7 @@
  * affordance and confuses the model.
  */
 
-import { GripVerticalIcon, Pin, Trash2 } from "lucide-react";
+import { GripVerticalIcon, Pin, Trash2, BellRingIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -44,8 +44,16 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { useDeleteNote, useSetNoteEntity, useToggleNotePin, useUpdateNote } from "../hooks";
+import {
+	useDeleteNote,
+	useSetNoteCategory,
+	useSetNoteEntity,
+	useToggleNotePin,
+	useUpdateNote,
+} from "../hooks";
+import { CategoryDotPicker } from "./CategoryDotPicker";
 import { type EntityAttachment, EntityPickerPopover } from "./EntityPickerPopover";
+import { NoteReminderDialog } from "./NoteReminderDialog";
 import { resolveTextColor } from "./note-color-utils";
 
 export interface NoteCardProps {
@@ -58,6 +66,17 @@ export interface NoteCardProps {
 	orgSlug?: string;
 	isDragging?: boolean;
 	className?: string;
+	/**
+	 * Which corner pickers to render. Context-dependent:
+	 *   - `"category"` (default for embedded panels) — only the category
+	 *     dot. The entity attachment is locked by the parent context (a
+	 *     profile / deal / company tab), so the entity picker is hidden.
+	 *   - `"entity"` — only the entity-attach `+` button. Used when the
+	 *     category isn't user-pickable.
+	 *   - `"both"` (default for the org-wide notes board) — show both, so
+	 *     the user can recategorize AND retarget a card from one row.
+	 */
+	pickers?: "category" | "entity" | "both";
 	/**
 	 * When true, the card mounts in edit mode with the textarea focused and
 	 * the existing content selected — used by the "create + auto-focus" flow
@@ -90,6 +109,7 @@ export function NoteCard({
 	orgSlug,
 	isDragging,
 	className,
+	pickers = "both",
 	autoFocus = false,
 	onAutoFocusConsumed,
 	isHighlighted = false,
@@ -97,11 +117,13 @@ export function NoteCard({
 }: NoteCardProps) {
 	const [editing, setEditing] = useState(autoFocus);
 	const [draft, setDraft] = useState(note.content);
+	const [reminderOpen, setReminderOpen] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const rootRef = useRef<HTMLDivElement | null>(null);
 
 	const togglePin = useToggleNotePin();
 	const setEntity = useSetNoteEntity();
+	const setCategory = useSetNoteCategory();
 	const deleteNote = useDeleteNote();
 	const updateNote = useUpdateNote();
 
@@ -208,6 +230,22 @@ export function NoteCard({
 		}
 	}
 
+	async function handlePickCategory(categoryId: Id<"noteCategories">) {
+		if (categoryId === note.categoryId) return;
+		try {
+			// No sortOrder param → server stamps a top-of-column position so
+			// the recategorized card lands at the top of the new column. The
+			// optimistic update mirrors that visually.
+			await setCategory({
+				orgId: note.orgId,
+				noteId: note._id,
+				categoryId,
+			});
+		} catch (err) {
+			toast.mutationError(err, "Couldn't change category.");
+		}
+	}
+
 	async function handleTogglePin() {
 		try {
 			await togglePin({ orgId: note.orgId, noteId: note._id });
@@ -279,7 +317,12 @@ export function NoteCard({
 						)}
 					</div>
 
-					{/* Top-right: code-then-avatar (when attached) OR + button, then menu.
+					{/* Top-right: corner pickers (category dot + entity attach) and ⋮ menu.
+					    Picker visibility depends on `pickers`:
+					      - "category" → only the category dot. Used inside profile/deal
+					        panels where the entity is locked by context.
+					      - "entity"   → only the entity-attach `+` (legacy behaviour).
+					      - "both"     → both, used on the org-wide notes board.
 					    Wrap in a stop-propagation div so clicks don't start a drag. */}
 					{/* biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates the picker / menu from drag listeners */}
 					<div
@@ -288,39 +331,49 @@ export function NoteCard({
 						onClick={(e) => e.stopPropagation()}
 						onKeyDown={(e) => e.stopPropagation()}
 					>
-						{isAttachedToEntity && attachedCode ? (
-							<>
-								<IdentityBadge
-									entityType={
-										note.entityType === "company"
-											? "company"
-											: note.entityType === "deal"
-												? "deal"
-												: "person"
-									}
-									code={attachedCode}
-									layout="code"
-									size="xs"
-								/>
+						{(pickers === "category" || pickers === "both") && canEdit && (
+							<CategoryDotPicker
+								categories={categories}
+								currentCategoryId={note.categoryId}
+								onPick={handlePickCategory}
+								size={14}
+								ringed
+							/>
+						)}
+						{(pickers === "entity" || pickers === "both") &&
+							(isAttachedToEntity && attachedCode ? (
+								<>
+									<IdentityBadge
+										entityType={
+											note.entityType === "company"
+												? "company"
+												: note.entityType === "deal"
+													? "deal"
+													: "person"
+										}
+										code={attachedCode}
+										layout="code"
+										size="xs"
+									/>
+									<EntityPickerPopover
+										orgId={note.orgId}
+										orgSlug={orgSlug}
+										currentAttachment={currentAttachment}
+										onPick={handlePickEntity}
+										ariaLabel="Change attachment"
+										className="size-5"
+									/>
+								</>
+							) : (
 								<EntityPickerPopover
 									orgId={note.orgId}
 									orgSlug={orgSlug}
 									currentAttachment={currentAttachment}
 									onPick={handlePickEntity}
-									ariaLabel="Change attachment"
+									ariaLabel="Attach to record"
 									className="size-5"
 								/>
-							</>
-						) : (
-							<EntityPickerPopover
-								orgId={note.orgId}
-								orgSlug={orgSlug}
-								currentAttachment={currentAttachment}
-								onPick={handlePickEntity}
-								ariaLabel="Attach to record"
-								className="size-5"
-							/>
-						)}
+							))}
 						{(canPin || canDelete || canEdit) && (
 							<DropdownMenu>
 								<DropdownMenuTrigger asChild>
@@ -343,6 +396,10 @@ export function NoteCard({
 											{note.isPinned ? "Unpin" : "Pin"}
 										</DropdownMenuItem>
 									)}
+									<DropdownMenuItem onSelect={() => setReminderOpen(true)}>
+										<BellRingIcon className="me-2 size-3.5" />
+										Set reminder
+									</DropdownMenuItem>
 									{canEdit && (
 										<DropdownMenuItem
 											onSelect={() =>
@@ -452,6 +509,17 @@ export function NoteCard({
 						<GripVerticalIcon className="size-3" />
 					</button>
 				</KanbanItemHandle>
+
+				{/* Reminder quick-create dialog — opened from the ⋮ menu. Wired
+				    to the existing `useCreateReminder` hook so a real reminder
+				    row is persisted today; the full Reminders UI (panel, form,
+				    detail) lands later and will surface the same row through
+				    its own listForPerson query. */}
+				<NoteReminderDialog
+					open={reminderOpen}
+					onOpenChange={setReminderOpen}
+					note={note}
+				/>
 			</div>
 		</KanbanItem>
 	);

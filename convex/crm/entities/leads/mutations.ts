@@ -122,6 +122,14 @@ export const update = orgMutation({
 		status: v.optional(v.string()),
 		source: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
+		/**
+		 * Optional kanban position. Set by the leads board's drag handler when
+		 * the user drops a card at a specific index — the consumer computes
+		 * the midpoint between the two neighbours and passes it here. Combined
+		 * with `status` / `assignedTo` / `source` in the same mutation so the
+		 * drop is atomic. See `core/data-display/kanban/utils/sort-order.ts`.
+		 */
+		sortOrder: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);

@@ -675,10 +675,28 @@ interface KanbanColumnProps extends React.ComponentProps<"div"> {
 	asChild?: boolean;
 	asHandle?: boolean;
 	disabled?: boolean;
+	/**
+	 * Override the SortableContext strategy for items inside this column.
+	 * Defaults to the orientation-derived strategy (vertical list for the
+	 * standard column layout). Pass `rectSortingStrategy` when the column
+	 * uses a 2D grid layout (e.g. the notes sticky board), so dnd-kit's
+	 * drag-collision math accounts for both axes.
+	 */
+	itemStrategy?: SortableContextProps["strategy"];
 }
 
 function KanbanColumn(props: KanbanColumnProps) {
-	const { value, asChild, asHandle, disabled, className, style, ref, ...columnProps } = props;
+	const {
+		value,
+		asChild,
+		asHandle,
+		disabled,
+		itemStrategy,
+		className,
+		style,
+		ref,
+		...columnProps
+	} = props;
 
 	const id = React.useId();
 	const context = useKanbanContext(COLUMN_NAME);
@@ -747,9 +765,10 @@ function KanbanColumn(props: KanbanColumnProps) {
 			<SortableContext
 				items={items}
 				strategy={
-					context.orientation === "horizontal"
+					itemStrategy ??
+					(context.orientation === "horizontal"
 						? horizontalListSortingStrategy
-						: verticalListSortingStrategy
+						: verticalListSortingStrategy)
 				}
 			>
 				<ColumnPrimitive

@@ -53,7 +53,12 @@ interface EntityListPageProps<TRow extends { id: string }> {
 	boardColumns?: KanbanColumnConfig[];
 	itemsByColumnId?: Record<string, TRow[]>;
 	renderCard?: (item: TRow, isDragging: boolean) => React.ReactNode;
-	onCardMove?: (itemId: string, fromColumnId: string, toColumnId: string) => Promise<void>;
+	onCardMove?: (
+		itemId: string,
+		fromColumnId: string,
+		toColumnId: string,
+		newIndex: number,
+	) => Promise<void>;
 	renderColumnFooter?: (columnId: string) => React.ReactNode;
 	onAddToColumn?: (columnId: string) => void;
 	/** Forwards through to KanbanBoard. See KanbanBoard.onColumnReorder. */
@@ -89,16 +94,25 @@ export function EntityListPage<TRow extends { id: string }>({
 }: EntityListPageProps<TRow>) {
 	const isLoading = items === undefined;
 
+	// Default sort: newest first. The "createdAt" column is appended by
+	// `useEntityColumns` for the leads board, but the deals / contacts /
+	// companies boards build their columns from a user-toggled
+	// `listColumns` set. If the user hides the Created column, applying
+	// the default sort would crash tanstack-table with
+	// `[Table] Column with id 'createdAt' does not exist.` — guard by
+	// checking the actual column ids in scope.
+	const hasCreatedAtColumn = columns.some(
+		(c) => (c as { id?: string; accessorKey?: string }).id === "createdAt",
+	);
 	const { table } = useDataTable({
 		data: items ?? [],
 		columns,
 		pageCount: Math.ceil((items?.length ?? 0) / 25),
 		initialState: {
 			pagination: { pageSize: 25, pageIndex: 0 },
-			// Default sort: newest first. The "createdAt" column is appended by
-			// useEntityColumns and reads `_creationTime`. Header clicks override
-			// it; clearing the sort returns to this order.
-			sorting: [{ id: "createdAt", desc: true }] as never,
+			sorting: hasCreatedAtColumn
+				? ([{ id: "createdAt", desc: true }] as never)
+				: ([] as never),
 		},
 		getRowId: (row) => row.id,
 	});

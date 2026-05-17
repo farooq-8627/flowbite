@@ -94,6 +94,8 @@ export const update = orgMutation({
 		assignedTo: v.optional(v.id("users")),
 		assignees: v.optional(v.array(v.id("users"))),
 		personCodes: v.optional(v.array(v.string())),
+		/** Optional kanban position. See `leads.update.sortOrder`. */
+		sortOrder: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);

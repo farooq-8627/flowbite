@@ -13,6 +13,7 @@ import type * as _functions_authenticated from "../_functions/authenticated.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
 import type * as _migrations_seedNoteCategories from "../_migrations/seedNoteCategories.js";
+import type * as _migrations_seedSortOrder from "../_migrations/seedSortOrder.js";
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
@@ -110,6 +111,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
   "_migrations/seedNoteCategories": typeof _migrations_seedNoteCategories;
+  "_migrations/seedSortOrder": typeof _migrations_seedSortOrder;
   "_shared/constants": typeof _shared_constants;
   "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;

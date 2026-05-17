@@ -166,7 +166,12 @@ export function useSetNoteCategory() {
 				if (queryArgs.orgId !== args.orgId) continue;
 				const patched = list.map((n) =>
 					n._id === args.noteId
-						? { ...n, categoryId: args.categoryId, updatedAt: Date.now() }
+						? {
+								...n,
+								categoryId: args.categoryId,
+								sortOrder: args.sortOrder ?? n.sortOrder,
+								updatedAt: Date.now(),
+							}
 						: n,
 				);
 				store.setQuery(api.crm.shared.notes.queries.listForOrg, queryArgs, patched);
@@ -183,7 +188,12 @@ export function useSetNoteCategory() {
 					queryArgs,
 					list.map((n) =>
 						n._id === args.noteId
-							? { ...n, categoryId: args.categoryId, updatedAt: Date.now() }
+							? {
+									...n,
+									categoryId: args.categoryId,
+									sortOrder: args.sortOrder ?? n.sortOrder,
+									updatedAt: Date.now(),
+								}
 							: n,
 					),
 				);
@@ -198,11 +208,54 @@ export function useSetNoteCategory() {
 					queryArgs,
 					list.map((n) =>
 						n._id === args.noteId
-							? { ...n, categoryId: args.categoryId, updatedAt: Date.now() }
+							? {
+									...n,
+									categoryId: args.categoryId,
+									sortOrder: args.sortOrder ?? n.sortOrder,
+									updatedAt: Date.now(),
+								}
 							: n,
 					),
 				);
 			}
+		},
+	);
+}
+
+/**
+ * In-column reorder fast-path. Drag-drop within the same column updates
+ * only `sortOrder`; the optimistic patch keeps the card in its dropped
+ * position the moment the user releases the mouse.
+ */
+export function useReorderNote() {
+	return useMutation(api.crm.shared.notes.mutations.reorder).withOptimisticUpdate(
+		(store, args) => {
+			const patchList = <
+				Q extends typeof api.crm.shared.notes.queries.listForOrg
+					| typeof api.crm.shared.notes.queries.listForEntity
+					| typeof api.crm.shared.notes.queries.listForPerson,
+			>(
+				query: Q,
+			) => {
+				const all = store.getAllQueries(query);
+				for (const { args: queryArgs, value: list } of all) {
+					if (!list) continue;
+					if ((queryArgs as { orgId: Id<"orgs"> }).orgId !== args.orgId) continue;
+					if (!list.some((n) => n._id === args.noteId)) continue;
+					store.setQuery(
+						query,
+						queryArgs,
+						list.map((n) =>
+							n._id === args.noteId
+								? { ...n, sortOrder: args.sortOrder, updatedAt: Date.now() }
+								: n,
+						),
+					);
+				}
+			};
+			patchList(api.crm.shared.notes.queries.listForOrg);
+			patchList(api.crm.shared.notes.queries.listForEntity);
+			patchList(api.crm.shared.notes.queries.listForPerson);
 		},
 	);
 }

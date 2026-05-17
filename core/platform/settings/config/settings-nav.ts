@@ -1,11 +1,13 @@
 import type { LucideIcon } from "lucide-react";
 import {
+	Activity,
 	BarChart2,
 	Bell,
 	BellRing,
 	Bot,
 	Brain,
 	Building2,
+	CalendarClock,
 	CreditCard,
 	Database,
 	Keyboard,
@@ -149,6 +151,35 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 					label: "Tags",
 					icon: Tag,
 					description: "Manage tags used across CRM records",
+				},
+				// Notes/Reminders/Follow-ups/Timeline used to be their own
+				// top-level group; folded under CRM (2026-05-17) so all
+				// cross-cutting CRM-record concerns live in one place. Each
+				// id stays prefixed with `notes.*` to keep deep-links, topnav
+				// pill ids, and search keywords stable.
+				{
+					id: "notes.categories",
+					label: "Note Categories",
+					icon: Tag,
+					description: "Coloured buckets that sticky notes group into",
+				},
+				{
+					id: "notes.reminders",
+					label: "Reminders",
+					icon: BellRing,
+					description: "Defaults for follow-ups, briefings, and stale alerts",
+				},
+				{
+					id: "notes.followups",
+					label: "Follow-ups",
+					icon: CalendarClock,
+					description: "Defaults for follow-up automations and SLAs",
+				},
+				{
+					id: "notes.timeline",
+					label: "Timeline",
+					icon: Activity,
+					description: "What appears on entity and org-wide timelines",
 				},
 			],
 		},

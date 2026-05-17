@@ -10,13 +10,33 @@
  *
  * Privacy: any reader without `notes.viewInternal` only sees `isInternal=false` rows.
  *
- * Schema move (2026-05-17): the legacy `color` + `type` enum filters are gone.
- * The new groupable axis is `categoryId`, indexed by `by_org_and_category`.
+ * Sort order (2026-05-17 free-drag update)
+ * ────────────────────────────────────────
+ * Notes are now ordered by `sortOrder asc` so users can drag-drop a card to
+ * any position and have it persist. Rows with no `sortOrder` (pre-migration
+ * leftovers) fall back to `-_creationTime` so newest still floats to the
+ * top — matches the day-one behaviour. Pinned-first is no longer an
+ * ordering signal; the pin chip stays as a visual flag and the user moves
+ * pinned cards to the top by dragging them.
  */
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
 import type { Doc } from "../../../_generated/dataModel";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
+
+/**
+ * Stable sort-order resolver. When `sortOrder` is set we use it as-is;
+ * otherwise we fall back to `-_creationTime` so the day-one order
+ * (post-migration) matches the legacy "newest first" behaviour. Lower
+ * values are top-of-column.
+ */
+function noteSortKey(n: Doc<"notes">): number {
+	return n.sortOrder ?? -n._creationTime;
+}
+
+function sortNotesByOrder(a: Doc<"notes">, b: Doc<"notes">): number {
+	return noteSortKey(a) - noteSortKey(b);
+}
 
 // ─── listForEntity ───────────────────────────────────────────────────────────
 
@@ -42,13 +62,9 @@ export const listForEntity = orgQuery({
 			)
 			.collect();
 
-		// Pinned first, then by createdAt desc.
-		return notes
-			.filter((n) => isAdmin || !n.isInternal)
-			.sort((a, b) => {
-				if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-				return b.createdAt - a.createdAt;
-			});
+		// sortOrder asc — user drags a card to any position. Privacy filter
+		// drops `isInternal` rows for non-admin readers.
+		return notes.filter((n) => isAdmin || !n.isInternal).sort(sortNotesByOrder);
 	},
 });
 
@@ -69,12 +85,7 @@ export const listForPerson = orgQuery({
 			)
 			.collect();
 
-		return notes
-			.filter((n) => isAdmin || !n.isInternal)
-			.sort((a, b) => {
-				if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-				return b.createdAt - a.createdAt;
-			});
+		return notes.filter((n) => isAdmin || !n.isInternal).sort(sortNotesByOrder);
 	},
 });
 
@@ -143,10 +154,7 @@ export const listForOrg = orgQuery({
 		});
 
 		// Pinned first, then newest.
-		return filtered.sort((a, b) => {
-			if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-			return b.createdAt - a.createdAt;
-		});
+		return filtered.sort(sortNotesByOrder);
 	},
 });
 

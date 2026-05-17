@@ -164,9 +164,13 @@ export function EntityPageLayout({
 				</div>
 
 				<div className="flex shrink-0 items-center gap-1.5">
-					{/* View options first (gated to board view by parent), then view-toggle, then primary action. */}
+					{/* View options first (gated to board view by parent), then view-toggle, then primary action.
+					    Skip the view-toggle entirely when the consumer doesn't pass any views (e.g. NotesView,
+					    which owns its own two-icon Category/Board toggle in toolbarExtras). */}
 					{toolbarExtras}
-					<ViewToggleIcons view={view} onViewChange={onViewChange} views={views} />
+					{views.length > 0 && (
+						<ViewToggleIcons view={view} onViewChange={onViewChange} views={views} />
+					)}
 
 					{showPrimary && (
 						<div className="flex items-center">

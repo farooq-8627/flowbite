@@ -25,6 +25,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
+import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { EditContactDrawer } from "@/core/entities/_entities/contacts/components/EditContactDrawer";
 import { ConvertLeadDrawer } from "@/core/entities/_entities/leads/components/ConvertLeadDrawer";
 import { useLeadMutations } from "@/core/entities/_entities/leads/hooks/useLeadMutations";
@@ -211,16 +212,90 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 					grouped[tag.name].push(item);
 				}
 			}
-			return grouped;
+		} else {
+			for (const item of rankedItems.items) {
+				const raw = (item as Record<string, unknown>)[groupBy];
+				const key = raw ? String(raw) : NO_GROUP_KEY;
+				if (!grouped[key]) grouped[key] = [];
+				grouped[key].push(item);
+			}
 		}
-		for (const item of rankedItems.items) {
-			const raw = (item as Record<string, unknown>)[groupBy];
-			const key = raw ? String(raw) : NO_GROUP_KEY;
-			if (!grouped[key]) grouped[key] = [];
-			grouped[key].push(item);
+		// Sort each column by sortOrder asc with search-match boost so
+		// dragged-to-position cards stick.
+		const matched = rankedItems.matchedIds;
+		for (const key of Object.keys(grouped)) {
+			grouped[key].sort((a, b) => {
+				const aMatch = matched.has(a.id);
+				const bMatch = matched.has(b.id);
+				if (aMatch !== bMatch) return aMatch ? -1 : 1;
+				const aKey =
+					(a as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((a as { _creationTime?: number })._creationTime ?? 0);
+				const bKey =
+					(b as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((b as { _creationTime?: number })._creationTime ?? 0);
+				return aKey - bKey;
+			});
 		}
 		return grouped;
-	}, [rankedItems.items, boardColumns, groupBy, tagsByEntityId]);
+	}, [rankedItems.items, rankedItems.matchedIds, boardColumns, groupBy, tagsByEntityId]);
+
+	// Drag card → persist position via sortOrder + (when groupBy is one of
+	// the writable axes) update the column-field. Cross-column move and
+	// in-column reorder dispatch through the same callback.
+	const updateContact = useMutation(api.crm.entities.contacts.mutations.update);
+	const handleCardMove = useCallback(
+		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
+			if (!orgId) return;
+			const destBefore = itemsByColumnId[toCol] ?? [];
+			let itemsAfter: typeof destBefore;
+			if (fromCol === toCol) {
+				const oldIndex = destBefore.findIndex((it) => it.id === itemId);
+				if (oldIndex < 0) {
+					itemsAfter = destBefore;
+				} else {
+					const copy = destBefore.slice();
+					const [moved] = copy.splice(oldIndex, 1);
+					copy.splice(newIndex, 0, moved);
+					itemsAfter = copy;
+				}
+			} else {
+				const movedItem = (rankedItems.items ?? []).find((it) => it.id === itemId);
+				if (!movedItem) return;
+				const copy = destBefore.slice();
+				copy.splice(newIndex, 0, movedItem as (typeof destBefore)[number]);
+				itemsAfter = copy;
+			}
+			const sortOrder = computeSortOrderForDrop(
+				itemsAfter as Array<{ id: string; sortOrder?: number; _creationTime?: number }>,
+				newIndex,
+			);
+
+			try {
+				const baseArgs = {
+					orgId,
+					contactId: itemId as Id<"contacts">,
+					sortOrder,
+				};
+				if (fromCol === toCol) {
+					await updateContact(baseArgs);
+				} else if (groupBy === "assignedTo") {
+					await updateContact({
+						...baseArgs,
+						assignedTo: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"users">),
+					});
+				} else {
+					// Custom groupBy — only persist position.
+					await updateContact(baseArgs);
+				}
+			} catch (err) {
+				toast.error("Couldn't update", {
+					description: err instanceof Error ? err.message : undefined,
+				});
+			}
+		},
+		[orgId, updateContact, groupBy, itemsByColumnId, rankedItems.items],
+	);
 
 	const handleRevert = useCallback(
 		async (contactId: Id<"contacts">) => {
@@ -539,7 +614,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 						/>
 					);
 				}}
-				onCardMove={async () => {}}
+				onCardMove={handleCardMove}
 				onColumnReorder={onColumnReorder}
 				emptyTitle={`No ${labels.contact.plural.toLowerCase()} yet`}
 				emptyDescription={`Convert a ${labels.lead.singular.toLowerCase()} to create your first ${labels.contact.singular.toLowerCase()}.`}

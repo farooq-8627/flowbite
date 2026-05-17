@@ -1,7 +1,11 @@
 # Reminders — State
 
-> Updated: 2026-05-16
+> Updated: 2026-05-17
 > Status: 50% Complete — backend (existing) + hooks + route wired; UI pending.
+> **Note → reminder integration is live as of 2026-05-17**: every note card has a
+> "Set reminder" action in its ⋮ menu (see `core/comms/notes/components/NoteReminderDialog.tsx`).
+> Reminders created from a note are persisted to the same `reminders` table the
+> upcoming UI will read, so no extra wiring is needed when the views ship.
 
 ## ✅ Completed
 

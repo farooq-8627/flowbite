@@ -42,7 +42,25 @@ interface KanbanBoardProps<T extends { id: string }> {
 	columns: KanbanColumnConfig[];
 	itemsByColumnId: Record<string, T[]>;
 	renderCard: (item: T, isDragging: boolean) => React.ReactNode;
-	onCardMove: (itemId: string, fromColumnId: string, toColumnId: string) => Promise<void>;
+	/**
+	 * Fires when a card is dropped at a new position. Receives:
+	 *   - itemId          — the moved card's id.
+	 *   - fromColumnId    — the column the card came from.
+	 *   - toColumnId      — the column the card was dropped into (may be
+	 *                       the same as `fromColumnId` for in-column reorder).
+	 *   - newIndex        — the card's index in `toColumnId` AFTER the drop.
+	 *                       Consumers use this to compute a `sortOrder` from
+	 *                       neighbours (`computeSortOrderForDrop` helper).
+	 *
+	 * In-column reorder vs cross-column move are emitted through the SAME
+	 * callback — distinguish via `fromColumnId === toColumnId`.
+	 */
+	onCardMove: (
+		itemId: string,
+		fromColumnId: string,
+		toColumnId: string,
+		newIndex: number,
+	) => Promise<void>;
 	showColumnValue?: boolean;
 	getItemValue?: (item: T) => number | undefined;
 	currencyCode?: string;
@@ -113,13 +131,6 @@ export function KanbanBoard<T extends { id: string }>({
 		return addCardAllowedColumns.includes(columnId);
 	}
 
-	function findColumnForItem(itemId: string): string | null {
-		for (const [colId, items] of Object.entries(columnMap)) {
-			if (items.some((i) => i.id === itemId)) return colId;
-		}
-		return null;
-	}
-
 	return (
 		<div ref={containerRef} className="flex h-full min-h-0 w-full min-w-0">
 			{/* biome-ignore lint/suspicious/noExplicitAny: Kanban primitive generic slot */}
@@ -142,13 +153,28 @@ export function KanbanBoard<T extends { id: string }>({
 						// dnd-kit emits them on separate frames.
 					}
 
-					// 2. Detect card moves between columns.
+					// 2. Build a snapshot of where each item lived BEFORE the
+					// change so we can detect cross-column moves AND in-column
+					// reorders in one pass.
+					const previousLocation = new Map<string, { columnId: string; index: number }>();
+					for (const [colId, items] of Object.entries(columnMap)) {
+						for (let i = 0; i < items.length; i += 1) {
+							previousLocation.set(items[i].id, { columnId: colId, index: i });
+						}
+					}
+
+					// 3. Walk the new state. For every item whose (column, index)
+					// pair differs from its previous one, fire `onCardMove`. The
+					// callback distinguishes cross-column moves (different
+					// columnId) from in-column reorders (same columnId, new
+					// index) on the consumer side.
 					for (const [colId, items] of Object.entries(newColumns)) {
-						for (const item of items as T[]) {
-							const prevCol = findColumnForItem(item.id);
-							if (prevCol && prevCol !== colId) {
-								await onCardMove(item.id, prevCol, colId);
-							}
+						for (let i = 0; i < items.length; i += 1) {
+							const item = items[i];
+							const prev = previousLocation.get(item.id);
+							if (!prev) continue; // brand-new item — first render
+							if (prev.columnId === colId && prev.index === i) continue; // unchanged
+							await onCardMove(item.id, prev.columnId, colId, i);
 						}
 					}
 				}}

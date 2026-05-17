@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
+import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import {
 	CreateModeFileField,
 	FileBufferProvider,
@@ -213,8 +214,24 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 
 	// Items by column for board — supports stage grouping (uses server
 	// `listGroupedByStage`) or generic per-field grouping from the flat list.
+	// Each column is sorted by sortOrder asc so dragged-to-position cards
+	// stick. Search matches still float to the top.
 	const itemsByColumnId = useMemo(() => {
 		const ranked = new Set(rankedItems.matchedIds);
+
+		const sortColumn = (rows: DealRow[]): DealRow[] =>
+			rows.slice().sort((a, b) => {
+				const aMatch = ranked.has(a.id);
+				const bMatch = ranked.has(b.id);
+				if (aMatch !== bMatch) return aMatch ? -1 : 1;
+				const aKey =
+					(a as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((a as { _creationTime?: number })._creationTime ?? 0);
+				const bKey =
+					(b as { sortOrder?: number; _creationTime?: number }).sortOrder ??
+					-((b as { _creationTime?: number })._creationTime ?? 0);
+				return aKey - bKey;
+			});
 
 		if (groupBy === "currentStageId") {
 			if (!grouped) return {};
@@ -224,15 +241,7 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 					...d,
 					id: (d._id ?? d.id) as string,
 				})) as DealRow[];
-				if (!search) {
-					result[stageId] = rows;
-					continue;
-				}
-				result[stageId] = [...rows].sort((a, b) => {
-					const ma = ranked.has(a.id) ? 1 : 0;
-					const mb = ranked.has(b.id) ? 1 : 0;
-					return mb - ma;
-				});
+				result[stageId] = sortColumn(rows);
 			}
 			return result;
 		}
@@ -246,22 +255,64 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 			if (!result[key]) result[key] = [];
 			result[key].push(it);
 		}
+		for (const key of Object.keys(result)) {
+			result[key] = sortColumn(result[key]);
+		}
 		return result;
-	}, [groupBy, grouped, rankedItems.matchedIds, rankedItems.items, search, boardColumns]);
+	}, [groupBy, grouped, rankedItems.matchedIds, rankedItems.items, boardColumns]);
 
-	// Handle card move (drag-drop) — updates the active `groupBy` field.
+	// Handle card move (drag-drop) — updates the active `groupBy` field
+	// and persists the dropped position via `sortOrder`. In-column reorder
+	// and cross-column move are dispatched through the same callback.
 	const updateDeal = useMutation(api.crm.entities.deals.mutations.update);
 	const handleCardMove = useCallback(
-		async (itemId: string, _fromColumnId: string, toColumnId: string) => {
+		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;
+
+			// Reconstruct the destination column AFTER the drop so we can
+			// compute the midpoint sortOrder.
+			const destBefore = itemsByColumnId[toCol] ?? [];
+			let itemsAfter: DealRow[];
+			if (fromCol === toCol) {
+				const oldIndex = destBefore.findIndex((it) => it.id === itemId);
+				if (oldIndex < 0) {
+					itemsAfter = destBefore;
+				} else {
+					const copy = destBefore.slice();
+					const [moved] = copy.splice(oldIndex, 1);
+					copy.splice(newIndex, 0, moved);
+					itemsAfter = copy;
+				}
+			} else {
+				const movedItem = (rankedItems.items as DealRow[]).find((it) => it.id === itemId);
+				if (!movedItem) return;
+				const copy = destBefore.slice();
+				copy.splice(newIndex, 0, movedItem);
+				itemsAfter = copy;
+			}
+			const sortOrder = computeSortOrderForDrop(
+				itemsAfter as Array<{ id: string; sortOrder?: number; _creationTime?: number }>,
+				newIndex,
+			);
+
 			try {
+				if (fromCol === toCol) {
+					// In-column reorder — only sortOrder.
+					await updateDeal({
+						orgId,
+						dealId: itemId as Id<"deals">,
+						sortOrder,
+					});
+					return;
+				}
 				if (groupBy === "currentStageId") {
 					await moveToStage({
 						orgId,
 						dealId: itemId as Id<"deals">,
-						stageId: toColumnId,
+						stageId: toCol,
+						sortOrder,
 					});
-					const toStage = pipeline?.stages.find((s) => s.id === toColumnId);
+					const toStage = pipeline?.stages.find((s) => s.id === toCol);
 					if (toStage?.isFinal && toStage.finalType === "positive") {
 						toast.success(`🎉 ${labels.deal.singular} won!`);
 						import("canvas-confetti")
@@ -274,19 +325,29 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 					await updateDeal({
 						orgId,
 						dealId: itemId as Id<"deals">,
-						assignedTo:
-							toColumnId === NO_GROUP_KEY ? undefined : (toColumnId as Id<"users">),
+						assignedTo: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"users">),
+						sortOrder,
 					});
 					return;
 				}
-				// Unknown/custom groupBy — no-op.
+				// Unknown/custom groupBy — only persist position.
+				await updateDeal({ orgId, dealId: itemId as Id<"deals">, sortOrder });
 			} catch (err) {
 				toast.error(`Couldn't move ${labels.deal.singular.toLowerCase()}`, {
 					description: err instanceof Error ? err.message : undefined,
 				});
 			}
 		},
-		[orgId, moveToStage, updateDeal, pipeline, labels.deal.singular, groupBy],
+		[
+			orgId,
+			moveToStage,
+			updateDeal,
+			pipeline,
+			labels.deal.singular,
+			groupBy,
+			itemsByColumnId,
+			rankedItems.items,
+		],
 	);
 
 	// List columns

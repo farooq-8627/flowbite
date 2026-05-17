@@ -35,7 +35,13 @@ export type ContactPersonRef = PersonRef & {
 };
 export type UserPersonRef = PersonRef & { type: "user"; id: Id<"users"> };
 
-export type ViewKind = "list" | "board";
+/**
+ * `ViewKind` lives in `core/shell/shared/entity-layout/types.ts` (the shared
+ * toolbar + view-toggle module). Re-exported here for backward compatibility
+ * — existing callers like `useViewToggle`, settings views, and the entity
+ * scaffolds keep importing from `@/core/entities/shared/types`.
+ */
+export type { ViewKind } from "@/core/shell/shared/entity-layout/types";
 
 /**
  * Defined by `core/entities/shared/config/field-catalog.ts`. Re-exported here

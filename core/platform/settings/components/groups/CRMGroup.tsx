@@ -18,6 +18,7 @@ import { resolveEntityLabels } from "../../types";
 import { SettingsFormRow } from "../shared/SettingsFormRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
+import { NoteCategoriesSection } from "./crm/NoteCategoriesSection";
 
 // ────────────────────────────────────────────────────────────────────────────
 // ────────────────────────────────────────────────────────────────────────────
@@ -308,9 +309,13 @@ function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> 
 
 export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const labels = resolveEntityLabels(org.entityLabels);
+	const myMembership = useQuery(api.orgs.queries.getMyMembership, { orgId });
+	const canManageNoteCategories =
+		myMembership?.permissions?.includes("notes.categories.manage") ?? false;
 	return (
 		<div className="grid gap-6">
 			<TagsSection orgId={orgId} labels={labels} />
+			<NoteCategoriesSection orgId={orgId} canManage={canManageNoteCategories} />
 			<RemindersSection org={org} orgId={orgId} />
 		</div>
 	);

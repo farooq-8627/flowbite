@@ -183,7 +183,16 @@ export const listMembers = orgQuery({
  *   The frontend `useOrgPermission` hook only needs the CURRENT user's role.
  *   This query returns a single membership row — O(1) after index lookup.
  *
- * RETURN: `Doc<"orgMembers"> | null`
+ * PERMISSIONS RESOLUTION:
+ *   `orgMembers.permissions` is an OPTIONAL override field that's almost
+ *   never set in production — `createOrg` only writes `roleId`. The real
+ *   SSOT is `orgRoles.permissions`. We resolve it here so the returned
+ *   `permissions` field is always populated, matching what backend handlers
+ *   see via `getOrgMember(...)`. Otherwise every frontend permission check
+ *   that reads `myMembership.permissions` silently evaluates to `false`,
+ *   even for the org Owner.
+ *
+ * RETURN: `Doc<"orgMembers"> | null` — `permissions` is always present.
  */
 export const getMyMembership = authenticatedQuery({
 	args: { orgId: v.id("orgs") },
@@ -196,7 +205,14 @@ export const getMyMembership = authenticatedQuery({
 			.first();
 
 		if (!member || member.deletedAt !== undefined) return null;
-		return member;
+
+		// Resolve permissions from the role doc (SSOT). Per-member overrides
+		// in `member.permissions` are honoured if present, otherwise fall
+		// back to the role's catalog-derived list.
+		const role = await ctx.db.get(member.roleId);
+		const permissions = member.permissions ?? role?.permissions ?? [];
+
+		return { ...member, permissions };
 	},
 });
 

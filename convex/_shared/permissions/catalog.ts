@@ -391,6 +391,20 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Pin notes",
 		defaultRoles: ["Owner", "Admin"],
 	},
+	{
+		key: "notes.categories.view",
+		module: "notes",
+		label: "View note categories",
+		description: "See the list of sticky-note categories defined for this workspace.",
+		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
+	},
+	{
+		key: "notes.categories.manage",
+		module: "notes",
+		label: "Manage note categories",
+		description: "Create, rename, recolour, archive, and reorder sticky-note categories.",
+		defaultRoles: ["Owner", "Admin"],
+	},
 
 	// ── Messages ─────────────────────────────────────────────────────────────
 	{

@@ -3,6 +3,7 @@
 
 import type { Id } from "@/convex/_generated/dataModel";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
+import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
@@ -140,9 +141,9 @@ function NotesGroup({ personCode }: { personCode: string }) {
 			<ProfileSection
 				id="notes.entries"
 				title="Notes"
-				description="Agent-written notes, editable."
+				description="Sticky notes — color-code, filter, and drag between categories. Notes added here also appear on the org-wide Notes page."
 			>
-				<PlaceholderRow personCode={personCode} label="Notes list" />
+				<NotesPanel entityType="person" entityId={personCode} personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);

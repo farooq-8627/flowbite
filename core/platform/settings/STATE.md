@@ -1,7 +1,7 @@
 # Settings — State
 
-> Updated: 2026-05-12
-> Status: ~92% Complete — dynamic entity labels are now wired through every settings group, and the Module Visibility (hide/show) UI has shipped.
+> Updated: 2026-05-17
+> Status: ~93% Complete — dynamic entity labels wired through every settings group; Module Visibility shipped; **Note Categories editor shipped**.
 
 ## ✅ Completed
 
@@ -16,7 +16,8 @@
 | RoleEditor | `components/groups/team/RoleEditor.tsx` | ✅ PermissionMatrix calls `useEntityLabels()` + `getPermissionModules(labels)` — every permission label follows the workspace's renamed entities. Labels bind to checkboxes via htmlFor. |
 | permissions-catalog | `config/permissions-catalog.ts` | ✅ Exports `getPermissionModules(labels)` factory. Static `PERMISSION_MODULES` kept as English-default fallback. |
 | settings-sections | `config/settings-sections.ts` | ✅ Exports `getSettingsSections(labels)` factory. Adds `workspace.modules` entry. Descriptions + keywords interpolate current labels so search matches both the English defaults AND the renamed terms. |
-| CRMGroup | `components/groups/CRMGroup.tsx` | Tabs + Tags description already dynamic. Keydown handler refactored to block statement (no comma operator). |
+| CRMGroup | `components/groups/CRMGroup.tsx` | Tabs + Tags description already dynamic. Keydown handler refactored to block statement (no comma operator). Now mounts `NoteCategoriesSection`. |
+| **NoteCategoriesSection** *(new 2026-05-17)* | `components/groups/crm/NoteCategoriesSection.tsx` | Owners/admins manage the org's sticky-note categories — create / rename / recolour / archive / set default / reorder via chevrons. Permission gate: `notes.categories.manage`. Dynamic text-color override (auto-derived from luminance unless set). |
 | AIGroup | `components/groups/AIGroup.tsx` | Context + usage |
 | AppearanceGroup | `components/groups/AppearanceGroup.tsx` | Theme + layout cookies |
 | NotificationsGroup | `components/groups/NotificationsGroup.tsx` | ✅ CRM group description accepts a `(labels) => string` function; all item labels already dynamic via the existing `label: (l) => ...` shape. |

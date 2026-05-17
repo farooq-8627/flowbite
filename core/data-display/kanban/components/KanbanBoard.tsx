@@ -48,8 +48,30 @@ interface KanbanBoardProps<T extends { id: string }> {
 	currencyCode?: string;
 	addCardAllowedColumns?: "first-only" | "all" | string[];
 	onAddToColumn?: (columnId: string) => void;
+	/**
+	 * Where to render the `+ add card` affordance.
+	 *  - "footer" (default) renders a full-width "+ Add card" pill at the
+	 *    bottom of the column. Used by entity boards that want a prominent
+	 *    quick-add slot.
+	 *  - "header" renders a small `+` icon in the column header next to the
+	 *    actions menu. Used by the notes board where the card composer
+	 *    appears at the TOP of the column.
+	 */
+	addCardSlot?: "footer" | "header";
+	/** Tooltip / aria label for the column-header `+`. Defaults to "Add card". */
+	addCardLabel?: string;
 	onEditColumn?: (columnId: string) => void;
 	onDeleteColumn?: (columnId: string) => void;
+	/**
+	 * Fires when the user drags a column header to a new position. Receives
+	 * the new column id order. Parent decides where to persist it (per-user
+	 * `usePersistedState` for entities, server mutation for note categories
+	 * and pipelines, etc.). When omitted, column drag still animates but
+	 * reverts on the next render.
+	 */
+	onColumnReorder?: (newOrder: string[]) => void;
+	/** Optional content rendered ABOVE the card list (between header and items). */
+	renderColumnTop?: (columnId: string) => React.ReactNode;
 	/** Optional footer rendered at the bottom of every column (below the card list). */
 	renderColumnFooter?: (columnId: string) => React.ReactNode;
 }
@@ -64,8 +86,12 @@ export function KanbanBoard<T extends { id: string }>({
 	currencyCode,
 	addCardAllowedColumns = "first-only",
 	onAddToColumn,
+	addCardSlot = "footer",
+	addCardLabel,
 	onEditColumn,
 	onDeleteColumn,
+	onColumnReorder,
+	renderColumnTop,
 	renderColumnFooter,
 }: KanbanBoardProps<T>) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -100,6 +126,23 @@ export function KanbanBoard<T extends { id: string }>({
 			<Kanban<any>
 				value={columnMap}
 				onValueChange={async (newColumns: Record<string, T[]>) => {
+					// 1. Detect column reorder. The dnd-kit primitive emits the
+					// new key order via Object.keys(newColumns). Compare against
+					// the current `columns` prop order — if it differs, the user
+					// dragged a column header.
+					const currentOrder = columns.map((c) => c.id);
+					const newOrder = Object.keys(newColumns);
+					const orderChanged =
+						newOrder.length === currentOrder.length &&
+						newOrder.some((id, i) => id !== currentOrder[i]);
+					if (orderChanged && onColumnReorder) {
+						onColumnReorder(newOrder);
+						// Don't return — a single drag can in theory change both
+						// item membership and column order, though in practice
+						// dnd-kit emits them on separate frames.
+					}
+
+					// 2. Detect card moves between columns.
 					for (const [colId, items] of Object.entries(newColumns)) {
 						for (const item of items as T[]) {
 							const prevCol = findColumnForItem(item.id);
@@ -144,24 +187,39 @@ export function KanbanBoard<T extends { id: string }>({
 										currencyCode={currencyCode}
 										onEditColumn={onEditColumn}
 										onDeleteColumn={onDeleteColumn}
+										onAddCard={
+											addCardSlot === "header" &&
+											canAddToColumn(col.id, index) &&
+											onAddToColumn
+												? onAddToColumn
+												: undefined
+										}
+										addCardLabel={addCardLabel}
 									/>
 
 									{/* Scrollable card body — takes remaining column height */}
 									<div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto overflow-x-hidden pe-0.5">
-										{items.length === 0 && <KanbanEmptyColumn />}
+										{renderColumnTop?.(col.id)}
+										{items.length === 0 && !renderColumnTop?.(col.id) && (
+											<KanbanEmptyColumn />
+										)}
 										{items.map((item) => renderCard(item, false))}
 									</div>
 
 									{/* Fixed footer slot (add button + any custom footer) */}
-									{(canAddToColumn(col.id, index) && onAddToColumn) ||
+									{(addCardSlot === "footer" &&
+										canAddToColumn(col.id, index) &&
+										onAddToColumn) ||
 									renderColumnFooter ? (
 										<div className="flex shrink-0 flex-col gap-1 pt-1">
-											{canAddToColumn(col.id, index) && onAddToColumn && (
-												<KanbanAddCardButton
-													columnId={col.id}
-													onAdd={onAddToColumn}
-												/>
-											)}
+											{addCardSlot === "footer" &&
+												canAddToColumn(col.id, index) &&
+												onAddToColumn && (
+													<KanbanAddCardButton
+														columnId={col.id}
+														onAdd={onAddToColumn}
+													/>
+												)}
 											{renderColumnFooter?.(col.id)}
 										</div>
 									) : null}

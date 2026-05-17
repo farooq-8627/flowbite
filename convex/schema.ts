@@ -57,6 +57,7 @@ export default defineSchema({
 
 	// CRM — shared (notes, conversations, messages, reminders, tags, savedViews)
 	notes: crmShared.notes,
+	noteCategories: crmShared.noteCategories,
 	conversations: crmShared.conversations,
 	conversationMembers: crmShared.conversationMembers,
 	messages: crmShared.messages,

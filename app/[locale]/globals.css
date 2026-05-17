@@ -293,3 +293,42 @@ html[data-font="source-code-pro"] body {
 	position: relative;
 	z-index: 1;
 }
+
+
+/* ─── Note-card search highlight ────────────────────────────────────────────
+ *
+ * Mirrors `entity-card-flash` but two things differ:
+ *
+ *   1. We animate `border-color` instead of an outline / box-shadow because
+ *      notes sit edge-to-edge inside a column with no gap — anything painted
+ *      outside the card's footprint bleeds onto the next note.
+ *   2. The flash colour is `currentColor`, NOT `var(--primary)`. Note cards
+ *      have a coloured background driven by the category palette
+ *      (yellow / blue / green / pink / purple / gray) which `--primary`
+ *      can't reliably contrast against in every theme. The card's
+ *      `color` property is already set to a luminance-derived contrast
+ *      colour (`note-color-utils.ts::resolveTextColor` — black on light
+ *      bg, white on dark bg), so `currentColor` is guaranteed to stand
+ *      out against whatever the category bg happens to be.
+ *
+ * The card reserves a 2px transparent border up-front so the flash never
+ * shifts layout.
+ */
+@keyframes note-card-flash {
+	0% {
+		border-color: transparent;
+	}
+	10%,
+	70% {
+		border-color: currentColor;
+	}
+	100% {
+		border-color: transparent;
+	}
+}
+
+.note-card-flash {
+	animation: note-card-flash 1.6s ease-out both;
+	position: relative;
+	z-index: 1;
+}

@@ -36,8 +36,8 @@ import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
+import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
 import { getStatusColor, LEAD_STATUSES } from "@/core/entities/shared/config/defaults";
 import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
@@ -52,6 +52,7 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
@@ -325,6 +326,13 @@ export function LeadsView(_props: { orgSlug: string }) {
 		}));
 	}, [groupBy, items, revealedStatuses, memberNameById, uniqueTags]);
 
+	// Per-user persisted column order. Survives reloads and locks the layout
+	// the user picked until they drag again.
+	const { orderedColumns: boardColumnsOrdered, onColumnReorder } = usePersistedColumnOrder(
+		`lead:${groupBy}`,
+		boardColumns,
+	);
+
 	// Search ranking
 	const rankedItems = useMemo(
 		() =>
@@ -535,7 +543,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 						</div>
 					);
 				}}
-				boardColumns={boardColumns}
+				boardColumns={boardColumnsOrdered}
 				itemsByColumnId={itemsByColumnId}
 				renderCard={(item, isDragging) => (
 					<LeadCard
@@ -567,6 +575,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 					/>
 				)}
 				onCardMove={handleCardMove}
+				onColumnReorder={onColumnReorder}
 				emptyTitle={`No ${labels.lead.plural.toLowerCase()} yet`}
 				emptyDescription={`Create your first ${labels.lead.singular.toLowerCase()} to get started.`}
 			/>

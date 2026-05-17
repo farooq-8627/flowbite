@@ -271,10 +271,10 @@ export function EntityCard({
 			<div
 				ref={rootRef}
 				className={cn(
-					"group/card relative flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card ps-2.5 pe-5 py-2 text-xs shadow-xs transition-all",
-					"hover:border-ring/40 hover:shadow-sm",
+					"group/card relative flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card ps-2.5 pe-5 py-2 text-xs shadow-xs transition-shadow",
+					!isDragging && "hover:border-ring/40 hover:shadow-sm",
 					borderClass,
-					isDragging && "rotate-1 opacity-60 shadow-lg",
+					isDragging && "rotate-1 shadow-lg",
 				)}
 			>
 				{/* ── Row 1: identity (top-left) + tags (top-right) ── */}
@@ -434,7 +434,7 @@ export function EntityCard({
 						aria-label="Drag card"
 						data-tour="lead-card-grip"
 						className={cn(
-							"absolute inset-y-1 end-0 flex w-4 cursor-grab items-center justify-center rounded-e-[var(--radius)] text-muted-foreground/40 transition-colors",
+							"absolute inset-y-0 end-0 flex w-4 cursor-grab items-center justify-center rounded-e-[var(--radius)] text-muted-foreground/40 transition-colors",
 							"hover:bg-muted hover:text-muted-foreground focus-visible:bg-muted focus-visible:outline-none",
 							"data-dragging:cursor-grabbing",
 						)}

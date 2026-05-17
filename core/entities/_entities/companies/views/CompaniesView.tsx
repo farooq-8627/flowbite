@@ -25,9 +25,9 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
+import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { CompanyDrawer } from "@/core/entities/_entities/companies/components/CompanyDrawer";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { EntityCard } from "@/core/entities/shared/components/EntityCard";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
@@ -42,6 +42,7 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
@@ -177,6 +178,12 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 			color: getStatusColor("company", v),
 		}));
 	}, [groupBy, rankedItems.items, memberNameById]);
+
+	// Per-user persisted column order. Survives reloads.
+	const { orderedColumns: boardColumnsOrdered, onColumnReorder } = usePersistedColumnOrder(
+		`company:${groupBy}`,
+		boardColumns,
+	);
 
 	const itemsByColumnId = useMemo(() => {
 		const grouped: Record<string, typeof rankedItems.items> = {};
@@ -412,7 +419,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 						/>
 					) : null
 				}
-				boardColumns={boardColumns}
+				boardColumns={boardColumnsOrdered}
 				itemsByColumnId={itemsByColumnId}
 				renderCard={(item, isDragging) => (
 					<EntityCard
@@ -427,6 +434,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 					/>
 				)}
 				onCardMove={async () => {}}
+				onColumnReorder={onColumnReorder}
 				emptyTitle={`No ${labels.company.plural.toLowerCase()} yet`}
 				emptyDescription={`Add your first ${labels.company.singular.toLowerCase()} to get started.`}
 			/>

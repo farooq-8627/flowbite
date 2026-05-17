@@ -34,7 +34,6 @@ import {
 	useFileBuffer,
 } from "@/core/data-io/files/components/CreateModeFileField";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { EntityCard } from "@/core/entities/shared/components/EntityCard";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
@@ -54,6 +53,7 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";

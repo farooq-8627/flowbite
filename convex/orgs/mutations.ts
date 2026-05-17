@@ -33,6 +33,7 @@ import {
 import { RESERVED_SLUGS, validateSlug } from "../_shared/reservedSlugs";
 import { logActivity } from "../activityLogs/helpers";
 import { seedFieldDefinitionsForOrg } from "../crm/fields/fieldDefinitions/internal";
+import { seedNoteCategoriesForOrg } from "../crm/shared/noteCategories/internal";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
 import { getDefaultStages } from "./templates/pipelineStages";
@@ -166,6 +167,10 @@ export const createOrg = authenticatedMutation({
 		// Counter — workspace creator is the first active member.
 		await applyOrgStat(ctx, orgId, "members.active", +1);
 
+		// Seed default sticky-note categories (Yellow / Blue / Green / …).
+		// Idempotent — calling again is a no-op.
+		await seedNoteCategoriesForOrg(ctx, orgId, now);
+
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, { defaultOrgId: orgId, updatedAt: now });
 		}
@@ -242,6 +247,9 @@ export const create = authenticatedMutation({
 		});
 
 		await applyOrgStat(ctx, orgId, "members.active", +1);
+
+		// Seed default sticky-note categories (idempotent).
+		await seedNoteCategoriesForOrg(ctx, orgId, now);
 
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, {

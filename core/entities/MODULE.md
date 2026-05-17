@@ -101,3 +101,18 @@ See `DYNAMIC_FIELDS_BLUEPRINT.md` §7 for the full pitch list. Highlights:
 - Files tab on entity detail views.
 - AI summary generator (the slot exists; the writer is missing).
 - "Replay tutorials" button in Appearance settings.
+
+
+## 2026-05-17 — Per-user persisted column order
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | LeadsView / ContactDetailView (the contacts list view) / CompaniesView all wire `usePersistedColumnOrder(slot, boardColumns)` and pass the resulting `onColumnReorder` to `EntityListPage`. | Column drag now sticks across reloads. Slot keys include the active `groupBy` so swapping groupings doesn't carry stale orderings (`lead:status` vs `lead:assignedTo` vs `lead:tag`). |
+| 2 | Deals board is intentionally NOT wired in this pass. | Pipeline stages are an org-wide doc gated on `pipelines.manage`. The follow-up adds a server reorder call, an early-return when the user lacks the perm, and an optimistic local update. Tracked in `core/entities/_entities/deals/MODULE.md`. |
+
+
+## 2026-05-17 — EntityCard drag smoothness
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | EntityCard now uses `transition-shadow` (not `transition-all`) and drops `opacity-60` while dragging. | Aligns the drag-overlay clone with the notes board's smoother feel. Tailwind's `transition-all` was animating the dnd-kit transform, fighting the primitive's own transition string and looking janky. The card-flash border animation is a `@keyframes` so it still works without `transition-all`. The hover affordances now only apply when not dragging. |

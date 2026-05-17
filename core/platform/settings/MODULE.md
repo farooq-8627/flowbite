@@ -51,3 +51,11 @@
 - ❌ Never put Activity Log in settings — it's at /activity
 - ❌ Never allow reserved slugs — validate against RESERVED_SLUGS
 - ❌ Never use Cloudinary — Convex `_storage` only
+
+
+## 2026-05-17 — Permissions resolved from role doc
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | `Settings → CRM → Note Categories` was rendering the read-only view for the Owner. Root cause: `myMembership.permissions` was undefined because `orgMembers.permissions` is an optional override field that `createOrg` never writes. | Patched `convex/orgs/queries.ts::getMyMembership` to resolve `permissions` from the role doc before returning. No schema or migration change required. `backfillRolePermissions` already keeps `orgRoles.permissions` aligned with the catalog SSOT. |
+| 2 | Every settings group that gates UI on `myMembership.permissions` (CRMGroup, others) now sees the correct set. | No changes needed in `CRMGroup.tsx` or any other consumer. Manual verification: Owner now sees Add / Edit / Up / Down / Default / Archive on every category row. |

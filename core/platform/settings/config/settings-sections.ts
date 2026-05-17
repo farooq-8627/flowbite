@@ -287,6 +287,26 @@ export function getSettingsSections(
 			keywords: ["label", "color", "categorize", "group", "mark", ...entityKeywords],
 		},
 		{
+			id: "crm.noteCategories",
+			groupId: "crm",
+			label: "Note Categories",
+			description:
+				"Coloured buckets that sticky-notes group into (Urgent, Today, Demo Scheduled, …). Used by the Notes board and per-entity panels.",
+			keywords: [
+				"note",
+				"notes",
+				"sticky",
+				"category",
+				"color",
+				"urgent",
+				"today",
+				"label",
+				"bucket",
+				"kanban",
+			],
+			permission: "notes.categories.manage",
+		},
+		{
 			id: "crm.reminders",
 			groupId: "crm",
 			label: "Reminder Defaults",

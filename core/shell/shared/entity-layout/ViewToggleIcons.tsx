@@ -14,12 +14,16 @@
  * understood them; the tour fires once per device and stays out of the way.
  * `aria-label` keeps the controls accessible to screen readers and any
  * native browser title hint.
+ *
+ * Lives in `core/shell/shared/entity-layout/` because every shared view that
+ * uses the entity-style toolbar (Leads, Contacts, Deals, Companies, Notes,
+ * etc.) consumes this widget. Free of entity-domain imports.
  */
 
 import { LayoutGridIcon, ListIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { ViewKind } from "../types";
+import type { ViewKind } from "./types";
 
 interface ViewToggleIconsProps {
 	view: ViewKind;

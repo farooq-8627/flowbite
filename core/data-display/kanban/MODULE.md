@@ -412,3 +412,21 @@ When `features/project-management/` is built in Phase 8, the SAME `KanbanBoard` 
 - [ ] R-KAN-04: Stale/warning colors come from pipeline stage config — never hardcoded
 - [ ] R-KAN-05: RTL-safe classes only (ms-*, me-*, ps-*, pe-*)
 - [ ] R-KAN-06: rounded-[var(--radius)] only — never rounded-md/lg
+
+
+## 2026-05-17 — Column drag-to-reorder
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | `KanbanBoard` should expose a column-reorder callback. The underlying `Kanban` primitive already emits the new key order via `onValueChange`, but the wrapper was swallowing it (only items were checked). | Added `onColumnReorder?: (newOrder: string[]) => void`. The wrapper now diffs `Object.keys(newColumns)` against `columns.map(c => c.id)` and forwards the new order when it differs. Item-move logic untouched. |
+| 2 | Persistence policy varies per consumer. Notes go to the server (real org-wide preference). Entity boards (Leads / Contacts / Companies) are per-user — admins shouldn't fight over a private layout choice. Deals stages are pipeline-doc state and require `pipelines.manage`. | Added `usePersistedColumnOrder(slot, columns)` helper for the per-user case (localStorage via `usePersistedState`). Notes uses `useReorderNoteCategories` directly. Deals reorder is a follow-up — needs the pipeline-reorder mutation + permission gate. |
+| 3 | Persisted order must not lose new statuses / assignees / tags that appear later. | `usePersistedColumnOrder` applies the saved order to known ids and APPENDS unknown ones at the end. Stale ids are dropped silently. |
+
+
+## 2026-05-17 (later) — `+` in column header + top-of-column slot
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Some boards (notes) want a `+` directly inside the column header, not as a footer pill. | Added `addCardSlot?: "footer" \| "header"` to `KanbanBoard` (default `"footer"`, no behaviour change for existing entity boards). When set to `"header"`, the small `+` icon button is rendered inside `KanbanColumnHeader` next to the actions menu, gated by `canAddToColumn(...)`. |
+| 2 | New cards from the `+` should appear at the TOP of the column. | Added `renderColumnTop?: (columnId: string) => React.ReactNode` slot. Renders above the items list, inside the same scroll container, before any card. Notes uses it for the `InlineNoteCard` composer; the empty-state fallback only shows when both `items` and `renderColumnTop` are empty. |
+| 3 | Header `+` must not start a column drag. | Wrapped in a `pointerdown / click / keydown` event-stopping div, same pattern entity-card menu uses to avoid kicking off `KanbanItem` drags. |

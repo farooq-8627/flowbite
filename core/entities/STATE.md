@@ -175,7 +175,13 @@ show tooltips — the tour explains the gesture once.
 ## Architecture invariants
 
 - All four entities render through the same scaffolds (EntityListPage,
-  EntityPageLayout, EntityCard, EntityFormDrawer). Zero per-entity layout.
+  EntityFormDrawer, EntityCard). The toolbar chrome (`EntityPageLayout`,
+  `ViewToggleIcons`, `EmptyState`, `ViewKind`) was lifted to
+  `core/shell/shared/entity-layout/` on 2026-05-17 so Notes (and future
+  shared views) reuse the exact same 40px toolbar. Import them via the
+  barrel: `@/core/shell/shared/entity-layout`. `EntityListPage` +
+  `EntityFormDrawer` stay here because they depend on entity-specific
+  helpers (DataTable + Kanban entity-card rendering, dedup banner).
 - View toggle uses nuqs (`?view=list|board`). Precedence: URL → workspace
   default → fallback constant.
 - `fieldDefinitions` is the single source of metadata.

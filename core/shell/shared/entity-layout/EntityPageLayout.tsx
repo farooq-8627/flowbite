@@ -1,13 +1,19 @@
 "use client";
 
 /**
- * EntityPageLayout — dedicated entity-page toolbar (D2).
+ * EntityPageLayout — shared toolbar + body chrome (D2).
+ *
+ * Lives in `core/shell/shared/entity-layout/` because it's reused by:
+ *   - the four entity list pages (Leads, Contacts, Deals, Companies) via
+ *     `core/entities/scaffolds/EntityListPage.tsx`,
+ *   - the org-wide Notes page (`core/comms/notes/views/NotesView.tsx`),
+ *   - any future shared view that wants the same slim 40px toolbar.
  *
  * Layout (single compact row — ~40px tall, full width):
  *   ┌───────────────────────────────────────────────────────────────────┐
  *   │ [🔍 search ] [filter ▾]      [list|board] [+ Add Lead]            │
  *   ├───────────────────────────────────────────────────────────────────┤
- *   │ body (DataTable or KanbanBoard)                                   │
+ *   │ body (DataTable, KanbanBoard, NotesByCategoryKanban, …)           │
  *
  * Why no left title cluster: `TopNav`'s `AutoBreadcrumb` already shows the
  * current page title, so the toolbar stays focused on actions.
@@ -33,8 +39,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { cn } from "@/lib/utils";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
-import { ViewToggleIcons } from "../shared/components/ViewToggleIcons";
-import type { ViewKind } from "../shared/types";
+import type { ViewKind } from "./types";
+import { ViewToggleIcons } from "./ViewToggleIcons";
 
 /**
  * Entity-layout tour — fires ONCE per device, at the first entity page the

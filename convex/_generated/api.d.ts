@@ -10,7 +10,9 @@
 
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
+import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
+import type * as _migrations_seedNoteCategories from "../_migrations/seedNoteCategories.js";
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
@@ -54,6 +56,9 @@ import type * as crm_shared_conversations_mutations from "../crm/shared/conversa
 import type * as crm_shared_conversations_queries from "../crm/shared/conversations/queries.js";
 import type * as crm_shared_messages_mutations from "../crm/shared/messages/mutations.js";
 import type * as crm_shared_messages_queries from "../crm/shared/messages/queries.js";
+import type * as crm_shared_noteCategories_internal from "../crm/shared/noteCategories/internal.js";
+import type * as crm_shared_noteCategories_mutations from "../crm/shared/noteCategories/mutations.js";
+import type * as crm_shared_noteCategories_queries from "../crm/shared/noteCategories/queries.js";
 import type * as crm_shared_notes_mutations from "../crm/shared/notes/mutations.js";
 import type * as crm_shared_notes_queries from "../crm/shared/notes/queries.js";
 import type * as crm_shared_reminders_mutations from "../crm/shared/reminders/mutations.js";
@@ -102,7 +107,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
+  "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
+  "_migrations/seedNoteCategories": typeof _migrations_seedNoteCategories;
   "_shared/constants": typeof _shared_constants;
   "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;
@@ -146,6 +153,9 @@ declare const fullApi: ApiFromModules<{
   "crm/shared/conversations/queries": typeof crm_shared_conversations_queries;
   "crm/shared/messages/mutations": typeof crm_shared_messages_mutations;
   "crm/shared/messages/queries": typeof crm_shared_messages_queries;
+  "crm/shared/noteCategories/internal": typeof crm_shared_noteCategories_internal;
+  "crm/shared/noteCategories/mutations": typeof crm_shared_noteCategories_mutations;
+  "crm/shared/noteCategories/queries": typeof crm_shared_noteCategories_queries;
   "crm/shared/notes/mutations": typeof crm_shared_notes_mutations;
   "crm/shared/notes/queries": typeof crm_shared_notes_queries;
   "crm/shared/reminders/mutations": typeof crm_shared_reminders_mutations;

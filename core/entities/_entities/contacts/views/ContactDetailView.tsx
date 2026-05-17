@@ -24,11 +24,11 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
+import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { EditContactDrawer } from "@/core/entities/_entities/contacts/components/EditContactDrawer";
 import { ConvertLeadDrawer } from "@/core/entities/_entities/leads/components/ConvertLeadDrawer";
 import { useLeadMutations } from "@/core/entities/_entities/leads/hooks/useLeadMutations";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import type { PrimaryActionConfig } from "@/core/entities/scaffolds/EntityPageLayout";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { CompanyCell } from "@/core/entities/shared/components/CompanyCell";
 import { EntityCard } from "@/core/entities/shared/components/EntityCard";
@@ -47,6 +47,7 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
@@ -187,6 +188,12 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 			color: getStatusColor("contact", v),
 		}));
 	}, [groupBy, items, memberNameById, uniqueTags]);
+
+	// Per-user persisted column order. Survives reloads.
+	const { orderedColumns: boardColumnsOrdered, onColumnReorder } = usePersistedColumnOrder(
+		`contact:${groupBy}`,
+		boardColumns,
+	);
 
 	const itemsByColumnId = useMemo(() => {
 		const grouped: Record<string, typeof rankedItems.items> = {};
@@ -491,7 +498,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 						/>
 					) : null
 				}
-				boardColumns={boardColumns}
+				boardColumns={boardColumnsOrdered}
 				itemsByColumnId={itemsByColumnId}
 				renderCard={(item, isDragging) => {
 					const r = item as ContactRow;
@@ -533,6 +540,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 					);
 				}}
 				onCardMove={async () => {}}
+				onColumnReorder={onColumnReorder}
 				emptyTitle={`No ${labels.contact.plural.toLowerCase()} yet`}
 				emptyDescription={`Convert a ${labels.lead.singular.toLowerCase()} to create your first ${labels.contact.singular.toLowerCase()}.`}
 			/>

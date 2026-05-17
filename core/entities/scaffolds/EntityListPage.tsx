@@ -22,9 +22,13 @@ import {
 	KanbanBoard,
 	type KanbanColumnConfig,
 } from "@/core/data-display/kanban/components/KanbanBoard";
-import { EmptyState } from "../shared/components/EmptyState";
-import type { EntitySlot, ViewKind } from "../shared/types";
-import { EntityPageLayout, type PrimaryActionConfig } from "./EntityPageLayout";
+import {
+	EmptyState,
+	EntityPageLayout,
+	type PrimaryActionConfig,
+	type ViewKind,
+} from "@/core/shell/shared/entity-layout";
+import type { EntitySlot } from "../shared/types";
 
 interface EntityListPageProps<TRow extends { id: string }> {
 	slot: EntitySlot;
@@ -52,6 +56,8 @@ interface EntityListPageProps<TRow extends { id: string }> {
 	onCardMove?: (itemId: string, fromColumnId: string, toColumnId: string) => Promise<void>;
 	renderColumnFooter?: (columnId: string) => React.ReactNode;
 	onAddToColumn?: (columnId: string) => void;
+	/** Forwards through to KanbanBoard. See KanbanBoard.onColumnReorder. */
+	onColumnReorder?: (newOrder: string[]) => void;
 	// Empty state
 	emptyTitle?: string;
 	emptyDescription?: string;
@@ -76,6 +82,7 @@ export function EntityListPage<TRow extends { id: string }>({
 	onCardMove,
 	renderColumnFooter,
 	onAddToColumn,
+	onColumnReorder,
 	emptyTitle,
 	emptyDescription,
 	emptyAction,
@@ -133,6 +140,7 @@ export function EntityListPage<TRow extends { id: string }>({
 							onCardMove={onCardMove}
 							renderColumnFooter={renderColumnFooter}
 							onAddToColumn={onAddToColumn}
+							onColumnReorder={onColumnReorder}
 						/>
 					</div>
 				</div>

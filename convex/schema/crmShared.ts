@@ -36,18 +36,102 @@ import { orgScoped, softDelete, timestamps } from "../_shared/validators";
 // ─── Notes ────────────────────────────────────────────────────────────────────
 
 /**
- * Rich text notes attached to any entity. authorType distinguishes user vs AI.
+ * User-managed sticky-note categories — one row per (orgId, name).
+ *
+ * Replaces the old fixed 6-color enum on `notes`. Each org defines its own
+ * categories ("Urgent", "Today", "Demo Scheduled", …) with a background
+ * colour (hex) and an optional explicit text colour. When `textColor` is
+ * unset, the UI derives a readable text colour from the bg luminance at
+ * render time — see `core/comms/notes/components/note-color-utils.ts`.
+ *
+ * Default categories are seeded on org creation (Yellow / Blue / Green /
+ * Pink / Purple / Gray) so existing notes keep their visual identity. Yellow
+ * is marked `isDefault: true`. Owners can rename, archive, reorder, or
+ * change defaults in Settings → CRM → Note Categories.
+ */
+export const noteCategories = defineTable({
+	...orgScoped,
+	/** Display label shown on the card and in Settings. */
+	name: v.string(),
+	/** Background colour as a hex string (e.g. "#fde68a"). */
+	bgColor: v.string(),
+	/**
+	 * Optional explicit text colour. When unset, the UI derives a readable
+	 * value from `bgColor` luminance.
+	 */
+	textColor: v.optional(v.string()),
+	/** Sort order on the board and in Settings. Lower = earlier. */
+	position: v.number(),
+	/** New notes created without an explicit categoryId land in this one. */
+	isDefault: v.boolean(),
+	/**
+	 * Soft archive — archived categories keep their notes but no longer show
+	 * in pickers or as Kanban columns. Archived categories may not be the
+	 * default.
+	 */
+	isArchived: v.boolean(),
+	...timestamps,
+})
+	.index("by_org", ["orgId"])
+	.index("by_org_and_position", ["orgId", "position"])
+	.index("by_org_and_name", ["orgId", "name"])
+	.index("by_org_and_default", ["orgId", "isDefault"]);
+
+/**
+ * Sticky-style notes attached to any entity (lead, contact, deal, company, person, org).
  *
  * Notes are agent-written annotations: editable, pinnable, sometimes long-lived.
- * For chat-style messages between users (or AI on-behalf), use the
- * `conversations` + `messages` tables.
+ * The UI is a sticky-note board — `categoryId` is NOT decorative; it drives the
+ * Kanban-style column the card belongs to and the per-card colour.
+ *
+ * Schema notes
+ * ────────────
+ *   - `categoryId` (optional) — reference into `noteCategories`. Optional so the
+ *     org-wide page can hold uncategorised cards while a fresh org is being
+ *     seeded; in steady-state every row has one (set by `notes.create` if the
+ *     caller didn't pass it). The 2026-05-17 migration backfills every legacy
+ *     row from the old `color` enum.
+ *   - `color` (optional, deprecated) — legacy fixed enum. KEPT in the schema
+ *     so existing rows still validate. The migration can clear it after
+ *     `categoryId` is populated; consumers MUST NOT read this field.
+ *   - `type` (optional, deprecated) — legacy semantic classification. Same
+ *     deal as `color`: removed from the public API; only kept so legacy rows
+ *     pass schema validation until the cleanup migration finishes.
+ *   - `title` (optional) — short label (≤80 chars). Most cards are body-only.
+ *
+ * For chat-style messages between users (or AI on-behalf), use the dedicated
+ * `messages` table — never repurpose this one.
  */
 export const notes = defineTable({
 	...orgScoped,
 	entityType: v.string(),
 	entityId: v.string(),
 	personCode: v.optional(v.string()),
+	title: v.optional(v.string()),
 	content: v.string(),
+	categoryId: v.optional(v.id("noteCategories")),
+	/** @deprecated use `categoryId`. Kept optional for legacy rows + migration. */
+	color: v.optional(
+		v.union(
+			v.literal("yellow"),
+			v.literal("blue"),
+			v.literal("green"),
+			v.literal("pink"),
+			v.literal("purple"),
+			v.literal("gray"),
+		),
+	),
+	/** @deprecated removed in v2. Kept optional for legacy rows + migration. */
+	type: v.optional(
+		v.union(
+			v.literal("general"),
+			v.literal("follow_up"),
+			v.literal("blocker"),
+			v.literal("decision"),
+			v.literal("idea"),
+			v.literal("ai_summary"),
+		),
+	),
 	authorId: v.id("users"),
 	authorType: v.string(),
 	isPinned: v.boolean(),
@@ -56,6 +140,8 @@ export const notes = defineTable({
 	...timestamps,
 })
 	.index("by_entity", ["orgId", "entityType", "entityId"])
+	.index("by_entity_and_pinned", ["orgId", "entityType", "entityId", "isPinned", "createdAt"])
+	.index("by_org_and_category", ["orgId", "categoryId", "createdAt"])
 	.index("by_org_and_author", ["orgId", "authorId"])
 	.index("by_org_and_personCode", ["orgId", "personCode"])
 	.index("by_org_and_created", ["orgId", "createdAt"])

@@ -1,7 +1,7 @@
 # Shared — State
 
-> Updated: 2026-05-12
-> Status: Shell-layout primitives + canonical `useEntityLabels` live here.
+> Updated: 2026-05-17
+> Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome live here.
 
 ## ✅ Completed
 
@@ -18,6 +18,11 @@
 | useShellSearch + scrollToShellSection + getVisibleShellSections | `core/shared/layouts/useShellSearch.ts` | ShellLayout — Fuse-backed search + blink-safe scroll |
 | SearchFilterProvider + useSearchFilter | `core/shared/layouts/search-filter-context.tsx` | SettingsSection, ProfileSection |
 | Barrel export | `core/shared/layouts/index.ts` | Single import path for any shell consumer |
+| **EntityPageLayout** *(new 2026-05-17)* | `core/shell/shared/entity-layout/EntityPageLayout.tsx` | EntityListPage (entities), NotesView (planned) — slim 40px toolbar + body slot |
+| **ViewToggleIcons** *(moved 2026-05-17)* | `core/shell/shared/entity-layout/ViewToggleIcons.tsx` | EntityPageLayout — list/board switch |
+| **EmptyState** *(moved 2026-05-17)* | `core/shell/shared/entity-layout/EmptyState.tsx` | EntityListPage, future shared views |
+| **ViewKind type** *(moved 2026-05-17)* | `core/shell/shared/entity-layout/types.ts` | Re-exported by `core/entities/shared/types.ts` for back-compat |
+| **Entity-layout barrel** *(new 2026-05-17)* | `core/shell/shared/entity-layout/index.ts` | One import path for the toolbar chrome |
 
 ## ⬜ Pending
 

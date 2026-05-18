@@ -4,7 +4,7 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { useCurrentOrg, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ShellGroup, ShellSection } from "@/core/shell/shared/layouts";
 import { ShellLayout } from "@/core/shell/shared/layouts";
@@ -20,7 +20,10 @@ import type { OrgSettings } from "../types";
  *   1. Resolve orgId via the shared `OrgProvider` context — no extra
  *      `listMyOrgs` subscription (per AGENTS.md "Identity/auth/labels via
  *      context, not subscriptions").
- *   2. Fetch org-wide settings + current user's permissions.
+ *   2. Read the current user's permissions from the same context — they
+ *      are already resolved server-side on `getMyMembership` and exposed
+ *      via `useOrgPermissions()`. We only need a separate subscription
+ *      for org settings (which are NOT already in scope).
  *   3. Pull entity labels via `useEntityLabels()` so every section
  *      description + search keyword reflects the admin's rename choices
  *      (Lead → Inquiry, Company → Venue, …) instantly. The hook auto-detects
@@ -36,10 +39,19 @@ import type { OrgSettings } from "../types";
  * No changes here.
  */
 export function SettingsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
-	const { orgId } = useCurrentOrg();
+	const { orgId, membership } = useCurrentOrg();
 
 	const settings = useQuery(api.orgs.queries.getFullSettings, orgId ? { orgId } : "skip");
-	const permissions = useQuery(api.orgRoles.queries.getMyPermissions, orgId ? { orgId } : "skip");
+	// Permissions come from the shared OrgProvider context — they are already
+	// resolved as part of `getMyMembership` (the server merges role + member
+	// overrides). Calling `getMyPermissions` here would fire a redundant
+	// subscription. Keep `permissions` as a plain string[] to preserve the
+	// downstream shape (ShellLayout / SettingsContent expect a mutable array).
+	const orgPermissions = useOrgPermissions();
+	const permissions = useMemo(
+		() => (membership === undefined ? undefined : [...orgPermissions]),
+		[membership, orgPermissions],
+	);
 
 	// Entity labels drive section descriptions + search keywords. When the
 	// admin renames "Lead" → "Inquiry", Convex reactivity flows through here

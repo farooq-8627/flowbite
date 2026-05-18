@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { CrmDataProvider } from "@/core/entities/shared/hooks/useOrgTags";
 import { OrgProvider } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
 	AIChatPanel,
@@ -129,8 +130,9 @@ export function DashboardLayoutClient({
 		<div className="flex h-screen w-full overflow-hidden">
 			<RouteProgress />
 			<OrgProvider orgSlug={orgSlug}>
-				<GlobalEntityShortcuts orgSlug={orgSlug} />
-				<SidebarProvider defaultOpen={initialSidebarOpen}>
+				<CrmDataProvider>
+					<GlobalEntityShortcuts orgSlug={orgSlug} />
+					<SidebarProvider defaultOpen={initialSidebarOpen}>
 					<Suspense fallback={<SidebarSkeleton />}>
 						<AppSidebar
 							variant={variant}
@@ -233,6 +235,7 @@ export function DashboardLayoutClient({
 						<AIChatPanelContent />
 					</AppSheet>
 				)}
+				</CrmDataProvider>
 			</OrgProvider>
 		</div>
 	);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -21,8 +21,19 @@ import { CreateRoleDialog, RoleEditorDialog } from "./RoleEditor";
 
 type Role = Doc<"orgRoles">;
 
-export function RolesSection({ orgId }: { orgId: Id<"orgs"> }) {
-	const roles = useQuery(api.orgRoles.queries.list, { orgId });
+/**
+ * `roles` is provided by the parent `TeamGroup` so the same data is shared
+ * across MembersSection, RolesSection, and InviteMemberDialog from a single
+ * subscription — see AGENTS.md "Per-row data on a list view comes from one
+ * batched query".
+ */
+export function RolesSection({
+	orgId,
+	roles,
+}: {
+	orgId: Id<"orgs">;
+	roles: Role[] | undefined;
+}) {
 	const remove = useMutation(api.orgRoles.mutations.remove);
 
 	const [editing, setEditing] = useState<Role | null>(null);

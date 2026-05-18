@@ -25,7 +25,9 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:debug": "playwright test --debug",
-		"test:all": "pnpm test && pnpm test:frontend && pnpm test:e2e"
+		"test:all": "pnpm test && pnpm test:frontend && pnpm test:e2e",
+		"guard:identity-subscriptions": "node scripts/guard-identity-subscriptions.mjs",
+		"guard:all": "pnpm guard:identity-subscriptions"
 	},
 	"dependencies": {
 		"@auth/core": "0.37.4",

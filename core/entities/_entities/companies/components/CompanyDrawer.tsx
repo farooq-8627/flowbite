@@ -31,6 +31,7 @@ import {
 	useFileBuffer,
 } from "@/core/data-io/files/components/CreateModeFileField";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
+import { useUpdateCompany } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
@@ -64,7 +65,7 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const create = useMutation(api.crm.entities.companies.mutations.create);
-	const update = useMutation(api.crm.entities.companies.mutations.update);
+	const update = useUpdateCompany();
 
 	// Buffered file uploads — files added during create are committed under
 	// scope="company" / scopeId=companyCode after the org row is written. For

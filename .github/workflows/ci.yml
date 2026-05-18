@@ -1,0 +1,83 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# One workflow at a time per PR — cancel stale runs on new pushes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: Static checks (typecheck, lint, guards)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        # `packageManager` field in package.json drives the version.
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Convex types
+        # `tsc` needs the generated `convex/_generated/api.d.ts` to typecheck
+        # client code. `--typecheck=disable` skips the inner tsc — we run our
+        # own at the next step.
+        run: pnpm exec convex codegen --typecheck=disable
+
+      - name: TypeScript typecheck
+        run: pnpm typecheck
+
+      - name: Biome lint
+        run: pnpm lint-check
+
+      - name: Identity / auth subscription guard
+        # Enforces AGENTS.md "Identity/auth/labels via context, not
+        # subscriptions". Fails CI if any new file outside the allow-list
+        # subscribes to the queries hoisted into <OrgProvider> /
+        # <CrmDataProvider>.
+        run: pnpm guard:all
+
+  tests:
+    name: Tests (Convex + frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: static-checks
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Convex types
+        run: pnpm exec convex codegen --typecheck=disable
+
+      - name: Convex backend tests
+        run: pnpm test
+
+      - name: Frontend unit tests
+        run: pnpm test:frontend

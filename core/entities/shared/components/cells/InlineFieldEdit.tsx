@@ -31,6 +31,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FileDropzone, useFileAttachments } from "@/core/data-io/files/components/FileUpload";
+import {
+	useUpdateCompany,
+	useUpdateContact,
+	useUpdateDeal,
+	useUpdateLead,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { cn } from "@/lib/utils";
 import { type FieldDef, getInputRenderer } from "../inputs/input-dispatcher";
@@ -110,10 +116,12 @@ export function InlineFieldEdit({
 	}, [open, currentValue]);
 
 	const setFieldValue = useMutation(api.crm.fields.fieldValues.mutations.set);
-	const updateLead = useMutation(api.crm.entities.leads.mutations.update);
-	const updateContact = useMutation(api.crm.entities.contacts.mutations.update);
-	const updateDeal = useMutation(api.crm.entities.deals.mutations.update);
-	const updateCompany = useMutation(api.crm.entities.companies.mutations.update);
+	// Centralized — these hooks carry the optimistic update so the
+	// user sees the new value the moment they hit Save (no flash).
+	const updateLead = useUpdateLead();
+	const updateContact = useUpdateContact();
+	const updateDeal = useUpdateDeal();
+	const updateCompany = useUpdateCompany();
 
 	const persistColumn = (val: unknown) => {
 		const key = field.columnKey ?? field.name;

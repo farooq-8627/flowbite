@@ -34,6 +34,12 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import {
+	useAttachTagToEntity,
+	useDetachTagFromEntity,
+	useSoftDeleteCompany,
+	useUpdateCompany,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
@@ -71,7 +77,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	const defaultCardFields = useMemo(() => companyFields.map((f) => f.name), [companyFields]);
 	const listColumns = defaultCardFields;
 	const _createCompany = useMutation(api.crm.entities.companies.mutations.create);
-	const deleteCompany = useMutation(api.crm.entities.companies.mutations.softDelete);
+	const deleteCompany = useSoftDeleteCompany();
 
 	const [addOpen, setAddOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
@@ -227,9 +233,9 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	//
 	// Tag groupBy: companies can carry multiple tags. Dragging across tag
 	// columns swaps just the source/destination tag (not all tags).
-	const updateCompany = useMutation(api.crm.entities.companies.mutations.update);
-	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
-	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
+	const updateCompany = useUpdateCompany();
+	const attachTag = useAttachTagToEntity();
+	const detachTag = useDetachTagFromEntity();
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;

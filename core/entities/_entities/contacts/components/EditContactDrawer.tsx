@@ -8,7 +8,7 @@
  * call on Save.
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -18,6 +18,7 @@ import {
 	EntityFieldForm,
 	type EntityFormValues,
 } from "@/core/entities/shared/components/EntityFieldForm";
+import { useUpdateContact } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 interface EditContactDrawerProps {
@@ -38,7 +39,7 @@ export function EditContactDrawer({ open, onOpenChange, orgId, contact }: EditCo
 	const labels = useEntityLabels();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const update = useMutation(api.crm.entities.contacts.mutations.update);
+	const update = useUpdateContact();
 	const customValues = useQuery(
 		api.crm.fields.fieldValues.queries.getForEntity,
 		orgId && contact?._id

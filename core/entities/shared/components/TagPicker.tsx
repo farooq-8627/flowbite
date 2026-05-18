@@ -12,11 +12,12 @@
  * `create` mutation and selects the new tag.
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { useMemo } from "react";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 
 interface TagPickerProps {
 	orgId: Id<"orgs"> | undefined;
@@ -38,7 +39,7 @@ export function TagPicker({
 	placeholder = "Add tags…",
 	disabled,
 }: TagPickerProps) {
-	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
+	const tags = useOrgTags(orgId);
 	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 
 	const options: TagOption[] = useMemo(

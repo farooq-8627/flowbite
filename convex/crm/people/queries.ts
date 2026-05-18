@@ -172,3 +172,80 @@ export const searchByCode = orgQuery({
 		return null;
 	},
 });
+
+/**
+ * Conversation-picker payload — one network round-trip that returns the
+ * minimal set of rows needed to render the "Start a new conversation"
+ * dialog. Replaces three separate subscriptions
+ * (`people.listAll` + `deals.list` + `companies.list`) when the dialog
+ * opens, dropping the messages page from 4 list subscriptions to 2 (this
+ * + the inbox query).
+ *
+ * Returns:
+ *   - people:    leads + contacts merged into the unified
+ *                `{ personCode, displayName, email?, phone?, type }` shape
+ *   - deals:     `{ dealCode, title }`
+ *   - companies: `{ companyCode, name }`
+ *
+ * Bounded — capped at 100 rows per type to keep the payload small. The
+ * dialog's `cmdk` already filters on the client; the cap matches the
+ * Convex Rule R5 default.
+ */
+export const listForConversationPicker = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+
+		const cap = 100;
+
+		const [leads, contacts, deals, companies] = await Promise.all([
+			ctx.db
+				.query("leads")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(cap),
+			ctx.db
+				.query("contacts")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(cap),
+			ctx.db
+				.query("deals")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(cap),
+			ctx.db
+				.query("companies")
+				.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+				.take(cap),
+		]);
+
+		const people = [
+			...leads
+				.filter((l) => !l.deletedAt && !l.convertedAt)
+				.map((l) => ({
+					type: "lead" as const,
+					personCode: l.personCode,
+					displayName: l.displayName,
+					email: l.email,
+					phone: l.phone,
+				})),
+			...contacts
+				.filter((c) => !c.deletedAt)
+				.map((c) => ({
+					type: "contact" as const,
+					personCode: c.personCode,
+					displayName: c.displayName,
+					email: c.email,
+					phone: c.phone,
+				})),
+		];
+
+		return {
+			people,
+			deals: deals
+				.filter((d) => !d.deletedAt)
+				.map((d) => ({ dealCode: d.dealCode, title: d.title })),
+			companies: companies
+				.filter((c) => !c.deletedAt)
+				.map((c) => ({ companyCode: c.companyCode, name: c.name })),
+		};
+	},
+});

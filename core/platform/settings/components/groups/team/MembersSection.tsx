@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { MoreHorizontal, Shield, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
@@ -68,7 +68,7 @@ export function MembersSection({
 			id="team.members"
 			title="Members"
 			description="People who have access to this workspace."
-			action={canManage ? <InviteMemberDialog orgId={orgId} /> : undefined}
+			action={canManage ? <InviteMemberDialog orgId={orgId} roles={roles} /> : undefined}
 		>
 			<div className="overflow-x-auto">
 				<Table>

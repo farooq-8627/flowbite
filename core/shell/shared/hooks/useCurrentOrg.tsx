@@ -21,6 +21,7 @@ import { OrgEntityLabelsContext } from "./org-entity-labels-context";
  *   - `orgs.getMyMembership` (current user's permissions)
  *   - `orgs.listMembers`    (members for assignee/avatar lookup)
  *   - `orgs.getEntityLabels`(white-labelled entity names)
+ *   - `featureFlags.getForOrg` (module / feature toggles)
  *
  * Convex deduplicates network round-trips for identical args, so the
  * client doesn't actually re-fetch — but each `useQuery` call still
@@ -40,6 +41,7 @@ import { OrgEntityLabelsContext } from "./org-entity-labels-context";
  *   - `useOrgMemberMap()`      → Map<userId, member>
  *   - `useOrgMemberNameMap()`  → Map<userId, name>
  *   - `useEntityLabels()`      → EntityLabels (auto-detects via context)
+ *   - `useFeatureFlags()`      → Record<string, boolean> | undefined
  *
  * Locked architectural decision (2026-05-18). Per AGENTS.md rule:
  * components MUST NOT call these queries via `useQuery` directly. Use the
@@ -94,6 +96,12 @@ type OrgContextValue = {
 	memberNameMap: Map<string, string>;
 	/** Entity labels (with defaults merged). */
 	entityLabels: EntityLabels;
+	/**
+	 * Feature flag map (`{ [flagKey]: boolean }`). `undefined` while loading.
+	 * Use `useFeatureFlags()` or `useModuleEnabled(key)` to read; never call
+	 * `useQuery(api.featureFlags.queries.getForOrg)` directly inside the shell.
+	 */
+	featureFlags: Record<string, boolean> | undefined;
 };
 
 const OrgContext = createContext<OrgContextValue | null>(null);
@@ -126,6 +134,15 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
 	);
 
+	// Feature flags are session-scoped — hoisted here so `useModuleEnabled`
+	// and `<ModuleGuard>` read from context instead of each mounting their
+	// own `featureFlags.queries.getForOrg` subscription. Server-side this
+	// query already resolves the user's defaultOrgId, so it's safe to fire
+	// before `resolvedOrgId` is known. We don't gate on `resolvedOrgId`
+	// because the flags don't depend on the current route's orgId — they
+	// depend on the authenticated user's default org.
+	const featureFlags = useQuery(api.featureFlags.queries.getForOrg);
+
 	const value = useMemo<OrgContextValue>(() => {
 		const entry = orgs?.find((o) => o.org.slug === orgSlug);
 		const memberMap = new Map<string, MemberWithUser>();
@@ -149,8 +166,9 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 			memberMap,
 			memberNameMap,
 			entityLabels: mergeEntityLabelDefaults(entityLabelsRaw),
+			featureFlags,
 		};
-	}, [orgs, orgSlug, me, membership, members, entityLabelsRaw]);
+	}, [orgs, orgSlug, me, membership, members, entityLabelsRaw, featureFlags]);
 
 	return (
 		<OrgContext.Provider value={value}>
@@ -214,6 +232,21 @@ export function useOrgMemberMap(): Map<string, MemberWithUser> {
 /** Returns a `Map<userId, displayName>` for O(1) name lookups. Always defined. */
 export function useOrgMemberNameMap(): Map<string, string> {
 	return useCurrentOrg().memberNameMap;
+}
+
+/**
+ * Returns the feature-flag map (`{ [flagKey]: boolean }`) for the current
+ * user's default org. `undefined` while loading. Single subscription
+ * mounted by `<OrgProvider>` — components MUST NOT call
+ * `useQuery(api.featureFlags.queries.getForOrg)` directly.
+ *
+ * Outside the dashboard shell (no `<OrgProvider>`) this returns `undefined`
+ * and `useModuleEnabled` falls back to its own subscription via
+ * `useQuery(...)` so legacy callsites keep working.
+ */
+export function useFeatureFlags(): Record<string, boolean> | undefined {
+	const ctx = useContext(OrgContext);
+	return ctx?.featureFlags;
 }
 
 // Keep types exported for callers that need to type props.

@@ -15,7 +15,7 @@
  * when empty) so the visual is identical between create and edit.
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import { cn } from "@/lib/utils";
 import { TagsPickerPopoverContent } from "./TagsPickerPopover";
 
@@ -45,14 +46,10 @@ export function BufferedTagsPicker({
 	className,
 }: BufferedTagsPickerProps) {
 	const [open, setOpen] = useState(false);
-	// `listByOrg` powers the in-popover picker — only fire while it's open.
-	// Mirrors the lazy-load pattern in `TagsCell` so opening multiple
-	// create-mode drawers (or rendering many BufferedTagsPickers in a
-	// settings panel) doesn't fan out to one subscription per instance.
-	const allTags = useQuery(
-		api.crm.shared.tags.queries.listByOrg,
-		orgId && open ? { orgId } : "skip",
-	);
+	// Picker list — reads from the shared `<CrmDataProvider>` context, so
+	// many BufferedTagsPickers on the same page share one subscription.
+	// Gated on `open` so unopened pickers contribute zero.
+	const allTags = useOrgTags(open ? orgId : undefined);
 	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 
 	const options = useMemo(

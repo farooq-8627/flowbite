@@ -11,7 +11,7 @@
  * and several sibling sections (Notes, Reminders, Follow-ups, Timeline).
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import type { resolveEntityLabels } from "../../../types";
 import { SettingsSection } from "../../shared/SettingsSection";
 
@@ -52,7 +53,7 @@ interface TagsSectionProps {
 }
 
 export function TagsSection({ orgId, labels }: TagsSectionProps) {
-	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, { orgId });
+	const tags = useOrgTags(orgId);
 	const create = useMutation(api.crm.shared.tags.mutations.create);
 	const remove = useMutation(api.crm.shared.tags.mutations.remove);
 

@@ -15,6 +15,10 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import {
+	useSoftDeleteLead,
+	useUpdateLead,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 function describeError(err: unknown): string | undefined {
@@ -30,9 +34,11 @@ function describeError(err: unknown): string | undefined {
 export function useLeadMutations(orgId: Id<"orgs"> | undefined) {
 	const labels = useEntityLabels();
 	const createLead = useMutation(api.crm.entities.leads.mutations.create);
-	const updateLead = useMutation(api.crm.entities.leads.mutations.update);
+	// Optimistic-update hooks — patch the cached `leads.list` so the UI
+	// reflects the change instantly.
+	const updateLead = useUpdateLead();
 	const convertLead = useMutation(api.crm.entities.leads.mutations.convertToContact);
-	const deleteLead = useMutation(api.crm.entities.leads.mutations.softDelete);
+	const deleteLead = useSoftDeleteLead();
 
 	const create = useCallback(
 		async (data: {

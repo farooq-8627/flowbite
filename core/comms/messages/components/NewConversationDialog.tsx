@@ -118,9 +118,17 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 	}, [open]);
 
 	// All sources fetched in parallel (only when open). Each is bounded server-side.
-	const people = useQuery(api.crm.people.queries.listAll, open ? { orgId } : "skip");
-	const deals = useQuery(api.crm.entities.deals.queries.list, open ? { orgId } : "skip");
-	const companies = useQuery(api.crm.entities.companies.queries.list, open ? { orgId } : "skip");
+	// 2026-05-18: collapsed three subscriptions (`people.listAll`, `deals.list`,
+	// `companies.list`) into a single `listForConversationPicker` server query
+	// — see AGENTS.md "Per-row data on a list view comes from one batched
+	// query". Also drops the messages page from 4 list subscriptions to 2.
+	const picker = useQuery(
+		api.crm.people.queries.listForConversationPicker,
+		open ? { orgId } : "skip",
+	);
+	const people = picker?.people;
+	const deals = picker?.deals;
+	const companies = picker?.companies;
 	const inbox = useQuery(
 		api.crm.shared.conversations.queries.listForUser,
 		open ? { orgId, filter: "all" } : "skip",

@@ -9,7 +9,7 @@
  * call on Save. Custom fields are persisted live as the user types.
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
@@ -19,6 +19,7 @@ import {
 	EntityFieldForm,
 	type EntityFormValues,
 } from "@/core/entities/shared/components/EntityFieldForm";
+import { useUpdateLead } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 interface EditLeadDrawerProps {
@@ -39,7 +40,7 @@ export function EditLeadDrawer({ open, onOpenChange, orgId, lead }: EditLeadDraw
 	const labels = useEntityLabels();
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	const update = useMutation(api.crm.entities.leads.mutations.update);
+	const update = useUpdateLead();
 	const customValues = useQuery(
 		api.crm.fields.fieldValues.queries.getForEntity,
 		orgId && lead?._id ? { orgId, entityType: "lead", entityId: lead._id as string } : "skip",

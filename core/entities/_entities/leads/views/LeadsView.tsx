@@ -26,14 +26,12 @@
  *   - Briefly flash-highlighted so they're easy to spot.
  */
 
-import { useMutation } from "convex/react";
 import { ArrowRightCircleIcon, PencilIcon, PlusIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
-import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
@@ -44,6 +42,11 @@ import { getStatusColor, LEAD_STATUSES } from "@/core/entities/shared/config/def
 import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import {
+	useAttachTagToEntity,
+	useDetachTagFromEntity,
+	useUpdateLead,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useCompaniesByPersonCodes } from "@/core/entities/shared/hooks/useCompaniesByPersonCodes";
 import { useModuleDisplay } from "@/core/entities/shared/hooks/useModuleDisplay";
@@ -126,23 +129,11 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const { visibleFields } = useEntityFields("lead", orgId);
 	const defaultCardFields = useMemo(() => visibleFields.map((f) => f.name), [visibleFields]);
 	const { create, convert, remove } = useLeadMutations(orgId);
-	const updateLead = useMutation(api.crm.entities.leads.mutations.update).withOptimisticUpdate(
-		(store, args) => {
-			const list = store.getQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId });
-			if (!list) return;
-			// Per AGENTS.md "Every list-affecting mutation has
-			// `withOptimisticUpdate`":
-			//   "The optimistic update MUST NOT bump `updatedAt: Date.now()`
-			//    — that changes row identity on every render and cascades
-			//    list invalidations."
-			// Patch ONLY the user-visible fields the mutation touches; let
-			// the server stamp `updatedAt`. We reuse the existing object's
-			// `updatedAt` so the row's reactive identity stays stable until
-			// the real server roundtrip lands (no flash, no list re-fetch).
-			const next = list.map((l) => (l._id === args.leadId ? { ...l, ...args } : l));
-			store.setQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId }, next);
-		},
-	);
+	// Centralized — see `core/entities/shared/hooks/useEntityMutations.ts`
+	// for the optimistic update implementation. Wired across LeadsView,
+	// EditLeadDrawer, and InlineFieldEdit so every lead update flows
+	// through the same patch path.
+	const updateLead = useUpdateLead();
 
 	// Org-level staleness thresholds (falls back gracefully when not configured)
 	// Read from shared OrgProvider context — no extra `orgs.get` subscription.
@@ -437,8 +428,8 @@ export function LeadsView(_props: { orgSlug: string }) {
 	// only changes whether THIS one is attached. The NO_GROUP_KEY column
 	// represents "untagged"; dropping there detaches the source tag without
 	// attaching anything new.
-	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
-	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
+	const attachTag = useAttachTagToEntity();
+	const detachTag = useDetachTagFromEntity();
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;

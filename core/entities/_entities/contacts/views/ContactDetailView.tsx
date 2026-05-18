@@ -11,7 +11,7 @@
  */
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowRightCircleIcon, PencilIcon, Undo2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,6 +37,13 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import {
+	useAttachTagToEntity,
+	useDetachTagFromEntity,
+	useRevertContactToLead,
+	useSoftDeleteContact,
+	useUpdateContact,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { PersonCodeBadge } from "@/core/entities/shared/PersonCodeBadge";
@@ -90,8 +97,8 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	const listColumns = defaultCardFields;
 	const { convert } = useLeadMutations(orgId);
 	const canConvert = useOrgPermission(orgId, "leads.convert");
-	const revertToLead = useMutation(api.crm.entities.contacts.mutations.revertToLead);
-	const softDeleteContact = useMutation(api.crm.entities.contacts.mutations.softDelete);
+	const revertToLead = useRevertContactToLead();
+	const softDeleteContact = useSoftDeleteContact();
 
 	const [convertOpen, setConvertOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
@@ -256,9 +263,9 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	// Tag groupBy: contacts can carry multiple tags. Dragging across tag
 	// columns swaps just the source/destination tag (not all tags) — same
 	// semantics as LeadsView.
-	const updateContact = useMutation(api.crm.entities.contacts.mutations.update);
-	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
-	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
+	const updateContact = useUpdateContact();
+	const attachTag = useAttachTagToEntity();
+	const detachTag = useDetachTagFromEntity();
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;

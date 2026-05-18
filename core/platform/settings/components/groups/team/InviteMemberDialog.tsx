@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -44,11 +44,22 @@ const inviteSchema = z.object({
 
 const INVITE_SYSTEM_ROLE_NAMES = ["admin", "member", "viewer"] as const;
 
-export function InviteMemberDialog({ orgId }: { orgId: Id<"orgs"> }) {
+/**
+ * `roles` is provided by the parent (MembersSection → TeamGroup) so the
+ * same role list is shared across the whole Team tab from a single
+ * subscription. See AGENTS.md "Per-row data on a list view comes from
+ * one batched query".
+ */
+export function InviteMemberDialog({
+	orgId,
+	roles,
+}: {
+	orgId: Id<"orgs">;
+	roles: Role[] | undefined;
+}) {
 	const [open, setOpen] = useState(false);
 	const invite = useMutation(api.invitations.mutations.create);
 
-	const roles = useQuery(api.orgRoles.queries.list, { orgId });
 	const inviteRoles = useMemo(() => {
 		const byName = new Map<string, Role>();
 		for (const r of roles ?? []) {

@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import { cn } from "@/lib/utils";
 import { TagsPickerPopoverContent } from "./TagsPickerPopover";
 
@@ -63,16 +64,16 @@ export function TagsCell({
 	const [open, setOpen] = useState(false);
 
 	// `listByOrg` powers the in-popover picker (full list of tags the user
-	// can choose from). It's ONLY needed while the popover is open. With ~10
-	// cards on a kanban board we'd otherwise fire 10 identical
-	// subscriptions — each registered as a separate `useQuery` on the
-	// dashboard's "Function Calls" counter even though Convex deduplicates
-	// the actual round-trip. Subscribing only on `open` collapses this to
-	// 1 subscription on the FIRST tag-edit (kept warm by the popover state).
-	const allTags = useQuery(
-		api.crm.shared.tags.queries.listByOrg,
-		orgId && open ? { orgId } : "skip",
-	);
+	// can choose from). Reads from the shared `<CrmDataProvider>` context
+	// when inside the dashboard, so even with 10 cards on a kanban board
+	// the popovers don't stack 10 separate subscriptions — they all
+	// piggy-back on the provider's single subscription.
+	//
+	// `useOrgTags` is itself reference-counted: as long as at least one
+	// consumer (popover, settings page, AddLeadDrawer) is mounted with an
+	// orgId, the subscription stays open. When everything unmounts, the
+	// provider pauses the underlying `useQuery` automatically.
+	const allTags = useOrgTags(open ? orgId : undefined);
 	// Per-row attached tags. Skipped when the parent (board / table view) has
 	// already batched the lookup via `useEntityTagsMap` and forwarded
 	// `prefetchedTags` — see AGENTS.md "Per-row data on a list view comes

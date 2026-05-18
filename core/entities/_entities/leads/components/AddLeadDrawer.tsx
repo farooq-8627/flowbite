@@ -39,6 +39,7 @@ import {
 	type EntityFormValues,
 } from "@/core/entities/shared/components/EntityFieldForm";
 import { useDedup } from "@/core/entities/shared/hooks/useDedup";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { cn } from "@/lib/utils";
 
@@ -82,7 +83,10 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 	const createCompany = useMutation(api.crm.entities.companies.mutations.create);
 	const addPersonToCompany = useMutation(api.crm.entities.companies.mutations.addPerson);
 	const bulkSetCustom = useMutation(api.crm.fields.fieldValues.mutations.bulkSet);
-	const tagsByOrg = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
+	// Shared tags subscription via CrmDataProvider — reused across TagPicker,
+	// TagsSection, and any other on-page consumer. See AGENTS.md
+	// "Identity/auth/labels via context, not subscriptions".
+	const tagsByOrg = useOrgTags(orgId);
 	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
 

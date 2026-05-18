@@ -1,8 +1,7 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { useMemo } from "react";
+import { useCurrentOrg, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { ShellLayout } from "@/core/shell/shared/layouts";
 import {
 	DEFAULT_PROFILE_GROUP,
@@ -43,9 +42,18 @@ export function ProfileDetailView({
 	orgSlug: string;
 	personCode: string;
 }) {
-	const { orgId } = useCurrentOrg();
+	const { orgId, membership } = useCurrentOrg();
 
-	const permissions = useQuery(api.orgRoles.queries.getMyPermissions, orgId ? { orgId } : "skip");
+	// Permissions are already resolved server-side on `getMyMembership` and
+	// exposed via `useOrgPermissions()`. No extra subscription needed.
+	// `ShellLayout` expects either `string[] | undefined` (mutable), so wrap
+	// the readonly slice from context in a fresh array while preserving the
+	// "still loading" signal (`undefined` while `membership === undefined`).
+	const orgPermissions = useOrgPermissions();
+	const permissions = useMemo(
+		() => (membership === undefined ? undefined : [...orgPermissions]),
+		[membership, orgPermissions],
+	);
 
 	const isReady = !!orgId && permissions !== undefined;
 

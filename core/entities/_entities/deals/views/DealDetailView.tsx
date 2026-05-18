@@ -45,6 +45,12 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import {
+	useAttachTagToEntity,
+	useDetachTagFromEntity,
+	useMoveDealToStage,
+	useUpdateDeal,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
@@ -142,23 +148,12 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 		setFlashEpoch((e) => e + 1);
 	}, [search]);
 
-	// Mutations.
-	// `moveToStage` carries an optimistic update — the kanban card visually
-	// moves the moment the user releases the drag, then reconciles with the
-	// server response. Adds the "feels instant" UX without round-trip lag.
-	const moveToStage = useMutation(
-		api.crm.entities.deals.mutations.moveToStage,
-	).withOptimisticUpdate((store, args) => {
-		const list = store.getQuery(api.crm.entities.deals.queries.list, { orgId: args.orgId });
-		if (!list) return;
-		const now = Date.now();
-		const next = list.map((d) =>
-			d._id === args.dealId
-				? { ...d, currentStageId: args.stageId, stageEnteredAt: now, updatedAt: now }
-				: d,
-		);
-		store.setQuery(api.crm.entities.deals.queries.list, { orgId: args.orgId }, next);
-	});
+	// Mutations — all centralized in `useEntityMutations.ts`. The hooks
+	// carry the optimistic-update logic (per AGENTS.md
+	// "Every list-affecting mutation has `withOptimisticUpdate`"). The
+	// kanban card visually moves the moment the user releases the drag,
+	// then reconciles with the server response.
+	const moveToStage = useMoveDealToStage();
 	const createDeal = useMutation(api.crm.entities.deals.mutations.create);
 
 	const [addOpen, setAddOpen] = useState(false);
@@ -275,9 +270,9 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	// Tag groupBy: deals can carry multiple tags. Dragging across tag columns
 	// swaps just the source/destination tag (not all tags). NO_GROUP_KEY ↔
 	// "untagged" — no join row to add/remove.
-	const updateDeal = useMutation(api.crm.entities.deals.mutations.update);
-	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
-	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
+	const updateDeal = useUpdateDeal();
+	const attachTag = useAttachTagToEntity();
+	const detachTag = useDetachTagFromEntity();
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;

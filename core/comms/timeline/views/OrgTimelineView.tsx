@@ -1,39 +1,23 @@
 "use client";
 
-/**
- * OrgTimelineView — org-wide audit feed.
- *
- * Mounts `<TimelineFeed scope={kind:"org"}>` in the standard
- * `EntityPageLayout` chrome (slim toolbar with the page header).
- *
- * Permissions
- *   - `activityLogs.viewOrg` is enforced server-side by the timeline
- *     query (see `convex/crm/shared/timeline/queries.ts`).
- *
- * Composer
- *   - Hidden on this scope. There's no canonical entity to attach
- *     comments to org-wide. (Comments belong on a person/deal/company.)
- */
-
 import { ActivityIcon } from "lucide-react";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { TimelineFeed } from "@/core/comms/timeline/components/TimelineFeed";
+import { TimelineFilters } from "@/core/comms/timeline/components/TimelineFilters";
+import type { TimelineFilter } from "@/core/comms/timeline/components/types";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 export function OrgTimelineView() {
-	useCurrentOrg(); // ensure we're inside <OrgProvider>
+	useCurrentOrg();
+	const [filter, setFilter] = useState<TimelineFilter>("all");
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			<div className="flex shrink-0 items-center gap-2 border-b bg-background px-4 py-2.5">
-				<ActivityIcon
-					className="size-4 text-muted-foreground"
-					aria-hidden
-				/>
-				<h1 className="text-sm font-semibold">Timeline</h1>
-				<span className="text-xs text-muted-foreground">
-					Workspace-wide activity, notes, and reminders.
-				</span>
+			{/* Header — icon + filter chips inline */}
+			<div className="flex shrink-0 items-center gap-3 border-b bg-background px-4 py-2">
+				<ActivityIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+				<TimelineFilters value={filter} onChange={setFilter} />
 			</div>
 
 			<div className="min-h-0 flex-1 p-3 xl:p-4">
@@ -42,6 +26,8 @@ export function OrgTimelineView() {
 						scope={{ kind: "org" }}
 						pageSize={50}
 						showComposer={false}
+						showFilters={false}
+						externalFilter={filter}
 						emptyState={{
 							title: "No workspace activity yet",
 							body: "When teammates create leads, notes, or follow-ups, they'll show up here.",

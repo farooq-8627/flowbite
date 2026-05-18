@@ -159,6 +159,12 @@ export const orgs = defineTable({
 						),
 					),
 					autoCloseAfterDays: v.optional(v.number()),
+					/** Notify the assignee when a follow-up is created/updated. Default: true. */
+					notifyAssignee: v.optional(v.boolean()),
+					/** Require every follow-up to be linked to a deal before saving. Default: false. */
+					requireDealCode: v.optional(v.boolean()),
+					/** Send a reminder notification N hours before the follow-up is due. 0 = off. */
+					reminderBeforeHours: v.optional(v.number()),
 				}),
 			),
 			fileUpload: v.optional(

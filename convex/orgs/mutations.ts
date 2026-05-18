@@ -448,6 +448,9 @@ export const update = orgMutation({
 							),
 						),
 						autoCloseAfterDays: v.optional(v.number()),
+						notifyAssignee: v.optional(v.boolean()),
+						requireDealCode: v.optional(v.boolean()),
+						reminderBeforeHours: v.optional(v.number()),
 					}),
 				),
 				fileUpload: v.optional(

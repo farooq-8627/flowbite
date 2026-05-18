@@ -54,30 +54,16 @@ import {
 
 interface TimelineFeedProps {
 	scope: TimelineScope;
-	/** Show the bottom composer. Default: true on entity-bound scopes, false on org. */
 	showComposer?: boolean;
-	/** Show the filter chip row. Default: true. */
 	showFilters?: boolean;
-	/** Override empty-state copy. */
 	emptyState?: { title: string; body?: string };
-	/** Per-page size. Default: 50. */
 	pageSize?: number;
-	/** Visible cap — only enforced on glance surfaces (dashboard widget). */
 	visibleCap?: number;
 	className?: string;
-	/**
-	 * Optional — when provided, the composer attaches notes to this entity.
-	 * Required when scope.kind === "entity" or "person"; ignored when "org".
-	 */
 	composerEntity?: { entityType: string; entityId: string; personCode?: string };
-	/**
-	 * Pixel gap between sibling entries. Default 28 (= `gap-7` on the
-	 * timeline page). The dashboard widget overrides to `12` (= `gap-3`)
-	 * to fit more entries in a tighter card. The connector (rendered
-	 * inside `ActionNode`) reads this value to extend its line through
-	 * the gap and meet the next icon's top edge.
-	 */
 	entryGapPx?: number;
+	/** When set the internal filter state is ignored — caller owns the filter. */
+	externalFilter?: TimelineFilter;
 }
 
 export function TimelineFeed({
@@ -90,6 +76,7 @@ export function TimelineFeed({
 	className,
 	composerEntity,
 	entryGapPx = 28,
+	externalFilter,
 }: TimelineFeedProps) {
 	const { orgId } = useCurrentOrg();
 
@@ -99,7 +86,8 @@ export function TimelineFeed({
 		initialNumItems: pageSize,
 	});
 
-	const [filter, setFilter] = useState<TimelineFilter>("all");
+	const [internalFilter, setFilter] = useState<TimelineFilter>("all");
+	const filter = externalFilter ?? internalFilter;
 
 	// Reverse desc → asc for natural top-to-bottom reading order, then
 	// optionally cap to `visibleCap` from the BOTTOM (we keep the newest).
@@ -260,10 +248,10 @@ export function TimelineFeed({
 
 	return (
 		<div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
-			{/* Filters */}
-			{showFilters && (
+			{/* Filters — only shown when caller hasn't taken control via externalFilter */}
+			{showFilters && !externalFilter && (
 				<div className="flex shrink-0 items-center justify-between gap-2 px-1">
-					<TimelineFilters value={filter} onChange={setFilter} counts={counts} />
+					<TimelineFilters value={internalFilter} onChange={setFilter} counts={counts} />
 				</div>
 			)}
 

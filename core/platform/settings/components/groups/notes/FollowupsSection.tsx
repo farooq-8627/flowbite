@@ -29,6 +29,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
@@ -50,11 +51,10 @@ const PRIORITY_LABEL: Record<Priority, string> = {
 const followupSchema = z.object({
 	defaultDueOffsetDays: z.coerce.number().int().min(1).max(365),
 	defaultPriority: z.enum(PRIORITY_VALUES),
-	/**
-	 * 0 = disabled. Coerced for the `<Input type="number">` value
-	 * (HTML inputs hand back strings even when typed `number`).
-	 */
 	autoCloseAfterDays: z.coerce.number().int().min(0).max(365),
+	notifyAssignee: z.boolean(),
+	requireDealCode: z.boolean(),
+	reminderBeforeHours: z.coerce.number().int().min(0).max(72),
 });
 
 export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
@@ -67,6 +67,9 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 			defaultDueOffsetDays: defaults.defaultDueOffsetDays ?? 3,
 			defaultPriority: (defaults.defaultPriority ?? "normal") as Priority,
 			autoCloseAfterDays: defaults.autoCloseAfterDays ?? 0,
+			notifyAssignee: defaults.notifyAssignee ?? true,
+			requireDealCode: defaults.requireDealCode ?? false,
+			reminderBeforeHours: defaults.reminderBeforeHours ?? 0,
 		},
 		onSubmit: async (data) => {
 			await update({
@@ -75,9 +78,10 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 					followupDefaults: {
 						defaultDueOffsetDays: data.defaultDueOffsetDays,
 						defaultPriority: data.defaultPriority,
-						// Persist `0` as undefined so the disabled state is canonical.
-						autoCloseAfterDays:
-							data.autoCloseAfterDays > 0 ? data.autoCloseAfterDays : undefined,
+						autoCloseAfterDays: data.autoCloseAfterDays > 0 ? data.autoCloseAfterDays : undefined,
+						notifyAssignee: data.notifyAssignee,
+						requireDealCode: data.requireDealCode,
+						reminderBeforeHours: data.reminderBeforeHours > 0 ? data.reminderBeforeHours : undefined,
 					},
 				},
 			});
@@ -156,6 +160,56 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 									days (0 = off)
 								</span>
 							</div>
+						)}
+					</SettingsFormRow>
+
+					<SettingsFormRow
+						control={form.control}
+						name="reminderBeforeHours"
+						label="Advance reminder"
+						description="Send a notification to the assignee this many hours before a follow-up is due. Set to 0 to disable."
+					>
+						{(field) => (
+							<div className="flex items-center gap-2">
+								<Input
+									type="number"
+									min={0}
+									max={72}
+									className="w-24"
+									{...field}
+								/>
+								<span className="text-xs text-muted-foreground">
+									hours before due (0 = off)
+								</span>
+							</div>
+						)}
+					</SettingsFormRow>
+
+					<SettingsFormRow
+						control={form.control}
+						name="notifyAssignee"
+						label="Notify assignee"
+						description="Send a notification when a follow-up is assigned or updated."
+					>
+						{(field) => (
+							<Switch
+								checked={Boolean(field.value)}
+								onCheckedChange={field.onChange}
+							/>
+						)}
+					</SettingsFormRow>
+
+					<SettingsFormRow
+						control={form.control}
+						name="requireDealCode"
+						label="Require deal link"
+						description="Prevent saving a follow-up unless it is linked to a deal. Useful for sales teams that need every cadence touch tied to a pipeline deal."
+					>
+						{(field) => (
+							<Switch
+								checked={Boolean(field.value)}
+								onCheckedChange={field.onChange}
+							/>
 						)}
 					</SettingsFormRow>
 

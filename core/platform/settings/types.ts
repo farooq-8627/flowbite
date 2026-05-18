@@ -55,6 +55,9 @@ export type OrgSettings = {
 			defaultDueOffsetDays?: number;
 			defaultPriority?: "low" | "normal" | "high" | "urgent";
 			autoCloseAfterDays?: number;
+			notifyAssignee?: boolean;
+			requireDealCode?: boolean;
+			reminderBeforeHours?: number;
 		};
 		/**
 		 * File upload policy. Controls which file categories are accepted

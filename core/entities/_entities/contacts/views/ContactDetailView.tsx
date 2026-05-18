@@ -70,7 +70,7 @@ type ContactRow = Record<string, unknown> & {
 
 const CONTACT_SEARCH_FIELDS = ["displayName", "email", "phone", "personCode"] as const;
 
-export function ContactsView({ orgSlug }: { orgSlug: string }) {
+export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
 	const { orgId } = useCurrentOrg();
 

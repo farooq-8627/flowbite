@@ -61,6 +61,8 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
+import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
@@ -72,7 +74,7 @@ type DealRow = Record<string, unknown> & { id: string };
 
 const DEAL_SEARCH_FIELDS = ["title", "dealCode", "personCode"] as const;
 
-export function DealsView({ orgSlug }: { orgSlug: string }) {
+export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
 	const { orgId } = useCurrentOrg();
 	const [view, setView] = useViewToggle("deal");
@@ -881,14 +883,150 @@ function AddDealDrawer({
 
 export function DealDetailView({ orgSlug, dealId }: { orgSlug: string; dealId: string }) {
 	const labels = useEntityLabels();
+	const { orgId } = useCurrentOrg();
+	// `dealId` from the URL is actually the dealCode (D-001), per our slug
+	// scheme — we resolve to the full doc via `getByDealCode`.
+	const deal = useQuery(
+		api.crm.entities.deals.queries.getByDealCode,
+		orgId ? { orgId, dealCode: dealId } : "skip",
+	);
+
+	const tabs = [
+		{ id: "overview" as const, label: "Overview" },
+		{ id: "calendar" as const, label: "Calendar" },
+		{ id: "reminders" as const, label: "Reminders" },
+	];
+	const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("overview");
+
+	if (deal === undefined) {
+		return (
+			<div
+				data-org={orgSlug}
+				data-id={dealId}
+				className="flex h-full items-center justify-center text-sm text-muted-foreground"
+			>
+				Loading {labels.deal.singular.toLowerCase()}…
+			</div>
+		);
+	}
+	if (deal === null) {
+		return (
+			<div
+				data-org={orgSlug}
+				data-id={dealId}
+				className="flex h-full flex-col items-center justify-center gap-2 text-center"
+			>
+				<p className="text-sm font-medium">{labels.deal.singular} not found</p>
+				<p className="text-xs text-muted-foreground">{dealId}</p>
+			</div>
+		);
+	}
+
 	return (
-		<div
-			data-org={orgSlug}
-			data-id={dealId}
-			data-entity="deal"
-			className="flex h-full items-center justify-center text-sm text-muted-foreground"
-		>
-			{labels.deal.singular} detail — coming in Slice 2
+		<div className="flex h-full min-h-0 flex-col" data-org={orgSlug} data-id={dealId}>
+			{/* Header */}
+			<div className="border-b bg-background px-4 py-3">
+				<div className="flex items-center gap-3">
+					<div className="flex flex-col gap-0.5">
+						<h1 className="text-lg font-semibold tracking-tight">{deal.title}</h1>
+						<p className="text-xs text-muted-foreground">
+							<span className="font-mono tabular-nums">{deal.dealCode}</span>
+							{deal.personCode ? (
+								<>
+									<span aria-hidden> · </span>
+									<Link
+										href={`/${orgSlug}/profile/${deal.personCode}`}
+										className="font-mono tabular-nums hover:text-foreground hover:underline"
+									>
+										{deal.personCode}
+									</Link>
+								</>
+							) : null}
+						</p>
+					</div>
+				</div>
+				{/* Tabs */}
+				<div className="mt-3 flex items-center gap-1 border-b -mb-3">
+					{tabs.map((t) => {
+						const active = activeTab === t.id;
+						return (
+							<button
+								key={t.id}
+								type="button"
+								onClick={() => setActiveTab(t.id)}
+								aria-pressed={active}
+								className={`relative px-3 pb-2 pt-1 text-sm transition-colors ${
+									active
+										? "font-medium text-foreground"
+										: "text-muted-foreground hover:text-foreground"
+								}`}
+							>
+								{t.label}
+								{active && (
+									<span
+										aria-hidden
+										className="absolute inset-x-3 -bottom-px h-0.5 bg-primary"
+									/>
+								)}
+							</button>
+						);
+					})}
+				</div>
+			</div>
+
+			{/* Tab body */}
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
+				{activeTab === "overview" && (
+					<div className="grid gap-3 text-sm">
+						<div className="rounded-[var(--radius)] border bg-card p-4">
+							<h3 className="text-sm font-semibold">Details</h3>
+							<dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+								<dt className="text-muted-foreground">Stage</dt>
+								<dd className="font-medium">{deal.currentStageId}</dd>
+								<dt className="text-muted-foreground">Value</dt>
+								<dd className="font-medium tabular-nums">
+									{deal.value ?? 0} {deal.currency ?? ""}
+								</dd>
+								{deal.expectedCloseDate ? (
+									<>
+										<dt className="text-muted-foreground">Expected close</dt>
+										<dd className="font-medium">
+											{new Date(deal.expectedCloseDate).toLocaleDateString()}
+										</dd>
+									</>
+								) : null}
+							</dl>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							Full {labels.deal.singular.toLowerCase()} detail (notes, files,
+							timeline) lands in Slice 4.
+						</p>
+					</div>
+				)}
+				{activeTab === "calendar" && (
+					<EntityCalendarPanel
+						entityType="deal"
+						entityId={deal.dealCode}
+						personCode={deal.personCode}
+						dealCode={deal.dealCode}
+					/>
+				)}
+				{activeTab === "reminders" && deal.personCode ? (
+					<RemindersPanel
+						personCode={deal.personCode}
+						defaults={{
+							dealCode: deal.dealCode,
+							entityType: "deal",
+							entityId: deal.dealCode,
+						}}
+					/>
+				) : activeTab === "reminders" ? (
+					<p className="text-xs text-muted-foreground">
+						This {labels.deal.singular.toLowerCase()} has no primary contact yet.
+						Reminders attach to a person.
+					</p>
+				) : null}
+			</div>
 		</div>
 	);
 }

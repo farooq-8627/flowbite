@@ -17,7 +17,6 @@ import {
 	Bell,
 	BellRing,
 	Building2,
-	CalendarDays,
 	Handshake,
 	LayoutDashboard,
 	MessageSquare,
@@ -164,11 +163,10 @@ export function buildNavigation(
 			url: `${base}/messages`,
 			icon: MessageSquare,
 		},
-		{
-			title: locale === "ar" ? "التقويم" : "Calendar",
-			url: `${base}/calendar`,
-			icon: CalendarDays,
-		},
+		// Reminders now hosts three views (List | Calendar | Today) inside a
+		// toolbar toggle, so the sidebar carries one entry instead of two.
+		// The standalone `/calendar` route was removed — calendar is a view
+		// of reminders (`/reminders?view=calendar`), not a separate page.
 		{
 			title: locale === "ar" ? "التذكيرات" : "Reminders",
 			url: `${base}/reminders`,

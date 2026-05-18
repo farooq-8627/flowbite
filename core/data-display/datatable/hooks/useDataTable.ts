@@ -73,7 +73,14 @@ export function useDataTable<TData>(props: UseDataTableProps<TData>) {
 		history = "replace",
 		debounceMs = DEBOUNCE_MS,
 		throttleMs = THROTTLE_MS,
-		clearOnDefault = false,
+		// Default to `true` so the URL stays clean when the user is at the
+		// default page / pageSize / sort. Without this, EVERY mount of a
+		// DataTable wrote `?page=1&perPage=25` to the URL — even on board
+		// views that never actually paginate (because we instantiate the
+		// table for sort + filter + view-options regardless of the active
+		// view). Pass `clearOnDefault={false}` explicitly only when the
+		// caller wants the URL to always reflect the table state.
+		clearOnDefault = true,
 		enableAdvancedFilter = false,
 		scroll = false,
 		shallow = true,

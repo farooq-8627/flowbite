@@ -26,21 +26,19 @@
  * convention as `ModulesGroup`. An unknown slug falls back to "tags".
  */
 
-import { useQuery } from "convex/react";
 import { parseAsStringEnum, useQueryState } from "nuqs";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
+import { TagsSection } from "./crm/TagsSection";
+import { FollowupsSection } from "./notes/FollowupsSection";
 import { NoteCategoriesSection } from "./notes/NoteCategoriesSection";
 import { RemindersSection } from "./notes/RemindersSection";
-import { FollowupsSection } from "./notes/FollowupsSection";
 import { TimelineSection } from "./notes/TimelineSection";
-import { TagsSection } from "./crm/TagsSection";
 
 const CRM_TABS = ["tags", "notes", "reminders", "followups", "timeline"] as const;
 type CRMTab = (typeof CRM_TABS)[number];

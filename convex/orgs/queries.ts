@@ -310,8 +310,9 @@ export const getEntityLabels = orgQuery({
  * ──────────────────────────────────────────────
  * The aggregate counts live in the `orgStats` table, written by every CRM
  * mutation via `applyOrgStat`. This query is O(1 + members) — no scan over
- * leads/contacts/deals. Drift recovery via the `_shared/orgStats:recompute`
- * internal action (Phase 3 cron stub).
+ * leads/contacts/deals. Drift recovery is handled by the canonical
+ * `recomputeOrgStats` internal mutation in `_shared/orgStats.ts`, scheduled
+ * weekly by the cron in `convex/crons.ts`.
  *
  * Recent activity stays as a small index lookup on activityLogs.
  * Reminders-due-today still reads off `by_org_and_status_and_due` — accurate

@@ -49,6 +49,7 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
+import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
@@ -59,7 +60,7 @@ type CompanyRow = Record<string, unknown> & { id: string };
 
 const COMPANY_SEARCH_FIELDS = ["name", "companyCode", "industry", "website"] as const;
 
-export function CompaniesView({ orgSlug }: { orgSlug: string }) {
+export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
 	const { orgId } = useCurrentOrg();
 
@@ -601,14 +602,116 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 
 export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; companyId: string }) {
 	const labels = useEntityLabels();
+	const { orgId } = useCurrentOrg();
+	// `companyId` from the URL is the companyCode (CO-001).
+	const company = useQuery(
+		api.crm.entities.companies.queries.getByCompanyCode,
+		orgId ? { orgId, companyCode: companyId } : "skip",
+	);
+
+	const tabs = [
+		{ id: "overview" as const, label: "Overview" },
+		{ id: "calendar" as const, label: "Calendar" },
+	];
+	const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("overview");
+
+	if (company === undefined) {
+		return (
+			<div
+				data-org={orgSlug}
+				data-id={companyId}
+				className="flex h-full items-center justify-center text-sm text-muted-foreground"
+			>
+				Loading {labels.company.singular.toLowerCase()}…
+			</div>
+		);
+	}
+	if (company === null) {
+		return (
+			<div
+				data-org={orgSlug}
+				data-id={companyId}
+				className="flex h-full flex-col items-center justify-center gap-2 text-center"
+			>
+				<p className="text-sm font-medium">{labels.company.singular} not found</p>
+				<p className="text-xs text-muted-foreground">{companyId}</p>
+			</div>
+		);
+	}
+
 	return (
-		<div
-			data-org={orgSlug}
-			data-id={companyId}
-			data-entity="company"
-			className="flex h-full items-center justify-center text-sm text-muted-foreground"
-		>
-			{labels.company.singular} detail — coming in Slice 2
+		<div className="flex h-full min-h-0 flex-col" data-org={orgSlug} data-id={companyId}>
+			<div className="border-b bg-background px-4 py-3">
+				<div className="flex flex-col gap-0.5">
+					<h1 className="text-lg font-semibold tracking-tight">{company.name}</h1>
+					<p className="text-xs text-muted-foreground">
+						<span className="font-mono tabular-nums">{company.companyCode}</span>
+						{company.industry ? (
+							<>
+								<span aria-hidden> · </span>
+								<span>{company.industry}</span>
+							</>
+						) : null}
+					</p>
+				</div>
+				<div className="mt-3 flex items-center gap-1 border-b -mb-3">
+					{tabs.map((t) => {
+						const active = activeTab === t.id;
+						return (
+							<button
+								key={t.id}
+								type="button"
+								onClick={() => setActiveTab(t.id)}
+								aria-pressed={active}
+								className={`relative px-3 pb-2 pt-1 text-sm transition-colors ${
+									active
+										? "font-medium text-foreground"
+										: "text-muted-foreground hover:text-foreground"
+								}`}
+							>
+								{t.label}
+								{active && (
+									<span
+										aria-hidden
+										className="absolute inset-x-3 -bottom-px h-0.5 bg-primary"
+									/>
+								)}
+							</button>
+						);
+					})}
+				</div>
+			</div>
+
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
+				{activeTab === "overview" && (
+					<div className="grid gap-3 text-sm">
+						<div className="rounded-[var(--radius)] border bg-card p-4">
+							<h3 className="text-sm font-semibold">Details</h3>
+							<dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+								{company.website ? (
+									<>
+										<dt className="text-muted-foreground">Website</dt>
+										<dd className="font-medium truncate">{company.website}</dd>
+									</>
+								) : null}
+								{company.industry ? (
+									<>
+										<dt className="text-muted-foreground">Industry</dt>
+										<dd className="font-medium">{company.industry}</dd>
+									</>
+								) : null}
+							</dl>
+						</div>
+						<p className="text-xs text-muted-foreground">
+							Full {labels.company.singular.toLowerCase()} detail (people, deals,
+							notes) lands in Slice 3.
+						</p>
+					</div>
+				)}
+				{activeTab === "calendar" && (
+					<EntityCalendarPanel entityType="company" entityId={company.companyCode} />
+				)}
+			</div>
 		</div>
 	);
 }

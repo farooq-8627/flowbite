@@ -428,3 +428,15 @@ useHotkeys("mod+,",         () => router.push(`/dashboard/${orgSlug}/settings`))
   `api.users.me`, `api.orgs.myOrgs`, `api.savedViews.listPinned`, `api.featureFlags.getForOrg`
 - **WRITES TO**: Nothing (read-only shell)
 - **NEVER IMPORTS FROM**: Any entity or feature module
+
+
+---
+
+## Decisions Log
+
+| # | Decision | Outcome |
+|---|---|---|
+| D1 | Dashboard cards stack max 2 per row (never 3+) | AI panel takes ~360px when open. With 3-card rows the middle card collapsed into a sliver. New layout: 4-tile KPI strip → 2-card content rows → full-width strip → 2-card row. Opening AI panel only changes density inside cards, not their count. |
+| D2 | Week-ahead widget cells use natural height (no `h-full`) | Cells now grow to content + a `min-h-[110px]` floor. Inflated to "full height" when its grid row had a tall sibling — looked awful in dashboard row 1 next to a packed reminders card. Each cell is now exactly as tall as its content needs. |
+| D3 | Dashboard messages limit increased to 8 (was 5) | Filled the empty bottom of the messages card; matches the activity card's row count visually. |
+| D4 | Pipeline + Today's Focus cards added to dashboard | The shell user complained about "we have lot of cards to work" — added a Pipeline snapshot (open value, win rate, won/lost bar) and a Today's Focus list (reminders due, leads to qualify, deals to advance, deals won). Both link straight into the entity list pages. |

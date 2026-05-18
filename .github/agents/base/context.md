@@ -1,7 +1,50 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never create a new context file.
-> Last Updated: 2026-05-12
+> Last Updated: 2026-05-18
+
+---
+
+## Most recent session (2026-05-18) — Task 5: Reminders + Calendar consolidation, dashboard rewrite
+
+- **Sidebar collapsed**: standalone Calendar entry removed. `/calendar` 308-redirects
+  to `/reminders?view=calendar`. `Reminders` is now a single sidebar item with three
+  toolbar-toggle views — `today` (compact dashboard-style), `list` (DataTable), and
+  `calendar` (CalendarMain grid). `?view=` is URL-persisted.
+- **Overdue bug fixed**. `getDueToday` was scoped to today's 00:00–23:59 window so any
+  reminder dragged to yesterday silently disappeared from the dashboard. Added
+  `getDueAndOverdue` (pending + `dueAt ≤ endOfDay(today)` + 90-day lookback cap) and
+  `getNextUpcoming` (next N pending reminders strictly after today). The dashboard
+  now uses these via `useRemindersDueAndOverdue` and `useRemindersNextUpcoming`.
+- **Calendar double-click creates**. `CalendarMain` accepts `onCreateAtDate` (month +
+  week cell double-click) and `onCreateAtDateTime` (day-view hour-row double-click).
+  The day grid now always renders 24 hour-rows (not just when there are events) so
+  every hour is a valid create target. Wired to `CalendarView`, `PersonCalendarPanel`,
+  and `EntityCalendarPanel`.
+- **EventForm supports any entity**. New shared
+  `core/entities/shared/components/EntityCodeSelector.tsx` Combobox-style picker
+  reuses notes' `useEntitySearch` and renders avatar + name + code on the selected
+  chip (no `?` placeholders). Discriminated-union `EntityCodeSelection`
+  (`person | deal | company`). `ReminderForm` rewritten to use it; smart locking
+  when the parent pre-binds via `defaults`.
+- **Dashboard rewrite**. "Welcome back" header gone. 12-col dense grid: Reminders (5)
+  + WeekAhead (4) + Recent activity (3); row 2 = Messages (7) + Mini cal (5). Every
+  card is `flex flex-col h-full` so siblings line up. Reminders "+ New" opens an
+  inline `<ReminderForm>` dialog (no navigation). Empty-today shows the next
+  upcoming reminder via `formatDistanceToNow`.
+- **WeekAheadWidget rewrite**. Shows actual event titles in mini-chips with
+  source-coloured backgrounds (3 max + "+N more") instead of three coloured dots.
+- **Profile / deal / company wiring**. Profile already mounted `PersonCalendarPanel`
+  + `RemindersPanel`. `DealDetailView` and `CompanyDetailView` were placeholder stubs;
+  they now resolve via `getByDealCode` / `getByCompanyCode` and mount the panels
+  inside Calendar / Reminders tabs. The dynamic `[entitySlug]/[id]` page is still
+  a placeholder — once it routes to these views, `/deals/D-001` and
+  `/companies/CO-001` will reach the new tabs directly. Until then the panels are
+  exercisable via the dashboard, `/reminders?view=today`,
+  `/reminders?view=calendar`, and `/profile/{personCode}`.
+- **STATE.md updated** for `core/scheduling`, `core/shell/shell`, `core/entities`.
+- **Verification**: `pnpm typecheck` → 0 errors. `pnpm exec biome check` on the 16
+  touched files → 0 errors, 0 warnings.
 
 ---
 

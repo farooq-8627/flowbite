@@ -235,6 +235,11 @@ await enforceRateLimit(ctx, {
 | 18 | **File uploads**: max-size and allowed-mime categories come from `org.settings.fileUpload` — NOT hardcoded. Scope/scopeId validated on every record. Ownership or `files.deleteAny` permission required to delete. |
 | 19 | **Convex folder layout**: kept logically grouped by domain via `convex/_arch.md`; physical structure stays flat at the top level so the public `api.X` paths don't break. CRM domain physically grouped under `crm/{entities,fields,people,shared}`. |
 | 20 | **Sentry/PostHog DSNs come from env vars** — never hardcoded. `SENTRY_DSN`, `NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN`, `NEXT_PUBLIC_POSTHOG_HOST`. If unset, providers no-op gracefully. |
+| 21 | **Reminders + Calendar UI uses the donor pattern only** from the shadcnstore template — never the JSON mocks. Donor's `tasks/page.tsx` informs the stats-grid + DataTable layout; donor's `calendar-main.tsx` informs the month/week/day/list grid. Every event handler is rewired to our Convex hooks. |
+| 22 | **Calendar grid is a pure renderer** — `<CalendarMain>` accepts an `events` prop and never calls `useQuery` or `useCurrentOrg`. Bucketing runs once at the parent via `useMemo`. Cell renderers receive only props. The popover state is owned by the parent grid (anchor + open) so chips never carry their own popover instance. |
+| 23 | **EventForm is a thin wrapper around ReminderForm** with calendar-specific defaults (`source="calendar"`, midnight clicks snap to 9 AM, submit reads "Save as reminder"). One form to maintain; UX surfaces the "calendar event = reminder" model. |
+| 24 | **All scheduling write mutations gate on `RATE_LIMITS.write`** under a shared scope (`reminders.write` for `complete` / `update` / `remove`; `reminders.create` for create). Same-class limits across writes; a frantic user can't bypass by alternating verbs. |
+| 25 | **Embedded calendar panels clamp the date range to ±45 days** (90-day cap from the spec). Bounds the read set; prevents 5-year scans. The org-wide CalendarView uses `getRangeForView(viewMode, selectedDate)` which is always <= 1 month. |
 
 ---
 

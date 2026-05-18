@@ -1,7 +1,16 @@
 # Shared — State
 
-> Updated: 2026-05-18 (afternoon — perf cleanup #2)
+> Updated: 2026-05-19
 > Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome live here.
+>
+> **2026-05-19 — Currency rendering fixed (`narrowSymbol`).**
+> `formatCurrency()` in `useOrgDefaultCurrency.ts` now defaults to
+> `currencyDisplay: "narrowSymbol"`. Previously USD rendered as "US$0"
+> in en-GB / en-CA / en-AU / Arabic locales — that's CLDR-correct but
+> confused users who chose USD. The narrow symbol gives "$" in any
+> English locale, "₹" for INR, "€" for EUR. AED has no narrower form
+> so it stays "AED N" — acceptable. Used everywhere money is rendered:
+> dashboard PipelineCard, kanban totals, deal-value cells, AI prompts.
 >
 > **2026-05-18 (afternoon) — `useMe()` joins the OrgProvider context.**
 > Added a 5th hoisted subscription to `OrgProvider`: `api.users.queries.me`.

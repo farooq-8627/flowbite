@@ -1,7 +1,54 @@
 # Shell — State
 
-> Updated: 2026-05-18
+> Updated: 2026-05-19
 > Status: 100% Complete for Phase 1 — wired to dynamic entity labels + module visibility flags.
+>
+> **2026-05-19 — Dashboard cards split + currency fix + calendar route deleted.**
+>
+> 1. **`DashboardHomeView` split into per-card files.** The 530-line
+>    monolith at `core/shell/shell/views/DashboardHomeView.tsx` was
+>    deleted and rebuilt as a thin (~140-line) layout shell at
+>    `core/shell/shell/views/dashboard/DashboardHomeView.tsx`. Each card
+>    now owns its own file under `cards/`:
+>    - `StatTile.tsx` — single KPI tile (link or static)
+>    - `StatStrip.tsx` — row of 4 KPI tiles
+>    - `RemindersCard.tsx` — today/overdue + inline new-form drawer
+>    - `NextReminderFallback.tsx` — empty-state for RemindersCard
+>    - `PipelineCard.tsx` — open value + win-rate + bar
+>    - `RecentActivityCard.tsx`
+>    - `TodaySummaryCard.tsx` — "today's focus" list
+>    Single barrel at `cards/index.ts` so the parent imports them all in
+>    one block. The view itself only owns the 12-column grid + ONE
+>    `useQuery(getDashboardStats)` subscription + the FirstTimeTour
+>    mount. Cards never call `useQuery` — every value is propagated as
+>    a prop (per AGENTS.md "per-row data on a list view comes from one
+>    batched query").
+> 2. **Pipeline value "US$0" rendering fixed.** `formatCurrency` in
+>    `core/shell/shared/hooks/useOrgDefaultCurrency.ts` now defaults to
+>    `currencyDisplay: "narrowSymbol"` so USD shows as "$" in any
+>    English locale (was "US$" in en-GB / en-CA / en-AU). When the
+>    pipeline has zero deals AND zero value, `PipelineCard` and
+>    `StatStrip` render "—" instead of "$0" so empty workspaces look
+>    intentional.
+> 3. **`/calendar` route deleted.** The `app/[locale]/(private)/[orgSlug]/calendar/`
+>    directory (a redirect-only page) is gone. The reminders page hosts
+>    the calendar via `?view=calendar`. Sidebar nav has only "Reminders".
+>    Bookmarks of `/calendar` will 404 — explicit user request.
+> 4. **`navigation.ts` JSDoc updated** to reflect that there's no longer
+>    a back-compat redirect from `/calendar`.
+>
+> **2026-05-18 — Task 5 / Dashboard rewrite.** `DashboardHomeView` rebuilt:
+> "Welcome back" header removed, dense 12-column grid (Reminders 5 / Week
+> ahead 4 / Recent activity 3, then Messages 7 / Mini-cal 5), every card is
+> `flex flex-col h-full` so siblings align, the Reminders "+ New" button
+> opens an inline `<ReminderForm>` instead of routing, the empty-today
+> tab falls back to a "Next reminder" card via `useRemindersNextUpcoming`,
+> and overdue items dragged to yesterday now show up correctly thanks to
+> the new `useRemindersDueAndOverdue` hook. Sidebar Calendar entry was
+> removed — `/calendar` redirects to `/reminders?view=calendar` and
+> the reminders page now hosts three views (today / list / calendar) via
+> a URL-persisted `?view=` toggle. See `core/scheduling/STATE.md` for the
+> matching scheduling-side changes.
 >
 > **2026-05-18 — Subscription dedup pass.** Removed two duplicate
 > `api.orgs.queries.listMyOrgs` subscriptions in `app-sidebar.tsx` and
@@ -21,6 +68,8 @@
 | Navigation config | `core/shell/config/navigation.ts` | Dynamic module config, default modules exported |
 | Dashboard layout (server) | `core/shell/layouts/DashboardLayout.tsx` | Reads cookies |
 | Dashboard layout (client) | `core/shell/layouts/DashboardLayoutClient.tsx` | 3-pane resizable AI panel, Sheet for mobile, RTL-aware |
+| **DashboardHomeView (split)** *(2026-05-19)* | `core/shell/shell/views/dashboard/DashboardHomeView.tsx` | Thin ~140-line layout. ONE `getDashboardStats` query. All cards under `dashboard/cards/`, one card per file. |
+| **Dashboard cards** *(2026-05-19)* | `core/shell/shell/views/dashboard/cards/*.tsx` | StatTile, StatStrip, RemindersCard, NextReminderFallback, PipelineCard, RecentActivityCard, TodaySummaryCard. No `useQuery` inside cards. |
 | AppSidebar | `core/shell/components/sidebar/app-sidebar.tsx` | ✅ Reads `useEntityLabels()` + filters by `orgSettings.modules[].hidden` + honors `modules[].order` overrides |
 | useEntityLabels (re-export) | `core/shell/hooks/useEntityLabels.ts` | Thin re-export of canonical hook in `core/shared/hooks/` |
 | useModuleEnabled | `core/shell/hooks/useModuleEnabled.ts` | Feature-flag reader |

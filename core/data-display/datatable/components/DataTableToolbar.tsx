@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 import { DataTableDateFilter } from "./DataTableDateFilter";
 import { DataTableFacetedFilter } from "./DataTableFacetedFilter";
 import { DataTableSliderFilter } from "./DataTableSliderFilter";
-import { DataTableViewOptions } from "./DataTableViewOptions";
 
 interface DataTableToolbarProps<TData> extends React.ComponentProps<"div"> {
 	table: Table<TData>;
@@ -56,7 +55,7 @@ export function DataTableToolbar<TData>({
 			</div>
 			<div className="flex items-center gap-2">
 				{children}
-				<DataTableViewOptions table={table} />
+				{/* <DataTableViewOptions table={table} /> */}
 			</div>
 		</div>
 	);

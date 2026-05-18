@@ -5,6 +5,18 @@
 > drawer + file UX polished across all four entities. Stage filter +
 > saved views shipped. Only the AI summary pipeline remains in this lane.
 >
+> **2026-05-18 — Task 5 wiring + EntityCodeSelector.** Added
+> `core/entities/shared/components/EntityCodeSelector.tsx`: a Combobox-style
+> picker that reuses `useEntitySearch` from notes and renders avatar + name
+> + code on the selected chip. `ReminderForm` now uses it to attach
+> reminders to leads / contacts / deals / companies (replaces the old
+> person-only `PersonSelect`). `DealDetailView` and `CompanyDetailView`
+> shells now resolve via `getByDealCode` / `getByCompanyCode` and mount
+> `EntityCalendarPanel` (deals + companies) and `RemindersPanel` (deals).
+> Both views still need full Slice 2/3/4 detail content; the calendar +
+> reminders tabs are testable today via the dashboard, the reminders
+> page, and the profile route.
+>
 > **2026-05-18 perf fix #5 — TagsCell `listByOrg` lazy subscription**:
 > `TagsCell` was firing `api.crm.shared.tags.queries.listByOrg` on EVERY
 > visible board card on mount, even though that query (the org's full

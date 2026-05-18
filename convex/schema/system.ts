@@ -115,8 +115,11 @@ export const files = defineTable({
  * do not multi-currency-convert; if a deal stores a different currency, its
  * value still contributes — matches existing behaviour.
  *
- * Drift-recovery: a `recomputeOrgStats` internal mutation rebuilds the row
- * from the source-of-truth tables; called from a sparse cron in Phase 3.
+ * Drift-recovery: an internal `recomputeOrgStats` mutation rebuilds the row
+ * from the source-of-truth tables. Canonical export lives at
+ * `_shared/orgStats.ts` and runs automatically once a week — see the weekly
+ * cron registered in `convex/crons.ts`. To recompute manually:
+ *   npx convex run _shared/orgStats:recomputeOrgStats '{}'
  */
 export const orgStats = defineTable({
 	...orgScoped,

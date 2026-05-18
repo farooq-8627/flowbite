@@ -10,7 +10,7 @@
  *
  * Per FRONTEND-DECISIONS Rule 1 — pure Convex live query, no Zustand.
  */
-import { formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -52,8 +52,8 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 	}, [members]);
 
 	return (
-		<Card className={className}>
-			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-3">
+		<Card className={`flex flex-col ${className ?? ""}`.trim()}>
+			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
 				<div className="flex items-center gap-2">
 					<MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />
 					<CardTitle className="text-base">Recent messages</CardTitle>
@@ -65,7 +65,7 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 					View all →
 				</Link>
 			</CardHeader>
-			<CardContent className="pt-0">
+			<CardContent className="flex-1 pt-0">
 				{messages === undefined ? (
 					<p className="text-xs text-muted-foreground">Loading…</p>
 				) : messages.length === 0 ? (
@@ -111,10 +111,8 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 													· {m.entityType} {m.entityId}
 												</span>
 											</span>
-											<span className="col-start-2 shrink-0 text-[10px] text-muted-foreground">
-												{formatDistanceToNow(m.createdAt, {
-													addSuffix: false,
-												})}
+											<span className="col-start-2 shrink-0 text-[10px] tabular-nums text-muted-foreground">
+												{format(m.createdAt, "h:mm a")}
 											</span>
 											<p className="col-start-1 truncate text-xs text-muted-foreground">
 												{m.content.slice(0, 100)}

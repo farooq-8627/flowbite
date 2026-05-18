@@ -55,6 +55,13 @@ export function useCurrentOrgCurrency(): string {
  * Format a numeric value as currency using the active org's default currency.
  * Pure helper — accepts the currency code so it can be used in non-component
  * contexts (e.g. inside a `useMemo` formatter).
+ *
+ * Defaults to `currencyDisplay: "narrowSymbol"` which renders the most
+ * compact symbol available for the active locale. Without it,
+ * `Intl.NumberFormat` shows "US$0" in en-GB / en-CA / en-AU instead of
+ * "$0" — a confusing rendering when the user clearly chose USD. The
+ * narrow form falls back to the canonical symbol when no narrow form
+ * exists (e.g. INR → ₹, AED → د.إ).
  */
 export function formatCurrency(
 	value: number | string | null | undefined,
@@ -68,6 +75,7 @@ export function formatCurrency(
 		return new Intl.NumberFormat(undefined, {
 			style: "currency",
 			currency: currencyCode,
+			currencyDisplay: "narrowSymbol",
 			maximumFractionDigits: 0,
 			...options,
 		}).format(num);

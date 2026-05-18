@@ -108,6 +108,15 @@ export const complete = orgMutation({
 		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
+		// Per SCHEDULING-IMPLEMENTATION.md §4.7 — every public mutation
+		// triggered by a user gesture is rate-limited. Scope is shared
+		// across reminder writes so a frantic user can't bypass by
+		// alternating between complete / update / remove.
+		await enforceRateLimit(ctx, {
+			scope: "reminders.write",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const now = Date.now();
 		await ctx.db.patch(args.reminderId, { status: "completed", completedAt: now });
@@ -155,6 +164,12 @@ export const update = orgMutation({
 		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
+		// Shared rate-limit scope across reminder writes (see complete).
+		await enforceRateLimit(ctx, {
+			scope: "reminders.write",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		const { orgId: _o, reminderId: _r, ...updates } = args;
 		const patch = Object.fromEntries(
@@ -186,6 +201,12 @@ export const remove = orgMutation({
 		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
+		// Shared rate-limit scope across reminder writes (see complete).
+		await enforceRateLimit(ctx, {
+			scope: "reminders.write",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
 
 		await ctx.db.delete(args.reminderId);
 

@@ -496,3 +496,12 @@ pnpm add @tanstack/react-table
 | Tasks (Phase 8) | Status, Assignee, Priority, Project, Due date |
 
 All filter options are **loaded from Convex**, not hardcoded. Stage options come from the pipeline query. Assignee options come from orgMembers query.
+
+
+---
+
+## Decisions Log (continued)
+
+| # | Decision | Outcome |
+|---|---|---|
+| D11 | `useDataTable` defaults `clearOnDefault: true` | Previously every mount of any DataTable wrote `?page=1&perPage=25` to the URL even when the values matched the default — and even on board views that never paginated, because `EntityListPage` always instantiates the table for sort/filter/view-options regardless of the active view. With `clearOnDefault: true`, those URL params are stripped when at default. Pass `clearOnDefault={false}` explicitly only when the caller needs the URL to always reflect the table state. |

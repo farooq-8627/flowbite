@@ -5,6 +5,8 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
+import { PersonCalendarPanel } from "@/core/scheduling/calendar/panels/PersonCalendarPanel";
+import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
 import { ProfileSection } from "./ProfileSection";
@@ -211,7 +213,7 @@ function RemindersGroup({ personCode }: { personCode: string }) {
 				title="Reminders"
 				description="All follow-ups scheduled for this person."
 			>
-				<PlaceholderRow personCode={personCode} label="Reminders" />
+				<RemindersPanel personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);
@@ -225,7 +227,7 @@ function CalendarGroup({ personCode }: { personCode: string }) {
 				title="Upcoming"
 				description="Scheduled meetings and follow-up plan."
 			>
-				<PlaceholderRow personCode={personCode} label="Calendar" />
+				<PersonCalendarPanel personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);

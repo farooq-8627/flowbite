@@ -39,3 +39,17 @@ No owned tables. Read-merges reminders + activityLogs + deals.
 - ❌ Don't add an `events` table.
 - ❌ Don't render sidebar inside an embedded panel (no horizontal space).
 - ❌ Don't subscribe to large date ranges from inside a panel — clamp `rangeEnd - rangeStart` to ≤ 90 days.
+
+## Phase 3 — AI Integration (planned)
+
+> Document this here so the AI build phase has clear scope.
+
+AI tools to add in `convex/ai/tools/`:
+- `create_reminder` — AI creates a reminder from conversation context (auto-fills personCode, title, dueAt from NLP).
+- `complete_reminder` — AI marks a reminder done after confirming with the user.
+- `list_due_today` — AI reads today's reminders to proactively surface them in conversation.
+- `schedule_event` — AI creates a calendar event (= reminder with source="ai") from a user request like "remind me to call John on Monday at 3pm".
+- `reschedule_event` — AI moves a reminder to a new date/time.
+- `list_upcoming_events` — AI reads the next 7 days of calendar events to answer "what's on my schedule this week?"
+
+Each tool calls the existing mutations/queries (no new tables). The AI system prompt will include scheduling context (today's reminders, upcoming events) so it can proactively suggest follow-ups.

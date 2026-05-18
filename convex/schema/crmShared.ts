@@ -279,6 +279,30 @@ export const messages = defineTable({
 	),
 
 	editedAt: v.optional(v.number()),
+	/**
+	 * Per-user "delete for me" list — users who hid this message from
+	 * their own view. Distinct from `deletedAt` which means the message
+	 * is deleted for everyone (added by `softDelete` and now reserved
+	 * for hard-delete tombstones written by `messages.remove({ mode:
+	 * "everyone" })`).
+	 *
+	 * Doctrine (2026-05-19):
+	 *   - "Delete for me" → adds the caller to `deletedFor[]`. Other
+	 *     participants still see the message untouched. Author OR any
+	 *     participant can do this for their own view.
+	 *   - "Delete for everyone" → hard-deletes the row (no tombstone).
+	 *     Only allowed for the author within the edit window OR for any
+	 *     org member with `messages.deleteAny`. After hard-delete the
+	 *     conversation's `lastMessage*` fields are recomputed from the
+	 *     next-newest surviving message.
+	 *
+	 * The legacy `deletedAt` (from `softDelete`) is kept on the schema
+	 * but is no longer written by `messages.remove`. Existing
+	 * soft-deleted rows continue to be filtered out of queries via the
+	 * existing `r.deletedAt === undefined` check; this field is purely
+	 * additive.
+	 */
+	deletedFor: v.optional(v.array(v.id("users"))),
 	...softDelete,
 	...timestamps,
 })
@@ -292,6 +316,24 @@ export const messages = defineTable({
 
 /**
  * Follow-up reminders. followUpCode auto-generated (FU-001).
+ *
+ * Doctrine (locked 2026-05-19):
+ *   - There is NO separate `followUps` table. Every reminder carries a
+ *     `followUpCode` AND a `source`. The "Follow-ups" UI surface is a
+ *     reminders subset where `source === "followup"` — see
+ *     CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
+ *
+ * 2026-05-19 schema additions (all backwards-compatible — optional fields,
+ * additive index, source narrowed via migration):
+ *   - `source` narrowed from free-form `v.string()` to a closed `v.union`.
+ *     Migration `_migrations/tightenReminderSourceAndAddPriority.ts` maps
+ *     legacy values onto the new literals.
+ *   - `priority` (optional) — used by the Follow-ups view for triage.
+ *   - `updatedAt` (optional) — pre-existing rows pass without it; the
+ *     migration backfills `updatedAt = createdAt` so optimistic-update
+ *     consumers can rely on the field.
+ *   - New index `by_org_and_source_and_due` powers the Follow-ups filter
+ *     without scanning the whole reminders table.
  */
 export const reminders = defineTable({
 	...orgScoped,
@@ -306,13 +348,45 @@ export const reminders = defineTable({
 	assignedTo: v.id("users"),
 	status: v.string(),
 	completedAt: v.optional(v.number()),
-	source: v.string(),
+	/**
+	 * How this reminder was created. Closed union — drives:
+	 *   - the Follow-ups view filter (`source === "followup"`)
+	 *   - the calendar event-source colour palette
+	 *   - the AI tool-to-source mapping (`create_followup` → "followup",
+	 *     `create_reminder` → "manual", etc.)
+	 */
+	source: v.union(
+		v.literal("manual"), // user typed it directly
+		v.literal("followup"), // created from a "follow up with X" affordance
+		v.literal("calendar"), // created from a calendar slot click
+		v.literal("ai"), // created by an AI tool
+		v.literal("note"), // created from a note's "Set reminder" menu
+		v.literal("system"), // created by an automation rule / system
+	),
+	/**
+	 * Optional triage priority. The Reminders surface ignores this; the
+	 * Follow-ups surface uses it for sort order + chip color.
+	 */
+	priority: v.optional(
+		v.union(
+			v.literal("low"),
+			v.literal("normal"),
+			v.literal("high"),
+			v.literal("urgent"),
+		),
+	),
 	createdAt: v.number(),
+	/**
+	 * Optional — backfilled by the 2026-05-19 migration to `createdAt` for
+	 * legacy rows. Mutations keep this fresh going forward.
+	 */
+	updatedAt: v.optional(v.number()),
 })
 	.index("by_org_and_person", ["orgId", "personCode"])
 	.index("by_org_and_due", ["orgId", "dueAt"])
 	.index("by_org_and_status", ["orgId", "status"])
 	.index("by_org_and_status_and_due", ["orgId", "status", "dueAt"])
+	.index("by_org_and_source_and_due", ["orgId", "source", "dueAt"])
 	.index("by_user_and_due", ["assignedTo", "dueAt"]);
 
 // ─── Tags / entityTags / savedViews / companyMembers ─────────────────────────

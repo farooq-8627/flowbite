@@ -75,6 +75,19 @@ const MAX_RECENTS = 5;
 
 type RecentRef = { entityType: ChatEntityType; entityId: string };
 
+/**
+ * Compute the canonical conversation lookup key for a picker row.
+ * Lead/contact rows collapse to "person" so they match conversations
+ * already created under the canonical key (post 2026-05-19 normalisation).
+ */
+function pickerKeyFor(row: PickerRow): string {
+	const t =
+		row.entityType === "lead" || row.entityType === "contact"
+			? "person"
+			: row.entityType;
+	return `${t}:${row.entityId}`;
+}
+
 function loadRecents(): RecentRef[] {
 	if (typeof window === "undefined") return [];
 	try {
@@ -190,14 +203,25 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 	}, [people, deals, companies]);
 
 	// Build a fast lookup of entityId → row (used by recents + already-chatting sets).
+	// For lead/contact rows we also index under the normalised "person:<code>"
+	// key so recents stored under the canonical key (set by handleSelect)
+	// still resolve to the picker row.
 	const rowsByKey = useMemo(() => {
 		const map = new Map<string, PickerRow>();
-		for (const r of allRows) map.set(`${r.entityType}:${r.entityId}`, r);
+		for (const r of allRows) {
+			map.set(`${r.entityType}:${r.entityId}`, r);
+			if (r.entityType === "lead" || r.entityType === "contact") {
+				map.set(`person:${r.entityId}`, r);
+			}
+		}
 		return map;
 	}, [allRows]);
 
 	// Set of entityIds the user is already in a conversation with — used to
 	// split rows into "already chatting" vs "start a new conversation".
+	// We key on the NORMALISED entityType (lead/contact → person) so a
+	// person whose conversation lives on `entityType=person` is matched
+	// regardless of whether the picker row is a lead or contact card.
 	const chattingKeys = useMemo(() => {
 		const set = new Set<string>();
 		for (const row of inbox ?? []) {
@@ -217,11 +241,11 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 	}, [recents, rowsByKey]);
 
 	const chatting = useMemo(
-		() => allRows.filter((r) => chattingKeys.has(`${r.entityType}:${r.entityId}`)),
+		() => allRows.filter((r) => chattingKeys.has(pickerKeyFor(r))),
 		[allRows, chattingKeys],
 	);
 	const others = useMemo(
-		() => allRows.filter((r) => !chattingKeys.has(`${r.entityType}:${r.entityId}`)),
+		() => allRows.filter((r) => !chattingKeys.has(pickerKeyFor(r))),
 		[allRows, chattingKeys],
 	);
 
@@ -232,12 +256,21 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 			if (creating) return;
 			setCreating(true);
 			try {
+				// Normalise lead/contact → person at the boundary. The server
+				// also normalises (defence in depth), but doing it here means
+				// the recents list keys on the canonical type — picking the
+				// same person from the lead row or the contact row resolves
+				// to the same recent entry.
+				const normalisedType =
+					row.entityType === "lead" || row.entityType === "contact"
+						? "person"
+						: row.entityType;
 				const conversationId = await ensureForEntity({
 					orgId,
-					entityType: row.entityType,
+					entityType: normalisedType,
 					entityId: row.entityId,
 				});
-				saveRecent({ entityType: row.entityType, entityId: row.entityId });
+				saveRecent({ entityType: normalisedType, entityId: row.entityId });
 				onCreated(conversationId);
 				onOpenChange(false);
 			} finally {

@@ -14,9 +14,30 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import type { Doc, Id } from "../../../_generated/dataModel";
 import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { findConversation, getMyMembership } from "../conversations/internal";
+
+/**
+ * Visibility filter for messages.
+ *
+ * Drops two classes of rows:
+ *   1. Tombstones — `deletedAt !== undefined`. Reserved for legacy soft
+ *      deletes; new code uses hard delete (see `mutations.remove`).
+ *   2. Per-user "delete for me" — when `deletedFor[]` contains the caller.
+ *
+ * The closure is created once per query call so the filter is a tight
+ * loop (no re-evaluation of `userId` per row).
+ */
+function makeMessageVisibilityFilter(userId: Id<"users">) {
+	const me = String(userId);
+	return (m: Doc<"messages">) => {
+		if (m.deletedAt !== undefined) return false;
+		if (m.deletedFor?.some((u) => String(u) === me)) return false;
+		return true;
+	};
+}
 
 // ─── Single conversation thread ──────────────────────────────────────────────
 
@@ -49,7 +70,7 @@ export const listForConversation = orgQuery({
 			)
 			.order("desc")
 			.take(cap);
-		return rows.filter((m) => m.deletedAt === undefined);
+		return rows.filter(makeMessageVisibilityFilter(userId));
 	},
 });
 
@@ -101,7 +122,7 @@ export const listForConversationPaginated = orgQuery({
 
 		return {
 			...result,
-			page: result.page.filter((m) => m.deletedAt === undefined),
+			page: result.page.filter(makeMessageVisibilityFilter(userId)),
 		};
 	},
 });
@@ -145,7 +166,7 @@ export const listForEntity = orgQuery({
 			.take(cap);
 		return {
 			conversation,
-			messages: rows.filter((m) => m.deletedAt === undefined),
+			messages: rows.filter(makeMessageVisibilityFilter(userId)),
 		};
 	},
 });
@@ -163,7 +184,7 @@ export const listForPerson = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
 		const cap = args.limit ?? 100;
@@ -175,7 +196,7 @@ export const listForPerson = orgQuery({
 			)
 			.order("desc")
 			.take(cap);
-		return rows.filter((m) => m.deletedAt === undefined);
+		return rows.filter(makeMessageVisibilityFilter(userId));
 	},
 });
 
@@ -206,7 +227,7 @@ export const listInbox = orgQuery({
 			.order("desc")
 			.take(scanLimit);
 
-		const live = recent.filter((m) => m.deletedAt === undefined);
+		const live = recent.filter(makeMessageVisibilityFilter(userId));
 
 		// Dedupe by conversationId — keep first (newest) seen per key.
 		const seen = new Map<string, (typeof live)[number]>();
@@ -251,7 +272,7 @@ export const listRecent = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
 		const rows = await ctx.db
@@ -259,7 +280,7 @@ export const listRecent = orgQuery({
 			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
 			.order("desc")
 			.take(args.limit ?? 5);
-		return rows.filter((m) => m.deletedAt === undefined);
+		return rows.filter(makeMessageVisibilityFilter(userId));
 	},
 });
 
@@ -269,13 +290,15 @@ export const listRecent = orgQuery({
 export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), messageId: v.id("messages") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
 		const message = await ctx.db.get(args.messageId);
 		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
 			return null;
 		}
+		// Hidden for the caller via "delete for me" — treat as not found.
+		if (message.deletedFor?.some((u) => String(u) === String(userId))) return null;
 		return message;
 	},
 });

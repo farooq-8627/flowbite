@@ -17,6 +17,7 @@ import {
 	Bell,
 	BellRing,
 	Building2,
+	CalendarClock,
 	Handshake,
 	LayoutDashboard,
 	MessageSquare,
@@ -171,6 +172,14 @@ export function buildNavigation(
 			title: locale === "ar" ? "التذكيرات" : "Reminders",
 			url: `${base}/reminders`,
 			icon: BellRing,
+		},
+		// Follow-ups lives next to reminders in the sidebar but is a distinct
+		// CRM-cadence surface — see CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
+		// Persistence is the same `reminders` table with `source = "followup"`.
+		{
+			title: locale === "ar" ? "المتابعات" : "Follow-ups",
+			url: `${base}/followups`,
+			icon: CalendarClock,
 		},
 		{
 			title: locale === "ar" ? "الملاحظات" : "Notes",

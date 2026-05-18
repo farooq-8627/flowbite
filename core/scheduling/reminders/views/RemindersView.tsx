@@ -461,7 +461,7 @@ function ListMode({
 				</TabsList>
 
 				{isLoading ? (
-					<p className="py-8 text-center text-sm text-muted-foreground">Loading…</p>
+					<ReminderEmptyState variant="org" onCreate={onCreate} />
 				) : allReminders.length === 0 ? (
 					<ReminderEmptyState variant="org" onCreate={onCreate} />
 				) : filteredReminders.length === 0 ? (
@@ -478,7 +478,10 @@ function ListMode({
 						pageSizeOptions={[10, 25, 50, 100]}
 						onRowClick={onEdit}
 					>
-						<DataTableToolbar table={table}>
+						<DataTableToolbar
+							table={table}
+							// className="flex-wrap items-center [&>div:first-child]:flex-wrap [&>div:last-child]:ms-auto [&>div:last-child]:flex-none"
+						>
 							<DataTableViewOptions table={table} />
 						</DataTableToolbar>
 					</DataTable>

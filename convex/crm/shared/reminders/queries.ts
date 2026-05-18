@@ -188,3 +188,95 @@ export const getById = orgQuery({
 		return reminder;
 	},
 });
+
+// ─── Follow-ups (subset of reminders where source === "followup") ────────────
+//
+// Doctrine: there is no separate `followUps` table. The Follow-ups UI
+// surface is a reminders view filtered to source==="followup" — see
+// CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md §1.
+
+/**
+ * All follow-ups across the org (source === "followup"), sorted by dueAt
+ * via the new `by_org_and_source_and_due` index. Members without
+ * `reminders.manage` only see their own assigned items.
+ *
+ * Used by `FollowUpsView` (org-wide) and the dashboard's Follow-ups card.
+ */
+export const listFollowupsForOrg = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		/** Optional status filter. Defaults to all statuses. */
+		status: v.optional(v.union(v.literal("pending"), v.literal("completed"))),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "reminders.view");
+
+		const canSeeAll = hasPermission(member.permissions, "reminders.manage");
+
+		const rows = await ctx.db
+			.query("reminders")
+			.withIndex("by_org_and_source_and_due", (q) =>
+				q.eq("orgId", args.orgId).eq("source", "followup"),
+			)
+			.collect();
+
+		const filtered = canSeeAll ? rows : rows.filter((r) => r.assignedTo === userId);
+		return args.status ? filtered.filter((r) => r.status === args.status) : filtered;
+	},
+});
+
+/**
+ * Follow-ups for a specific person (used by profile page Follow-ups tab).
+ *
+ * Reads from `by_org_and_person` then filters source === "followup" in
+ * memory — per-person follow-up volume is small so a secondary in-memory
+ * filter is cheaper than a 2-key compound index for this case.
+ */
+export const listFollowupsForPerson = orgQuery({
+	args: { orgId: v.id("orgs"), personCode: v.string() },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "reminders.view");
+
+		const rows = await ctx.db
+			.query("reminders")
+			.withIndex("by_org_and_person", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.collect();
+
+		return rows.filter((r) => r.source === "followup");
+	},
+});
+
+/**
+ * Follow-ups for a specific entity (deal/company detail Follow-ups tab).
+ *
+ * Reads from `by_org_and_due` (no entity-keyed index on reminders) and
+ * filters in-memory by entityType+entityId+source. Entity-scoped views
+ * have small per-entity volumes so this is acceptable; if it ever
+ * becomes a hotspot we add a compound index.
+ */
+export const listFollowupsForEntity = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		entityType: v.string(),
+		entityId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "reminders.view");
+
+		const rows = await ctx.db
+			.query("reminders")
+			.withIndex("by_org_and_source_and_due", (q) =>
+				q.eq("orgId", args.orgId).eq("source", "followup"),
+			)
+			.collect();
+
+		return rows.filter(
+			(r) => r.entityType === args.entityType && r.entityId === args.entityId,
+		);
+	},
+});

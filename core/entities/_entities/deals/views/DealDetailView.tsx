@@ -117,8 +117,12 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		orgId && pipeline?._id ? { orgId, pipelineId: pipeline._id } : "skip",
 	);
 
-	// Flat list (for list view)
-	const flatDeals = useQuery(api.crm.entities.deals.queries.list, orgId ? { orgId } : "skip");
+	// Flat list — only needed for list view. Skip while the board is active
+	// to avoid a full-table subscription when the kanban is the primary view.
+	const flatDeals = useQuery(
+		api.crm.entities.deals.queries.list,
+		orgId && view === "list" ? { orgId } : "skip",
+	);
 	const items = useMemo(
 		() =>
 			flatDeals

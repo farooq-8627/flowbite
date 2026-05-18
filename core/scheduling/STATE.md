@@ -83,3 +83,4 @@
 |---|---|---|
 | Reminders | 100% Complete | `scheduling/reminders/STATE.md` |
 | Calendar | 100% Complete | `scheduling/calendar/STATE.md` |
+| Follow-ups | 100% Complete (Phase A) | `scheduling/followups/STATE.md` |

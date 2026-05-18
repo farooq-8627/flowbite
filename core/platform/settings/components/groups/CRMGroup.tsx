@@ -157,7 +157,7 @@ export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }
 					<NoteCategoriesSection orgId={orgId} canManage={canManageNoteCategories} />
 				)}
 				{activeTab === "reminders" && <RemindersSection org={org} orgId={orgId} />}
-				{activeTab === "followups" && <FollowupsSection />}
+				{activeTab === "followups" && <FollowupsSection org={org} orgId={orgId} />}
 				{activeTab === "timeline" && <TimelineSection />}
 			</div>
 		</div>

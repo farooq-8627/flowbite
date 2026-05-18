@@ -47,6 +47,16 @@ export type OrgSettings = {
 			rentAlertEnabled?: boolean;
 		};
 		/**
+		 * Follow-up cadence defaults — apply to reminders with
+		 * `source === "followup"` only. See
+		 * CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
+		 */
+		followupDefaults?: {
+			defaultDueOffsetDays?: number;
+			defaultPriority?: "low" | "normal" | "high" | "urgent";
+			autoCloseAfterDays?: number;
+		};
+		/**
 		 * File upload policy. Controls which file categories are accepted
 		 * across the workspace. Empty / undefined = allow all.
 		 * Categories: "image" | "pdf" | "document" | "spreadsheet" | "video"

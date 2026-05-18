@@ -24,6 +24,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { MediaViewerModal } from "@/core/comms/messages/components/MediaViewerModal";
 import {
 	buildAcceptString,
 	type FileCategory,
@@ -378,54 +379,190 @@ export function FileList({
 	className,
 	emptyText = "No files yet.",
 }: FileListProps) {
+	// Lightbox state — set on image/video tap.
+	const [viewerOpen, setViewerOpen] = useState(false);
+	const [viewerIndex, setViewerIndex] = useState(0);
+
+	// Filter previewable files (images + videos) — these get a tile + open
+	// the lightbox on click. Everything else falls back to a list row with
+	// a download link.
+	const previewable = useMemo(
+		() =>
+			files
+				.filter((f) => isImageMime(f.mimeType) || isVideoMime(f.mimeType))
+				.map((f) => ({
+					id: String(f._id),
+					name: f.name,
+					url: f.url ?? "",
+					mimeType: f.mimeType,
+				})),
+		[files],
+	);
+
+	const documents = files.filter(
+		(f) => !isImageMime(f.mimeType) && !isVideoMime(f.mimeType),
+	);
+
 	if (files.length === 0 && uploading.length === 0) {
 		return <p className={cn("text-xs text-muted-foreground", className)}>{emptyText}</p>;
 	}
 
 	return (
-		<ul className={cn("flex flex-col gap-1.5", className)}>
-			{uploading.map((name) => (
-				<li
-					key={`upl-${name}`}
-					className="flex items-center gap-2 rounded-[var(--radius)] border bg-muted/30 px-2 py-1.5 text-xs"
-				>
-					<Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
-					<span className="flex-1 truncate">{name}</span>
-					<span className="text-[10px] text-muted-foreground">Uploading…</span>
-				</li>
-			))}
-			{files.map((f) => (
-				<li
-					key={f._id}
-					className="group/file flex items-center gap-2 rounded-[var(--radius)] border bg-card px-2 py-1.5 text-xs"
-				>
-					<FileIconForType mimeType={f.mimeType} />
-					<a
-						href={f.url ?? "#"}
-						target="_blank"
-						rel="noopener noreferrer"
-						className="flex-1 truncate hover:underline"
-					>
-						{f.name}
-					</a>
-					<span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-						{formatSize(f.size)}
-					</span>
-					{onRemove && (
-						<Button
-							size="icon"
-							variant="ghost"
-							className="size-5 opacity-0 transition-opacity group-hover/file:opacity-100"
-							onClick={() => onRemove(f._id)}
-							aria-label={`Remove ${f.name}`}
+		<div className={cn("flex flex-col gap-3", className)}>
+			{/* Uploading rows */}
+			{uploading.length > 0 && (
+				<ul className="flex flex-col gap-1.5">
+					{uploading.map((name) => (
+						<li
+							key={`upl-${name}`}
+							className="flex items-center gap-2 rounded-[var(--radius)] border bg-muted/30 px-2 py-1.5 text-xs"
 						>
-							<Trash2Icon className="size-3 text-destructive" />
-						</Button>
-					)}
-				</li>
-			))}
-		</ul>
+							<Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />
+							<span className="flex-1 truncate">{name}</span>
+							<span className="text-[10px] text-muted-foreground">Uploading…</span>
+						</li>
+					))}
+				</ul>
+			)}
+
+			{/* Previewable tiles — images + videos */}
+			{previewable.length > 0 && (
+				<ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+					{previewable.map((p, idx) => {
+						const file = files.find((f) => String(f._id) === p.id)!;
+						return (
+							<li key={p.id} className="group/tile relative">
+								<button
+									type="button"
+									onClick={() => {
+										setViewerIndex(idx);
+										setViewerOpen(true);
+									}}
+									className="block w-full aspect-square overflow-hidden rounded-[var(--radius)] border bg-muted transition-colors hover:border-ring/40"
+									aria-label={`Preview ${p.name}`}
+								>
+									{isImageMime(p.mimeType) ? (
+										// biome-ignore lint/performance/noImgElement: user-uploaded image with signed Convex storage URLs; next/image would require runtime remote-pattern config that doesn't fit ephemeral signed URLs.
+										<img
+											src={p.url}
+											alt={p.name}
+											className="size-full object-cover"
+											loading="lazy"
+										/>
+									) : (
+										<div className="relative size-full">
+											{/* video poster — render a `<video>` with no controls
+											    just for first-frame thumbnail */}
+											<video
+												src={p.url}
+												className="size-full object-cover"
+												preload="metadata"
+												muted
+											/>
+											<div className="absolute inset-0 flex items-center justify-center bg-black/30">
+												<div className="rounded-full bg-white/90 p-2">
+													<svg
+														className="size-4 text-black"
+														fill="currentColor"
+														viewBox="0 0 24 24"
+														aria-hidden="true"
+													>
+														<path d="M8 5v14l11-7z" />
+													</svg>
+												</div>
+											</div>
+										</div>
+									)}
+								</button>
+								<div className="mt-1 flex items-baseline justify-between gap-2 px-0.5 text-[11px]">
+									<span
+										className="truncate text-foreground"
+										title={p.name}
+									>
+										{p.name}
+									</span>
+									<span className="shrink-0 text-muted-foreground tabular-nums">
+										{formatSize(file.size)}
+									</span>
+								</div>
+								{onRemove && (
+									<Button
+										size="icon"
+										variant="secondary"
+										className="absolute end-1 top-1 size-6 opacity-0 transition-opacity group-hover/tile:opacity-100"
+										onClick={(e) => {
+											e.stopPropagation();
+											onRemove(file._id);
+										}}
+										aria-label={`Remove ${p.name}`}
+									>
+										<Trash2Icon className="size-3 text-destructive" />
+									</Button>
+								)}
+							</li>
+						);
+					})}
+				</ul>
+			)}
+
+			{/* Document list — non-previewable files */}
+			{documents.length > 0 && (
+				<ul className="flex flex-col gap-1.5">
+					{documents.map((f) => (
+						<li
+							key={f._id}
+							className="group/file flex items-center gap-2 rounded-[var(--radius)] border bg-card px-2 py-1.5 text-xs"
+						>
+							<FileIconForType mimeType={f.mimeType} />
+							<a
+								href={f.url ?? "#"}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="flex-1 truncate hover:underline"
+								download
+							>
+								{f.name}
+							</a>
+							<span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+								{formatSize(f.size)}
+							</span>
+							{onRemove && (
+								<Button
+									size="icon"
+									variant="ghost"
+									className="size-5 opacity-0 transition-opacity group-hover/file:opacity-100"
+									onClick={() => onRemove(f._id)}
+									aria-label={`Remove ${f.name}`}
+								>
+									<Trash2Icon className="size-3 text-destructive" />
+								</Button>
+							)}
+						</li>
+					))}
+				</ul>
+			)}
+
+			{/* Lightbox — same MediaViewerModal used by chat. */}
+			{previewable.length > 0 && (
+				<MediaViewerModal
+					files={previewable}
+					startIndex={viewerIndex}
+					open={viewerOpen}
+					onOpenChange={setViewerOpen}
+				/>
+			)}
+		</div>
 	);
+}
+
+// ─── MIME helpers ────────────────────────────────────────────────────────────
+
+function isImageMime(mime: string): boolean {
+	return mime.startsWith("image/");
+}
+
+function isVideoMime(mime: string): boolean {
+	return mime.startsWith("video/");
 }
 
 // ─── FileUpload — dropzone + list together (edit mode) ───────────────────────

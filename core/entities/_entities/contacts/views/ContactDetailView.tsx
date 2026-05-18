@@ -156,10 +156,12 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		return map;
 	}, [members]);
 
-	// Companies lookup — used to resolve `companyId` (revealed when grouping
-	// by tag/assignee on the contacts board) into a human-readable name for
-	// the EntityCard's "fill the gap" strip.
-	const companies = useQuery(api.crm.entities.companies.queries.list, orgId ? { orgId } : "skip");
+	// Companies lookup — only needed when board is grouped by companyId.
+	// Scoped to avoid a full-table subscription on every mount.
+	const companies = useQuery(
+		api.crm.entities.companies.queries.list,
+		orgId && groupBy === "companyId" ? { orgId } : "skip",
+	);
 	const companyNameById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const c of companies ?? []) map.set(c._id as string, c.name);

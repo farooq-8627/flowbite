@@ -6,6 +6,24 @@
  * verified org membership and permissions — they do NOT re-check.
  *
  * Public mutations live in `mutations.ts`; queries in `queries.ts`.
+ *
+ * 2026-05-19 — person conversation normalisation
+ * ─────────────────────────────────────────────
+ * Doctrine: a person's conversation always uses `entityType: "person"`,
+ * NEVER `lead` / `contact`. Reasons:
+ *   1. A personCode survives lead → contact conversion. The thread should
+ *      follow the person, not split when the lead is converted.
+ *   2. Profile page and global inbox must show the SAME thread for the
+ *      same person — a single source of truth.
+ *   3. AI tools key on personCode, not on the lead/contact discriminator.
+ *
+ * `normaliseEntityType()` is the single chokepoint for this rule. Every
+ * write path runs through it; reads do too via `findConversation()`.
+ *
+ * For backwards-compat with conversations created before this rule
+ * landed, `findConversation()` does a SECONDARY lookup against any
+ * legacy `lead` / `contact` rows for the same personCode and re-keys
+ * the row to `person` on first read. Idempotent.
  */
 
 import { ConvexError } from "convex/values";
@@ -13,6 +31,16 @@ import type { Id } from "../../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../../_generated/server";
 import type { EntityTypeForChat } from "../../../_shared/entityCodes";
 import { ERRORS } from "../../../_shared/errors";
+
+/**
+ * Person-conversation normalisation. Every entry that targets a person
+ * (lead / contact / person) collapses to `entityType: "person"`. Other
+ * entity types pass through unchanged.
+ */
+export function normaliseEntityType(entityType: EntityTypeForChat): EntityTypeForChat {
+	if (entityType === "lead" || entityType === "contact") return "person";
+	return entityType;
+}
 
 // ─── Lookup ──────────────────────────────────────────────────────────────────
 
@@ -25,16 +53,50 @@ export async function findConversation(
 		threadId?: string;
 	},
 ) {
+	const target = normaliseEntityType(args.entityType);
+
 	const matches = await ctx.db
 		.query("conversations")
 		.withIndex("by_org_and_entity", (q) =>
-			q
-				.eq("orgId", args.orgId)
-				.eq("entityType", args.entityType)
-				.eq("entityId", args.entityId),
+			q.eq("orgId", args.orgId).eq("entityType", target).eq("entityId", args.entityId),
 		)
 		.take(50); // bounded — typical entity has 1–3 threads
-	return matches.find((c) => (c.threadId ?? null) === (args.threadId ?? null)) ?? null;
+	const direct = matches.find(
+		(c) => (c.threadId ?? null) === (args.threadId ?? null),
+	);
+	if (direct) return direct;
+
+	// Backwards-compat: if we're looking for a person, also check the legacy
+	// `lead` / `contact` keys. Conversations created before the 2026-05-19
+	// normalisation rule may still be keyed there. Returning the legacy
+	// row is enough — write paths re-key it to `person` automatically.
+	if (target === "person") {
+		const legacy = await ctx.db
+			.query("conversations")
+			.withIndex("by_org_and_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.entityId),
+			)
+			.take(50);
+		const legacyMatch = legacy.find(
+			(c) => (c.threadId ?? null) === (args.threadId ?? null),
+		);
+		if (legacyMatch) return legacyMatch;
+
+		const contactLegacy = await ctx.db
+			.query("conversations")
+			.withIndex("by_org_and_entity", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", "contact")
+					.eq("entityId", args.entityId),
+			)
+			.take(50);
+		const contactMatch = contactLegacy.find(
+			(c) => (c.threadId ?? null) === (args.threadId ?? null),
+		);
+		if (contactMatch) return contactMatch;
+	}
+	return null;
 }
 
 /**
@@ -51,13 +113,30 @@ export async function getOrCreateConversation(
 		creatorId: Id<"users">;
 	},
 ): Promise<Id<"conversations">> {
-	const existing = await findConversation(ctx, args);
-	if (existing) return existing._id;
+	const normalised = normaliseEntityType(args.entityType);
+	const lookupArgs = { ...args, entityType: normalised };
+
+	const existing = await findConversation(ctx, lookupArgs);
+	if (existing) {
+		// If we found a legacy lead/contact-keyed row, opportunistically re-key
+		// it to `person` so future reads hit the canonical index path. Skips
+		// when already canonical.
+		if (
+			normalised === "person" &&
+			(existing.entityType === "lead" || existing.entityType === "contact")
+		) {
+			await ctx.db.patch(existing._id, {
+				entityType: "person",
+				updatedAt: Date.now(),
+			});
+		}
+		return existing._id;
+	}
 
 	const now = Date.now();
 	const conversationId = await ctx.db.insert("conversations", {
 		orgId: args.orgId,
-		entityType: args.entityType,
+		entityType: normalised,
 		entityId: args.entityId,
 		threadId: args.threadId,
 		isArchived: false,

@@ -36,6 +36,7 @@ import {
 	getMyMembership,
 	getOrCreateConversation,
 	listActiveMembers,
+	normaliseEntityType,
 } from "../conversations/internal";
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
@@ -119,14 +120,17 @@ export const send = orgMutation({
 			entityType = convo.entityType;
 			entityId = convo.entityId;
 		} else if (args.entityType && args.entityId) {
+			// Normalise lead/contact → person at the boundary so the
+			// denormalised `messages.entityType` field stays canonical.
+			const normalised = normaliseEntityType(args.entityType);
 			conversationId = await getOrCreateConversation(ctx, {
 				orgId: args.orgId,
-				entityType: args.entityType,
+				entityType: normalised,
 				entityId: args.entityId,
 				threadId: args.threadId,
 				creatorId: userId,
 			});
-			entityType = args.entityType;
+			entityType = normalised;
 			entityId = args.entityId;
 		} else {
 			throw new ConvexError({
@@ -341,7 +345,22 @@ export const update = orgMutation({
 });
 
 export const remove = orgMutation({
-	args: { orgId: v.id("orgs"), messageId: v.id("messages") },
+	args: {
+		orgId: v.id("orgs"),
+		messageId: v.id("messages"),
+		/**
+		 * `"self"`     — hide from the caller's own view only.
+		 *                Adds caller to `deletedFor`. Author + everyone else
+		 *                still see the message.
+		 * `"everyone"` — hard-delete for all participants. Only the author
+		 *                (within the edit window) OR a member with
+		 *                `messages.deleteAny` can do this.
+		 *
+		 * Defaults to `"self"` when omitted (the conservative choice — keep
+		 * legacy callers safe).
+		 */
+		mode: v.optional(v.union(v.literal("self"), v.literal("everyone"))),
+	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 
@@ -350,27 +369,68 @@ export const remove = orgMutation({
 			throw new ConvexError(ERRORS.NOT_FOUND);
 		}
 
+		const mode = args.mode ?? "self";
+
+		if (mode === "self") {
+			// Per-user hide. No moderation gate — every conversation member can
+			// hide a message from their own view. Idempotent.
+			const already = (message.deletedFor ?? []).some(
+				(u) => String(u) === String(userId),
+			);
+			if (already) return;
+			await ctx.db.patch(args.messageId, {
+				deletedFor: [...(message.deletedFor ?? []), userId],
+				updatedAt: Date.now(),
+			});
+			return;
+		}
+
+		// mode === "everyone" → hard-delete.
 		const isOwn = message.authorId === userId;
 		const canDeleteOwn = hasPermission(member.permissions, "messages.deleteOwn");
 		const canDeleteAny = hasPermission(member.permissions, "messages.deleteAny");
-		if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
+		const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
+		// Author within the edit window (with deleteOwn) OR any moderator.
+		if (!(canDeleteAny || (isOwn && canDeleteOwn && within))) {
 			throw new ConvexError(ERRORS.FORBIDDEN);
 		}
 
-		const now = Date.now();
-		await ctx.db.patch(args.messageId, {
-			deletedAt: now,
-			updatedAt: now,
+		// Capture the entity coords for activity-log + lastMessage recompute
+		// BEFORE deleting the row.
+		const conversationId = message.conversationId;
+		const entityType = message.entityType;
+		const entityId = message.entityId;
+		const personCode = message.personCode;
+
+		// Hard-delete — no tombstone. The row is gone for everyone.
+		await ctx.db.delete(args.messageId);
+
+		// Recompute the conversation's lastMessage* from the next surviving
+		// message (descending by createdAt). When the conversation now has
+		// no messages, clear the fields entirely.
+		const nextNewest = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", conversationId),
+			)
+			.order("desc")
+			.first();
+
+		await ctx.db.patch(conversationId, {
+			lastMessageAt: nextNewest?.createdAt,
+			lastMessagePreview: nextNewest?.content.slice(0, 200),
+			lastMessageAuthorId: nextNewest?.authorId,
+			updatedAt: Date.now(),
 		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId,
 			action: "message_deleted",
-			entityType: message.entityType,
-			entityId: message.entityId,
-			personCode: message.personCode,
-			description: "Message deleted",
+			entityType,
+			entityId,
+			personCode,
+			description: "Message deleted (for everyone)",
 			metadata: { messageId: String(args.messageId) },
 		});
 	},

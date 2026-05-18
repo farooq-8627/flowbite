@@ -32,7 +32,28 @@ export const create = orgMutation({
 		note: v.optional(v.string()),
 		dueAt: v.number(),
 		assignedTo: v.id("users"),
-		source: v.string(),
+		/**
+		 * Closed union — must match the schema. Adds the new `note` and
+		 * `system` literals; legacy `manual`/`followup`/`calendar`/`ai`
+		 * unchanged. See CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md §1.
+		 */
+		source: v.union(
+			v.literal("manual"),
+			v.literal("followup"),
+			v.literal("calendar"),
+			v.literal("ai"),
+			v.literal("note"),
+			v.literal("system"),
+		),
+		/** Optional triage priority — used by the Follow-ups view for sort/chip color. */
+		priority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("normal"),
+				v.literal("high"),
+				v.literal("urgent"),
+			),
+		),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -59,7 +80,9 @@ export const create = orgMutation({
 			assignedTo: args.assignedTo,
 			status: "pending",
 			source: args.source,
+			priority: args.priority,
 			createdAt: now,
+			updatedAt: now,
 		});
 
 		await logActivity(ctx, {
@@ -119,7 +142,11 @@ export const complete = orgMutation({
 		});
 
 		const now = Date.now();
-		await ctx.db.patch(args.reminderId, { status: "completed", completedAt: now });
+		await ctx.db.patch(args.reminderId, {
+			status: "completed",
+			completedAt: now,
+			updatedAt: now,
+		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -155,6 +182,15 @@ export const update = orgMutation({
 		note: v.optional(v.string()),
 		dueAt: v.optional(v.number()),
 		assignedTo: v.optional(v.id("users")),
+		/** Optional priority change — used by the Follow-ups view's triage chip. */
+		priority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("normal"),
+				v.literal("high"),
+				v.literal("urgent"),
+			),
+		),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -172,9 +208,11 @@ export const update = orgMutation({
 		});
 
 		const { orgId: _o, reminderId: _r, ...updates } = args;
-		const patch = Object.fromEntries(
+		const patch: Record<string, unknown> = Object.fromEntries(
 			Object.entries(updates).filter(([, val]) => val !== undefined),
 		);
+		// Server-stamped — never trust the client's clock.
+		patch.updatedAt = Date.now();
 
 		await ctx.db.patch(args.reminderId, patch);
 
@@ -220,5 +258,146 @@ export const remove = orgMutation({
 			description: `Reminder deleted: ${reminder.title}`,
 			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
 		});
+	},
+});
+
+// ─── Follow-ups ──────────────────────────────────────────────────────────────
+//
+// Doctrine (CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md): follow-ups are
+// reminders with `source === "followup"`. We expose a separate mutation
+// because:
+//   - The AI tool registry maps `create_followup` → this mutation, with a
+//     CRM-cadence-specific arg schema (personCode + dealCode + priority +
+//     optional dueAt). The model picks one tool unambiguously instead of
+//     guessing which `source` literal to pass to the generic `create`.
+//   - The activity log writes `followup_created` instead of
+//     `reminder_created` so the timeline narrative reads naturally
+//     ("Sara created a follow-up with Acme" vs "Sara created a reminder").
+//   - The mutation reads `org.settings.followupDefaults` to compute the
+//     default `dueAt` (today + N days) and `priority` when the caller
+//     leaves them unset. The reminders surface doesn't share this default
+//     resolution.
+//
+// All persistence still lands in the same `reminders` table and shares
+// indexes / RBAC / notifications with the existing flows. The only
+// difference visible to consumers is the `source === "followup"`
+// discriminator and the activity-log verb.
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Default `defaultDueOffsetDays` when org.settings.followupDefaults is unset. */
+const DEFAULT_FOLLOWUP_OFFSET_DAYS = 3;
+
+/** Default priority chip on a new follow-up when org settings are unset. */
+const DEFAULT_FOLLOWUP_PRIORITY = "normal" as const;
+
+export const createFollowup = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		/** The person we're following up with — required. */
+		personCode: v.string(),
+		/** Optional deal context. The follow-up's calendar/timeline narrative shows this when set. */
+		dealCode: v.optional(v.string()),
+		/**
+		 * Optional pre-bound entity. When unset, the follow-up attaches
+		 * to the person itself (`entityType="person"`, `entityId=personCode`).
+		 */
+		entityType: v.optional(v.string()),
+		entityId: v.optional(v.string()),
+		title: v.string(),
+		note: v.optional(v.string()),
+		/**
+		 * When unset, computed as `Date.now() + defaultDueOffsetDays * 1d`
+		 * using `org.settings.followupDefaults.defaultDueOffsetDays`
+		 * (fallback: 3 days).
+		 */
+		dueAt: v.optional(v.number()),
+		/** Defaults to caller. */
+		assignedTo: v.optional(v.id("users")),
+		/**
+		 * Defaults to `org.settings.followupDefaults.defaultPriority`
+		 * (fallback: "normal").
+		 */
+		priority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("normal"),
+				v.literal("high"),
+				v.literal("urgent"),
+			),
+		),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "reminders.create");
+		await enforceRateLimit(ctx, {
+			scope: "reminders.create",
+			key: `${userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
+
+		// Resolve org-level defaults for unset fields.
+		const org = await ctx.db.get(args.orgId);
+		const followupDefaults = (org?.settings as { followupDefaults?: { defaultDueOffsetDays?: number; defaultPriority?: "low" | "normal" | "high" | "urgent" } })?.followupDefaults ?? {};
+		const offsetDays = Math.max(
+			1,
+			Math.min(365, followupDefaults.defaultDueOffsetDays ?? DEFAULT_FOLLOWUP_OFFSET_DAYS),
+		);
+		const resolvedDueAt = args.dueAt ?? Date.now() + offsetDays * ONE_DAY_MS;
+		const resolvedPriority =
+			args.priority ?? followupDefaults.defaultPriority ?? DEFAULT_FOLLOWUP_PRIORITY;
+		const resolvedAssignee = args.assignedTo ?? userId;
+
+		// Default the entity binding to the person profile when the caller
+		// didn't pre-bind a deal/company tab.
+		const entityType = args.entityType ?? "person";
+		const entityId = args.entityId ?? args.personCode;
+
+		const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
+		const now = Date.now();
+
+		const reminderId = await ctx.db.insert("reminders", {
+			orgId: args.orgId,
+			followUpCode,
+			personCode: args.personCode,
+			dealCode: args.dealCode,
+			entityType,
+			entityId,
+			title: args.title,
+			note: args.note,
+			dueAt: resolvedDueAt,
+			assignedTo: resolvedAssignee,
+			status: "pending",
+			source: "followup",
+			priority: resolvedPriority,
+			createdAt: now,
+			updatedAt: now,
+		});
+
+		// Distinct activity verb so the timeline narrative is unambiguous.
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "followup_created",
+			entityType,
+			entityId,
+			personCode: args.personCode,
+			description: `Follow-up scheduled: ${args.title}`,
+			metadata: { followUpCode, reminderId, priority: resolvedPriority },
+		});
+
+		if (resolvedAssignee !== userId) {
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: resolvedAssignee,
+				type: "reminder.created",
+				title: `New follow-up: ${args.title}`,
+				entityType,
+				entityId,
+				metadata: { followUpCode, personCode: args.personCode },
+			});
+		}
+
+		return { reminderId, followUpCode, dueAt: resolvedDueAt, priority: resolvedPriority };
 	},
 });

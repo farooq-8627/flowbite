@@ -1,7 +1,25 @@
 # Reminders — State
 
-> Updated: 2026-05-18
+> Updated: 2026-05-19
 > Status: 100% Complete — backend + hooks + org view + panel + widgets all live. Drag-to-reschedule + in-place edit from calendar done.
+
+## Reminders vs Follow-ups — settled
+
+The user asked 2026-05-19 "since reminders and follow-ups are the same, do we
+really need two? And remove the follow-up badge from ReminderCard." Resolution:
+
+1. **Same data, two read shapes** — see `core/scheduling/followups/STATE.md`.
+   Reminders is the **operational queue** (DataTable, Today/Open/Completed
+   tabs, sortable). Follow-ups is the **CRM cadence lens** (priority-first
+   cards, Pipedrive-style buckets). Both read the `reminders` table.
+2. **No follow-up badge to remove** — `ReminderCard.tsx` has only a
+   `<ReminderStatusBadge>` (overdue / today / upcoming / completed). It
+   never had a "Follow-up" badge. The user's hypothesis was incorrect.
+3. **Decision locked**: do not add such a badge in the future. The surface
+   IS the discriminator. A user on `/reminders` doesn't need the badge to
+   tell them what kind of thing they're looking at — they're on the
+   reminders surface. See follow-ups MODULE.md decision #9 for the full
+   rationale.
 
 ## ✅ Completed
 

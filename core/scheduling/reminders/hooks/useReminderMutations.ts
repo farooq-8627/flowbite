@@ -78,6 +78,32 @@ function patchReminderListsForOrg(
 		const next = list.map(transform).filter((r): r is Reminder => r !== null);
 		store.setQuery(api.crm.shared.reminders.queries.listOpen, qa, next);
 	}
+	// ── Follow-ups lists (same `reminders` table, `source === "followup"`) ──
+	// `listFollowupsForOrg` — org-wide follow-ups list (FollowUpsView).
+	const followupsOrg = store.getAllQueries(api.crm.shared.reminders.queries.listFollowupsForOrg);
+	for (const { args: qa, value: list } of followupsOrg) {
+		if (!list || qa.orgId !== orgId) continue;
+		const next = list.map(transform).filter((r): r is Reminder => r !== null);
+		store.setQuery(api.crm.shared.reminders.queries.listFollowupsForOrg, qa, next);
+	}
+	// `listFollowupsForPerson` — per-profile follow-ups panel.
+	const followupsPerson = store.getAllQueries(
+		api.crm.shared.reminders.queries.listFollowupsForPerson,
+	);
+	for (const { args: qa, value: list } of followupsPerson) {
+		if (!list || qa.orgId !== orgId) continue;
+		const next = list.map(transform).filter((r): r is Reminder => r !== null);
+		store.setQuery(api.crm.shared.reminders.queries.listFollowupsForPerson, qa, next);
+	}
+	// `listFollowupsForEntity` — per-deal/company follow-ups tab.
+	const followupsEntity = store.getAllQueries(
+		api.crm.shared.reminders.queries.listFollowupsForEntity,
+	);
+	for (const { args: qa, value: list } of followupsEntity) {
+		if (!list || qa.orgId !== orgId) continue;
+		const next = list.map(transform).filter((r): r is Reminder => r !== null);
+		store.setQuery(api.crm.shared.reminders.queries.listFollowupsForEntity, qa, next);
+	}
 }
 
 /** Mark a reminder completed — patch every cached list to flip `status`. */

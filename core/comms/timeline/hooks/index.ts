@@ -2,17 +2,58 @@
  * Timeline hooks — wrap the unified timeline query.
  *
  * Backend already merges activityLogs + notes + reminders into a single feed
- * with `_entryType` and `_color` tags. Frontend simply renders.
+ * with `_entryType`, `_kind` ("bare" | "card" | "node"), and `_color` tags.
+ * Frontend simply renders.
  *
- * Status: IMPLEMENTED (Phase 2 backend already exists; this is the React wrapper).
+ * Status: IMPLEMENTED.
+ *
+ * 2026-05-19 — added `usePaginatedTimeline` (cursor pagination via
+ * `usePaginatedQuery`). This is the primary hook used by the new
+ * `<TimelineFeed>` component. The legacy hooks (`usePersonTimeline`,
+ * `useOrgTimeline`) are kept for non-paginated callers (small embeds,
+ * dashboard widgets) — they cap at 50/100 entries which is all those
+ * surfaces ever render.
  */
 "use client";
 
-import { useQuery } from "convex/react";
+import { usePaginatedQuery, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-/** Per-person timeline. Used by `PersonTimelinePanel`. */
+/**
+ * Discriminated scope union — must match the validator on
+ * `crm.shared.timeline.queries.getForScope`.
+ */
+export type TimelineScope =
+	| { kind: "org" }
+	| { kind: "person"; personCode: string }
+	| { kind: "entity"; entityType: string; entityId: string };
+
+/**
+ * Paginated timeline — used by `<TimelineFeed>` everywhere.
+ *
+ * Returns the standard `usePaginatedQuery` shape:
+ *   - `results`     — flat array of all loaded entries, ordered desc by createdAt
+ *   - `status`      — "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted"
+ *   - `loadMore(n)` — call to fetch the next older page
+ *
+ * Pass `initialNumItems` per surface:
+ *   - Org / profile / entity timeline: 50
+ *   - Dashboard widget: 10
+ */
+export function usePaginatedTimeline(args: {
+	orgId?: Id<"orgs">;
+	scope: TimelineScope;
+	initialNumItems?: number;
+}) {
+	return usePaginatedQuery(
+		api.crm.shared.timeline.queries.getForScope,
+		args.orgId ? { orgId: args.orgId, scope: args.scope } : "skip",
+		{ initialNumItems: args.initialNumItems ?? 50 },
+	);
+}
+
+/** Per-person timeline — non-paginated. Used by simple embeds. */
 export function usePersonTimeline(args: {
 	orgId?: Id<"orgs">;
 	personCode: string;
@@ -24,7 +65,7 @@ export function usePersonTimeline(args: {
 	);
 }
 
-/** Org-wide audit feed. Admin/owner only — gated server-side. */
+/** Org-wide audit feed — non-paginated. Admin/owner only — gated server-side. */
 export function useOrgTimeline(args: {
 	orgId?: Id<"orgs">;
 	limit?: number;
@@ -37,23 +78,26 @@ export function useOrgTimeline(args: {
 }
 
 /**
- * Entity-scoped timeline (Deal/Company tabs).
+ * Entity-scoped timeline (Deal/Company tabs) — non-paginated.
  *
- * `getForOrg` returns activity logs filtered by actorType — for entity scope
- * we currently fall through to person scope when personCode is known. A
- * dedicated `getForEntity` query can be added later if needed.
+ * Calls the new `getForEntity` query which reads from the cheapest
+ * activityLogs index plus entity-scoped notes + reminders.
  */
 export function useEntityTimeline(args: {
 	orgId?: Id<"orgs">;
-	personCode?: string;
+	entityType?: string;
+	entityId?: string;
 	limit?: number;
 }) {
-	// Until a `getForEntity` query exists, route entity timelines through the
-	// person query when personCode is available; otherwise return undefined.
 	return useQuery(
-		api.crm.shared.timeline.queries.getForPerson,
-		args.orgId && args.personCode
-			? { orgId: args.orgId, personCode: args.personCode, limit: args.limit }
+		api.crm.shared.timeline.queries.getForEntity,
+		args.orgId && args.entityType && args.entityId
+			? {
+					orgId: args.orgId,
+					entityType: args.entityType,
+					entityId: args.entityId,
+					limit: args.limit,
+				}
 			: "skip",
 	);
 }

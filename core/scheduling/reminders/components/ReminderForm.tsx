@@ -78,10 +78,31 @@ interface ReminderFormBaseProps {
 		title?: string;
 		dueAt?: number;
 		assignedTo?: Id<"users">;
-		source?: string;
+		source?: ReminderSource;
 	};
 	/** Submit-button label override. Calendar uses "Save as Reminder". */
 	submitLabel?: string;
+}
+
+/**
+ * Closed union — must match the Convex validator on `reminders.create`.
+ * See CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md §1 for the rationale and the
+ * 2026-05-19 schema migration that backfilled legacy values.
+ */
+type ReminderSource = "manual" | "followup" | "calendar" | "ai" | "note" | "system";
+
+const REMINDER_SOURCE_VALUES: ReminderSource[] = [
+	"manual",
+	"followup",
+	"calendar",
+	"ai",
+	"note",
+	"system",
+];
+
+/** Type guard — narrow an arbitrary string to a `ReminderSource`. */
+function isReminderSource(value: unknown): value is ReminderSource {
+	return typeof value === "string" && (REMINDER_SOURCE_VALUES as string[]).includes(value);
 }
 
 const SOURCE_OPTIONS = [
@@ -152,7 +173,7 @@ export function ReminderForm({
 	 * picker enforces "must pick a person" for company-only selections).
 	 */
 	const [entitySelection, setEntitySelection] = useState<EntityCodeSelection | null>(null);
-	const [source, setSource] = useState<string>("manual");
+	const [source, setSource] = useState<ReminderSource>("manual");
 	const [submitting, setSubmitting] = useState(false);
 
 	const titleInputRef = useRef<HTMLInputElement>(null);
@@ -195,7 +216,7 @@ export function ReminderForm({
 					personCode: reminder.personCode,
 				});
 			}
-			setSource(reminder.source);
+			setSource(isReminderSource(reminder.source) ? reminder.source : "manual");
 		} else {
 			setTitle(defaults?.title ?? "");
 			setNote("");
@@ -469,7 +490,12 @@ export function ReminderForm({
 				{!isEditing && (
 					<div className="grid gap-1.5">
 						<Label htmlFor="reminder-source">Source</Label>
-						<Select value={source} onValueChange={setSource}>
+						<Select
+							value={source}
+							onValueChange={(v) => {
+								if (isReminderSource(v)) setSource(v);
+							}}
+						>
 							<SelectTrigger id="reminder-source">
 								<SelectValue placeholder="Where is this from?" />
 							</SelectTrigger>

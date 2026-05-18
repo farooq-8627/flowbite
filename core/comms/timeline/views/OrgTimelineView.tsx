@@ -1,34 +1,54 @@
 "use client";
 
-import { useOrgTimeline } from "@/core/comms/timeline/hooks";
 /**
- * OrgTimelineView — org-wide audit feed (placeholder, no UI yet).
+ * OrgTimelineView — org-wide audit feed.
  *
- * Same backing query as `/{orgSlug}/settings/activity-log` — gated by
- * `activityLogs.viewOrg` (admin/owner only).
+ * Mounts `<TimelineFeed scope={kind:"org"}>` in the standard
+ * `EntityPageLayout` chrome (slim toolbar with the page header).
  *
- * Status: backend wired (`useOrgTimeline`). Custom UI pending — designed in-house,
- * NOT copied from any template per FRONTEND-DECISIONS Rule 3.
+ * Permissions
+ *   - `activityLogs.viewOrg` is enforced server-side by the timeline
+ *     query (see `convex/crm/shared/timeline/queries.ts`).
+ *
+ * Composer
+ *   - Hidden on this scope. There's no canonical entity to attach
+ *     comments to org-wide. (Comments belong on a person/deal/company.)
  */
+
+import { ActivityIcon } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { TimelineFeed } from "@/core/comms/timeline/components/TimelineFeed";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 export function OrgTimelineView() {
-	const { orgId, orgSlug } = useCurrentOrg();
-	const entries = useOrgTimeline({ orgId, limit: 100 });
+	useCurrentOrg(); // ensure we're inside <OrgProvider>
 
 	return (
-		<div data-status="timeline-pending-ui" className="p-6">
-			<h1 className="text-xl font-semibold">Timeline</h1>
-			<p className="text-sm text-muted-foreground">
-				Backend connected — {entries?.length ?? 0} entries. Custom UI pending.
-			</p>
-			<pre className="mt-4 max-h-[40vh] overflow-auto rounded-[var(--radius)] border bg-muted p-3 text-xs">
-				{JSON.stringify(
-					{ orgSlug, count: entries?.length, sample: entries?.slice(0, 3) },
-					null,
-					2,
-				)}
-			</pre>
+		<div className="flex h-full min-h-0 flex-col">
+			<div className="flex shrink-0 items-center gap-2 border-b bg-background px-4 py-2.5">
+				<ActivityIcon
+					className="size-4 text-muted-foreground"
+					aria-hidden
+				/>
+				<h1 className="text-sm font-semibold">Timeline</h1>
+				<span className="text-xs text-muted-foreground">
+					Workspace-wide activity, notes, and reminders.
+				</span>
+			</div>
+
+			<div className="min-h-0 flex-1 p-3 xl:p-4">
+				<Card className="h-full overflow-hidden p-3 xl:p-4">
+					<TimelineFeed
+						scope={{ kind: "org" }}
+						pageSize={50}
+						showComposer={false}
+						emptyState={{
+							title: "No workspace activity yet",
+							body: "When teammates create leads, notes, or follow-ups, they'll show up here.",
+						}}
+					/>
+				</Card>
+			</div>
 		</div>
 	);
 }

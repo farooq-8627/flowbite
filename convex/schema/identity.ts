@@ -126,6 +126,41 @@ export const orgs = defineTable({
 					rentAlertEnabled: v.optional(v.boolean()),
 				}),
 			),
+			/**
+			 * Follow-up cadence defaults.
+			 *
+			 * Doctrine (CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md): follow-ups
+			 * are reminders with `source === "followup"`. These settings
+			 * affect that subset only — generic reminders ignore them.
+			 *
+			 * Every field is OPTIONAL so the block is purely additive — old
+			 * org docs validate without backfill, and the
+			 * `createFollowup` mutation falls back to hard-coded defaults
+			 * when a field is unset.
+			 *
+			 *   defaultDueOffsetDays — when the user clicks "Follow up"
+			 *     without specifying a date, the form defaults to
+			 *     `today + N days` (default: 3).
+			 *   defaultPriority      — default priority chip on a new
+			 *     follow-up (default: "normal").
+			 *   autoCloseAfterDays   — Phase B: auto-mark a follow-up
+			 *     completed if it sits past-due for N days. `null` /
+			 *     unset disables auto-close.
+			 */
+			followupDefaults: v.optional(
+				v.object({
+					defaultDueOffsetDays: v.optional(v.number()),
+					defaultPriority: v.optional(
+						v.union(
+							v.literal("low"),
+							v.literal("normal"),
+							v.literal("high"),
+							v.literal("urgent"),
+						),
+					),
+					autoCloseAfterDays: v.optional(v.number()),
+				}),
+			),
 			fileUpload: v.optional(
 				v.object({
 					allowedMimeCategories: v.optional(v.array(v.string())),

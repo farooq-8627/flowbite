@@ -272,7 +272,14 @@ export function MessageBubble({
 
 	const canEditOwn =
 		isByCurrentUser && Date.now() - message.createdAt < EDIT_WINDOW_MS && !isAI && !isContact;
-	const canDelete = isByCurrentUser || canDeleteAny;
+	// "Delete for me" is always available to anyone who can read the message —
+	// hide-from-my-view is a per-user action, not a moderation action.
+	// "Delete for everyone" requires authorship within the edit window OR a
+	// member with `messages.deleteAny` (moderator).
+	const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
+	const canDeleteForMe = true;
+	const canDeleteForEveryone = (isByCurrentUser && within) || canDeleteAny;
+	const canDelete = canDeleteForMe || canDeleteForEveryone;
 	const canForward = !isAI || message.content.length > 0; // forwarding works for any message
 	const showActions = canEditOwn || canDelete || canForward || onReply !== undefined;
 
@@ -308,17 +315,24 @@ export function MessageBubble({
 		}
 	}, [draft, editMessage, message._id, message.content, message.orgId]);
 
-	const handleDelete = useCallback(async () => {
-		if (busy) return;
-		setBusy(true);
-		try {
-			await deleteMessage({ orgId: message.orgId, messageId: message._id });
-		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't delete.");
-		} finally {
-			setBusy(false);
-		}
-	}, [busy, deleteMessage, message._id, message.orgId]);
+	const handleDelete = useCallback(
+		async (mode: "self" | "everyone") => {
+			if (busy) return;
+			setBusy(true);
+			try {
+				await deleteMessage({
+					orgId: message.orgId,
+					messageId: message._id,
+					mode,
+				});
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Couldn't delete.");
+			} finally {
+				setBusy(false);
+			}
+		},
+		[busy, deleteMessage, message._id, message.orgId],
+	);
 
 	const handleToggleReaction = useCallback(
 		async (emoji: string) => {
@@ -636,13 +650,21 @@ export function MessageBubble({
 										{(canEditOwn || canForward) && canDelete && (
 											<DropdownMenuSeparator />
 										)}
-										{canDelete && (
+										{canDeleteForMe && (
 											<DropdownMenuItem
-												variant="destructive"
-												onSelect={() => void handleDelete()}
+												onSelect={() => void handleDelete("self")}
 											>
 												<Trash2 className="size-3.5" aria-hidden="true" />
-												Delete
+												Delete for me
+											</DropdownMenuItem>
+										)}
+										{canDeleteForEveryone && (
+											<DropdownMenuItem
+												variant="destructive"
+												onSelect={() => void handleDelete("everyone")}
+											>
+												<Trash2 className="size-3.5" aria-hidden="true" />
+												Delete for everyone
 											</DropdownMenuItem>
 										)}
 									</DropdownMenuContent>

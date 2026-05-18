@@ -32,12 +32,12 @@ import { useMemo } from "react";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
+import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineActivityWidget";
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
 	PipelineCard,
-	RecentActivityCard,
 	RemindersCard,
 	StatStrip,
 	TodaySummaryCard,
@@ -100,18 +100,21 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					</div>
 				</div>
 
-				{/* Row 3 — Recent messages + Recent activity */}
+				{/* Row 3 — Recent messages + Recent activity (equal-width, decoupled
+				    from Row 2's wider/narrower split). Each card sizes itself
+				    by its own content; their inner lists use the SAME `limit`
+				    so the visual density matches across the row. */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					<div className="lg:col-span-7">
+					<div className="lg:col-span-6">
 						<MessagesPreviewWidget
 							orgId={orgId}
 							orgSlug={orgSlug}
-							limit={7}
+							limit={9}
 							className="h-full"
 						/>
 					</div>
-					<div className="lg:col-span-5">
-						<RecentActivityCard activity={stats.recentActivity} />
+					<div className="lg:col-span-6">
+						<TimelineActivityWidget orgSlug={orgSlug} limit={6} />
 					</div>
 				</div>
 

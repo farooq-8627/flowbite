@@ -77,6 +77,7 @@ export const RESERVED_SLUGS = new Set([
 	"messages",
 	"calendar",
 	"reminders",
+	"followups",
 	"notes",
 	"timeline",
 

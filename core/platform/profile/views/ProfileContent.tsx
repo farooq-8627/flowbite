@@ -172,10 +172,14 @@ function DealsGroup({ personCode }: { personCode: string }) {
 /**
  * FilesGroup — drag-and-drop attachments scoped to a single person.
  *
- * Uses the universal `<EntityFilesPanel>` which combines:
- *   - direct person-scope files (scope="person", scopeId=personCode), and
- *   - any file from another entity tagged `person:<personCode>` (e.g. a deal
- *     attachment uploaded "for this person" surfaces here without dupes).
+ * Uses the universal `<EntityFilesPanel>`. For a person profile the
+ * attachments live in `scope="person", scopeId=personCode` and tagged
+ * `person:<personCode>`. Setting `entityType="person"` everywhere keeps
+ * the three internal queries (direct scope + tag + personFiles) all
+ * pointing at the SAME slot, so the dedupe loop can collapse the
+ * "this file matches via tag AND via direct scope" case to one row
+ * (instead of one row per query — which is what produced the
+ * "every file shows twice" bug pre-2026-05-19).
  *
  * Future passes will gate AI access to these files through a per-person
  * consent flag.
@@ -191,11 +195,9 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 				{orgId ? (
 					<EntityFilesPanel
 						orgId={orgId}
-						entityType="user"
+						entityType="person"
 						entityId={personCode}
 						personCode={personCode}
-						uploadScope="person"
-						uploadScopeId={personCode}
 					/>
 				) : (
 					<div className="text-xs text-muted-foreground">Loading…</div>

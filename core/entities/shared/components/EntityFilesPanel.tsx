@@ -25,7 +25,6 @@
  */
 
 import { useQuery } from "convex/react";
-import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
@@ -34,7 +33,7 @@ import {
 	FileUpload,
 } from "@/core/data-io/files/components/FileUpload";
 
-type EntityType = "lead" | "contact" | "deal" | "company" | "user" | "org";
+type EntityType = "lead" | "contact" | "deal" | "company" | "user" | "org" | "person";
 
 interface EntityFilesPanelProps {
 	orgId: Id<"orgs"> | undefined;
@@ -66,39 +65,14 @@ export function EntityFilesPanel({
 	description,
 	className,
 }: EntityFilesPanelProps) {
-	// 1. Direct entity-scope files (uploaded to this exact record).
-	const directFiles = useQuery(
-		api.files.queries.listByScope,
-		orgId ? { orgId, scope: entityType, scopeId: entityId } : "skip",
-	);
-
-	// 2. Cross-entity attribution: any file tagged "<entityType>:<entityId>".
-	const tagged = useQuery(
-		api.files.queries.listByTag,
-		orgId ? { orgId, tag: `${entityType}:${entityId}` } : "skip",
-	);
-
-	// 3. (Optional) person-scope files for this person — surfaces lead/contact
-	// attachments on the deal page when the deal references a personCode.
-	const personFiles = useQuery(
-		api.files.queries.listByScope,
-		orgId && personCode ? { orgId, scope: "person", scopeId: personCode } : "skip",
-	);
-
-	const merged = useMemo<AttachedFile[]>(() => {
-		const seen = new Set<string>();
-		const out: AttachedFile[] = [];
-		for (const list of [directFiles, tagged, personFiles]) {
-			if (!list) continue;
-			for (const f of list as AttachedFile[]) {
-				const id = f._id as unknown as string;
-				if (seen.has(id)) continue;
-				seen.add(id);
-				out.push(f);
-			}
-		}
-		return out.sort((a, b) => b.createdAt - a.createdAt);
-	}, [directFiles, tagged, personFiles]);
+	// One query replaces the previous 3 subscriptions (direct + tagged + person scope).
+	// Dedup + sort are done server-side.
+	const files = useQuery(
+		api.files.queries.listForEntity,
+		orgId
+			? { orgId, scope: entityType, scopeId: entityId, ...(personCode ? { personCode } : {}) }
+			: "skip",
+	) as AttachedFile[] | undefined;
 
 	if (!orgId) return null;
 
@@ -120,7 +94,7 @@ export function EntityFilesPanel({
 					tags={[`${entityType}:${entityId}`]}
 				/>
 				<FileList
-					files={merged}
+					files={files ?? []}
 					emptyText="No files attached yet. Drop one above to get started."
 				/>
 			</div>

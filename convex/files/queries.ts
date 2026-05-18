@@ -98,6 +98,63 @@ export const listByTag = orgQuery({
 	},
 });
 
+/**
+ * Unified entity-files query — replaces the 3 separate subscriptions that
+ * EntityFilesPanel previously opened (listByScope + listByTag + listByScope for person).
+ * One server-side query, deduped + sorted. Saves 2 subscriptions per detail-page mount.
+ */
+export const listForEntity = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		scope: v.string(),
+		scopeId: v.string(),
+		/** Also include person-scope files for this personCode when present. */
+		personCode: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+		const tag = `${args.scope}:${args.scopeId}`;
+		const personScopeRedundant = args.scope === "person" && args.personCode === args.scopeId;
+
+		const [direct, tagged, person] = await Promise.all([
+			ctx.db
+				.query("files")
+				.withIndex("by_org_and_scope", (q) =>
+					q.eq("orgId", args.orgId).eq("scope", args.scope).eq("scopeId", args.scopeId),
+				)
+				.collect(),
+			ctx.db
+				.query("files")
+				.withIndex("by_org_and_scope", (q) => q.eq("orgId", args.orgId))
+				.collect()
+				.then((rows) => rows.filter((f) => f.tags?.includes(tag))),
+			args.personCode && !personScopeRedundant
+				? ctx.db
+						.query("files")
+						.withIndex("by_org_and_scope", (q) =>
+							q.eq("orgId", args.orgId).eq("scope", "person").eq("scopeId", args.personCode!),
+						)
+						.collect()
+				: Promise.resolve([]),
+		]);
+
+		const seen = new Set<string>();
+		const merged: typeof direct = [];
+		for (const f of [...direct, ...tagged, ...person]) {
+			if (f.deletedAt !== undefined) continue;
+			const key = String(f._id);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			merged.push(f);
+		}
+		merged.sort((a, b) => b.createdAt - a.createdAt);
+
+		return await Promise.all(
+			merged.map(async (f) => ({ ...f, url: await ctx.storage.getUrl(f.storageId) })),
+		);
+	},
+});
+
 export const getUrl = orgQuery({
 	args: {
 		orgId: v.id("orgs"),

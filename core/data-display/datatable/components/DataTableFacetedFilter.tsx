@@ -57,7 +57,7 @@ export function DataTableFacetedFilter<TData, TValue>({
 	);
 
 	const onReset = React.useCallback(
-		(e?: React.MouseEvent) => {
+		(e?: React.MouseEvent | React.KeyboardEvent) => {
 			e?.stopPropagation();
 			column?.setFilterValue(undefined);
 		},
@@ -69,14 +69,30 @@ export function DataTableFacetedFilter<TData, TValue>({
 			<PopoverTrigger asChild>
 				<Button variant="outline" size="sm" className="border-dashed">
 					{selectedValues.size > 0 ? (
-						<button
-							type="button"
+						// We render a span (not <button>) because this element
+						// is a descendant of <PopoverTrigger asChild> on a
+						// <Button> — nesting <button> inside <button> is
+						// invalid HTML and triggers a Next.js hydration error.
+						// `role="button"` + `tabIndex={0}` + keyboard handlers
+						// keep it accessible: Enter/Space clear the filter and
+						// stop propagation so the popover stays closed when
+						// the user just wants to clear.
+						// biome-ignore lint/a11y/useSemanticElements: cannot use a real <button> here — descendant of an outer Button (PopoverTrigger asChild). See comment above.
+						<span
+							role="button"
+							tabIndex={0}
 							aria-label={`Clear ${title} filter`}
 							onClick={onReset}
-							className="focus-visible:ring-ring rounded-[var(--radius)] opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
+							onKeyDown={(e) => {
+								if (e.key === "Enter" || e.key === " ") {
+									e.preventDefault();
+									onReset(e);
+								}
+							}}
+							className="focus-visible:ring-ring inline-flex cursor-pointer items-center justify-center rounded-[var(--radius)] opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-1 focus-visible:outline-none"
 						>
 							<XCircle className="size-4" />
-						</button>
+						</span>
 					) : (
 						<CirclePlus className="size-4" />
 					)}

@@ -1,184 +1,72 @@
 # Build Context — Current State
 
-> OVERWRITE this file at end of every session. Never create a new context file.
-> Last Updated: 2026-05-18
+> OVERWRITE this file at end of every session. Never append.
+> Last Updated: 2026-05-19
 
 ---
 
-## Most recent session (2026-05-18) — Task 5: Reminders + Calendar consolidation, dashboard rewrite
+## Phase Status
 
-- **Sidebar collapsed**: standalone Calendar entry removed. `/calendar` 308-redirects
-  to `/reminders?view=calendar`. `Reminders` is now a single sidebar item with three
-  toolbar-toggle views — `today` (compact dashboard-style), `list` (DataTable), and
-  `calendar` (CalendarMain grid). `?view=` is URL-persisted.
-- **Overdue bug fixed**. `getDueToday` was scoped to today's 00:00–23:59 window so any
-  reminder dragged to yesterday silently disappeared from the dashboard. Added
-  `getDueAndOverdue` (pending + `dueAt ≤ endOfDay(today)` + 90-day lookback cap) and
-  `getNextUpcoming` (next N pending reminders strictly after today). The dashboard
-  now uses these via `useRemindersDueAndOverdue` and `useRemindersNextUpcoming`.
-- **Calendar double-click creates**. `CalendarMain` accepts `onCreateAtDate` (month +
-  week cell double-click) and `onCreateAtDateTime` (day-view hour-row double-click).
-  The day grid now always renders 24 hour-rows (not just when there are events) so
-  every hour is a valid create target. Wired to `CalendarView`, `PersonCalendarPanel`,
-  and `EntityCalendarPanel`.
-- **EventForm supports any entity**. New shared
-  `core/entities/shared/components/EntityCodeSelector.tsx` Combobox-style picker
-  reuses notes' `useEntitySearch` and renders avatar + name + code on the selected
-  chip (no `?` placeholders). Discriminated-union `EntityCodeSelection`
-  (`person | deal | company`). `ReminderForm` rewritten to use it; smart locking
-  when the parent pre-binds via `defaults`.
-- **Dashboard rewrite**. "Welcome back" header gone. 12-col dense grid: Reminders (5)
-  + WeekAhead (4) + Recent activity (3); row 2 = Messages (7) + Mini cal (5). Every
-  card is `flex flex-col h-full` so siblings line up. Reminders "+ New" opens an
-  inline `<ReminderForm>` dialog (no navigation). Empty-today shows the next
-  upcoming reminder via `formatDistanceToNow`.
-- **WeekAheadWidget rewrite**. Shows actual event titles in mini-chips with
-  source-coloured backgrounds (3 max + "+N more") instead of three coloured dots.
-- **Profile / deal / company wiring**. Profile already mounted `PersonCalendarPanel`
-  + `RemindersPanel`. `DealDetailView` and `CompanyDetailView` were placeholder stubs;
-  they now resolve via `getByDealCode` / `getByCompanyCode` and mount the panels
-  inside Calendar / Reminders tabs. The dynamic `[entitySlug]/[id]` page is still
-  a placeholder — once it routes to these views, `/deals/D-001` and
-  `/companies/CO-001` will reach the new tabs directly. Until then the panels are
-  exercisable via the dashboard, `/reminders?view=today`,
-  `/reminders?view=calendar`, and `/profile/{personCode}`.
-- **STATE.md updated** for `core/scheduling`, `core/shell/shell`, `core/entities`.
-- **Verification**: `pnpm typecheck` → 0 errors. `pnpm exec biome check` on the 16
-  touched files → 0 errors, 0 warnings.
-
----
-
-## Most recent session (2026-05-12) — Dynamic Labels + Hide Toggles + Biome Cleanup
-
-- **Dynamic entity labels everywhere.** `useEntityLabels()` now drives every user-visible
-  label referring to a CRM entity across the entire app — settings, sidebar, role editor,
-  permissions catalog, notifications, dashboard metric cards, profile sections, shortcuts,
-  delete-workspace dialog, settings section descriptions + search keywords.
-- **Module Visibility UI shipped.** New `ModuleVisibilitySection` in
-  `core/settings/components/groups/WorkspaceGroup.tsx` renders a Switch per entity slot and
-  patches `orgs.settings.modules[].hidden`. Sidebar already honored this flag — so toggling
-  it instantly hides the entity from the left rail.
-- **Key factory functions.** `getPermissionModules(labels)` in
-  `core/settings/config/permissions-catalog.ts` and `getSettingsSections(labels)` in
-  `core/settings/config/settings-sections.ts` — callers resolve labels via
-  `useEntityLabels(orgId)` in `SettingsView.tsx`.
-- **Biome project-wide clean.** `pnpm typecheck` + `pnpm exec biome check .` +
-  `pnpm exec biome lint .` all return 0 errors / 0 warnings / 0 infos across 354 files.
-  Overrides in `biome.json` are targeted, each with a scope comment in source.
-- **See** `core/settings/STATE.md`, `core/shell/STATE.md`, `core/shared/STATE.md`,
-  `core/profile/STATE.md` for full decision tables.
-
----
-
-## Current Phase: 2 — CRM Core (Backend COMPLETE, Frontend NEXT)
-
-**Phase 0: ✅ COMPLETE** — Auth, RBAC (70 tests), invitations, preferences, theme presets, Zustand store.
-**Phase 1: ✅ COMPLETE** — Shell, sidebar, TopNav, WorkspaceSwitcher, onboarding, dashboard home, notifications, feature flags, record codes.
-**Phase 2 Backend: ✅ 100% COMPLETE** — All CRM tables, all mutations + queries, canonical pattern steps 1-6.
-**Phase 2 Frontend: ⬜ NEXT** — Vertical slices. Start with Slice 0 (shared primitives).
-
----
-
-## MUST READ Before Any Frontend Work
-
-1. `FRONTEND-DECISIONS.md` — ALL locked frontend decisions (20 rules)
-2. `PHASE2-PROGRESS.md` — Backend status + frontend vertical slice plan
-3. `CONVEX-ARCHITECTURE.md` — Convex patterns, caching, realtime, timeline, AI context
-4. `.kiro/code-architecture-v.md` — Full architecture bible (36 modules)
-
----
-
-## Key Decisions (Summary — Full Detail in FRONTEND-DECISIONS.md)
-
-| Decision | Value |
+| Phase | Status |
 |---|---|
-| Entity labels | NEVER hardcoded — always from `orgSettings.entityLabels` (DB) |
-| Route slugs | NEVER hardcoded — always from `orgSettings.entityLabels[slot].slug` (DB) |
-| Person detail page | ONE page for lead + contact — `/people/[personCode]` |
-| Notes | Inline in Unified Timeline — NOT a separate tab |
-| AI capabilities | Everything the user has permission to do |
-| Staleness colors | Configurable per stage (`stage.staleColor`, `stage.warningColor`) |
-| Client portal | Permission gates on every section from day one |
-| Platform timeline | `/settings/activity-log` — org-wide, admin only |
-| Per-person timeline | `/people/[personCode]` → Timeline tab — scoped to personCode |
+| 0 — Auth, RBAC, shell primitives | ✅ 100% Complete |
+| 1 — Shell, sidebar, nav, onboarding, dashboard | ✅ 100% Complete |
+| 2 Backend — all CRM tables, mutations, queries | ✅ 100% Complete |
+| 2 Frontend — Slices 0–7 | ✅ 100% Complete |
+| 3 — AI Assistant + WhatsApp | ⬜ Next |
 
----
+## What Was Completed in Phase 2 (summary)
 
-## App Route Structure (Current + Planned)
+All entity list/board views (Leads, Contacts, Deals, Companies), all detail views, profile page (unified lead+contact by personCode), Messages UI (thread/sidebar/composer/voice), Notes UI (category kanban), Calendar (month/week/day/list), Reminders (DataTable + 3 view modes), Follow-ups (org-wide cadence view + panel built), Timeline (person + entity + org), Settings (all groups), Dashboard (dense grid + real metrics).
+
+Backend: 28 tables, all mutations canonical pattern steps 1–6, step 7 wired as no-op for Phase 3. Follow-ups: `createFollowup` mutation + 3 list queries + UI surface + panel — all complete. Files: `listForEntity` query added (server-side merge).
+
+Performance fixes landed 2026-05-18/19:
+- ContactsView: `companies.list` scoped to `groupBy === "companyId"` only
+- DealDetailView: `flatDeals` scoped to `view === "list"` only  
+- EntityFilesPanel: 3 subscriptions → 1 `listForEntity` server-side query
+- Tags batched via `useEntityTagsMap` on all list parents
+- Identity/RBAC via `useCurrentOrg()` context only — no per-component subscriptions
+- Drag: one mutation per drop via `onCommit`
+
+## What Is Pending (Phase 2 leftovers)
+
+1. **Mount FollowUpsPanel in 3 detail views** (panel is built, just needs wiring):
+   - `core/platform/profile/views/ProfileContent.tsx` — add `<FollowUpsPanel personCode={personCode} />` beside RemindersPanel ~line 218
+   - `core/entities/_entities/deals/views/DealDetailView.tsx` — add beside RemindersPanel ~line 1015
+   - `core/entities/_entities/companies/views/CompanyDetailView.tsx` — add both RemindersPanel and FollowUpsPanel (neither exists there yet)
+
+2. **Auto-close follow-ups cron** — `autoCloseAfterDays` setting exists in schema+UI but no cron. Details in PHASE-3-NEXT.md.
+
+3. **Production hardening** — email send, soft-delete recovery, GDPR export, billing. Details in PHASE-3-NEXT.md.
+
+## Root File Map
 
 ```
-app/[locale]/
-  (auth)/          ← signin, signup, forgot-password, verify-email, join  ✅
-  (private)/       ← auth guard (client-side useConvexAuth)               ✅
-    layout.tsx     ← redirects to /signin if not authenticated
-    onboarding/    ← 3-step wizard
-    [orgSlug]/     ← org resolver + DashboardLayout + OnboardingGuard     ✅
-      page.tsx     ← dashboard home  →  /{locale}/{orgSlug}
-      profile/     ← person detail + list  ✅ stub
-        page.tsx   ← all profiles (leads + contacts combined)
-        [personCode]/page.tsx  ← unified profile page (P-001)
-      [entitySlug]/page.tsx    ← dynamic: leads, contacts, deals, companies + renamed  ✅ stub
-      companies/[id]/page.tsx  ← company detail  ✅ stub
-      deals/[id]/page.tsx      ← deal detail  ✅ stub
-      notifications/page.tsx   ← all notifications  ✅ stub
-      settings/    ← all settings pages (stubs → Slice 6)
+AGENTS.md              — Global coding rules (RTL, radius, labels, perf, etc.) — ALWAYS READ
+PHASE-2-PROGRESS.md    — Phase 2 completed + pending + all architecture decisions
+PHASE-3-NEXT.md        — Phase 3 AI plan + remaining perf improvements + future phases
+README.md              — Convex+Next.js project README
 ```
 
-**URL pattern**: `/{locale}/{orgSlug}/...` — orgSlug directly after locale, no "dashboard" segment.
-**No separate /leads or /contacts directories** — `[entitySlug]` handles all entity list views.
+Root-level files deleted 2026-05-19 (consolidated into PHASE-2-PROGRESS.md + PHASE-3-NEXT.md):
+BUILD-ORDER.md, FRONTEND-DECISIONS.md, PRODUCTION-READINESS-AUDIT.md, SCHEDULING-IMPLEMENTATION.md, CORE-FEATURES-ARCHITECTURE.md, DYNAMIC_FIELDS_BLUEPRINT.md, INDUSTRY_ADAPTABILITY_ANALYSIS.md, CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md, PERFORMANCE-AUDIT-2026-05-19.md, Phase-2-progress.md
 
-## Key Decisions Locked This Session
+## Next Steps (Phase 3)
 
-- Profile page at `/profile/[personCode]` (not /people/)
-- `[entitySlug]` dynamic route handles ALL entity lists (leads, contacts, deals, companies + renamed)
-- No separate /leads and /contacts directories
-- Profile page tabs: Overview | Messages | Timeline | Notes | Deals | Reminders | Files
-- Overview tab = right sidebar content (no separate panel — space taken by AI chat panel)
-- Notes = separate tab (editable, AI briefing at top)
-- Messages = chat bubbles (human + AI on-behalf), stored in notes with isActivityChat: true
-- Timeline = system log (activityLogs + reminders), AI scans this, feed UI with colored icons
-- Staleness: same thresholds/colors for leads AND deals — configured per pipeline stage
-- PersonCodeBadge = always a clickable link to /profile/[personCode]
-- PersonCard = compact popover version of Overview tab (for deal cards etc.)
-- Reserved slugs validated in orgs.create: platform, api, admin, billing, auth, onboarding, profile, settings, notifications, signin, signup, pricing, portal
+1. Build AI tool registry (`convex/ai/toolRegistry.ts`)
+2. Fill in `convex/ai/systemPrompt.ts` — 3-layer prompt builder
+3. Build 11 core AI tools in `convex/ai/tools/`
+4. Fill in `convex/ai/internal.ts::rebuildEntityContext` body
+5. Build `core/ai/` frontend components (ChatSheet, ChatMessage, etc.)
+6. Wire WhatsApp webhook
 
----
+Full checklist in PHASE-3-NEXT.md.
 
-## Backend State (100% Complete)
-
-All tables: leads, contacts, companies, deals, notes, reminders, tags, entityTags,
-fieldDefinitions, fieldValues, savedViews, pipelines, entityCodeCounters.
-
-All mutations follow canonical pattern (steps 1-6). Step 7 (AI context rebuild) = TODO comment.
-
----
-
-## Frontend — Next Steps (Exact Order)
+## Verification Before Writing Code
 
 ```bash
-# Install first:
-pnpm add @dnd-kit/core @dnd-kit/sortable @tanstack/react-table canvas-confetti
-pnpm add -D @types/canvas-confetti
-```
-
-```
-Slice 0: Shared primitives (DataTable, KanbanBoard, scaffolds, shared components)
-Slice 1: Leads list + Contacts list (separate list views)
-Slice 2: PersonDetailPage (unified person hub — /people/[personCode])
-Slice 3: Companies list + detail
-Slice 4: Deals kanban + detail
-Slice 5: Unified Timeline component
-Slice 6: Settings pages
-Slice 7: Dashboard home (real metrics)
-```
-
-Full file-by-file breakdown: `PHASE2-PROGRESS.md`
-
----
-
-## Verification
-
-```
-pnpm tsc --noEmit  →  ✅ 0 errors
-Tests              →  ✅ 70 passing, 1 skipped
+pnpm typecheck        # must be 0 errors
+pnpm exec biome check # must be 0 issues
+pnpm test             # must be 100+ passing
 ```

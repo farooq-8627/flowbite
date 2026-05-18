@@ -431,6 +431,25 @@ export const update = orgMutation({
 						rentAlertEnabled: v.optional(v.boolean()),
 					}),
 				),
+				/**
+				 * Follow-up cadence defaults — see schema/identity.ts for
+				 * the field-level docs. Optional so the section can be
+				 * saved partially.
+				 */
+				followupDefaults: v.optional(
+					v.object({
+						defaultDueOffsetDays: v.optional(v.number()),
+						defaultPriority: v.optional(
+							v.union(
+								v.literal("low"),
+								v.literal("normal"),
+								v.literal("high"),
+								v.literal("urgent"),
+							),
+						),
+						autoCloseAfterDays: v.optional(v.number()),
+					}),
+				),
 				fileUpload: v.optional(
 					v.object({
 						allowedMimeCategories: v.optional(v.array(v.string())),
@@ -475,6 +494,7 @@ export const update = orgMutation({
 			const existing: {
 				codePrefixes?: Record<string, string | undefined>;
 				reminderDefaults?: Record<string, unknown>;
+				followupDefaults?: Record<string, unknown>;
 				fileUpload?: Record<string, unknown>;
 				[k: string]: unknown;
 			} = org?.settings ?? {};
@@ -491,6 +511,12 @@ export const update = orgMutation({
 					reminderDefaults: {
 						...existing.reminderDefaults,
 						...newSettings.reminderDefaults,
+					},
+				}),
+				...(newSettings.followupDefaults && {
+					followupDefaults: {
+						...existing.followupDefaults,
+						...newSettings.followupDefaults,
 					},
 				}),
 				...(newSettings.fileUpload && {

@@ -42,13 +42,20 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
+	const isPublic = isPublicRoute(request);
+
+	// Use getToken() (cookie read, no network call) for the fast path.
+	// Only call isAuthenticated() (network call to Convex) when we actually
+	// need server-verified auth status — i.e. when a redirect decision depends on it.
+	const token = await convexAuth.getToken();
+
 	// Authenticated user visiting an auth page → redirect to home
-	if (isPublicRoute(request) && (await convexAuth.isAuthenticated())) {
+	if (isPublic && token) {
 		return nextjsMiddlewareRedirect(request, "/");
 	}
 
 	// Unauthenticated user visiting a protected route → redirect to signin
-	if (!isPublicRoute(request) && !(await convexAuth.isAuthenticated())) {
+	if (!isPublic && !token) {
 		return nextjsMiddlewareRedirect(request, "/signin");
 	}
 

@@ -29,7 +29,7 @@
  * the donor's structure was kept; only the toolbar and row layout changed.
  */
 import { Archive, Check, Inbox, MailOpen, Menu, Search } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,7 +42,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useInbox } from "@/core/comms/messages/hooks";
-import { useEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplay";
+import type { BatchedEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
+import { useEntityDisplaysBatched } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
 import { formatChatSidebarTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
@@ -78,23 +79,19 @@ function ConversationItem({
 	row,
 	isSelected,
 	onSelect,
-	orgId,
+	display,
 }: {
 	row: InboxRow;
 	isSelected: boolean;
 	onSelect: (id: Id<"conversations">) => void;
-	orgId: Id<"orgs">;
+	display: BatchedEntityDisplay | undefined;
 }) {
 	const { conversation, unread } = row;
 	const lastAt = conversation.lastMessageAt ?? conversation.createdAt;
 	const timeLabel = formatChatSidebarTime(lastAt);
 
-	const display = useEntityDisplay({
-		orgId,
-		entityType: conversation.entityType,
-		entityId: conversation.entityId,
-	});
-	const title = conversation.title ?? display.name;
+	const title = conversation.title ?? display?.name ?? conversation.entityId ?? "Thread";
+
 
 	return (
 		<li>
@@ -109,7 +106,7 @@ function ConversationItem({
 					isSelected && "bg-accent text-accent-foreground",
 				)}
 			>
-				<ChatAvatar name={title} src={display.avatarUrl} size={2.25} className="mt-0.5" />
+				<ChatAvatar name={title} src={display?.avatarUrl} size={2.25} className="mt-0.5" />
 				<div className="grid min-w-0 flex-1 grid-cols-[1fr_auto] gap-x-2">
 					<span
 						className={cn(
@@ -145,7 +142,7 @@ function ConversationItem({
 						)}
 						<span
 							className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] uppercase text-muted-foreground"
-							title={display.kindLabel}
+							title={display?.kindLabel}
 						>
 							{conversation.entityId}
 						</span>
@@ -165,8 +162,19 @@ export function MessagesSidebar({
 	const [filter, setFilter] = useState<FilterId>("all");
 	const [pickerOpen, setPickerOpen] = useState(false);
 
-	const inbox = useInbox({ orgId, filter });
+	const inbox = useInbox({ orgId, filter, limit: 25 });
 	const rows: InboxRow[] = inbox ?? [];
+
+	// Batched entity display — one subscription for all visible rows.
+	const displayItems = useMemo(
+		() =>
+			rows.map((r) => ({
+				entityType: r.conversation.entityType,
+				entityId: r.conversation.entityId,
+			})),
+		[rows],
+	);
+	const displaysMap = useEntityDisplaysBatched({ orgId, items: displayItems });
 
 	const activeFilter = FILTERS.find((f) => f.id === filter) ?? FILTERS[0];
 	const ActiveIcon = activeFilter.Icon;
@@ -274,7 +282,7 @@ export function MessagesSidebar({
 								row={row}
 								isSelected={selectedConversationId === row.conversation._id}
 								onSelect={onSelect}
-								orgId={orgId}
+								display={displaysMap?.[`${row.conversation.entityType}:${row.conversation.entityId}`]}
 							/>
 						))}
 					</ul>

@@ -54,6 +54,19 @@ interface LeadCardProps {
 	highlightEpoch?: number;
 	/** Custom field values for this lead (fieldName → value). */
 	customFieldValues?: Record<string, unknown>;
+	/** Active board groupBy — passed to EntityCard so it can render the
+	    "fill the gap" indicator in the slot vacated by the grouped-by field. */
+	groupBy?: string;
+	/** Resolves opaque ids (e.g. assignedTo userId) to a human label for
+	    the EntityCard's group-replacement strip / dot tooltip. */
+	resolveReplacementLabel?: (fieldName: string, rawValue: string) => string | undefined;
+	/**
+	 * Pre-resolved tags for this row (from `useEntityTagsMap` in the parent
+	 * view). When provided, the embedded `<TagsCell>` skips its per-card
+	 * `getTagsForEntity` subscription. Pass `undefined` for legacy
+	 * standalone callers without a board-wide map.
+	 */
+	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
 }
 
 export function LeadCard({
@@ -70,6 +83,9 @@ export function LeadCard({
 	isHighlighted,
 	highlightEpoch,
 	customFieldValues,
+	groupBy,
+	resolveReplacementLabel,
+	prefetchedTags,
 }: LeadCardProps) {
 	const labels = useEntityLabels();
 
@@ -148,6 +164,9 @@ export function LeadCard({
 			isHighlighted={isHighlighted}
 			highlightEpoch={highlightEpoch}
 			customFieldValues={customFieldValues}
+			groupBy={groupBy}
+			resolveReplacementLabel={resolveReplacementLabel}
+			prefetchedTags={prefetchedTags}
 		/>
 	);
 }

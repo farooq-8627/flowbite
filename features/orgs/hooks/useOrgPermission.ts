@@ -1,39 +1,27 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 /**
- * useOrgPermission — checks if the current user has a specific permission in an org.
+ * useOrgPermission — checks if the current user has a specific permission
+ * in the *current org* (i.e. the one served by the surrounding
+ * `<OrgProvider>`).
  *
- * Loads the user's membership (roleId) then the role's permissions[] from DB.
+ * History — used to subscribe to `orgs.getMyMembership` AND `orgRoles.get`
+ * independently, returning `null | true | false`. As of 2026-05-18 it
+ * reads from the shared `OrgProvider` context: there's no extra
+ * subscription, the permission list is already resolved server-side, and
+ * the `orgId` argument is ignored. Kept as a thin wrapper so existing
+ * callers continue to work without a refactor.
  *
  * Returns:
  *   - `true`  — user has the permission
  *   - `false` — user does not have the permission
- *   - `null`  — still loading (use for skeleton/disabled states)
+ *   - `null`  — still loading
  */
-export function useOrgPermission(
-	orgId: Id<"orgs"> | undefined,
-	permission: string,
-): boolean | null {
-	const membership = useQuery(api.orgs.queries.getMyMembership, orgId ? { orgId } : "skip");
-
-	const role = useQuery(
-		api.orgRoles.queries.get,
-		membership?.roleId ? { roleId: membership.roleId } : "skip",
-	);
-
-	// Still loading
-	if (membership === undefined) return null;
-	// Not a member
-	if (membership === null) return false;
-
-	// Role still loading
-	if (role === undefined) return null;
-	// Role not found (shouldn't happen)
-	if (role === null) return false;
-
-	return role.permissions.includes(permission);
+export function useOrgPermission(_orgId: unknown, permission: string): boolean | null {
+	const { membership } = useCurrentOrg();
+	if (membership === undefined) return null; // loading
+	if (membership === null) return false; // not a member of this org
+	return membership.permissions.includes(permission);
 }

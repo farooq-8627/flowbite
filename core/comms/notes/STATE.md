@@ -1,10 +1,21 @@
 # Notes — State
 
-> Updated: 2026-05-17 (later)
+> Updated: 2026-05-18 (afternoon — perf cleanup #3)
 > Status: 100 % feature-complete. Two purpose-built boards:
 >   • **`/notes` page** → multi-column **category kanban** (drag = recategorize).
 >   • **Embeds** (profile/deal/company/project tabs) → **single sticky board**
 >     (one canvas, free-position cards, both pickers visible).
+>
+> **2026-05-18 perf fix #3** (audit pass): the singular `useAttachmentDisplay`
+> hook + matching backend `getAttachmentDisplay` query were dead code — the
+> only caller (`EntityPickerPopover`) was always invoked through `NoteCard`
+> which has always passed `resolvedDisplay` from the batched lookup. The
+> singular path's "fallback" branch was unreachable. Removed:
+>   - `useAttachmentDisplay` (frontend hook)
+>   - `crm.shared.notes.queries.getAttachmentDisplay` (Convex query)
+>   - The legacy `resolvedDisplay === undefined` branch in `EntityPickerPopover`
+>   - `resolvedAttachmentDisplay?` is now a required `null | object` prop on `NoteCard`
+> Net: -1 query identifier, -1 frontend hook, -60 lines, no functional change.
 >
 > Plus: free-position drag-drop with persisted `sortOrder` across notes +
 > all 4 entity boards; column drag-to-reorder for note categories
@@ -12,6 +23,37 @@
 > `useCreateReminder`; `notes.color` / `notes.type` deprecated fields
 > dropped from schema; defensive sortOrder rebalance for the notes
 > category column.
+>
+> **2026-05-18 perf fix #2** (driven by Convex insights showing 41 reorder
+> mutations in 70 seconds for a single drag — "cards still reordering
+> again"): the dnd-kit `Kanban` primitive's `onValueChange` fires on every
+> drag-over event (every frame the dragged card crosses a sibling), which
+> caused `NotesSingleBoard.handleValueChange` to fire `useReorderNote` per
+> frame instead of per drop. Net effect: a drag across N cards emitted
+> N+1 mutations, each with a different intermediate `sortOrder`, so the
+> card visibly bounced through several positions before the final lay
+> settled — matching the reported "reordering again" behaviour. Fix:
+> added `onCommit` to the kanban primitive (fires EXACTLY once per drop
+> in `onDragEnd`), migrated `NotesSingleBoard` and `KanbanBoard`
+> (entity boards) to use it for all mutation calls. `onValueChange` is
+> still emitted for visual reorder during drag, but consumers no longer
+> persist from there.
+>
+> **2026-05-18 perf fixes** (driven by Convex insights showing 195 calls/min on
+>   `listForOrg` and 90 calls/min on `reorder` for a single user):
+>   1. `MIN_GAP` rebalance threshold raised from `1` to `2 ** -10` (≈ 0.001).
+>      Previously rebalanced after ~10 midpoint inserts, patching every row
+>      in the column → cascade of subscriptions firing. Now fires only when
+>      float-precision is at risk (~20+ consecutive midpoints in the same gap).
+>   2. Optimistic updates in `useReorderNote` + `useSetNoteCategory` no longer
+>      bump `updatedAt: Date.now()` — that changed the row identity on every
+>      render and cascaded list invalidations. Server stamp is authoritative
+>      when the mutation lands.
+>   3. New batched query `listAttachmentDisplaysForOrg` replaces 50+ per-card
+>      `useAttachmentDisplay` subscriptions with a single round trip.
+>      `NotesView` resolves all visible attachments once and threads them
+>      through `NotesCategoryKanban` / `NotesSingleBoard` / `NoteCard` /
+>      `EntityPickerPopover` via a new `resolvedDisplay` prop.
 
 ## ✅ Completed
 

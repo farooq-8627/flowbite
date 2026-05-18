@@ -44,6 +44,7 @@ import {
 	KanbanBoard as KanbanBoardPrimitive,
 	KanbanColumn,
 	KanbanOverlay,
+	useKanbanItems,
 } from "@/components/ui/kanban";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { createRestrictToContainer } from "@/core/data-display/kanban/utils/restrict-to-container";
@@ -106,6 +107,19 @@ interface NotesSingleBoardProps {
 	/** Empty-state copy when the column is empty AND not loading. */
 	emptyTitle?: string;
 	emptyDescription?: string;
+	/**
+	 * Pre-resolved attachment displays keyed by `${entityType}:${entityId}`.
+	 * Same contract as `NotesCategoryKanban.attachmentDisplays`.
+	 */
+	attachmentDisplays?: Record<
+		string,
+		{
+			kind: "lead" | "contact" | "deal" | "company";
+			code?: string;
+			displayName: string;
+			secondary?: string;
+		}
+	>;
 }
 
 export function NotesSingleBoard({
@@ -129,6 +143,7 @@ export function NotesSingleBoard({
 	showAddButton = true,
 	emptyTitle = "No notes yet",
 	emptyDescription = "Drop a sticky note here. Drag cards to reorder them — the layout is yours.",
+	attachmentDisplays,
 }: NotesSingleBoardProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -195,32 +210,32 @@ export function NotesSingleBoard({
 		}
 	}
 
-	async function handleValueChange(next: Record<string, NoteItem[]>) {
+	async function handleCommit(next: Record<string, NoteItem[]>, draggedItemId: string) {
+		// `onCommit` fires EXACTLY ONCE per drop with the final layout AND
+		// the id of the card the user actually dragged. Persisting only
+		// THAT card (not all displaced cards in the column) keeps each
+		// drop = exactly one server write, regardless of how many cards
+		// are visually shifted.
 		const newItems = next[SINGLE_COLUMN_ID] ?? [];
-		// Find the card whose index changed.
-		for (let i = 0; i < newItems.length; i += 1) {
-			const newItem = newItems[i];
-			const prevIdx = items.findIndex((it) => it.id === newItem.id);
-			if (prevIdx === -1 || prevIdx === i) continue;
-			// Compute midpoint sortOrder from the dropped position's neighbours.
-			const sortOrder = computeSortOrderForDrop(
-				newItems.map((it) => ({
-					id: it.id,
-					sortOrder: it.note.sortOrder,
-					_creationTime: it.note._creationTime,
-				})),
-				i,
-			);
-			try {
-				await reorderNote({
-					orgId: newItem.note.orgId,
-					noteId: newItem.note._id,
-					sortOrder,
-				});
-			} catch (err) {
-				toast.mutationError(err, "Couldn't move note.");
-			}
-			break; // dnd-kit moves one card at a time
+		const newIndex = newItems.findIndex((it) => it.id === draggedItemId);
+		if (newIndex < 0) return;
+		const moved = newItems[newIndex];
+		const sortOrder = computeSortOrderForDrop(
+			newItems.map((it) => ({
+				id: it.id,
+				sortOrder: it.note.sortOrder,
+				_creationTime: it.note._creationTime,
+			})),
+			newIndex,
+		);
+		try {
+			await reorderNote({
+				orgId: moved.note.orgId,
+				noteId: moved.note._id,
+				sortOrder,
+			});
+		} catch (err) {
+			toast.mutationError(err, "Couldn't move note.");
 		}
 	}
 
@@ -258,7 +273,7 @@ export function NotesSingleBoard({
 				{/* biome-ignore lint/suspicious/noExplicitAny: Kanban primitive generic slot */}
 				<Kanban<any>
 					value={value}
-					onValueChange={handleValueChange}
+					onCommit={handleCommit}
 					getItemValue={(item: NoteItem) => item.id}
 					modifiers={[restrictToBoard]}
 				>
@@ -277,33 +292,18 @@ export function NotesSingleBoard({
 										</p>
 									</div>
 								) : (
-									items.map((item) => {
-										const author = authorsById.get(String(item.note.authorId));
-										const isAutoFocusTarget = autoFocusNoteId === item.id;
-										const isMatch =
-											matchedNoteIds?.has(item.id) ?? false;
-										return (
-											<NoteCard
-												key={item.id}
-												note={item.note}
-												categories={categories}
-												authorName={author?.name ?? "Unknown"}
-												authorAvatarUrl={author?.avatarUrl}
-												currentUserId={currentUserId}
-												permissions={permissions}
-												orgSlug={orgSlug}
-												pickers="both"
-												autoFocus={isAutoFocusTarget}
-												onAutoFocusConsumed={
-													isAutoFocusTarget
-														? onAutoFocusConsumed
-														: undefined
-												}
-												isHighlighted={isMatch}
-												highlightEpoch={highlightEpoch}
-											/>
-										);
-									})
+									<NotesSingleBoardCards
+										authorsById={authorsById}
+										categories={categories}
+										currentUserId={currentUserId}
+										permissions={permissions}
+										orgSlug={orgSlug}
+										autoFocusNoteId={autoFocusNoteId}
+										onAutoFocusConsumed={onAutoFocusConsumed}
+										matchedNoteIds={matchedNoteIds}
+										highlightEpoch={highlightEpoch}
+										attachmentDisplays={attachmentDisplays}
+									/>
 								)}
 							</KanbanColumn>
 						</KanbanBoardPrimitive>
@@ -314,9 +314,15 @@ export function NotesSingleBoard({
 							const item = items.find((it) => it.id === activeId);
 							if (!item) return null;
 							const author = authorsById.get(String(item.note.authorId));
+							const note = item.note;
+							const attachmentKey = `${note.entityType}:${note.entityId}`;
+							const resolvedAttachmentDisplay =
+								note.entityType === "org" || !attachmentDisplays
+									? null
+									: (attachmentDisplays[attachmentKey] ?? null);
 							return (
 								<NoteCard
-									note={item.note}
+									note={note}
 									categories={categories}
 									authorName={author?.name ?? "Unknown"}
 									authorAvatarUrl={author?.avatarUrl}
@@ -325,6 +331,7 @@ export function NotesSingleBoard({
 									orgSlug={orgSlug}
 									pickers="both"
 									isDragging
+									resolvedAttachmentDisplay={resolvedAttachmentDisplay}
 								/>
 							);
 						}}
@@ -332,6 +339,84 @@ export function NotesSingleBoard({
 				</Kanban>
 			</div>
 		</div>
+	);
+}
+
+/**
+ * Internal — renders the actual card list inside the single-column
+ * kanban. Lives INSIDE the `<Kanban>` provider so it can subscribe to
+ * `useKanbanItems()`. During a drag, this returns the in-flight optimistic
+ * layout (which has the active card moved to its hover position) — that's
+ * what gives the "card makes space" visual feedback. Outside of a drag
+ * it's identical to the parent prop.
+ */
+function NotesSingleBoardCards({
+	authorsById,
+	categories,
+	currentUserId,
+	permissions,
+	orgSlug,
+	autoFocusNoteId,
+	onAutoFocusConsumed,
+	matchedNoteIds,
+	highlightEpoch,
+	attachmentDisplays,
+}: {
+	authorsById: Map<string, { name?: string; avatarUrl?: string }>;
+	categories: Array<Doc<"noteCategories">> | undefined;
+	currentUserId: Id<"users"> | undefined;
+	permissions: ReadonlyArray<string>;
+	orgSlug: string | undefined;
+	autoFocusNoteId: string | null | undefined;
+	onAutoFocusConsumed: (() => void) | undefined;
+	matchedNoteIds: ReadonlySet<string> | undefined;
+	highlightEpoch: number | undefined;
+	attachmentDisplays:
+		| Record<
+				string,
+				{
+					kind: "lead" | "contact" | "deal" | "company";
+					code?: string;
+					displayName: string;
+					secondary?: string;
+				}
+		  >
+		| undefined;
+}) {
+	const effectiveItems = useKanbanItems<NoteItem>();
+	const items = effectiveItems[SINGLE_COLUMN_ID] ?? [];
+	return (
+		<>
+			{items.map((item) => {
+				const author = authorsById.get(String(item.note.authorId));
+				const isAutoFocusTarget = autoFocusNoteId === item.id;
+				const isMatch = matchedNoteIds?.has(item.id) ?? false;
+				const note = item.note;
+				const attachmentKey = `${note.entityType}:${note.entityId}`;
+				const resolvedAttachmentDisplay =
+					note.entityType === "org" || !attachmentDisplays
+						? null
+						: (attachmentDisplays[attachmentKey] ?? null);
+				return (
+					<NoteCard
+						key={item.id}
+						note={note}
+						categories={categories}
+						authorName={author?.name ?? "Unknown"}
+						authorAvatarUrl={author?.avatarUrl}
+						currentUserId={currentUserId}
+						permissions={permissions}
+						orgSlug={orgSlug}
+						pickers="both"
+						autoFocus={isAutoFocusTarget}
+						onAutoFocusConsumed={isAutoFocusTarget ? onAutoFocusConsumed : undefined}
+						isHighlighted={isMatch}
+						highlightEpoch={highlightEpoch}
+						resolvedAttachmentDisplay={resolvedAttachmentDisplay}
+					/>
+				);
+			})}
+		</>
 	);
 }
 

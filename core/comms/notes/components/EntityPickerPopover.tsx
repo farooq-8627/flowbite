@@ -10,9 +10,10 @@
  *       · Detached  → small `+` icon button (org-wide note).
  *       · Attached  → the attached entity's avatar (initials), same size as `+`.
  *     Click in either state opens the popover so the user can re-attach or
- *     detach. The trigger fetches its own display info via
- *     `useAttachmentDisplay`, so the parent only needs to pass the raw
- *     attachment shape.
+ *     detach. The trigger does NOT fetch its own display info — the parent
+ *     always passes `resolvedDisplay` from the batched
+ *     `useAttachmentDisplaysForOrg` lookup (one query per board, not per
+ *     card). See AGENTS.md "Per-row data on a list view" rule.
  *   - Popover layout: search input (no helper-text — the placeholder explains
  *     the input), then result rows grouped by kind:
  *       · Profiles (leads + contacts merged on personCode — the user
@@ -39,12 +40,24 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
-import { useAttachmentDisplay, useEntitySearch } from "../hooks";
+import { useEntitySearch } from "../hooks";
 
 export type EntityAttachment = {
 	entityType: "lead" | "contact" | "deal" | "company" | "org";
 	entityId: string;
 	personCode?: string;
+};
+
+/**
+ * Display info for a resolved attachment — what the avatar trigger uses to
+ * render the entity's initials and label. Mirrors the return shape of
+ * `listAttachmentDisplaysForOrg[key]`.
+ */
+export type AttachmentDisplay = {
+	kind: "lead" | "contact" | "deal" | "company";
+	code?: string;
+	displayName: string;
+	secondary?: string;
 };
 
 interface EntityPickerPopoverProps {
@@ -55,6 +68,13 @@ interface EntityPickerPopoverProps {
 	/** Visual + a11y label for the trigger button. */
 	ariaLabel?: string;
 	className?: string;
+	/**
+	 * Pre-resolved display info for the current attachment, sourced from the
+	 * parent's batched `useAttachmentDisplaysForOrg` lookup. The popover NEVER
+	 * fetches per-card — every caller MUST supply this prop (pass `null`
+	 * when the parent has confirmed the attachment doesn't resolve).
+	 */
+	resolvedDisplay: AttachmentDisplay | null;
 }
 
 type GroupKey = "profiles" | "deal" | "company";
@@ -86,21 +106,18 @@ export function EntityPickerPopover({
 	onPick,
 	ariaLabel = "Attach to entity",
 	className,
+	resolvedDisplay,
 }: EntityPickerPopoverProps) {
 	const [open, setOpen] = useState(false);
 	const [query, setQuery] = useState("");
 
-	const isAttached =
-		currentAttachment !== null && currentAttachment.entityType !== "org";
+	const isAttached = currentAttachment !== null && currentAttachment.entityType !== "org";
 
-	// Avatar-trigger lookup: fetch the attached record's display info so the
-	// `+` button can be replaced by the entity's initials avatar. The hook
-	// no-ops for org-wide notes (returns "skip" → undefined).
-	const attachedDisplay = useAttachmentDisplay({
-		orgId,
-		entityType: currentAttachment?.entityType ?? "org",
-		entityId: currentAttachment?.entityId ?? "",
-	});
+	// Avatar-trigger display: parent always supplies the resolved record via
+	// the batched `useAttachmentDisplaysForOrg` lookup. `null` is a meaningful
+	// signal — parent confirmed the attachment doesn't resolve (e.g. deleted
+	// record) and we should fall back to the `+` icon.
+	const attachedDisplay = resolvedDisplay;
 
 	// Server-side typeahead — only fires when the popover is open.
 	const results = useEntitySearch({ orgId, query, enabled: open, limitPerType: 6 });
@@ -232,7 +249,9 @@ export function EntityPickerPopover({
 															: "hover:bg-accent",
 													)}
 													onClick={() =>
-														handlePick(toAttachment(group.pickKind, hit))
+														handlePick(
+															toAttachment(group.pickKind, hit),
+														)
 													}
 												>
 													<Avatar className="size-6 shrink-0">

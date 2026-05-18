@@ -88,10 +88,16 @@ export function getRevealedCardFieldForGrouping(groupBy: string, slot: EntitySlo
 	// Per-slot reveal matrix — lets us pick sensible substitutes.
 	const revealMatrix: Record<EntitySlot, Record<string, string>> = {
 		lead: {
+			// Grouped by status → user already knows the status; reveal source.
 			status: "source",
+			// Grouped by assignee → reveal status so the user can tell which
+			// status the card would have been in.
 			assignedTo: "status",
-			tag: "source",
-			tags: "source",
+			// Grouped by tag → reveal status (the most "what column would I be
+			// in by default?" answer for leads). User can still see source via
+			// the `cardFields` toggle in ViewOptions.
+			tag: "status",
+			tags: "status",
 			source: "status",
 		},
 		contact: {
@@ -101,12 +107,17 @@ export function getRevealedCardFieldForGrouping(groupBy: string, slot: EntitySlo
 			tags: "assignedTo",
 		},
 		deal: {
+			// Grouped by stage → already visible in the column; reveal
+			// assignee. Grouped by assignee → reveal stage so user keeps
+			// pipeline context. Grouped by tag → reveal stage.
 			currentStageId: "assignedTo",
 			assignedTo: "currentStageId",
 			tag: "currentStageId",
 			tags: "currentStageId",
 		},
 		company: {
+			// Grouped by industry → reveal assignee. Grouped by assignee →
+			// reveal industry. Grouped by tag → reveal industry.
 			industry: "assignedTo",
 			assignedTo: "industry",
 			tag: "industry",

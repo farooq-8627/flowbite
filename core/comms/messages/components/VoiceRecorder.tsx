@@ -175,12 +175,11 @@ export function VoiceRecorder({ disabled, onSend, onClose, className }: Props) {
 		if (!blobRef.current) return;
 		setPhase("sending");
 		try {
-			const ext =
-				blobRef.current.type.includes("mp4")
-					? "m4a"
-					: blobRef.current.type.includes("ogg")
-						? "ogg"
-						: "webm";
+			const ext = blobRef.current.type.includes("mp4")
+				? "m4a"
+				: blobRef.current.type.includes("ogg")
+					? "ogg"
+					: "webm";
 			const file = new File([blobRef.current], `voice-${Date.now()}.${ext}`, {
 				type: blobRef.current.type,
 			});

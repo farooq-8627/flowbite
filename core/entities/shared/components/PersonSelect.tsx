@@ -14,7 +14,6 @@
 
 import { useQuery } from "convex/react";
 import { ChevronDownIcon } from "lucide-react";
-import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -29,6 +28,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import type { PersonRef } from "../types";
 
@@ -51,19 +51,18 @@ export function PersonSelect({
 	disabled,
 	className,
 }: PersonSelectProps) {
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const resolvedOrgId = orgId ?? orgs?.find((o) => o.org.slug === orgSlug)?.org._id;
+	const { orgId: contextOrgId } = useCurrentOrg();
+	const resolvedOrgId = orgId ?? contextOrgId;
 
 	const [open, setOpen] = useState(false);
 	const [inputValue, setInputValue] = useState("");
 
 	// Scope-based queries
-	const members = useQuery(
-		api.orgs.queries.listMembers,
-		scope === "user" && resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
-	);
+	// `members` comes from the shared OrgProvider context. When `scope`
+	// isn't "user" we simply ignore the value below — there's no extra
+	// subscription cost since the data is loaded once at the layout level.
+	const allMembers = useOrgMembers();
+	const members = scope === "user" ? allMembers : undefined;
 
 	const people = useQuery(
 		api.crm.people.queries.listAll,

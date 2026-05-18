@@ -178,3 +178,48 @@ export const listAllPersonsWithCompany = orgQuery({
 		}));
 	},
 });
+
+// ─── Batched company lookup by personCodes (eliminates N+1 in table views) ──
+
+/**
+ * For a list of personCodes, return `Record<personCode, { companyId, name, companyCode }>`.
+ * Used by leads/contacts table views so `CompanyCell` doesn't fire one
+ * `getByPersonCode` subscription per row.
+ *
+ * Capped at 200 personCodes.
+ */
+export const listCompaniesByPersonCodes = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		personCodes: v.array(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.view");
+
+		const codes = [...new Set(args.personCodes)].slice(0, 200);
+		const result: Record<
+			string,
+			{ companyId: string; name: string; companyCode: string }
+		> = {};
+
+		for (const personCode of codes) {
+			const link = await ctx.db
+				.query("companyMembers")
+				.withIndex("by_org_and_personCode", (q) =>
+					q.eq("orgId", args.orgId).eq("personCode", personCode),
+				)
+				.first();
+			if (!link) continue;
+			const company = await ctx.db.get(link.companyId);
+			if (!company || company.deletedAt !== undefined) continue;
+			result[personCode] = {
+				companyId: company._id as string,
+				name: company.name,
+				companyCode: company.companyCode,
+			};
+		}
+
+		return result;
+	},
+});

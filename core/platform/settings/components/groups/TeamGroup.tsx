@@ -3,12 +3,16 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { InvitationsSection } from "./team/InvitationsSection";
 import { MembersSection } from "./team/MembersSection";
 import { RolesSection } from "./team/RolesSection";
 
 export function TeamGroup({ orgId, permissions }: { orgId: Id<"orgs">; permissions: string[] }) {
-	const me = useQuery(api.users.queries.getCurrent);
+	// Read the authenticated user from the shared `OrgProvider` context —
+	// no extra `users.getCurrent` subscription per AGENTS.md "Identity/auth/
+	// labels via context, not subscriptions".
+	const me = useMe();
 	const roles = useQuery(api.orgRoles.queries.list, { orgId });
 
 	const canManage = permissions.includes("members.invite");

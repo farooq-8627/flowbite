@@ -9,6 +9,7 @@ import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
 import { FileUpload } from "@/core/data-io/files/components/FileUpload";
+import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { type EntityLabels, useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 // ─── Dashboard tour ───────────────────────────────────────────────────────────
@@ -206,9 +207,8 @@ function RecentActivity({ activity }: { activity: ActivityItem[] }) {
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 
 export function DashboardHomeView({ orgSlug }: { orgSlug: string }) {
-	const user = useQuery(api.users.queries.me);
-	const myOrgs = useQuery(api.orgs.queries.listMyOrgs);
-	const currentOrg = myOrgs?.find((o) => o.org.slug === orgSlug);
+	const user = useMe();
+	const { fullOrgEntry: currentOrg } = useCurrentOrg();
 	const stats = useQuery(
 		api.orgs.queries.getDashboardStats,
 		currentOrg ? { orgId: currentOrg.org._id } : "skip",

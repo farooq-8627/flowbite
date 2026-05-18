@@ -2,8 +2,7 @@
 
 /**
  * useOrgDefaultCurrency — read the org-level default currency code (USD/AED/
- * EUR/INR/…) from `orgs.settings.defaultCurrency`. Resolves the active org
- * from the URL exactly like `useEntityLabels`.
+ * EUR/INR/…) from `orgs.settings.defaultCurrency`.
  *
  * Why this exists
  * ───────────────
@@ -19,51 +18,37 @@
  *     setting is configured.
  *   - Hook flavour because Convex queries are reactive — we want updates to
  *     ripple through every consumer when the admin saves a new currency.
- *   - Accepts an explicit orgId override for places that already know it
- *     (settings, mutations) — same shape as `useEntityLabels(orgId?)`.
+ *
+ * Performance
+ * ───────────
+ * Two flavours are exported so dashboard renderers don't pay for an extra
+ * subscription:
+ *
+ *   - `useCurrentOrgCurrency()` — preferred inside the dashboard. Reads from
+ *     the shared `OrgProvider` context. Zero new subscriptions.
+ *   - `useOrgDefaultCurrency(orgId)` — non-dashboard fallback. Fires its own
+ *     `orgs.get` subscription for the explicit id (settings save handlers,
+ *     standalone components like `FileUpload`).
  */
 
 import { useQuery } from "convex/react";
-import { usePathname } from "next/navigation";
-import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "./useCurrentOrg";
 
 /** Canonical fallback used when no org setting / query still loading. */
 export const FALLBACK_CURRENCY = "USD";
 
-function extractOrgSlug(pathname: string | null): string | null {
-	if (!pathname) return null;
-	const segments = pathname.split("/").filter(Boolean);
-	if (segments.length < 2) return null;
-	const candidate = segments[1];
-	const RESERVED = new Set([
-		"signin",
-		"signup",
-		"forgot-password",
-		"verify-email",
-		"join",
-		"onboarding",
-		"pricing",
-	]);
-	if (RESERVED.has(candidate)) return null;
-	return candidate;
+/** Explicit-id flavour — fires its own subscription. */
+export function useOrgDefaultCurrency(orgId?: Id<"orgs">): string {
+	const explicit = useQuery(api.orgs.queries.get, orgId ? { orgId } : "skip");
+	return explicit?.settings?.defaultCurrency ?? FALLBACK_CURRENCY;
 }
 
-export function useOrgDefaultCurrency(orgId?: Id<"orgs">): string {
-	const pathname = usePathname();
-	const orgSlugFromUrl = useMemo(() => extractOrgSlug(pathname), [pathname]);
-
-	const myOrgs = useQuery(api.orgs.queries.listMyOrgs, !orgId && orgSlugFromUrl ? {} : "skip");
-	const resolvedOrgId = useMemo<Id<"orgs"> | undefined>(() => {
-		if (orgId) return orgId;
-		if (!myOrgs || !orgSlugFromUrl) return undefined;
-		return myOrgs.find((m) => m.org.slug === orgSlugFromUrl)?.org._id;
-	}, [orgId, myOrgs, orgSlugFromUrl]);
-
-	const org = useQuery(api.orgs.queries.get, resolvedOrgId ? { orgId: resolvedOrgId } : "skip");
-
-	return org?.settings?.defaultCurrency ?? FALLBACK_CURRENCY;
+/** Dashboard flavour — zero new subscriptions, reads OrgProvider context. */
+export function useCurrentOrgCurrency(): string {
+	const { fullOrgEntry } = useCurrentOrg();
+	return fullOrgEntry?.org.settings?.defaultCurrency ?? FALLBACK_CURRENCY;
 }
 
 /**

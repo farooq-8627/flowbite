@@ -129,6 +129,80 @@ Skipped migrations don't surface immediately — they surface when a real user h
 
 ---
 
+# 🔒 PERFORMANCE-CRITICAL RULES (locked 2026-05-18)
+
+> Driven by the audit pass that found a single drag firing 50+ Convex
+> calls (vs the production-grade target of 1) and 20% of all calls being
+> identity/RBAC overhead from per-component subscriptions.
+
+## RULE: Drag persistence is one mutation per drop
+
+Drag-and-drop callbacks (`onDragOver`, `onValueChange`) are for **VISUAL feedback only**. Persistence happens in `onCommit` / `onDragEnd`, exactly once, **for the dragged item only**.
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| Calling `useMutation()` from `onValueChange` | Call from `onCommit` |
+| Iterating the layout diff and persisting per-displaced-card | Persist only `draggedItemId` (the dnd-kit primitive forwards it) |
+| Storing `pendingLayout` in a `useRef` | Use `useState` so render reflects it |
+| Bumping `updatedAt` in optimistic updates | Let server stamp it; cascading invalidations otherwise |
+
+**Reference:** `components/ui/kanban.tsx::onCommit` plus the `useKanbanItems()` hook + `KanbanBoardBody` in `core/data-display/kanban/components/KanbanBoard.tsx`.
+
+**Rationale:** A drag across N cards in a column otherwise fires N+1 mutations and 5N+ list re-subscriptions. With the rule applied: 1 drag = 1 mutation = 1 optimistic patch = 0 list re-subscriptions. Verified by `convex/crm-hardening.test.ts::"notes.reorder (single-write invariant)"`.
+
+## RULE: Per-row data on a list view comes from one batched query
+
+If a list/board renders N rows where each row needs auxiliary data (tags, attachments, assignee, etc.), the parent view fetches **ONE batched query** that returns `{ [rowId]: data }`. Per-row child components accept the slice via prop. Per-row `useQuery` is only acceptable for single-row pages (detail view, side panel).
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `<TagsCell>` calling `getTagsForEntity` per card on a board | Pass `prefetchedTags` from `useEntityTagsMap(orgId, slot)` |
+| `<NoteCard>` calling `useAttachmentDisplay` per card | Pass `resolvedAttachmentDisplay` from `useAttachmentDisplaysForOrg` |
+| `<AssigneeCell>` calling `listMembers` per cell | Read from `useOrgMembers()` context |
+
+**Reference:** `core/entities/shared/hooks/useEntityTagsMap.ts`, `core/comms/notes/hooks/index.ts::useAttachmentDisplaysForOrg`. Add new batched queries when introducing new per-card data needs.
+
+## RULE: Identity/auth/labels via context, not subscriptions
+
+`getMyMembership`, `listMembers`, `orgs.get`, `getEntityLabels`, `users.me` are session-scoped. They MUST be fetched ONCE at the layout level (`<OrgProvider>`) and provided via React context. Components MUST NOT call these via `useQuery` directly.
+
+| ❌ Banned | ✅ Use instead |
+|---|---|
+| `useQuery(api.orgs.queries.listMembers, { orgId })` | `useOrgMembers()` |
+| `useQuery(api.orgs.queries.getMyMembership, ...)` | `useCurrentOrg().membership` or `useOrgPermissions()` |
+| `useQuery(api.orgs.queries.getEntityLabels, ...)` | `useEntityLabels()` (auto-detects context) |
+| Looking up `memberNameById` from a `members.map` per render | `useOrgMemberNameMap()` |
+
+**Reference:** `core/shell/shared/hooks/useCurrentOrg.tsx`. Mounted once in `DashboardLayoutClient.tsx`. Auth/identity overhead dropped from ~20% of all Convex calls to ~3% after this rule landed.
+
+## RULE: Every list-affecting mutation has `withOptimisticUpdate`
+
+If a mutation changes a row that's rendered in a list, it MUST patch the local cache via `withOptimisticUpdate`. This eliminates the "fire mutation → wait → re-render → flash" loop and the `listX` re-subscription spam that triggers when the cache invalidates.
+
+The optimistic update MUST NOT bump `updatedAt: Date.now()` — that changes row identity on every render and cascades list invalidations. Let the server stamp `updatedAt`; the optimistic patch only writes the user-visible field (`sortOrder`, `categoryId`, `assignedTo`, etc.).
+
+**Reference:** `core/comms/notes/hooks/index.ts::useReorderNote`, `useSetNoteCategory`. Apply the same shape to any new mutation that touches list-rendered fields.
+
+## RULE: Rate-limit drag mutations server-side
+
+All public mutations triggered by user UI gestures (drag, click, type) MUST gate on `enforceRateLimit`. Drag-driven mutations specifically use a 120/min budget, scoped per `(userId, orgId)`. The scope name is shared across related mutations so a user can't bypass by alternating (e.g. `notes.reorder` and `notes.setCategory` share scope `notes.reorder`).
+
+```ts
+await enforceRateLimit(ctx, {
+  scope: "notes.reorder",       // shared across reorder + setCategory
+  key: `${userId}:${args.orgId}`,
+  max: 120,
+  periodMs: 60_000,
+  orgId: args.orgId,            // honours per-tenant overrides
+});
+```
+
+**Reference:** `convex/_shared/rateLimit.ts`. Test coverage: `convex/crm-hardening.test.ts::"rejects after 120 ... inside the rate-limit window"`.
+
+---
+
+
+
 # 🔒 LOCKED ARCHITECTURAL DECISIONS — DO NOT REVISIT
 
 > These 10 decisions are settled. Do not reopen unless the user explicitly says so.

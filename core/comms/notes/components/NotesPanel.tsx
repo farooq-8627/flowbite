@@ -5,8 +5,11 @@
  *
  * Used inside Profile / Deal / Company / Project tabs. Self-contained:
  *   - Loads notes for `(entityType, entityId)` via `useNotesForEntity`.
- *   - Loads org members for the author map.
- *   - Loads current user + membership for RBAC.
+ *   - Loads org members + membership from the shared `OrgProvider` context
+ *     (no per-panel subscriptions — see `useCurrentOrg`).
+ *   - Resolves the SINGLE entity's display info ONCE via the batched
+ *     `useAttachmentDisplaysForOrg` hook (every card on the panel shares
+ *     the same entity, so one row of the result feeds every card).
  *   - Renders `NotesSingleBoard` (single canvas, sticky-note layout).
  *
  * Cards inside this embed expose BOTH the category dot picker and the
@@ -18,13 +21,11 @@
  * org-wide page — both views read the same `notes` table.
  */
 
-import { useQuery } from "convex/react";
 import { useMemo, useState } from "react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { useCurrentOrg, useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
-import { useNoteCategories, useNotesForEntity } from "../hooks";
+import { useAttachmentDisplaysForOrg, useNoteCategories, useNotesForEntity } from "../hooks";
 import { NotesSingleBoard } from "./NotesSingleBoard";
 
 export interface NotesPanelProps {
@@ -35,19 +36,31 @@ export interface NotesPanelProps {
 }
 
 export function NotesPanel({ entityType, entityId, personCode, className }: NotesPanelProps) {
-	const { orgId, orgSlug } = useCurrentOrg();
-	const me = useQuery(api.users.queries.me);
-	const myMembership = useQuery(api.orgs.queries.getMyMembership, orgId ? { orgId } : "skip");
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const { orgId, orgSlug, membership: myMembership } = useCurrentOrg();
+	const me = useMe();
+	const members = useOrgMembers();
 	const categories = useNoteCategories({ orgId });
 	const notes = useNotesForEntity({ orgId, entityType, entityId });
+
+	// Single-entity batched attachment lookup. Even though every note here
+	// has the same (entityType, entityId), threading the result through
+	// `NotesSingleBoard` lets the cards stay decoupled from data fetching.
+	// We pass a 1-element array; the hook stabilises it internally.
+	const attachmentTuple = useMemo(
+		() => (entityType === "org" ? [] : [{ entityType, entityId }]),
+		[entityType, entityId],
+	);
+	const attachmentDisplays = useAttachmentDisplaysForOrg({
+		orgId,
+		attachments: attachmentTuple,
+	});
 
 	const authorsById = useMemo(() => {
 		const map = new Map<string, { name: string; avatarUrl?: string }>();
 		for (const m of members ?? []) {
-			map.set(String(m.user._id), {
-				name: m.user.name ?? m.user.email ?? "Member",
-				avatarUrl: m.user.avatarUrl,
+			map.set(String(m.user?._id), {
+				name: m.user?.name ?? m.user?.email ?? "Member",
+				avatarUrl: m.user?.avatarUrl,
 			});
 		}
 		return map;
@@ -81,6 +94,7 @@ export function NotesPanel({ entityType, entityId, personCode, className }: Note
 					autoFocusNoteId={autoFocusNoteId}
 					onAutoFocusConsumed={() => setAutoFocusNoteId(null)}
 					onCreatedNote={(id) => setAutoFocusNoteId(id)}
+					attachmentDisplays={attachmentDisplays}
 				/>
 			</div>
 		</div>

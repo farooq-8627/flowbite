@@ -31,7 +31,12 @@ import {
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { useCreateNote, useReorderNote, useReorderNoteCategories, useSetNoteCategory } from "../hooks";
+import {
+	useCreateNote,
+	useReorderNote,
+	useReorderNoteCategories,
+	useSetNoteCategory,
+} from "../hooks";
 import { NoteCard } from "./NoteCard";
 
 /**
@@ -89,6 +94,20 @@ interface NotesCategoryKanbanProps {
 	matchedNoteIds?: ReadonlySet<string>;
 	/** Incrementing counter that retriggers the flash on every fresh search. */
 	highlightEpoch?: number;
+	/**
+	 * Pre-resolved attachment displays keyed by `${entityType}:${entityId}`.
+	 * Single batched query at the parent (`useAttachmentDisplaysForOrg`).
+	 * Cards never fetch per-row.
+	 */
+	attachmentDisplays?: Record<
+		string,
+		{
+			kind: "lead" | "contact" | "deal" | "company";
+			code?: string;
+			displayName: string;
+			secondary?: string;
+		}
+	>;
 }
 
 const PLACEHOLDER_CONTENT = "New note";
@@ -112,6 +131,7 @@ export function NotesCategoryKanban({
 	onCreatedNote,
 	matchedNoteIds,
 	highlightEpoch,
+	attachmentDisplays,
 }: NotesCategoryKanbanProps) {
 	const setCategory = useSetNoteCategory();
 	const reorderNote = useReorderNote();
@@ -172,7 +192,12 @@ export function NotesCategoryKanban({
 		return map;
 	}, [notes, visibleCategories, matchedNoteIds, pinnedOnly]);
 
-	async function handleCardMove(itemId: string, fromCol: string, toCol: string, newIndex: number) {
+	async function handleCardMove(
+		itemId: string,
+		fromCol: string,
+		toCol: string,
+		newIndex: number,
+	) {
 		const note = (notes ?? []).find((n) => String(n._id) === itemId);
 		if (!note) return;
 
@@ -285,6 +310,15 @@ export function NotesCategoryKanban({
 		const author = authorsById.get(String(note.authorId));
 		const isAutoFocusTarget = autoFocusNoteId === item.id;
 		const isMatch = matchedNoteIds?.has(item.id) ?? false;
+		// Resolve the per-card attachment from the batched lookup. `null` when
+		// the note is org-wide OR when the parent didn't supply a map (no
+		// per-card fallback — see AGENTS.md "Per-row data" rule). An object
+		// when the record was found in the batch.
+		const attachmentKey = `${note.entityType}:${note.entityId}`;
+		const resolvedAttachmentDisplay =
+			note.entityType === "org" || !attachmentDisplays
+				? null
+				: (attachmentDisplays[attachmentKey] ?? null);
 		return (
 			<NoteCard
 				key={item.id}
@@ -301,6 +335,7 @@ export function NotesCategoryKanban({
 				onAutoFocusConsumed={isAutoFocusTarget ? onAutoFocusConsumed : undefined}
 				isHighlighted={isMatch}
 				highlightEpoch={highlightEpoch}
+				resolvedAttachmentDisplay={resolvedAttachmentDisplay}
 			/>
 		);
 	}

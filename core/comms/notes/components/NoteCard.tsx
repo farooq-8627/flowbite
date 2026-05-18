@@ -27,7 +27,7 @@
  * affordance and confuses the model.
  */
 
-import { GripVerticalIcon, Pin, Trash2, BellRingIcon } from "lucide-react";
+import { BellRingIcon, GripVerticalIcon, Pin, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +52,11 @@ import {
 	useUpdateNote,
 } from "../hooks";
 import { CategoryDotPicker } from "./CategoryDotPicker";
-import { type EntityAttachment, EntityPickerPopover } from "./EntityPickerPopover";
+import {
+	type AttachmentDisplay,
+	type EntityAttachment,
+	EntityPickerPopover,
+} from "./EntityPickerPopover";
 import { NoteReminderDialog } from "./NoteReminderDialog";
 import { resolveTextColor } from "./note-color-utils";
 
@@ -97,6 +101,16 @@ export interface NoteCardProps {
 	isHighlighted?: boolean;
 	/** Incrementing counter that triggers the flash to replay on each search. */
 	highlightEpoch?: number;
+	/**
+	 * Pre-resolved display info for the current attachment. The parent
+	 * board batches the lookup via `useAttachmentDisplaysForOrg` and passes
+	 * the matching slice here.
+	 *
+	 *   - `null` → parent has resolved AND confirmed the record doesn't exist
+	 *     (deleted), or the note is org-wide.
+	 *   - object → resolved display.
+	 */
+	resolvedAttachmentDisplay: AttachmentDisplay | null;
 }
 
 export function NoteCard({
@@ -114,6 +128,7 @@ export function NoteCard({
 	onAutoFocusConsumed,
 	isHighlighted = false,
 	highlightEpoch,
+	resolvedAttachmentDisplay,
 }: NoteCardProps) {
 	const [editing, setEditing] = useState(autoFocus);
 	const [draft, setDraft] = useState(note.content);
@@ -362,6 +377,7 @@ export function NoteCard({
 										onPick={handlePickEntity}
 										ariaLabel="Change attachment"
 										className="size-5"
+										resolvedDisplay={resolvedAttachmentDisplay}
 									/>
 								</>
 							) : (
@@ -372,6 +388,7 @@ export function NoteCard({
 									onPick={handlePickEntity}
 									ariaLabel="Attach to record"
 									className="size-5"
+									resolvedDisplay={resolvedAttachmentDisplay}
 								/>
 							))}
 						{(canPin || canDelete || canEdit) && (

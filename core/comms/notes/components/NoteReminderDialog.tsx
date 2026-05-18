@@ -30,10 +30,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useCreateReminder } from "@/core/scheduling/reminders/hooks";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 
 const TITLE_MAX = 80;
@@ -61,10 +60,11 @@ interface NoteReminderDialogProps {
 }
 
 export function NoteReminderDialog({ open, onOpenChange, note }: NoteReminderDialogProps) {
-	const me = useQuery(api.users.queries.me);
+	const me = useMe();
 	const createReminder = useCreateReminder();
 
-	const defaultTitle = (note.title ?? note.content ?? "").trim().slice(0, TITLE_MAX) || "Follow up";
+	const defaultTitle =
+		(note.title ?? note.content ?? "").trim().slice(0, TITLE_MAX) || "Follow up";
 	const defaultDueAt = tomorrowAt9amLocal();
 
 	const [title, setTitle] = useState(defaultTitle);
@@ -125,8 +125,8 @@ export function NoteReminderDialog({ open, onOpenChange, note }: NoteReminderDia
 				<DialogHeader>
 					<DialogTitle>Set reminder</DialogTitle>
 					<DialogDescription>
-						Schedule a follow-up tied to this note. The reminder will appear in
-						the org's Reminders inbox and on the person's profile.
+						Schedule a follow-up tied to this note. The reminder will appear in the
+						org's Reminders inbox and on the person's profile.
 					</DialogDescription>
 				</DialogHeader>
 				<div className="grid gap-3 py-2">
@@ -151,8 +151,8 @@ export function NoteReminderDialog({ open, onOpenChange, note }: NoteReminderDia
 					</div>
 					{!personCode && (
 						<p className="text-xs text-muted-foreground">
-							This note isn't attached to a profile yet. Attach it to a record
-							first — reminders need a personCode.
+							This note isn't attached to a profile yet. Attach it to a record first —
+							reminders need a personCode.
 						</p>
 					)}
 				</div>

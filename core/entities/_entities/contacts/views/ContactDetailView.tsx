@@ -14,7 +14,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowRightCircleIcon, PencilIcon, Undo2Icon } from "lucide-react";
-import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -49,6 +48,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
@@ -65,9 +65,7 @@ const CONTACT_SEARCH_FIELDS = ["displayName", "email", "phone", "personCode"] as
 
 export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
-	const params = useParams();
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgId = orgs?.find((o) => o.org.slug === (params?.orgSlug ?? orgSlug))?.org._id;
+	const { orgId } = useCurrentOrg();
 
 	const contacts = useQuery(api.crm.entities.contacts.queries.list, orgId ? { orgId } : "skip");
 	const items = useMemo(
@@ -100,8 +98,9 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	const [editingContact, setEditingContact] = useState<Doc<"contacts"> | null>(null);
 	const [search, setSearch] = useState("");
 	// Persisted view options — survive route changes / reloads.
+	// `cardFields:v2` (2026-05-18) — see LeadsView for context.
 	const [cardFields, setCardFields] = usePersistedState<string[]>(
-		"viewopts:contact:cardFields",
+		"viewopts:contact:cardFields:v2",
 		[],
 	);
 	const [groupBy, setGroupBy] = usePersistedState<string>(
@@ -141,7 +140,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	}, [search]);
 
 	// Members lookup for assignee grouping labels
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const members = useOrgMembers();
 	const memberNameById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const m of members ?? []) {
@@ -149,6 +148,16 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 		}
 		return map;
 	}, [members]);
+
+	// Companies lookup — used to resolve `companyId` (revealed when grouping
+	// by tag/assignee on the contacts board) into a human-readable name for
+	// the EntityCard's "fill the gap" strip.
+	const companies = useQuery(api.crm.entities.companies.queries.list, orgId ? { orgId } : "skip");
+	const companyNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const c of companies ?? []) map.set(c._id as string, c.name);
+		return map;
+	}, [companies]);
 
 	// Batched tag map — for table tag column + board tag-grouping.
 	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "contact");
@@ -243,7 +252,13 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 	// Drag card → persist position via sortOrder + (when groupBy is one of
 	// the writable axes) update the column-field. Cross-column move and
 	// in-column reorder dispatch through the same callback.
+	//
+	// Tag groupBy: contacts can carry multiple tags. Dragging across tag
+	// columns swaps just the source/destination tag (not all tags) — same
+	// semantics as LeadsView.
 	const updateContact = useMutation(api.crm.entities.contacts.mutations.update);
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
+	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;
@@ -284,6 +299,30 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 						...baseArgs,
 						assignedTo: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"users">),
 					});
+				} else if (groupBy === "companyId") {
+					await updateContact({
+						...baseArgs,
+						companyId: toCol === NO_GROUP_KEY ? undefined : (toCol as Id<"companies">),
+					});
+				} else if (groupBy === "tag" || groupBy === "tags") {
+					// Tag move — sortOrder first, then detach old / attach new.
+					await updateContact(baseArgs);
+					if (fromCol !== NO_GROUP_KEY) {
+						await detachTag({
+							orgId,
+							tagId: fromCol as Id<"tags">,
+							entityType: "contact",
+							entityId: itemId,
+						});
+					}
+					if (toCol !== NO_GROUP_KEY) {
+						await attachTag({
+							orgId,
+							tagId: toCol as Id<"tags">,
+							entityType: "contact",
+							entityId: itemId,
+						});
+					}
 				} else {
 					// Custom groupBy — only persist position.
 					await updateContact(baseArgs);
@@ -294,7 +333,7 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 				});
 			}
 		},
-		[orgId, updateContact, groupBy, itemsByColumnId, rankedItems.items],
+		[orgId, updateContact, groupBy, itemsByColumnId, rankedItems.items, attachTag, detachTag],
 	);
 
 	const handleRevert = useCallback(
@@ -544,6 +583,19 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 		return next;
 	}, [cardFields, groupBy]);
 
+	// Resolver for the EntityCard "fill the gap" indicator. Contacts'
+	// reveal matrix can surface either `assignedTo` (user id) or `companyId`
+	// (company id) — both opaque ids that need a lookup to render a useful
+	// label. Wrapped in useCallback so the card can rely on a stable ref.
+	const resolveReplacementLabel = useCallback(
+		(fieldName: string, raw: string): string | undefined => {
+			if (fieldName === "assignedTo") return memberNameById.get(raw);
+			if (fieldName === "companyId") return companyNameById.get(raw);
+			return undefined;
+		},
+		[memberNameById, companyNameById],
+	);
+
 	return (
 		<>
 			<EntityListPage
@@ -611,6 +663,9 @@ export function ContactsView({ orgSlug }: { orgSlug: string }) {
 							isHighlighted={search ? rankedItems.matchedIds.has(item.id) : false}
 							highlightEpoch={flashEpoch}
 							menuItems={menuItems}
+							groupBy={groupBy}
+							resolveReplacementLabel={resolveReplacementLabel}
+							prefetchedTags={tagsByEntityId[item.id]}
 						/>
 					);
 				}}

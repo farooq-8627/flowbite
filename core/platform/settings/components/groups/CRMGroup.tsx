@@ -32,6 +32,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
@@ -72,7 +73,7 @@ const SECTION_ID_BY_TAB: Record<CRMTab, string> = {
 export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const labels = resolveEntityLabels(org.entityLabels);
 
-	const myMembership = useQuery(api.orgs.queries.getMyMembership, { orgId });
+	const { membership: myMembership } = useCurrentOrg();
 	const canManageNoteCategories =
 		myMembership?.permissions?.includes("notes.categories.manage") ?? false;
 

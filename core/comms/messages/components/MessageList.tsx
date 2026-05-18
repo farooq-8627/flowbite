@@ -41,6 +41,7 @@ import { Loader2 } from "lucide-react";
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { useMessageAttachmentsForThread } from "@/core/comms/messages/hooks/useMessageAttachmentsForThread";
 import { cn } from "@/lib/utils";
 import { MessageBubble } from "./MessageBubble";
 
@@ -50,6 +51,11 @@ const PIN_TO_BOTTOM_THRESHOLD = 80;
 type Author = { name: string; avatarUrl?: string };
 
 type MessageListProps = {
+	/**
+	 * Org id of the active conversation. Used by the list-level batched
+	 * attachment query so each bubble doesn't open its own subscription.
+	 */
+	orgId: Id<"orgs">;
 	messages: Doc<"messages">[] | undefined;
 	authorsById: Map<string, Author>;
 	currentUserId: Id<"users"> | undefined;
@@ -128,6 +134,7 @@ function hasFloatingReaction(
 }
 
 export function MessageList({
+	orgId,
 	messages,
 	authorsById,
 	currentUserId,
@@ -148,6 +155,15 @@ export function MessageList({
 		if (!messages) return undefined;
 		return [...messages].reverse();
 	}, [messages]);
+
+	// List-level batched attachment lookup. ONE subscription resolves every
+	// visible bubble's attachments; the resolved record is then sliced
+	// per-bubble below. Replaces the per-bubble `useQuery(listByIds)` that
+	// previously fired N subscriptions for one logical read.
+	const attachmentFilesById = useMessageAttachmentsForThread({
+		orgId,
+		messages: ordered,
+	});
 
 	// Update the pinned flag whenever the user scrolls.
 	useEffect(() => {
@@ -382,6 +398,7 @@ export function MessageList({
 							isDirect={isDirect}
 							showHeader={item.showHeader}
 							prevHasFloatingReaction={item.prevHasFloatingReaction}
+							attachmentFilesById={attachmentFilesById}
 							onReply={onReply}
 						/>
 					);

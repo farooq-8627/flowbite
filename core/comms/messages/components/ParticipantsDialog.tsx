@@ -1,29 +1,5 @@
 "use client";
 
-/**
- * ParticipantsDialog — manage org members on a conversation thread.
- *
- * Reachable via the "People" button in `ThreadHeader`. Three actions:
- *   1. Search org members → multi-select → Add as participants.
- *   2. Remove an existing participant (owner-only or self-remove).
- *   3. Leave the conversation yourself.
- *
- * Every action calls a typed Convex mutation:
- *   - `useAddParticipants` / `useRemoveParticipant` / `useLeaveConversation`
- *
- * RBAC is enforced server-side; the UI only surfaces error toasts on
- * `ConvexError`. We never gate on roles client-side because the auth source
- * of truth is the server (locked decision #16 in AGENTS.md).
- *
- * 2026-05-16 update:
- *   - Avatars are clickable and navigate to the org member page.
- *   - When the org has no other members, the empty state explains why and
- *     links to Settings → Members instead of saying "No members match"
- *     (which felt like a bug).
- *   - DialogContent gets explicit horizontal margin on mobile so the card
- *     doesn't kiss the screen edges.
- */
-import { useQuery } from "convex/react";
 import { LogOut, MessageSquare, Search, UserMinus, UserPlus, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -37,7 +13,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
 	useAddParticipants,
@@ -45,6 +20,7 @@ import {
 	useLeaveConversation,
 	useRemoveParticipant,
 } from "@/core/comms/messages/hooks";
+import { useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 
@@ -64,8 +40,11 @@ export function ParticipantsDialog({
 	const router = useRouter();
 	const params = useParams<{ orgSlug?: string }>();
 	const orgSlug = params?.orgSlug;
-	const me = useQuery(api.users.queries.me);
-	const allMembers = useQuery(api.orgs.queries.listMembers, open ? { orgId } : "skip");
+	const me = useMe();
+	// Member list comes from the shared OrgProvider context — no local
+	// subscription needed even when the dialog is closed (the data is
+	// already in the page's session-shared cache).
+	const allMembers = useOrgMembers();
 	const participants = useConversationParticipants({
 		orgId,
 		conversationId: open ? conversation._id : undefined,

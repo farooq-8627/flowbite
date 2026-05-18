@@ -1,7 +1,50 @@
 # Shared — State
 
-> Updated: 2026-05-17
+> Updated: 2026-05-18 (afternoon — perf cleanup #2)
 > Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome live here.
+>
+> **2026-05-18 (afternoon) — `useMe()` joins the OrgProvider context.**
+> Added a 5th hoisted subscription to `OrgProvider`: `api.users.queries.me`.
+> Was being called via `useQuery(api.users.queries.me)` from 9 different
+> components (ThreadHeader, MessagesThread, ParticipantsDialog,
+> NoteReminderDialog, NotesPanel, NotesView, SavedViewsMenu, NavUser,
+> DashboardHomeView). All migrated to the new `useMe()` hook (zero new
+> subscriptions per component; reads the shared context). `OrgContext`
+> also exposes `allOrgs` for the workspace switcher and `fullOrgEntry`
+> for views that need `org.settings.*` (currency, modules, fileUpload,
+> reminderDefaults).
+>
+> Same pass migrated 6+ entity hooks (`useLeads`, `useViewToggle`,
+> `useModuleDisplay`, `usePerson`) + 4 entity views (Companies, Contacts,
+> Deals, Leads, PersonSelect) from per-component `listMyOrgs` lookups
+> to the shared `useCurrentOrg().orgId`. Net: identity/auth subscription
+> count for a typical board view is now ~5 (one per OrgProvider hook),
+> down from ~25+ pre-cleanup.
+>
+> **2026-05-18 — OrgProvider expanded into the per-org session cache**
+> (driven by Convex insights showing 20 % of all calls were per-component
+> identity / RBAC subscriptions). The provider now owns ONE subscription
+> for each of `listMyOrgs`, `getMyMembership`, `listMembers`, and
+> `getEntityLabels`. Descendants read via context-only hooks:
+>
+>   - `useCurrentOrg()` — full slice (orgId, org, isLoading, membership,
+>     members, memberMap, memberNameMap, entityLabels)
+>   - `useOrgPermissions()` — readonly permission array
+>   - `useOrgMembers()` — full member list, undefined while loading
+>   - `useOrgMemberMap()` — Map<userId, member> for O(1) avatar / assignee
+>     lookups
+>   - `useOrgMemberNameMap()` — Map<userId, displayName> for O(1) labels
+>   - `useEntityLabels()` — auto-detects context, falls back to its own
+>     subscription only outside the dashboard tree
+>
+> 13 `listMembers` call sites + 5 `getMyMembership` call sites were
+> migrated. `useOrgPermission` (the legacy permission-check hook) was
+> rewritten to read from the context — it no longer fires its own
+> `useQuery` AND it no longer chains a redundant `orgRoles.get` call.
+>
+> The `useEntityLabels` ↔ `useCurrentOrg` circular import was broken by
+> extracting types/defaults to `entity-labels-types.ts` and the entity-
+> labels context to `org-entity-labels-context.ts` (both leaf modules).
 
 ## ✅ Completed
 

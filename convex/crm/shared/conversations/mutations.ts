@@ -220,7 +220,34 @@ export const markRead = orgMutation({
 		const { userId } = await requireOrgMember(ctx, args.orgId);
 		const me = await getMyMembership(ctx, { conversationId: args.conversationId, userId });
 		if (!me) return; // not a member — silently ignore
-		await ctx.db.patch(me._id, { lastReadAt: Date.now() });
+
+		// Idempotency / OCC guard.
+		//
+		// Convex insights surfaced 45 critical write conflicts + 223 retry
+		// warnings on `conversationMembers.markRead` per minute. Two tabs
+		// (or one tab + a remount) can fire `markRead` near-simultaneously
+		// for the same `(userId, conversationId)`; both transactions read
+		// the same `me` row, then both try to patch it, and the second
+		// loser hits OCC. The client-side fix (`MessagesThread.tsx` deps)
+		// reduced the burst dramatically, but a slow tab can still fire a
+		// stale `markRead` AFTER a newer one already landed — and a
+		// no-op patch still consumes the lock and contributes contention.
+		//
+		// This mutation is monotonic by definition: `lastReadAt` only ever
+		// moves forward. So we can:
+		//   1. Skip the patch entirely when the existing `lastReadAt` is
+		//      already at-or-beyond `now`. This is the no-op fast path.
+		//   2. Bound any forward jump to `now` so we never write a wall-
+		//      clock time that's smaller than the row's current value.
+		//
+		// Result: a stale racer either reads the same value and skips the
+		// write, or it does write but immediately observes its row is
+		// monotonic with the latest write — no contention either way.
+		const now = Date.now();
+		if (me.lastReadAt !== undefined && me.lastReadAt >= now) {
+			return; // already at or beyond — no write, no OCC risk
+		}
+		await ctx.db.patch(me._id, { lastReadAt: now });
 	},
 });
 

@@ -45,6 +45,7 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
 import type { PersonRef } from "@/core/entities/shared/types";
@@ -55,6 +56,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
@@ -66,10 +68,7 @@ const DEAL_SEARCH_FIELDS = ["title", "dealCode", "personCode"] as const;
 
 export function DealsView({ orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
-	const params = useParams();
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgId = orgs?.find((o) => o.org.slug === (params?.orgSlug ?? orgSlug))?.org._id;
-
+	const { orgId } = useCurrentOrg();
 	const [view, setView] = useViewToggle("deal");
 	const { visibleFields: dealFields } = useEntityFields("deal", orgId);
 	const defaultCardFields = useMemo(() => dealFields.map((f) => f.name), [dealFields]);
@@ -77,7 +76,11 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	const canViewValues = useOrgPermission(orgId, "deals.viewValues");
 	const [search, setSearch] = useState("");
 	// Persisted view options — survive route changes / reloads.
-	const [cardFields, setCardFields] = usePersistedState<string[]>("viewopts:deal:cardFields", []);
+	// `cardFields:v2` (2026-05-18) — see LeadsView for context.
+	const [cardFields, setCardFields] = usePersistedState<string[]>(
+		"viewopts:deal:cardFields:v2",
+		[],
+	);
 	const [groupBy, setGroupBy] = usePersistedState<string>(
 		"viewopts:deal:groupBy",
 		"currentStageId",
@@ -164,10 +167,14 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	useQuickAddListener("create-deal", () => setAddOpen(true));
 
 	const { valuesByEntityId: customValuesByEntityId } = useEntityFieldValuesMap("deal", orgId);
+	// Batched per-row tag lookup. One subscription drives every card on
+	// the board — replaces the per-card `getTagsForEntity` queries that
+	// were the dominant load source on the deals kanban.
+	const { tagsByEntityId } = useEntityTagsMap(orgId, "deal");
 
 	// Board columns — pipeline stages (when grouping by currentStageId) or
 	// generic buckets (when grouping by any other field).
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const members = useOrgMembers();
 	const memberNameById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const m of members ?? []) {
@@ -264,7 +271,13 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 	// Handle card move (drag-drop) — updates the active `groupBy` field
 	// and persists the dropped position via `sortOrder`. In-column reorder
 	// and cross-column move are dispatched through the same callback.
+	//
+	// Tag groupBy: deals can carry multiple tags. Dragging across tag columns
+	// swaps just the source/destination tag (not all tags). NO_GROUP_KEY ↔
+	// "untagged" — no join row to add/remove.
 	const updateDeal = useMutation(api.crm.entities.deals.mutations.update);
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
+	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;
@@ -330,6 +343,27 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 					});
 					return;
 				}
+				if (groupBy === "tag" || groupBy === "tags") {
+					// Tag move — sortOrder first, then detach old / attach new.
+					await updateDeal({ orgId, dealId: itemId as Id<"deals">, sortOrder });
+					if (fromCol !== NO_GROUP_KEY) {
+						await detachTag({
+							orgId,
+							tagId: fromCol as Id<"tags">,
+							entityType: "deal",
+							entityId: itemId,
+						});
+					}
+					if (toCol !== NO_GROUP_KEY) {
+						await attachTag({
+							orgId,
+							tagId: toCol as Id<"tags">,
+							entityType: "deal",
+							entityId: itemId,
+						});
+					}
+					return;
+				}
 				// Unknown/custom groupBy — only persist position.
 				await updateDeal({ orgId, dealId: itemId as Id<"deals">, sortOrder });
 			} catch (err) {
@@ -347,6 +381,8 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 			groupBy,
 			itemsByColumnId,
 			rankedItems.items,
+			attachTag,
+			detachTag,
 		],
 	);
 
@@ -499,6 +535,27 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 		return next;
 	}, [cardFields, groupBy]);
 
+	// Pipeline stage lookup — used to resolve `currentStageId` (revealed
+	// when grouping deals by tag/assignee) into the human-readable stage
+	// name for the EntityCard's "fill the gap" strip.
+	const stageNameById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const s of pipeline?.stages ?? []) map.set(s.id, s.name);
+		return map;
+	}, [pipeline?.stages]);
+
+	// Resolver for the EntityCard "fill the gap" indicator. Deals' reveal
+	// matrix surfaces `assignedTo` (user id) or `currentStageId` (stage id)
+	// — both opaque and require a lookup.
+	const resolveReplacementLabel = useCallback(
+		(fieldName: string, raw: string): string | undefined => {
+			if (fieldName === "assignedTo") return memberNameById.get(raw);
+			if (fieldName === "currentStageId") return stageNameById.get(raw);
+			return undefined;
+		},
+		[memberNameById, stageNameById],
+	);
+
 	return (
 		<>
 			<EntityListPage
@@ -570,6 +627,9 @@ export function DealsView({ orgSlug }: { orgSlug: string }) {
 						isDragging={isDragging}
 						isHighlighted={search ? rankedItems.matchedIds.has(item.id) : false}
 						highlightEpoch={flashEpoch}
+						groupBy={groupBy}
+						resolveReplacementLabel={resolveReplacementLabel}
+						prefetchedTags={tagsByEntityId[item.id]}
 					/>
 				)}
 				onCardMove={handleCardMove}

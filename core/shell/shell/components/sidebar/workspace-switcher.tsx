@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery } from "convex/react";
 import { Check, ChevronsUpDown, Command, LogOut, Plus, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,13 +16,32 @@ import {
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { APP_CONFIG } from "@/config/app-config";
-import { api } from "@/convex/_generated/api";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
+/**
+ * WorkspaceSwitcher — reads the org list from the shared `OrgProvider`
+ * context (`useCurrentOrg().allOrgs`) instead of firing its own
+ * `api.orgs.queries.listMyOrgs` subscription.
+ *
+ * `OrgProvider` already mounts that subscription once at the dashboard
+ * layout level; before this change the switcher AND the AppSidebar each
+ * fired the same query independently, which the dashboard's "Function
+ * Calls" counter records as separate `useQuery` registrations even though
+ * Convex deduplicates the actual round-trip.
+ *
+ * Locked architectural decision (see AGENTS.md → "Identity/auth/labels via
+ * context, not subscriptions"): components MUST NOT call `listMyOrgs`,
+ * `getMyMembership`, `listMembers`, `getEntityLabels`, or `users.me` via
+ * `useQuery` directly.
+ */
 export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }) {
 	const { signOut } = useAuthActions();
 	const router = useRouter();
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const currentOrg = orgs?.find((o) => o.org.slug === currentOrgSlug)?.org;
+	const { allOrgs: orgs, org: currentOrg, fullOrgEntry } = useCurrentOrg();
+	// `currentOrg` from context is the trimmed `{name, slug, plan}` shape.
+	// The switcher needs `platformOrgId` for the small ORB-xxx label, so we
+	// pull the full org doc from `fullOrgEntry`.
+	const currentOrgFull = fullOrgEntry?.org;
 
 	if (orgs === undefined) {
 		return (
@@ -66,7 +84,7 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 								<div className="grid flex-1 leading-tight ms-1">
 									<span className="truncate font-medium">{displayName}</span>
 									<span className="truncate text-xs text-muted-foreground font-mono ">
-										{currentOrg?.platformOrgId}
+										{currentOrgFull?.platformOrgId}
 									</span>
 								</div>
 							</div>

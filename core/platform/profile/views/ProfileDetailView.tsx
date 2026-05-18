@@ -2,6 +2,7 @@
 
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { ShellLayout } from "@/core/shell/shared/layouts";
 import {
 	DEFAULT_PROFILE_GROUP,
@@ -30,6 +31,10 @@ import { ProfileContent } from "./ProfileContent";
  *   - `reminders.view` gates the Reminders tab.
  *   - Internal notes (isInternal: true) and deal values rely on further
  *     permission checks *inside* their tabs — not at the shell level.
+ *
+ * orgId resolution: read from the shared `OrgProvider` context — no extra
+ * `listMyOrgs` subscription per AGENTS.md "Identity/auth/labels via
+ * context, not subscriptions".
  */
 export function ProfileDetailView({
 	orgSlug,
@@ -38,9 +43,7 @@ export function ProfileDetailView({
 	orgSlug: string;
 	personCode: string;
 }) {
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
-	const orgId = orgEntry?.org._id;
+	const { orgId } = useCurrentOrg();
 
 	const permissions = useQuery(api.orgRoles.queries.getMyPermissions, orgId ? { orgId } : "skip");
 

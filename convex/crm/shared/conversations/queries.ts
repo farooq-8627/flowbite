@@ -29,7 +29,7 @@ export const listForUser = orgQuery({
 		requireRole(member.permissions, "messages.view");
 
 		const filter = args.filter ?? "all";
-		const cap = args.limit ?? 100;
+		const cap = args.limit ?? 25;
 
 		const memberships = await ctx.db
 			.query("conversationMembers")
@@ -183,7 +183,7 @@ export const getMyTotalUnread = orgQuery({
 		const memberships = await ctx.db
 			.query("conversationMembers")
 			.withIndex("by_org_and_user", (q) => q.eq("orgId", args.orgId).eq("userId", userId))
-			.take(100);
+			.take(50);
 
 		const active = memberships.filter((m) => m.leftAt === undefined);
 
@@ -195,5 +195,122 @@ export const getMyTotalUnread = orgQuery({
 			if (total >= 99) return 99;
 		}
 		return total;
+	},
+});
+
+// ─── Batched entity display resolver (eliminates N+1 in sidebar/forward) ────
+
+/**
+ * Resolve display info for a batch of (entityType, entityId) tuples.
+ * Returns `Record<"entityType:entityId", DisplayInfo>`.
+ *
+ * Used by `MessagesSidebar` and `ForwardDialog` so each row doesn't open
+ * its own `getByPersonCode` / `getByDealCode` / `getByCompanyCode`
+ * subscription. One subscription covers the entire visible list.
+ *
+ * Capped at 200 tuples (practical max = inbox size).
+ */
+export const listEntityDisplays = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		items: v.array(
+			v.object({
+				entityType: v.string(),
+				entityId: v.string(),
+			}),
+		),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.view");
+
+		const uniq = new Map<string, { entityType: string; entityId: string }>();
+		for (const item of args.items) {
+			const key = `${item.entityType}:${item.entityId}`;
+			if (!uniq.has(key)) uniq.set(key, item);
+		}
+		const tuples = Array.from(uniq.values()).slice(0, 200);
+
+		const result: Record<
+			string,
+			{
+				name: string;
+				secondary?: string;
+				kindLabel: string;
+				avatarUrl?: string;
+			}
+		> = {};
+
+		for (const t of tuples) {
+			const key = `${t.entityType}:${t.entityId}`;
+			const isPerson =
+				t.entityType === "lead" || t.entityType === "contact" || t.entityType === "person";
+
+			if (isPerson) {
+				const contact = await ctx.db
+					.query("contacts")
+					.withIndex("by_org_and_personCode", (q) =>
+						q.eq("orgId", args.orgId).eq("personCode", t.entityId),
+					)
+					.first();
+				if (contact && !contact.deletedAt) {
+					result[key] = {
+						name: contact.displayName,
+						secondary: contact.email ?? contact.phone ?? undefined,
+						kindLabel: "Contact",
+					};
+					continue;
+				}
+				const lead = await ctx.db
+					.query("leads")
+					.withIndex("by_org_and_personCode", (q) =>
+						q.eq("orgId", args.orgId).eq("personCode", t.entityId),
+					)
+					.first();
+				if (lead && !lead.deletedAt) {
+					result[key] = {
+						name: lead.displayName,
+						secondary: lead.email ?? lead.phone ?? undefined,
+						kindLabel: "Lead",
+					};
+				}
+				continue;
+			}
+
+			if (t.entityType === "deal") {
+				const deal = await ctx.db
+					.query("deals")
+					.withIndex("by_org_and_dealCode", (q) =>
+						q.eq("orgId", args.orgId).eq("dealCode", t.entityId),
+					)
+					.first();
+				if (deal && !deal.deletedAt) {
+					result[key] = {
+						name: deal.title ?? t.entityId,
+						secondary: deal.dealCode,
+						kindLabel: "Deal",
+					};
+				}
+				continue;
+			}
+
+			if (t.entityType === "company") {
+				const company = await ctx.db
+					.query("companies")
+					.withIndex("by_org_and_companyCode", (q) =>
+						q.eq("orgId", args.orgId).eq("companyCode", t.entityId),
+					)
+					.first();
+				if (company && !company.deletedAt) {
+					result[key] = {
+						name: company.name,
+						secondary: company.companyCode,
+						kindLabel: "Company",
+					};
+				}
+			}
+		}
+
+		return result;
 	},
 });

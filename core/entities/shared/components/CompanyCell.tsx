@@ -45,9 +45,14 @@ interface CompanyCellProps {
 	/** Used for activity log / future personalisation — optional. */
 	entityType?: "lead" | "contact";
 	className?: string;
+	/**
+	 * Pre-fetched company for this person (from batch `useCompaniesByPersonCodes`).
+	 * When provided, skips the per-row `getByPersonCode` query.
+	 */
+	prefetchedCompany?: { companyId: string; name: string; companyCode: string } | null;
 }
 
-export function CompanyCell({ orgId, personCode, entityType, className }: CompanyCellProps) {
+export function CompanyCell({ orgId, personCode, entityType, className, prefetchedCompany }: CompanyCellProps) {
 	const [open, setOpen] = useState(false);
 	const [tab, setTab] = useState<"existing" | "new">("existing");
 	const [search, setSearch] = useState("");
@@ -61,12 +66,17 @@ export function CompanyCell({ orgId, personCode, entityType, className }: Compan
 
 	const company = useQuery(
 		api.crm.entities.companies.queries.getByPersonCode,
-		orgId && personCode ? { orgId, personCode } : "skip",
+		orgId && personCode && prefetchedCompany === undefined ? { orgId, personCode } : "skip",
 	);
 	const allCompanies = useQuery(
 		api.crm.entities.companies.queries.list,
 		orgId ? { orgId } : "skip",
 	);
+
+	// Resolve company from prefetched or query result.
+	const resolvedCompany = prefetchedCompany !== undefined
+		? (prefetchedCompany ?? undefined)
+		: company;
 
 	const createCompany = useMutation(api.crm.entities.companies.mutations.create);
 	const addPerson = useMutation(api.crm.entities.companies.mutations.addPerson);
@@ -110,11 +120,11 @@ export function CompanyCell({ orgId, personCode, entityType, className }: Compan
 	};
 
 	// ── Has a company → show linked pill ────────────────────────────────────
-	if (company) {
+	if (resolvedCompany) {
 		const href = orgSlug
 			? locale
-				? `/${locale}/${orgSlug}/company/${company.companyCode}`
-				: `/${orgSlug}/company/${company.companyCode}`
+				? `/${locale}/${orgSlug}/company/${resolvedCompany.companyCode}`
+				: `/${orgSlug}/company/${resolvedCompany.companyCode}`
 			: null;
 		const pill = (
 			<Badge
@@ -125,7 +135,7 @@ export function CompanyCell({ orgId, personCode, entityType, className }: Compan
 				)}
 			>
 				<Building2Icon className="size-3" />
-				<span className="truncate max-w-[14ch]">{company.name}</span>
+				<span className="truncate max-w-[14ch]">{resolvedCompany.name}</span>
 			</Badge>
 		);
 		if (!href) return pill;

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { SettingsSection } from "../../shared/SettingsSection";
 import { InviteMemberDialog } from "./InviteMemberDialog";
 
@@ -50,7 +51,7 @@ export function MembersSection({
 	currentUserId: Id<"users"> | undefined;
 	canManage: boolean;
 }) {
-	const members = useQuery(api.orgs.queries.listMembers, { orgId });
+	const members = useOrgMembers();
 	const changeRole = useMutation(api.orgs.mutations.updateMemberRole);
 	const removeMember = useMutation(api.orgs.mutations.removeMember);
 

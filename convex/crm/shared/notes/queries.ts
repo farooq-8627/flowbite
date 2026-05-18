@@ -327,95 +327,130 @@ export const searchEntities = orgQuery({
 	},
 });
 
-
-// ─── getAttachmentDisplay (single-entity lookup for the attached avatar) ─────
+// ─── listAttachmentDisplaysForOrg (batched per-board lookup) ─────────────────
 
 /**
- * Resolve a note's attachment to a displayable record so the per-card avatar
- * trigger can show the correct initials + name.
+ * Batched attachment-display resolver. Returns a record mapping
+ * `${entityType}:${entityId}` → display info for every distinct attachment
+ * present in the org's notes feed.
  *
- * People are unified: leads + contacts share a personCode, so we resolve via
- * the same "contact-first, lead-fallback" order as `crm.people.getByPersonCode`.
- * Deals and companies are looked up by their Convex `_id` (the picker stores
- * `hit.id` for those, not the code).
+ * Why this exists: each `NoteCard` previously called the singular
+ * lookup individually, which fired one Convex query per visible note
+ * (52+ calls/min in production for a single user with 50 notes on screen).
+ * This query batches them into a single round trip, resolving:
+ *   - person attachments (lead OR contact, by personCode) in two index hits
+ *   - deal attachments by Convex Id (one ctx.db.get each)
+ *   - company attachments by Convex Id (one ctx.db.get each)
  *
- * Permission: `notes.view` — same gate as the picker that consumes it.
+ * The frontend keys into the result with `result[`${entityType}:${entityId}`]`.
+ * For org-wide notes (`entityType === "org"`), no entry is returned — the
+ * frontend should not query for them.
+ *
+ * Permission: `notes.view` (same as the per-note picker that consumes it).
+ *
+ * Bounded: caller passes the unique (entityType, entityId) tuples
+ * extracted from the visible notes list. Caps at 200 tuples to keep the
+ * read-set small enough to stay well under Convex transaction limits.
  */
-export const getAttachmentDisplay = orgQuery({
+export const listAttachmentDisplaysForOrg = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
-		entityType: v.string(),
-		entityId: v.string(),
+		attachments: v.array(
+			v.object({
+				entityType: v.string(),
+				entityId: v.string(),
+			}),
+		),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.view");
 
-		// Persons (lead OR contact) — entityId is the personCode.
-		if (args.entityType === "lead" || args.entityType === "contact") {
-			const contact = await ctx.db
-				.query("contacts")
-				.withIndex("by_org_and_personCode", (q) =>
-					q.eq("orgId", args.orgId).eq("personCode", args.entityId),
-				)
-				.first();
-			if (contact && !contact.deletedAt) {
-				return {
-					kind: "contact" as const,
-					code: contact.personCode,
-					displayName: contact.displayName,
-					secondary: contact.email ?? contact.phone ?? undefined,
-				};
+		// De-dupe the tuples so we don't re-resolve the same person twice.
+		const uniq = new Map<string, { entityType: string; entityId: string }>();
+		for (const a of args.attachments) {
+			if (a.entityType === "org") continue;
+			uniq.set(`${a.entityType}:${a.entityId}`, a);
+		}
+		// Bound the read set — practical max is the number of visible cards
+		// on a kanban screen.
+		const tuples = Array.from(uniq.values()).slice(0, 200);
+
+		const result: Record<
+			string,
+			{
+				kind: "lead" | "contact" | "deal" | "company";
+				code?: string;
+				displayName: string;
+				secondary?: string;
 			}
-			const lead = await ctx.db
-				.query("leads")
-				.withIndex("by_org_and_personCode", (q) =>
-					q.eq("orgId", args.orgId).eq("personCode", args.entityId),
-				)
-				.first();
-			if (lead && !lead.deletedAt) {
-				return {
-					kind: "lead" as const,
-					code: lead.personCode,
-					displayName: lead.displayName,
-					secondary: lead.email ?? lead.phone ?? undefined,
-				};
+		> = {};
+
+		for (const t of tuples) {
+			const key = `${t.entityType}:${t.entityId}`;
+			if (t.entityType === "lead" || t.entityType === "contact") {
+				// Persons — entityId is the personCode. Try contact first
+				// (converted lead is more current state), then lead.
+				const contact = await ctx.db
+					.query("contacts")
+					.withIndex("by_org_and_personCode", (q) =>
+						q.eq("orgId", args.orgId).eq("personCode", t.entityId),
+					)
+					.first();
+				if (contact && !contact.deletedAt) {
+					result[key] = {
+						kind: "contact",
+						code: contact.personCode,
+						displayName: contact.displayName,
+						secondary: contact.email ?? contact.phone ?? undefined,
+					};
+					continue;
+				}
+				const lead = await ctx.db
+					.query("leads")
+					.withIndex("by_org_and_personCode", (q) =>
+						q.eq("orgId", args.orgId).eq("personCode", t.entityId),
+					)
+					.first();
+				if (lead && !lead.deletedAt) {
+					result[key] = {
+						kind: "lead",
+						code: lead.personCode,
+						displayName: lead.displayName,
+						secondary: lead.email ?? lead.phone ?? undefined,
+					};
+				}
+				continue;
 			}
-			return null;
+			if (t.entityType === "deal") {
+				try {
+					const deal = await ctx.db.get(t.entityId as Doc<"deals">["_id"]);
+					if (!deal || deal.deletedAt || deal.orgId !== args.orgId) continue;
+					result[key] = {
+						kind: "deal",
+						code: deal.dealCode,
+						displayName: deal.title ?? deal.dealCode,
+					};
+				} catch {
+					// invalid id — skip
+				}
+				continue;
+			}
+			if (t.entityType === "company") {
+				try {
+					const company = await ctx.db.get(t.entityId as Doc<"companies">["_id"]);
+					if (!company || company.deletedAt || company.orgId !== args.orgId) continue;
+					result[key] = {
+						kind: "company",
+						code: company.companyCode,
+						displayName: company.name,
+					};
+				} catch {
+					// invalid id — skip
+				}
+			}
 		}
 
-		// Deals — entityId is a Convex Id<"deals">.
-		if (args.entityType === "deal") {
-			try {
-				const deal = await ctx.db.get(args.entityId as Doc<"deals">["_id"]);
-				if (!deal || deal.deletedAt || deal.orgId !== args.orgId) return null;
-				return {
-					kind: "deal" as const,
-					code: deal.dealCode,
-					displayName: deal.title ?? deal.dealCode,
-					secondary: undefined as string | undefined,
-				};
-			} catch {
-				return null;
-			}
-		}
-
-		// Companies — entityId is a Convex Id<"companies">.
-		if (args.entityType === "company") {
-			try {
-				const company = await ctx.db.get(args.entityId as Doc<"companies">["_id"]);
-				if (!company || company.deletedAt || company.orgId !== args.orgId) return null;
-				return {
-					kind: "company" as const,
-					code: company.companyCode,
-					displayName: company.name,
-					secondary: undefined as string | undefined,
-				};
-			} catch {
-				return null;
-			}
-		}
-
-		return null;
+		return result;
 	},
 });

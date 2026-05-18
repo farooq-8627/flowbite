@@ -43,6 +43,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	DropdownMenu,
@@ -58,7 +59,9 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
 import { TagsCell } from "@/core/entities/shared/components/TagsCell";
+import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import type { EntitySlot } from "@/core/entities/shared/types";
+import { getRevealedCardFieldForGrouping } from "@/core/entities/shared/utils/board-grouping";
 import {
 	formatCurrency,
 	useOrgDefaultCurrency,
@@ -143,6 +146,50 @@ export interface EntityCardProps {
 	highlightEpoch?: number;
 	/** Map of custom field values for THIS entity row (fieldName → value). */
 	customFieldValues?: Record<string, unknown>;
+	/**
+	 * Active board groupBy field. When set, the card renders a "fill the gap"
+	 * indicator for the field that the kanban column already represents:
+	 *
+	 *   - groupBy="assignedTo" → the assignee avatar slot (bottom-left) is
+	 *     vacated. We render the *revealed* field (status / industry /
+	 *     companyId per slot) as a coloured strip in that empty slot.
+	 *   - groupBy="tag"|"tags" → the tags slot (top-right of row 1) is
+	 *     vacated. Same revealed-field strip is rendered there.
+	 *   - groupBy="status"|"source"|"industry"|"companyId"|"currentStageId"
+	 *     → no fixed slot is vacated (those fields didn't have one). We
+	 *     render just a small coloured DOT after the assignee avatar so
+	 *     the user still has a hint of "what would the card's status be".
+	 *     The dot has a tooltip that shows the resolved label.
+	 *
+	 * The colour comes from `getStatusColor(slot, value)` (which has a stable
+	 * deterministic fallback for arbitrary values), so any reveal field
+	 * resolves to *something* visible.
+	 */
+	groupBy?: string;
+	/**
+	 * Optional resolver — given an opaque id (e.g. `assignedTo` user id,
+	 * `companyId`, `currentStageId`), return the human-readable label.
+	 * Used to render the strip text and the dot tooltip without firing a
+	 * Convex query inside the card. Each view supplies this from data it
+	 * already has in scope (`memberNameById`, `companyNameById`,
+	 * `stageNameById`). Returning `undefined` falls back to the raw value.
+	 *
+	 * MUST be wrapped in `useCallback` to keep referential equality and
+	 * avoid blowing the card's memo / re-render budget.
+	 */
+	resolveReplacementLabel?: (fieldName: string, rawValue: string) => string | undefined;
+	/**
+	 * Pre-resolved tags for this entity (from a batched
+	 * `useEntityTagsMap(orgId, slot)` call in the parent view). When
+	 * provided, `<TagsCell>` uses this instead of subscribing per-card to
+	 * `crm.shared.tags.queries.getTagsForEntity` — one of the largest
+	 * sources of subscription spam on board views (every visible card was
+	 * its own subscription, blowing 100+ calls / minute).
+	 *
+	 * Pass `undefined` (the default) to keep the legacy per-card path —
+	 * still correct for embedded panels that don't have a board-wide map.
+	 */
+	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -159,6 +206,9 @@ export function EntityCard({
 	isHighlighted,
 	highlightEpoch,
 	customFieldValues,
+	groupBy,
+	resolveReplacementLabel,
+	prefetchedTags,
 }: EntityCardProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -266,6 +316,56 @@ export function EntityCard({
 		!summaryExpanded && "line-clamp-2",
 	);
 
+	// ── "Fill the gap" indicator for the active board groupBy ──────────────
+	//
+	// When the board groups by a field that owns a layout slot (assignee
+	// avatar bottom-left, or tags chip top-right), that slot ends up empty
+	// because the field is in `getHiddenCardFieldsForGrouping` and therefore
+	// removed from `cardFields`. We re-fill the empty slot with a coloured
+	// STRIP (revealed-field name + value) so the user still has a glance-able
+	// hint of what the card's status would be.
+	//
+	// When the groupBy field has no slot (status / source / industry /
+	// currentStageId / companyId), we render a tiny coloured DOT after the
+	// assignee avatar instead — same data, lighter footprint. The dot
+	// carries a tooltip with the resolved label so hover discloses meaning.
+	const groupReplacement = useMemo(() => {
+		if (!groupBy) return null;
+		const revealedName = getRevealedCardFieldForGrouping(groupBy, slot);
+		if (!revealedName) return null;
+		const raw = (item as Record<string, unknown>)[revealedName];
+		if (raw === undefined || raw === null || raw === "") return null;
+		const value = String(raw);
+		const color = getStatusColor(slot, value);
+
+		// Determine where the replacement renders:
+		//   - "top-right"   when groupBy hides the tags slot
+		//   - "bottom-left" when groupBy hides the assignee-avatar slot
+		//   - "inline-dot"  otherwise (no slot vacated → render just a dot)
+		let location: "top-right" | "bottom-left" | "inline-dot";
+		if (groupBy === "tag" || groupBy === "tags") {
+			location = "top-right";
+		} else if (groupBy === "assignedTo") {
+			location = "bottom-left";
+		} else {
+			location = "inline-dot";
+		}
+
+		// Resolve the human label. For opaque ids (companyId / assignedTo /
+		// currentStageId) we delegate to the view-supplied resolver so the
+		// card stays free of Convex queries. If the resolver returns
+		// undefined or no resolver is provided, we fall back to the raw
+		// value — which for status / source / industry IS the human label.
+		const resolved = resolveReplacementLabel?.(revealedName, value);
+		const label = resolved ?? value;
+
+		// Pretty title for the field (used in the tooltip + as a strip prefix
+		// when text alone would be ambiguous like "Acme" without context).
+		const fieldTitle = FIELD_DISPLAY_TITLES[revealedName] ?? revealedName;
+
+		return { name: revealedName, value, color, location, label, fieldTitle };
+	}, [groupBy, slot, item, resolveReplacementLabel]);
+
 	return (
 		<KanbanItem value={item.id} asChild>
 			<div
@@ -305,8 +405,16 @@ export function EntityCard({
 								entityId={itemId}
 								size="xs"
 								readOnlyAfterFirst
+								prefetchedTags={prefetchedTags}
 							/>
 						</div>
+					)}
+
+					{/* "Fill the gap" replacement — when grouping by tags hides
+					    the tags slot, surface the reveal-matrix field here so
+					    the user still has a glance-able hint. */}
+					{!showTags && groupReplacement?.location === "top-right" && (
+						<GroupReplacementStrip replacement={groupReplacement} />
 					)}
 				</div>
 
@@ -335,10 +443,6 @@ export function EntityCard({
 					</div>
 				)}
 
-				{/* Custom-field row removed — cards are slot-based by design.
-				    Future: a designed `meta` slot will surface 1–3 admin-bound
-				    fields here (see DYNAMIC_FIELDS_BLUEPRINT.md §1). */}
-
 				{/* ── Highlighted custom fields ── */}
 				{highlightFieldDefs && highlightFieldDefs.length > 0 && customFieldValues && (
 					<HighlightFieldStrip
@@ -352,6 +456,8 @@ export function EntityCard({
 				{/* ── Row 3: personCode + assignee (bottom-left) | menu + shortcuts (bottom-right) ── */}
 				{(showPersonCode ||
 					showAssignee ||
+					groupReplacement?.location === "bottom-left" ||
+					groupReplacement?.location === "inline-dot" ||
 					(shortcuts && shortcuts.length > 0) ||
 					(menuItems && menuItems.length > 0)) && (
 					<div className="flex items-center justify-between gap-2 pt-0.5">
@@ -387,6 +493,35 @@ export function EntityCard({
 										show={["avatar"]}
 									/>
 								</div>
+							)}
+
+							{/* "Fill the gap" replacement — when grouping by
+							    assignedTo hides the avatar slot, surface the
+							    revealed field as a coloured strip here. */}
+							{!showAssignee && groupReplacement?.location === "bottom-left" && (
+								<GroupReplacementStrip replacement={groupReplacement} />
+							)}
+
+							{/* Inline coloured dot — when groupBy is a field
+							    that has no fixed slot (status / source /
+							    industry / etc.), append a tiny dot here so
+							    the user still has a colour hint. The
+							    tooltip discloses what field + value the
+							    dot represents on hover. */}
+							{groupReplacement?.location === "inline-dot" && (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<span
+											role="img"
+											aria-label={`${groupReplacement.fieldTitle}: ${groupReplacement.label}`}
+											className="inline-block size-2 shrink-0 rounded-full"
+											style={{ backgroundColor: groupReplacement.color }}
+										/>
+									</TooltipTrigger>
+									<TooltipContent side="top" className="text-xs capitalize">
+										{groupReplacement.fieldTitle}: {groupReplacement.label}
+									</TooltipContent>
+								</Tooltip>
 							)}
 						</div>
 
@@ -780,4 +915,62 @@ function buildDetailHref(
 		default:
 			return `${prefix}/profile/${code}`;
 	}
+}
+
+// ─── GroupReplacementStrip — "fill the gap" badge for active groupBy ─────────
+//
+// When the kanban board groups by a field that owns a layout slot on the card
+// (assignee avatar bottom-left, or tags chip top-right), the corresponding
+// `getHiddenCardFieldsForGrouping` entry strips that field from `cardFields`
+// and the slot ends up empty. Instead of leaving a hole, we render a coloured
+// strip that surfaces the *revealed* field (per `getRevealedCardFieldForGrouping`)
+// — e.g. grouping leads by assignee → strip shows the status colour + label.
+//
+// Used in two layout slots (Row 1 top-right when grouping by tags; Row 3
+// bottom-left when grouping by assignedTo). The third case (groupBy is one
+// of status/source/industry/companyId/currentStageId — no slot vacated) is
+// handled inline in Row 3 as a tiny coloured dot, NOT this component.
+
+/** Pretty titles for the revealed field — used in the tooltip + strip. */
+const FIELD_DISPLAY_TITLES: Record<string, string> = {
+	status: "Status",
+	source: "Source",
+	industry: "Industry",
+	assignedTo: "Assignee",
+	companyId: "Company",
+	currentStageId: "Stage",
+	tag: "Tag",
+	tags: "Tag",
+};
+
+function GroupReplacementStrip({
+	replacement,
+}: {
+	replacement: {
+		name: string;
+		value: string;
+		color: string;
+		label: string;
+		fieldTitle: string;
+	};
+}) {
+	return (
+		<Badge
+			variant="outline"
+			className="h-5 gap-1 px-1.5 text-[10px] capitalize"
+			style={{
+				backgroundColor: `${replacement.color}1a`,
+				borderColor: `${replacement.color}66`,
+				color: replacement.color,
+			}}
+			title={`${replacement.fieldTitle}: ${replacement.label}`}
+		>
+			<span
+				aria-hidden
+				className="inline-block size-1.5 shrink-0 rounded-full"
+				style={{ backgroundColor: replacement.color }}
+			/>
+			<span className="truncate max-w-[14ch]">{replacement.label}</span>
+		</Badge>
+	);
 }

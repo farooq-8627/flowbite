@@ -135,6 +135,18 @@ export const update = orgMutation({
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.update");
 
+		// Drag-rate guard. The leads board's drag handler updates the
+		// active grouping field (status/assignedTo/source/sortOrder) on
+		// drop — at high frequency from a determined user / abuse loop.
+		// Same 120/min budget as the notes drag throttle.
+		await enforceRateLimit(ctx, {
+			scope: "leads.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const lead = await ctx.db.get(args.leadId);
 		if (!lead || lead.orgId !== args.orgId || lead.deletedAt !== undefined) {
 			throw new ConvexError(ERRORS.NOT_FOUND);
@@ -147,6 +159,28 @@ export const update = orgMutation({
 		if (args.phone) patch.normalizedPhone = normalizePhone(args.phone);
 
 		await ctx.db.patch(args.leadId, { ...patch, updatedAt: Date.now() });
+
+		// Propagate `assignedTo` change to the linked contact (if this lead
+		// has been converted). Without this, a kanban drag onto a different
+		// assignee column on the leads board (rare — converted leads are
+		// hidden by default but can be revealed) would leave the contact
+		// pointing at the old assignee. Idempotent: only patches when the
+		// value actually differs from what's already stored.
+		if (
+			args.assignedTo !== undefined &&
+			lead.contactId !== undefined &&
+			lead.assignedTo !== args.assignedTo
+		) {
+			const contact = await ctx.db.get(lead.contactId);
+			if (contact && contact.orgId === args.orgId && contact.deletedAt === undefined) {
+				if (contact.assignedTo !== args.assignedTo) {
+					await ctx.db.patch(lead.contactId, {
+						assignedTo: args.assignedTo,
+						updatedAt: Date.now(),
+					});
+				}
+			}
+		}
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

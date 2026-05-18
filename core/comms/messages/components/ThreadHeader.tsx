@@ -46,6 +46,7 @@ import {
 	useUpdateNotificationLevel,
 } from "@/core/comms/messages/hooks";
 import { useEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplay";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 import { ParticipantsDialog } from "./ParticipantsDialog";
@@ -53,6 +54,10 @@ import { ParticipantsDialog } from "./ParticipantsDialog";
 type ThreadHeaderProps = {
 	orgId: Id<"orgs">;
 	conversation: Doc<"conversations"> | null;
+	/** Pre-fetched participants from parent — avoids duplicate subscription. */
+	participants?: Array<{ membership: Doc<"conversationMembers">; user: Doc<"users"> & { avatarUrl?: string } }>;
+	/** Pre-fetched myMembership from parent — avoids duplicate getById call. */
+	myMembership?: Doc<"conversationMembers"> | null;
 	/** Mobile-only: when supplied, a hamburger button opens the sidebar Sheet. */
 	onOpenSidebar?: () => void;
 	className?: string;
@@ -73,7 +78,7 @@ const LEVELS = [
 
 type Level = (typeof LEVELS)[number]["id"];
 
-export function ThreadHeader({ orgId, conversation, onOpenSidebar, className }: ThreadHeaderProps) {
+export function ThreadHeader({ orgId, conversation, participants: participantsProp, myMembership: myMembershipProp, onOpenSidebar, className }: ThreadHeaderProps) {
 	const [participantsOpen, setParticipantsOpen] = useState(false);
 	const [levelPending, setLevelPending] = useState<Level | null>(null);
 
@@ -81,21 +86,23 @@ export function ThreadHeader({ orgId, conversation, onOpenSidebar, className }: 
 	const params = useParams<{ orgSlug?: string }>();
 	const orgSlug = params?.orgSlug;
 
-	const me = useQuery(api.users.queries.me);
+	const me = useMe();
 
-	const participants = useConversationParticipants({
+	// Use prop if provided (from parent), otherwise fall back to own query.
+	const participantsOwn = useConversationParticipants({
 		orgId,
-		conversationId: conversation?._id,
+		conversationId: participantsProp ? undefined : conversation?._id,
 	});
+	const participants = participantsProp ?? participantsOwn;
 
-	// Need myMembership here for the notification level selector.
+	// Use prop if provided, otherwise fall back to own query.
 	const detail = useQuery(
 		api.crm.shared.conversations.queries.getById,
-		conversation ? { orgId, conversationId: conversation._id } : "skip",
+		conversation && !myMembershipProp ? { orgId, conversationId: conversation._id } : "skip",
 	);
 	const updateLevel = useUpdateNotificationLevel();
 
-	const myLevel: Level | undefined = detail?.myMembership?.notificationLevel as Level | undefined;
+	const myLevel: Level | undefined = (myMembershipProp?.notificationLevel ?? detail?.myMembership?.notificationLevel) as Level | undefined;
 
 	const display = useEntityDisplay({
 		orgId,

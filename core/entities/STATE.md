@@ -1,9 +1,137 @@
 # Entities — State
 
-> Updated: 2026-05-15
+> Updated: 2026-05-18
 > Status: ~99% complete. Forms now match production-grade density. Card +
 > drawer + file UX polished across all four entities. Stage filter +
 > saved views shipped. Only the AI summary pipeline remains in this lane.
+>
+> **2026-05-18 perf fix #5 — TagsCell `listByOrg` lazy subscription**:
+> `TagsCell` was firing `api.crm.shared.tags.queries.listByOrg` on EVERY
+> visible board card on mount, even though that query (the org's full
+> tag catalogue) is only needed inside the picker popover. Convex
+> deduplicates the round-trip but the dashboard's "Function Calls"
+> counter records every `useQuery` registration separately — with ~10
+> cards on a board, that's 10 extra subscriptions per page mount. Fix:
+> gate the subscription on `open && orgId` so it fires once on the first
+> tag-edit and stays warm only as long as the user is in pick mode.
+> The per-row `getTagsForEntity` was already prefetched via
+> `useEntityTagsMap` — that path is unchanged.
+>
+> **2026-05-18 perf fix #4 — leads optimistic update no longer bumps
+> `updatedAt`**: per AGENTS.md "Every list-affecting mutation has
+> `withOptimisticUpdate`" rule, the optimistic patch must NOT bump
+> `updatedAt: Date.now()` because that changes row identity on every
+> render and cascades list invalidations. The leads board was doing
+> exactly that. Fixed `LeadsView::updateLead.withOptimisticUpdate` to
+> only patch the user-visible fields (`status`, `assignedTo`, `source`,
+> `sortOrder`) and leave `updatedAt` to the server. Net effect: drag
+> drop = 1 mutation + 1 optimistic patch + 0 list re-subscriptions
+> until the server roundtrip lands and reactively refreshes the list.
+>
+> **2026-05-18 perf fix #3 — single-write drag (the "real" fix)**: the
+> previous "one mutation per drop" change still fired ONE mutation per
+> *displaced* card, not just the dragged one. So a drop into a column
+> with 5 cards still emitted ~6 mutations + ~30 list re-runs. Fix: the
+> dnd-kit primitive now passes `draggedItemId` to `onCommit`, and
+> `KanbanBoard.onCommit` persists ONLY that card's new (column, index).
+> The other cards' `sortOrder` values DO NOT need to change — the
+> dragged card's fractional sortOrder slots between two existing
+> values, displacing them visually without rewriting them. Net effect:
+> N drops = N mutations, regardless of how many cards are in the
+> destination column. Test: `convex/crm-hardening.test.ts::"notes.reorder
+> (single-write invariant)"` locks this contract by asserting that
+> reorder leaves sibling rows untouched.
+>
+> **2026-05-18 perf fix #2 — visual feedback during drag**: when the
+> previous fix removed `onValueChange` as a persistence path, a side
+> effect was that visual reorder during drag also stopped working
+> (cards no longer made space, cross-column hover bg colour stopped
+> changing). Root cause: the kanban primitive stored the in-flight
+> layout in a `useRef`, which never triggers re-render. Fix: converted
+> to `useState` (`pendingLayout`), exposed via `useKanbanItems()` hook,
+> and lifted `<KanbanBoardBody>` / `<NotesSingleBoardCards>` into child
+> components that subscribe to it. Drag visual feedback now works
+> end-to-end without firing any Convex calls.
+>
+> **2026-05-18 perf fix — per-card tag subscription elimination**: every
+> `EntityCard` rendered on a kanban was firing its own
+> `crm.shared.tags.queries.getTagsForEntity` subscription. With ~10
+> visible cards on the leads / contacts / deals / companies boards this
+> manifested as 100+ Convex calls / minute on a single user's session
+> (visible in the dashboard "Function Calls" chart as a tall green spike
+> next to `notes:listForOrg`). Fix: added `prefetchedTags` prop to
+> `EntityCard` (and the wrapper `LeadCard`), wired it from each board
+> view (`LeadsView`, `ContactsView`, `DealDetailView`, `CompaniesView`)
+> via `useEntityTagsMap(orgId, slot).tagsByEntityId[item.id]`. When
+> provided, `<TagsCell>` reads from the prefetched array and skips the
+> per-card `useQuery`. Embedded panels and standalone callers without a
+> board-wide map fall back to the legacy per-card path — no breaking
+> change for consumers.
+>
+> **2026-05-18 perf fix — server-side rate limit on drag mutations**:
+> `notes.reorder`, `notes.setCategory`, `leads.update`, `contacts.update`,
+> `deals.update`, `deals.moveToStage`, `companies.update` all now gate
+> on `enforceRateLimit` with a 120/min budget (scoped per
+> user+org pair). `notes.reorder` and `notes.setCategory` share the
+> same scope so a user can't bypass by alternating across columns.
+> `deals.update` and `deals.moveToStage` share scope for the same
+> reason. Defensive: catches future regressions early instead of
+> burning the free-tier quota.
+>
+> **2026-05-18 perf fix — kanban drag firing one mutation per frame**:
+> the dnd-kit `Kanban` primitive in `components/ui/kanban.tsx` emits
+> `onValueChange` on every `onDragOver` event (every time the dragged
+> card crosses a sibling). The entity board's `KanbanBoard` consumer
+> wired its persistence callback (`onCardMove` → server mutation) to
+> `onValueChange`, which meant a single cross-column drag fired N+1
+> mutations (one per frame) instead of one per drop. The visible
+> symptom was leads/deals cards bouncing through several positions
+> before settling on the dropped slot. Fix: added `onCommit` callback
+> to the primitive (fires EXACTLY once per drop in `onDragEnd`,
+> guaranteed via an internal `pendingLayoutRef` that mirrors the
+> as-if-applied layout during drag). `KanbanBoard` now persists from
+> `onCommit`, never from `onValueChange`. Same fix for
+> `NotesSingleBoard`. `onValueChange` still emits during drag for
+> visual reorder feedback but is no longer used for mutations.
+>
+> **2026-05-18 board UX fixes**:
+>   1. `EntityCard` no longer renders an always-on built-in field strip.
+>      Instead it surfaces a single `GroupReplacementStrip` (top-right or
+>      bottom-left) **only** when the active `groupBy` vacates a layout
+>      slot:
+>        - `groupBy="tag" | "tags"` → tag chip slot vacated → strip in
+>          top-right showing the revealed field (status for leads,
+>          industry for companies, companyId for contacts, etc.).
+>        - `groupBy="assignedTo"` → assignee avatar slot vacated → strip
+>          in bottom-left where the avatar used to be.
+>        - `groupBy="status" | "source" | "industry" | "companyId" |
+>          "currentStageId"` → no slot vacated → tiny coloured dot
+>          appended after the assignee avatar (with a Tooltip that
+>          discloses the field name + label).
+>      Wired by passing `groupBy` AND `resolveReplacementLabel` (a
+>      `useCallback`-stable resolver that turns opaque ids — userId,
+>      companyId, stageId — into human labels using the maps each view
+>      already maintains: `memberNameById`, `companyNameById`,
+>      `stageNameById`). Each view reads only data already in scope; no
+>      extra Convex queries are fired from inside `EntityCard`. See
+>      `GroupReplacementStrip` + `FIELD_DISPLAY_TITLES` at the bottom of
+>      `core/entities/shared/components/EntityCard.tsx` and the reveal
+>      matrix in `core/entities/shared/utils/board-grouping.ts`.
+>
+>      `viewopts:{slot}:cardFields` localStorage keys bumped to `:v2` for
+>      all four slots so users with stale cardFields entries (that
+>      assumed the always-on strip) get a fresh seed against the current
+>      admin-visible field set on next visit.
+>   2. `handleCardMove` in all four views (lead/contact/deal/company) now
+>      handles `groupBy === "tag" | "tags"` properly. Cross-column tag
+>      drops attach the destination tag and detach the source via
+>      `tags.attachToEntity` + `tags.detachFromEntity`. Drops onto the
+>      `__none__` (NO_GROUP_KEY) column detach the source without
+>      attaching anything new (fully removes that tag from the entity).
+>   3. `leads.update` / `contacts.update` now propagate `assignedTo`
+>      changes to their linked counterpart — a kanban drag on the
+>      contacts board updates the source lead too, and vice versa.
+>      Idempotent: only fires when the value actually differs.
 
 ## What's shipped
 

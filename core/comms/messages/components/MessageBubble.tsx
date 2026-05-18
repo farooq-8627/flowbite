@@ -97,6 +97,21 @@ type MessageBubbleProps = {
 	 * collides with our content. (batch 5)
 	 */
 	prevHasFloatingReaction?: boolean;
+	/**
+	 * Pre-resolved attachment files keyed by `Id<"files">`, supplied by the
+	 * parent `MessageList` so every visible bubble shares ONE conversation-
+	 * level subscription instead of opening its own per-bubble `listByIds`
+	 * subscription.
+	 *
+	 * Tri-state contract:
+	 *   - `undefined` (prop omitted) — standalone consumer outside the list.
+	 *     `MessageAttachments` falls back to its own `listByIds` subscription.
+	 *   - `null` — list-batched mode, parent's query is still loading.
+	 *     Render nothing until the record arrives (matches the old
+	 *     "loading frame" behaviour of the per-bubble subscription).
+	 *   - `Record<string, …>` — list-batched mode, data ready. Slice it.
+	 */
+	attachmentFilesById?: Record<string, Doc<"files"> & { url: string | null }> | null;
 	/** Called when the user clicks "Reply" on this message. */
 	onReply?: (message: Doc<"messages">) => void;
 };
@@ -228,6 +243,7 @@ export function MessageBubble({
 	isDirect,
 	showHeader = true,
 	prevHasFloatingReaction = false,
+	attachmentFilesById,
 	onReply,
 }: MessageBubbleProps) {
 	const router = useRouter();
@@ -664,6 +680,7 @@ export function MessageBubble({
 						orgId={message.orgId}
 						attachmentIds={message.attachments}
 						alignEnd={isByCurrentUser}
+						prefetchedFilesById={attachmentFilesById}
 					/>
 				)}
 
@@ -703,16 +720,67 @@ export function MessageBubble({
 
 // ─── MessageAttachments — image/video previews + file chips ─────────────────
 
+/**
+ * Renders the bubble's attachment row.
+ *
+ * Two data sources, in priority order:
+ *   1. **`prefetchedFilesById`** — supplied by `MessageList` from the
+ *      conversation-level batched query (`useMessageAttachmentsForThread`).
+ *      When present (or `null` for "batched but loading"), we slice the
+ *      record by this bubble's `attachmentIds` and avoid opening any
+ *      subscription of our own. This is the hot path for the live chat
+ *      thread.
+ *   2. **`useQuery(api.files.queries.listByIds, …)` fallback** — used by
+ *      single-bubble consumers outside the thread (e.g. `ForwardDialog`'s
+ *      preview, future widgets) so they keep working without piping the
+ *      prefetched map through.
+ *
+ * `prefetchedFilesById === undefined` ⇒ standalone mode, use fallback.
+ * `prefetchedFilesById === null`      ⇒ batched but loading, render nothing.
+ * `prefetchedFilesById === record`    ⇒ batched + ready, slice the record.
+ *
+ * The conditional `useQuery` is gated by an unconditional `"skip"` arg
+ * branch so the hooks order is stable across renders.
+ */
 function MessageAttachments({
 	orgId,
 	attachmentIds,
 	alignEnd,
+	prefetchedFilesById,
 }: {
 	orgId: Id<"orgs">;
 	attachmentIds: Id<"files">[];
 	alignEnd: boolean;
+	prefetchedFilesById?: Record<string, Doc<"files"> & { url: string | null }> | null;
 }) {
-	const files = useQuery(api.files.queries.listByIds, { orgId, ids: attachmentIds });
+	// Standalone mode? Fall back to a per-bubble subscription. When the
+	// prefetched map (or its loading sentinel) IS supplied we pass `"skip"`
+	// so hooks order stays stable and no extra subscription is opened.
+	const isBatched = prefetchedFilesById !== undefined;
+	const fallbackFiles = useQuery(
+		api.files.queries.listByIds,
+		isBatched ? "skip" : { orgId, ids: attachmentIds },
+	);
+
+	// Resolve the bubble's slice of the attachments — either by indexing
+	// the prefetched record (no subscription) or by reading the fallback
+	// subscription's array. Order matches `attachmentIds` so the media
+	// viewer's index lookups stay stable.
+	const files = useMemo(() => {
+		if (isBatched) {
+			// `null` means "batched but the parent's query is still loading"
+			// — render nothing until the record arrives.
+			if (prefetchedFilesById === null) return undefined;
+			const resolved: Array<Doc<"files"> & { url: string | null }> = [];
+			for (const id of attachmentIds) {
+				const f = prefetchedFilesById[String(id)];
+				if (f) resolved.push(f);
+			}
+			return resolved;
+		}
+		return fallbackFiles ?? undefined;
+	}, [isBatched, prefetchedFilesById, attachmentIds, fallbackFiles]);
+
 	const [viewerOpen, setViewerOpen] = useState(false);
 	const [viewerStartIndex, setViewerStartIndex] = useState(0);
 

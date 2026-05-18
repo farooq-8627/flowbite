@@ -21,6 +21,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
+import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
@@ -123,20 +124,50 @@ export function useEntitySearch(args: {
 }
 
 /**
- * Look up the display info for a note's current attachment so the per-card
- * trigger can render the entity's initials avatar instead of the `+` icon.
- * Returns `null` for org-wide notes or when the record was soft-deleted.
+ * Batched attachment-display lookup for an entire board (NotesView).
+ * Replaces 50+ per-card individual subscriptions with a single query.
+ * The caller passes the unique (entityType, entityId) tuples extracted
+ * from the visible notes; the result is a Record keyed by
+ * `${entityType}:${entityId}` mapping to display info.
+ *
+ * Returns `undefined` while loading and an empty record when there are no
+ * non-org-wide attachments.
  */
-export function useAttachmentDisplay(args: {
+export function useAttachmentDisplaysForOrg(args: {
 	orgId?: Id<"orgs">;
-	entityType: string;
-	entityId: string;
+	attachments: ReadonlyArray<{ entityType: string; entityId: string }>;
 }) {
-	const isOrgWide = args.entityType === "org";
+	// Stabilise the tuple list so the Convex client doesn't see a new args
+	// reference on every parent render. We compute a deterministic string
+	// key first (ordered, de-duped), then derive the array from it. This
+	// keeps the hook deps as a single PRIMITIVE — biome is happy and the
+	// `useMemo` cache only invalidates when the actual set of tuples changes.
+	const cacheKey = useMemo(() => {
+		const seen = new Set<string>();
+		const keys: string[] = [];
+		for (const a of args.attachments) {
+			if (a.entityType === "org") continue;
+			const k = `${a.entityType}:${a.entityId}`;
+			if (seen.has(k)) continue;
+			seen.add(k);
+			keys.push(k);
+		}
+		keys.sort();
+		return keys.join("|");
+	}, [args.attachments]);
+
+	const stableAttachments = useMemo(() => {
+		if (cacheKey.length === 0) return [] as Array<{ entityType: string; entityId: string }>;
+		return cacheKey.split("|").map((k) => {
+			const [entityType, ...rest] = k.split(":");
+			return { entityType: entityType as string, entityId: rest.join(":") };
+		});
+	}, [cacheKey]);
+
 	return useQuery(
-		api.crm.shared.notes.queries.getAttachmentDisplay,
-		args.orgId && !isOrgWide
-			? { orgId: args.orgId, entityType: args.entityType, entityId: args.entityId }
+		api.crm.shared.notes.queries.listAttachmentDisplaysForOrg,
+		args.orgId && stableAttachments.length > 0
+			? { orgId: args.orgId, attachments: stableAttachments }
 			: "skip",
 	);
 }
@@ -160,6 +191,11 @@ export function useSetNoteCategory() {
 			// the Notes board calls `listForOrg({ orgId })` but other panels may
 			// call it with extra filter args, so iterate across all matching
 			// query keys.
+			//
+			// We do NOT optimistically bump `updatedAt` — `Date.now()` would
+			// change the value on every render, cascading invalidations to
+			// every subscriber. The server stamp lands when the mutation
+			// resolves; until then the cached `updatedAt` stays stable.
 			const allOrgQueries = store.getAllQueries(api.crm.shared.notes.queries.listForOrg);
 			for (const { args: queryArgs, value: list } of allOrgQueries) {
 				if (!list) continue;
@@ -170,7 +206,6 @@ export function useSetNoteCategory() {
 								...n,
 								categoryId: args.categoryId,
 								sortOrder: args.sortOrder ?? n.sortOrder,
-								updatedAt: Date.now(),
 							}
 						: n,
 				);
@@ -192,7 +227,6 @@ export function useSetNoteCategory() {
 									...n,
 									categoryId: args.categoryId,
 									sortOrder: args.sortOrder ?? n.sortOrder,
-									updatedAt: Date.now(),
 								}
 							: n,
 					),
@@ -212,7 +246,6 @@ export function useSetNoteCategory() {
 									...n,
 									categoryId: args.categoryId,
 									sortOrder: args.sortOrder ?? n.sortOrder,
-									updatedAt: Date.now(),
 								}
 							: n,
 					),
@@ -226,12 +259,20 @@ export function useSetNoteCategory() {
  * In-column reorder fast-path. Drag-drop within the same column updates
  * only `sortOrder`; the optimistic patch keeps the card in its dropped
  * position the moment the user releases the mouse.
+ *
+ * Note: we DO NOT bump `updatedAt` in the optimistic patch. Bumping it
+ * with `Date.now()` would change the row reference on every render even
+ * if the cached value matches the server (since `Date.now()` always
+ * differs), which would cascade through every subscriber of every cached
+ * `listForOrg` / `listForEntity` / `listForPerson` query that includes
+ * this note. The server stamp is authoritative when the mutation lands.
  */
 export function useReorderNote() {
 	return useMutation(api.crm.shared.notes.mutations.reorder).withOptimisticUpdate(
 		(store, args) => {
 			const patchList = <
-				Q extends typeof api.crm.shared.notes.queries.listForOrg
+				Q extends
+					| typeof api.crm.shared.notes.queries.listForOrg
 					| typeof api.crm.shared.notes.queries.listForEntity
 					| typeof api.crm.shared.notes.queries.listForPerson,
 			>(
@@ -246,9 +287,7 @@ export function useReorderNote() {
 						query,
 						queryArgs,
 						list.map((n) =>
-							n._id === args.noteId
-								? { ...n, sortOrder: args.sortOrder, updatedAt: Date.now() }
-								: n,
+							n._id === args.noteId ? { ...n, sortOrder: args.sortOrder } : n,
 						),
 					);
 				}

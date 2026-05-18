@@ -132,6 +132,16 @@ export const update = orgMutation({
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "contacts.update");
 
+		// Drag-rate guard — same shared 120/min budget as the other
+		// kanban-driven mutations.
+		await enforceRateLimit(ctx, {
+			scope: "contacts.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const contact = await ctx.db.get(args.contactId);
 		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
 			throw new ConvexError(ERRORS.NOT_FOUND);
@@ -144,6 +154,26 @@ export const update = orgMutation({
 		if (args.phone) patch.normalizedPhone = normalizePhone(args.phone);
 
 		await ctx.db.patch(args.contactId, { ...patch, updatedAt: Date.now() });
+
+		// Propagate `assignedTo` change back to the source lead (if this
+		// contact was converted from one). Keeps the two records in lockstep
+		// — a kanban drag on the contacts board surfaces on the lead row's
+		// activity log under the same assignee. Idempotent.
+		if (
+			args.assignedTo !== undefined &&
+			contact.leadId !== undefined &&
+			contact.assignedTo !== args.assignedTo
+		) {
+			const lead = await ctx.db.get(contact.leadId);
+			if (lead && lead.orgId === args.orgId && lead.deletedAt === undefined) {
+				if (lead.assignedTo !== args.assignedTo) {
+					await ctx.db.patch(contact.leadId, {
+						assignedTo: args.assignedTo,
+						updatedAt: Date.now(),
+					});
+				}
+			}
+		}
 
 		await logActivity(ctx, {
 			orgId: args.orgId,

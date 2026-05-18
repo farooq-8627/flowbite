@@ -2,19 +2,21 @@
 
 /**
  * useLeads — fetches leads list for the current org.
+ *
+ * Resolves orgId from the shared OrgProvider context instead of firing its own
+ * `listMyOrgs` subscription per call site. With this hook used inside list
+ * cells, board cells, and various detail panels, removing the duplicate
+ * subscription saves dozens of identity round-trips per render.
  */
 
 import { useQuery } from "convex/react";
-import { useParams } from "next/navigation";
 import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 export function useLeads(filters?: { status?: string; assignedTo?: Id<"users"> }) {
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgId = orgs?.find((o) => o.org.slug === orgSlug)?.org._id;
+	const { orgId } = useCurrentOrg();
 
 	const items = useQuery(
 		api.crm.entities.leads.queries.list,

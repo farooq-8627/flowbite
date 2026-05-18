@@ -3,30 +3,35 @@
 /**
  * AssigneeCell — resolves an `assignedTo` user id to a PersonDisplay.
  *
- * Uses the org's member list (cached on the client by Convex) so we avoid a
- * round trip per row. Renders a thin avatar + name; clicking the avatar/name
- * links to the person's profile via PersonDisplay.
+ * Reads the member list from the shared `OrgProvider` context (no own
+ * subscription) so any number of cells on the same page resolves to a
+ * single Convex `listMembers` subscription, not N.
  *
  * When `userId` is undefined → "Unassigned" muted text.
- * When the user can't be resolved → shows the raw id (dev-mode fallback).
+ * When the user can't be resolved → muted dash placeholder.
  */
 
-import { useQuery } from "convex/react";
 import { useMemo } from "react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { PersonDisplay } from "@/core/entities/shared/components/PersonDisplay";
 import type { PersonRef } from "@/core/entities/shared/types";
+import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 
 interface AssigneeCellProps {
+	/**
+	 * @deprecated `AssigneeCell` no longer fetches per-cell. Member data
+	 * comes from `<OrgProvider>` via `useOrgMembers()`. The prop is kept
+	 * for backwards-compatibility with call sites that still pass it but
+	 * has no runtime effect.
+	 */
 	orgId?: Id<"orgs">;
 	userId?: Id<"users"> | string;
 	/** Override which sections of the person to display. */
 	show?: Array<"avatar" | "name" | "email" | "personCode" | "status">;
 }
 
-export function AssigneeCell({ orgId, userId, show = ["avatar", "name"] }: AssigneeCellProps) {
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+export function AssigneeCell({ userId, show = ["avatar", "name"] }: AssigneeCellProps) {
+	const members = useOrgMembers();
 
 	const person = useMemo<PersonRef | null>(() => {
 		if (!userId) return null;

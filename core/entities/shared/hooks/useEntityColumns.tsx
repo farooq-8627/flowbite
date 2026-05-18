@@ -48,6 +48,8 @@ interface UseEntityColumnsOptions<TRow extends EntityRow> {
 	hiddenColumnIds?: Set<string>;
 	/** Batch tag data from useEntityTagsMap — enables sorting + eliminates per-row flash. */
 	tagsByEntityId?: Record<string, Array<{ _id: unknown; name: string; color?: string | null }>>;
+	/** Batch company data from useCompaniesByPersonCodes — eliminates per-row CompanyCell query. */
+	companiesByPersonCode?: Record<string, { companyId: string; name: string; companyCode: string }>;
 }
 
 export function useEntityColumns<TRow extends EntityRow>(
@@ -61,6 +63,7 @@ export function useEntityColumns<TRow extends EntityRow>(
 	const onDelete = options?.onDelete;
 	const rowExtraActions = options?.rowExtraActions;
 	const tagsByEntityId = options?.tagsByEntityId;
+	const companiesByPersonCode = options?.companiesByPersonCode;
 
 	const columns = useMemo<ColumnDef<TRow, unknown>[]>(() => {
 		const cols: ColumnDef<TRow, unknown>[] = [];
@@ -118,7 +121,11 @@ export function useEntityColumns<TRow extends EntityRow>(
 					const customValues = customValuesByEntityId?.[r.id];
 					const prefetchedTags =
 						field.kind === "tags" ? tagsByEntityId?.[r.id] : undefined;
-					return renderer({ slot, field, row: r, customValues, prefetchedTags });
+					const prefetchedCompany =
+						field.kind === "company-ref" && companiesByPersonCode
+							? (companiesByPersonCode[r.personCode as string] ?? null)
+							: undefined;
+					return renderer({ slot, field, row: r, customValues, prefetchedTags, prefetchedCompany });
 				},
 				// Tags are sortable when batch data is provided; otherwise
 				// join-storage fields remain unsortable.
@@ -211,6 +218,7 @@ export function useEntityColumns<TRow extends EntityRow>(
 		rowExtraActions,
 		slot,
 		tagsByEntityId,
+		companiesByPersonCode,
 	]);
 
 	return { columns, fields: tableFields, isLoading };

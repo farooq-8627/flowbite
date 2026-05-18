@@ -62,10 +62,23 @@ export function TagsCell({
 }: TagsCellProps) {
 	const [open, setOpen] = useState(false);
 
-	const allTags = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
+	// `listByOrg` powers the in-popover picker (full list of tags the user
+	// can choose from). It's ONLY needed while the popover is open. With ~10
+	// cards on a kanban board we'd otherwise fire 10 identical
+	// subscriptions — each registered as a separate `useQuery` on the
+	// dashboard's "Function Calls" counter even though Convex deduplicates
+	// the actual round-trip. Subscribing only on `open` collapses this to
+	// 1 subscription on the FIRST tag-edit (kept warm by the popover state).
+	const allTags = useQuery(
+		api.crm.shared.tags.queries.listByOrg,
+		orgId && open ? { orgId } : "skip",
+	);
+	// Per-row attached tags. Skipped when the parent (board / table view) has
+	// already batched the lookup via `useEntityTagsMap` and forwarded
+	// `prefetchedTags` — see AGENTS.md "Per-row data on a list view comes
+	// from one batched query".
 	const attached = useQuery(
 		api.crm.shared.tags.queries.getTagsForEntity,
-		// Skip the per-row query when prefetched data is available
 		orgId && !prefetchedTags ? { orgId, entityType, entityId } : "skip",
 	);
 

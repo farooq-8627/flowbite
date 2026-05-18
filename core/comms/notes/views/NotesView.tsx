@@ -35,14 +35,8 @@
  *     hidden in this view so consumers stay simple.
  */
 
-import { useMutation, useQuery } from "convex/react";
-import {
-	Columns3Icon,
-	FilterIcon,
-	LayoutGridIcon,
-	Pin,
-	PlusIcon,
-} from "lucide-react";
+import { useMutation } from "convex/react";
+import { Columns3Icon, FilterIcon, LayoutGridIcon, Pin, PlusIcon } from "lucide-react";
 import {
 	parseAsArrayOf,
 	parseAsBoolean,
@@ -59,17 +53,15 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import {
-	EntityPageLayout,
-	type PrimaryActionConfig,
-} from "@/core/shell/shared/entity-layout";
-import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
-import { cn } from "@/lib/utils";
+import { EntityPageLayout, type PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
+import { useCurrentOrg, useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
+import { cn } from "@/lib/utils";
 import { NotesCategoryKanban } from "../components/NotesCategoryKanban";
 import { NotesSingleBoard } from "../components/NotesSingleBoard";
 import {
+	useAttachmentDisplaysForOrg,
 	useDefaultNoteCategory,
 	useEnsureNoteCategories,
 	useNoteCategories,
@@ -85,10 +77,9 @@ type NotesTab = (typeof NOTES_TABS)[number];
 const NOTE_SEARCH_FIELDS = ["content", "title", "personCode", "entityId"] as const;
 
 export function NotesView() {
-	const { orgId, orgSlug } = useCurrentOrg();
-	const me = useQuery(api.users.queries.me);
-	const myMembership = useQuery(api.orgs.queries.getMyMembership, orgId ? { orgId } : "skip");
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const { orgId, orgSlug, membership: myMembership } = useCurrentOrg();
+	const me = useMe();
+	const members = useOrgMembers();
 
 	const categories = useNoteCategories({ orgId });
 	const defaultCategory = useDefaultNoteCategory({ orgId });
@@ -114,10 +105,7 @@ export function NotesView() {
 		"sticky-cats",
 		parseAsArrayOf(parseAsString).withDefault([]),
 	);
-	const [pinnedOnly, setPinnedOnly] = useQueryState(
-		"pinned",
-		parseAsBoolean.withDefault(false),
-	);
+	const [pinnedOnly, setPinnedOnly] = useQueryState("pinned", parseAsBoolean.withDefault(false));
 
 	// `?tab=` matches the entity-style URL contract used elsewhere
 	// (e.g. ModulesGroup). Only the two values are accepted; an unknown
@@ -129,6 +117,24 @@ export function NotesView() {
 	const activeTab: NotesTab = tab as NotesTab;
 
 	const notes = useNotesForOrg({ orgId });
+
+	// Batched attachment lookup — replaces 50+ per-card subscriptions with
+	// a single query. The hook stabilises the args list (de-dupes + sorts)
+	// so the cache key only changes when the actual set of attachments
+	// changes, not on every render.
+	const attachmentTuples = useMemo(() => {
+		if (!notes) return [] as Array<{ entityType: string; entityId: string }>;
+		const out: Array<{ entityType: string; entityId: string }> = [];
+		for (const n of notes) {
+			if (n.entityType === "org") continue;
+			out.push({ entityType: n.entityType, entityId: n.entityId });
+		}
+		return out;
+	}, [notes]);
+	const attachmentDisplays = useAttachmentDisplaysForOrg({
+		orgId,
+		attachments: attachmentTuples,
+	});
 
 	// Ranked search — matches float to the top of their column / row, non-
 	// matches keep their original position underneath. The same `matchedIds`
@@ -285,6 +291,7 @@ export function NotesView() {
 							onCreatedNote={(id) => setAutoFocusNoteId(id)}
 							matchedNoteIds={rankedNotes.matchedIds}
 							highlightEpoch={flashEpoch}
+							attachmentDisplays={attachmentDisplays}
 						/>
 					) : (
 						<NotesSingleBoard
@@ -307,6 +314,7 @@ export function NotesView() {
 							matchedNoteIds={rankedNotes.matchedIds}
 							highlightEpoch={flashEpoch}
 							showAddButton={false}
+							attachmentDisplays={attachmentDisplays}
 						/>
 					)}
 				</div>

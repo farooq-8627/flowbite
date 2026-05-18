@@ -33,7 +33,16 @@
  *     WhatsApp from the same input — same hook, same idempotency, same fan-out.
  */
 import { useMutation, useQuery } from "convex/react";
-import { File as FileIcon, Image as ImageIcon, Loader2, Mic, Paperclip, Send, Video, X } from "lucide-react";
+import {
+	File as FileIcon,
+	Image as ImageIcon,
+	Loader2,
+	Mic,
+	Paperclip,
+	Send,
+	Video,
+	X,
+} from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -41,6 +50,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { type ChatEntityType, useSendMessage } from "@/core/comms/messages/hooks";
+import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 import { VoiceRecorder } from "./VoiceRecorder";
@@ -151,7 +161,7 @@ export function MessageInput({
 
 	// ─── Mention picker ───────────────────────────────────────────────────────
 
-	const members = useQuery(api.orgs.queries.listMembers, { orgId });
+	const members = useOrgMembers();
 	const [mentionAnchor, setMentionAnchor] = useState<{
 		query: string;
 		start: number;
@@ -613,11 +623,7 @@ export function MessageInput({
 							<Paperclip className="size-4" aria-hidden="true" />
 						</Button>
 					</PopoverTrigger>
-					<PopoverContent
-						className="w-48 p-1"
-						align="start"
-						side="top"
-					>
+					<PopoverContent className="w-48 p-1" align="start" side="top">
 						<button
 							type="button"
 							onClick={() => {
@@ -626,7 +632,10 @@ export function MessageInput({
 							}}
 							className="flex w-full items-center gap-2 rounded-[var(--radius)] px-2 py-2 text-start text-sm hover:bg-accent hover:text-accent-foreground"
 						>
-							<ImageIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+							<ImageIcon
+								className="size-4 text-muted-foreground"
+								aria-hidden="true"
+							/>
 							Image
 						</button>
 						<button

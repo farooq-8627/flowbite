@@ -1,20 +1,18 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
+import type { Doc } from "@/convex/_generated/dataModel";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSection } from "../shared/SettingsSection";
 
-type NotifPrefs = NonNullable<
-	NonNullable<
-		ReturnType<typeof useQuery<typeof api.users.queries.getCurrent>>
-	>["notificationPreferences"]
->;
+type NotifPrefs = NonNullable<Doc<"users">["notificationPreferences"]>;
 type NotifKey = keyof NotifPrefs;
 
 type NotifItem = {
@@ -212,7 +210,11 @@ function NotifGroupCard({
 }
 
 export function NotificationsGroup({ org }: { org: OrgSettings }) {
-	const user = useQuery(api.users.queries.getCurrent);
+	// Read the authenticated user from the shared `OrgProvider` context —
+	// no extra `users.getCurrent` subscription per AGENTS.md "Identity/auth/
+	// labels via context, not subscriptions". The settings page already
+	// mounts inside the dashboard shell so the context is always present.
+	const user = useMe();
 	const updatePrefs = useMutation(api.users.mutations.updateNotificationPreferences);
 	const labels = resolveEntityLabels(org.entityLabels);
 

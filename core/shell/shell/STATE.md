@@ -1,7 +1,18 @@
 # Shell — State
 
-> Updated: 2026-05-12
+> Updated: 2026-05-18
 > Status: 100% Complete for Phase 1 — wired to dynamic entity labels + module visibility flags.
+>
+> **2026-05-18 — Subscription dedup pass.** Removed two duplicate
+> `api.orgs.queries.listMyOrgs` subscriptions in `app-sidebar.tsx` and
+> `workspace-switcher.tsx`. Both now read from the single canonical
+> `OrgProvider` context via `useCurrentOrg().fullOrgEntry` /
+> `useCurrentOrg().allOrgs`, per the locked rule "Identity/auth/labels via
+> context, not subscriptions" (AGENTS.md). `OrgProvider` is the SSOT for
+> `listMyOrgs`, `users.me`, `getMyMembership`, `listMembers`, and
+> `getEntityLabels`; all five queries fire once at the layout level and
+> propagate via React context. Result: leads-page mount drops from ~22
+> `useQuery` registrations to ~12 (the floor that view actually needs).
 
 ## ✅ Completed
 

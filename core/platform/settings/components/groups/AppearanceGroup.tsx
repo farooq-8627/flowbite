@@ -1,7 +1,5 @@
 "use client";
 
-import { useQuery } from "convex/react";
-import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { resetAllTours } from "@/components/ui/first-time-tour";
@@ -14,7 +12,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { api } from "@/convex/_generated/api";
+import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { type FontKey, fontOptions } from "@/lib/fonts/registry";
 import type { SidebarCollapsible, SidebarVariant } from "@/lib/preferences/layout";
 import { applySidebarCollapsible, applySidebarVariant } from "@/lib/preferences/layout-utils";
@@ -42,14 +40,12 @@ export function AppearanceGroup() {
 	const sidebar_collapsible = usePreferencesStore((s) => s.sidebar_collapsible);
 	const setSidebarCollapsible = usePreferencesStore((s) => s.setSidebarCollapsible);
 
-	// Resolve the current org to drive the per-user default-view overrides.
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
-	const orgId = orgEntry?.org._id;
-	const currentUser = useQuery(api.users.queries.getCurrent);
-	const userId = currentUser?._id;
+	// Resolve the current org + user from the shared `OrgProvider` context —
+	// no extra `listMyOrgs` / `users.getCurrent` subscriptions. Per AGENTS.md
+	// "Identity/auth/labels via context, not subscriptions".
+	const { orgId } = useCurrentOrg();
+	const me = useMe();
+	const userId = me?._id;
 
 	const persist =
 		<K extends string>(
@@ -264,7 +260,7 @@ export function AppearanceGroup() {
 						orgId={orgId}
 						userId={userId}
 						currentPreferences={
-							currentUser?.preferences?.entityDefaultView as
+							me?.preferences?.entityDefaultView as
 								| Record<string, "list" | "board">
 								| undefined
 						}

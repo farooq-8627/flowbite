@@ -14,7 +14,6 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery } from "convex/react";
 import { formatDistanceToNow } from "date-fns";
 import { PencilIcon, PlusIcon } from "lucide-react";
-import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +34,7 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
+import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
 import {
@@ -44,6 +44,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
@@ -54,9 +55,7 @@ const COMPANY_SEARCH_FIELDS = ["name", "companyCode", "industry", "website"] as 
 
 export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	const labels = useEntityLabels();
-	const params = useParams();
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgId = orgs?.find((o) => o.org.slug === (params?.orgSlug ?? orgSlug))?.org._id;
+	const { orgId } = useCurrentOrg();
 
 	const companies = useQuery(api.crm.entities.companies.queries.list, orgId ? { orgId } : "skip");
 	const items = useMemo(
@@ -81,8 +80,9 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	// Per-session view options — persisted to localStorage so they survive
 	// route changes and reloads. Stale entries that point at admin-hidden
 	// fields are filtered out by the EntityCard before render.
+	// `cardFields:v2` (2026-05-18) — see LeadsView for context.
 	const [cardFields, setCardFields] = usePersistedState<string[]>(
-		"viewopts:company:cardFields",
+		"viewopts:company:cardFields:v2",
 		[],
 	);
 	const [groupBy, setGroupBy] = usePersistedState<string>("viewopts:company:groupBy", "industry");
@@ -102,9 +102,14 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	useQuickAddListener("create-company", () => setAddOpen(true));
 
 	const { valuesByEntityId: customValuesByEntityId } = useEntityFieldValuesMap("company", orgId);
+	// Batched per-row tag lookup. Pulled once at the view level so each
+	// card on the kanban can render its TagsCell without a per-row
+	// `getTagsForEntity` subscription (which previously fired one Convex
+	// query per visible card — the source of the 100+ calls/min spike).
+	const { tagsByEntityId } = useEntityTagsMap(orgId, "company");
 
 	// Members lookup for assignee grouping labels
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const members = useOrgMembers();
 	const memberNameById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const m of members ?? []) {
@@ -219,7 +224,12 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 	// Drag card → persist position via sortOrder + (when groupBy is one of
 	// the writable axes) update the column-field. Cross-column move and
 	// in-column reorder dispatch through the same callback.
+	//
+	// Tag groupBy: companies can carry multiple tags. Dragging across tag
+	// columns swaps just the source/destination tag (not all tags).
 	const updateCompany = useMutation(api.crm.entities.companies.mutations.update);
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
+	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
 	const handleCardMove = useCallback(
 		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;
@@ -270,6 +280,25 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 						...baseArgs,
 						size: toCol === NO_GROUP_KEY ? undefined : toCol,
 					});
+				} else if (groupBy === "tag" || groupBy === "tags") {
+					// Tag move — sortOrder first, then detach old / attach new.
+					await updateCompany(baseArgs);
+					if (fromCol !== NO_GROUP_KEY) {
+						await detachTag({
+							orgId,
+							tagId: fromCol as Id<"tags">,
+							entityType: "company",
+							entityId: itemId,
+						});
+					}
+					if (toCol !== NO_GROUP_KEY) {
+						await attachTag({
+							orgId,
+							tagId: toCol as Id<"tags">,
+							entityType: "company",
+							entityId: itemId,
+						});
+					}
 				} else {
 					// Custom groupBy — only persist position.
 					await updateCompany(baseArgs);
@@ -280,7 +309,7 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 				});
 			}
 		},
-		[orgId, updateCompany, groupBy, itemsByColumnId, rankedItems.items],
+		[orgId, updateCompany, groupBy, itemsByColumnId, rankedItems.items, attachTag, detachTag],
 	);
 
 	// List columns
@@ -475,6 +504,17 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 		return next;
 	}, [cardFields, groupBy]);
 
+	// Resolver for the EntityCard "fill the gap" indicator. Companies'
+	// reveal matrix surfaces `assignedTo` (user id) — opaque, needs the
+	// member-name lookup. `industry` is a clean string and falls through.
+	const resolveReplacementLabel = useCallback(
+		(fieldName: string, raw: string): string | undefined => {
+			if (fieldName === "assignedTo") return memberNameById.get(raw);
+			return undefined;
+		},
+		[memberNameById],
+	);
+
 	return (
 		<>
 			<EntityListPage
@@ -516,6 +556,9 @@ export function CompaniesView({ orgSlug }: { orgSlug: string }) {
 						isDragging={isDragging}
 						isHighlighted={search ? rankedItems.matchedIds.has(item.id) : false}
 						highlightEpoch={flashEpoch}
+						groupBy={groupBy}
+						resolveReplacementLabel={resolveReplacementLabel}
+						prefetchedTags={tagsByEntityId[item.id]}
 					/>
 				)}
 				onCardMove={handleCardMove}

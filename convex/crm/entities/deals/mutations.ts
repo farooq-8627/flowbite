@@ -131,6 +131,17 @@ export const update = orgMutation({
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.update");
 
+		// Drag-rate guard. Same shared 120/min budget as the other drag
+		// mutations. The deals kanban can fire `update` (assignee/value
+		// in-column) and `moveToStage` (cross-column) — both gated.
+		await enforceRateLimit(ctx, {
+			scope: "deals.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
 			throw new ConvexError(ERRORS.NOT_FOUND);
@@ -179,6 +190,17 @@ export const moveToStage = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.changeStage");
+
+		// Drag-rate guard. Cross-stage moves on the kanban are the most
+		// likely target for runaway drag loops — same scope-shared budget
+		// as `deals.update` so a user can't bypass by alternating.
+		await enforceRateLimit(ctx, {
+			scope: "deals.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {

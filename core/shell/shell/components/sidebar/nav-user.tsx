@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useQuery } from "convex/react";
 import { CircleUser, CreditCard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -21,13 +20,13 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/convex/_generated/api";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { getInitials } from "@/lib/utils";
 
 export function NavUser({ orgSlug }: { orgSlug?: string }) {
 	const { isMobile } = useSidebar();
 	const { signOut } = useAuthActions();
-	const user = useQuery(api.users.queries.me);
+	const user = useMe();
 
 	if (user === undefined) {
 		return (

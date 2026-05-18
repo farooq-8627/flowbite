@@ -1,69 +1,220 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { type EntityLabels, mergeEntityLabelDefaults } from "./entity-labels-types";
+import { OrgEntityLabelsContext } from "./org-entity-labels-context";
 
 /**
- * OrgContext — resolves `orgSlug → orgId` once at the layout level.
+ * OrgContext — single source of truth for *every per-org identity / RBAC
+ * subscription* for the current dashboard route.
  *
- * WHY THIS EXISTS:
- *   Before this hook, every entity view independently called
- *   `useQuery(api.orgs.queries.listMyOrgs)` and then did
- *   `orgs?.find(o => o.org.slug === orgSlug)?.org._id`. This created a
- *   query waterfall: the real data queries (leads, deals, etc.) couldn't
- *   start until `listMyOrgs` resolved. With 9+ views doing this
- *   independently, the pattern was duplicated everywhere.
+ * Why this exists
+ * ───────────────
+ * Before this provider, every entity view, drawer, panel, and card called
+ * `useQuery` independently for the same handful of session-scoped queries:
  *
- *   Now: `DashboardLayoutClient` mounts `<OrgProvider orgSlug={...}>` once.
- *   Every child calls `useCurrentOrg()` to get `{ orgId, org, isLoading }`.
- *   The Convex subscription is shared (single network call), and `orgId` is
- *   available immediately on subsequent navigations (warm cache).
+ *   - `orgs.listMyOrgs`     (resolve orgSlug → orgId)
+ *   - `orgs.getMyMembership` (current user's permissions)
+ *   - `orgs.listMembers`    (members for assignee/avatar lookup)
+ *   - `orgs.getEntityLabels`(white-labelled entity names)
  *
- * USAGE:
- *   ```tsx
- *   // In any entity view:
- *   const { orgId } = useCurrentOrg();
- *   const leads = useQuery(api.crm.entities.leads.queries.list, orgId ? { orgId } : "skip");
- *   ```
+ * Convex deduplicates network round-trips for identical args, so the
+ * client doesn't actually re-fetch — but each `useQuery` call still
+ * registers as a server function execution (visible as 100+ calls/min on
+ * the Function Calls dashboard during normal use). Worse, every component
+ * re-renders independently on each subscription update, exploding the
+ * React render tree.
+ *
+ * Now: this provider mounts once at the dashboard layout level, fires the
+ * subscriptions ONCE, and exposes the result via React context. All
+ * descendants read via these hooks instead of per-component `useQuery`:
+ *
+ *   - `useCurrentOrg()`        → { orgSlug, orgId, org, isLoading,
+ *                                  membership, members, ... }
+ *   - `useOrgPermissions()`    → permissions[]
+ *   - `useOrgMembers()`        → members[]
+ *   - `useOrgMemberMap()`      → Map<userId, member>
+ *   - `useOrgMemberNameMap()`  → Map<userId, name>
+ *   - `useEntityLabels()`      → EntityLabels (auto-detects via context)
+ *
+ * Locked architectural decision (2026-05-18). Per AGENTS.md rule:
+ * components MUST NOT call these queries via `useQuery` directly. Use the
+ * context hooks.
  */
+
+type MemberWithUser = NonNullable<FunctionReturnType<typeof api.orgs.queries.listMembers>>[number];
+
+type Membership = NonNullable<FunctionReturnType<typeof api.orgs.queries.getMyMembership>>;
+
+type Me = NonNullable<FunctionReturnType<typeof api.users.queries.me>>;
+
+/**
+ * The full `OrgEntry` returned by `listMyOrgs` — `org` field plus the
+ * member-row metadata. Exposed as-is so views that need access to
+ * `org.settings.modules` (visibility), `org.settings.fileUpload`
+ * (upload limits), etc. don't need their own subscription.
+ */
+type FullOrgEntry = NonNullable<FunctionReturnType<typeof api.orgs.queries.listMyOrgs>>[number];
+
+type OrgEntry = {
+	name: string;
+	slug: string;
+	plan: string;
+};
 
 type OrgContextValue = {
 	orgSlug: string;
 	orgId: Id<"orgs"> | undefined;
-	org: { name: string; slug: string; plan: string } | undefined;
+	org: OrgEntry | undefined;
+	/**
+	 * Full org doc + member-row metadata as returned by `listMyOrgs`.
+	 * Exposed for views that need to read `org.settings.modules`,
+	 * `org.settings.fileUpload`, etc. without a separate subscription.
+	 * Most callers should use the trimmed `org` field above instead.
+	 */
+	fullOrgEntry: FullOrgEntry | undefined;
+	/** ALL orgs the current user belongs to (for switcher / multi-org views). */
+	allOrgs: ReadonlyArray<FullOrgEntry> | undefined;
 	isLoading: boolean;
+
+	/** Current authenticated user (`api.users.queries.me`). Undefined while loading. */
+	me: Me | undefined;
+
+	/** Current user's membership row in this org (with permissions resolved). */
+	membership: Membership | null | undefined;
+	/** All members of the org (each with `user` populated). Undefined while loading. */
+	members: ReadonlyArray<MemberWithUser> | undefined;
+	/** Pre-built `Map<userId, MemberWithUser>` for O(1) avatar / assignee lookups. */
+	memberMap: Map<string, MemberWithUser>;
+	/** Pre-built `Map<userId, displayName>` for O(1) label lookups. */
+	memberNameMap: Map<string, string>;
+	/** Entity labels (with defaults merged). */
+	entityLabels: EntityLabels;
 };
 
 const OrgContext = createContext<OrgContextValue | null>(null);
 
+const EMPTY_PERMISSIONS: ReadonlyArray<string> = Object.freeze([]);
+
 export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: ReactNode }) {
+	// Step 1 — resolve orgSlug → orgId via listMyOrgs (one subscription).
 	const orgs = useQuery(api.orgs.queries.listMyOrgs);
+	const resolvedOrgId = useMemo<Id<"orgs"> | undefined>(() => {
+		return orgs?.find((o) => o.org.slug === orgSlug)?.org._id;
+	}, [orgs, orgSlug]);
+
+	// Step 1b — current authenticated user (one subscription, not per-component).
+	// Was being called from 9 separate components (ThreadHeader, NoteCard,
+	// SavedViewsMenu, NotesView, …). All migrated to read `useMe()` instead.
+	const me = useQuery(api.users.queries.me);
+
+	// Step 2 — fan out the per-org subscriptions ONCE.
+	const membership = useQuery(
+		api.orgs.queries.getMyMembership,
+		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
+	);
+	const members = useQuery(
+		api.orgs.queries.listMembers,
+		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
+	);
+	const entityLabelsRaw = useQuery(
+		api.orgs.queries.getEntityLabels,
+		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
+	);
+
 	const value = useMemo<OrgContextValue>(() => {
 		const entry = orgs?.find((o) => o.org.slug === orgSlug);
+		const memberMap = new Map<string, MemberWithUser>();
+		const memberNameMap = new Map<string, string>();
+		for (const m of members ?? []) {
+			memberMap.set(String(m.userId), m);
+			memberNameMap.set(String(m.userId), m.user?.name ?? m.user?.email ?? "Member");
+		}
 		return {
 			orgSlug,
 			orgId: entry?.org._id,
 			org: entry?.org
 				? { name: entry.org.name, slug: entry.org.slug, plan: entry.org.plan }
 				: undefined,
+			fullOrgEntry: entry,
+			allOrgs: orgs,
 			isLoading: orgs === undefined,
+			me: me ?? undefined,
+			membership,
+			members,
+			memberMap,
+			memberNameMap,
+			entityLabels: mergeEntityLabelDefaults(entityLabelsRaw),
 		};
-	}, [orgs, orgSlug]);
+	}, [orgs, orgSlug, me, membership, members, entityLabelsRaw]);
 
-	return <OrgContext.Provider value={value}>{children}</OrgContext.Provider>;
+	return (
+		<OrgContext.Provider value={value}>
+			{/*
+			 * Mount the entity-labels context too so `useEntityLabels()`
+			 * inside the dashboard tree reads from the shared subscription
+			 * instead of firing its own. The leaf-module split (see
+			 * `org-entity-labels-context.ts`) prevents a circular import
+			 * with `useEntityLabels`.
+			 */}
+			<OrgEntityLabelsContext.Provider value={value.entityLabels}>
+				{children}
+			</OrgEntityLabelsContext.Provider>
+		</OrgContext.Provider>
+	);
 }
 
 /**
  * Returns the current org context. Must be used inside `<OrgProvider>`.
- *
- * Returns `{ orgId, org, orgSlug, isLoading }`.
- * - `orgId` is `undefined` while loading or if the slug doesn't match.
- * - `isLoading` is `true` until the first `listMyOrgs` response arrives.
  */
 export function useCurrentOrg(): OrgContextValue {
 	const ctx = useContext(OrgContext);
 	if (!ctx) throw new Error("useCurrentOrg must be used inside <OrgProvider>");
 	return ctx;
 }
+
+/**
+ * Returns the authenticated user (`api.users.queries.me`). Single subscription
+ * mounted by `<OrgProvider>` — components MUST NOT call `useQuery(api.users.me)`
+ * directly. Returns `undefined` while loading or for unauthenticated routes.
+ */
+export function useMe(): Me | undefined {
+	const ctx = useContext(OrgContext);
+	return ctx?.me;
+}
+
+/**
+ * Returns the membership permissions for the current user.
+ *
+ * Returns an empty frozen array while loading or if the user isn't a
+ * member. Callers that must distinguish "loading" vs "definitely no
+ * permissions" should read `membership` from `useCurrentOrg()` directly
+ * (`membership === undefined` means loading; `membership === null` means
+ * not a member).
+ */
+export function useOrgPermissions(): ReadonlyArray<string> {
+	const { membership } = useCurrentOrg();
+	return membership?.permissions ?? EMPTY_PERMISSIONS;
+}
+
+/** Returns the full member list. `undefined` while loading. */
+export function useOrgMembers(): ReadonlyArray<MemberWithUser> | undefined {
+	return useCurrentOrg().members;
+}
+
+/** Returns a `Map<userId, member>` for O(1) lookups. Always defined. */
+export function useOrgMemberMap(): Map<string, MemberWithUser> {
+	return useCurrentOrg().memberMap;
+}
+
+/** Returns a `Map<userId, displayName>` for O(1) name lookups. Always defined. */
+export function useOrgMemberNameMap(): Map<string, string> {
+	return useCurrentOrg().memberNameMap;
+}
+
+// Keep types exported for callers that need to type props.
+export type { Membership, MemberWithUser };

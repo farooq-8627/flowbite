@@ -1,7 +1,57 @@
 # Messages — State
 
-> Updated: 2026-05-17 (UX overhaul batch 5 — chat polish + cursor pagination)
+> Updated: 2026-05-18
 > Status: 100% Complete for Phase 2 — production-grade backend + full Tier-A/B/C UI shipped + UX overhaul batches 1, 2, 3, 4, and 5. Voice notes / lightbox / mobile sheet / consecutive grouping / forward / RTL Sheet / SWR conversation switch / audio MIME backfill / WhatsApp-style inline timestamp / touch-friendly action row / **bottom-anchored scroll resilient to media loads** / **cursor-based pagination** / **strict sender-only avatar grouping (no time window)** all delivered.
+>
+> **2026-05-18 attachment subscription batching** (deferred follow-up from
+>   the 2026-05-18 audit pass; not on the leads-page mount path but worth
+>   the cleanup):
+>   - `MessageBubble` previously called `useQuery(api.files.queries.listByIds,
+>     { orgId, ids: attachmentIds })` per bubble — N subscriptions per
+>     thread, one per message that had attachments.
+>   - New conversation-level batched query
+>     `api.files.queries.listByIdsKeyed(orgId, ids)` returns a
+>     `Record<fileId, FileWithUrl>` keyed by id. Hard-capped at 500 ids,
+>     de-dupes at the boundary, drops cross-tenant / soft-deleted rows.
+>   - New hook
+>     `core/comms/messages/hooks/useMessageAttachmentsForThread.ts`
+>     collects every attachment id from the visible page, sorts +
+>     de-dupes into a stable string cache key, and opens ONE subscription.
+>     Returns `{}` when the page has no attachments (no subscription
+>     opened) and `null` while the batched fetch is in flight.
+>   - `MessageList` calls the hook ONCE and forwards the resolved record
+>     to each `MessageBubble` via a new `attachmentFilesById` prop.
+>   - `MessageBubble` → `MessageAttachments` is now tri-state:
+>     prop omitted → fall back to `listByIds` subscription (preserves
+>     `ForwardDialog` and standalone use); prop is `null` → batched but
+>     loading; prop is a record → slice it.
+>   - Outcome: thread with 30 visible bubbles + attachments fires 1
+>     subscription instead of 30. Live-update behaviour identical (Convex
+>     reactive; the keyed query revalidates on any `files` row change in
+>     the union).
+>   - Verification: `pnpm typecheck` ✅, `pnpm lint-check` ✅, scoped
+>     biome on the 5 modified files ✅.
+>
+> **2026-05-18 OCC fix** (driven by Convex insights showing 45 critical write
+>   conflicts + 223 retry warnings on `conversationMembers.markRead` per
+>   minute):
+>   - `MessagesThread.tsx` `markRead` effect previously had `liveConversation`
+>     (the whole `useQuery` return value) in its deps. `useQuery` returns a
+>     new object reference on every revalidation, so the effect fired on
+>     every conversation update — hammering `mutations.markRead` and
+>     creating contention against any read of the same row (list queries,
+>     unread-count subscriptions). Now depends on `liveConversationId`
+>     (primitive) and `liveLastMessageId` only, so it fires once per actual
+>     conversation switch + once per new message.
+>   - **Server-side idempotency** (`convex/crm/shared/conversations/mutations.ts`):
+>     `markRead` is monotonic — `lastReadAt` only ever moves forward.
+>     Added a fast-path that skips the patch entirely when the existing
+>     `lastReadAt` is already at-or-beyond the wall-clock `now`. A stale
+>     racer (multiple tabs, remount, tab-focus storm) either reads the
+>     same value and writes a no-op or skips writing — eliminating
+>     contention either way. Covered by
+>     `convex/crm-hardening.test.ts::"is idempotent: a second back-to-back
+>     call doesn't go backwards"`.
 
 ## ✅ Completed (summary)
 

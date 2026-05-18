@@ -31,6 +31,7 @@ import {
 	useFileBuffer,
 } from "@/core/data-io/files/components/CreateModeFileField";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
+import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 type Mode = "add" | "edit";
@@ -71,7 +72,7 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 	// pattern is symmetric. (Mirrors the wiring in AddLeadDrawer.)
 	const fileBuffer = useFileBuffer(orgId);
 
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const members = useOrgMembers();
 	const availablePersons = useQuery(
 		api.crm.entities.companies.queries.listPersonsWithoutCompany,
 		orgId ? { orgId } : "skip",

@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "convex/react";
 import { Check, Languages, Maximize, Minimize, Moon, Sun } from "lucide-react";
 import Link from "next/link";
 import { useLocale } from "next-intl";
@@ -27,7 +26,7 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { api } from "@/convex/_generated/api";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import {
 	buildNavigation,
@@ -59,14 +58,15 @@ export function AppSidebar({
 	// Defaults are returned while the query is in-flight so the UI never flashes blank.
 	const labels = useEntityLabels();
 
-	// Also read the per-module visibility flags + order overrides from the same
-	// org settings. Users can toggle a module off (e.g. freelancers hide
-	// "Companies") or drag-reorder the sidebar — both flow through this memo.
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const orgEntry = orgs?.find((o) => o.org.slug === orgSlug);
+	// Per-module visibility flags + order overrides come from the same shared
+	// `OrgProvider` context as the rest of the dashboard — no separate
+	// `listMyOrgs` subscription. Users can toggle a module off (e.g.
+	// freelancers hide "Companies") or drag-reorder the sidebar — both flow
+	// through this memo and update reactively.
+	const { fullOrgEntry } = useCurrentOrg();
 	const moduleOverrides = useMemo(() => {
 		const overrides = new Map<string, { hidden?: boolean; order?: number; label?: string }>();
-		for (const mod of orgEntry?.org.settings?.modules ?? []) {
+		for (const mod of fullOrgEntry?.org.settings?.modules ?? []) {
 			overrides.set(mod.slot, {
 				hidden: mod.hidden,
 				order: mod.order,
@@ -74,7 +74,7 @@ export function AppSidebar({
 			});
 		}
 		return overrides;
-	}, [orgEntry]);
+	}, [fullOrgEntry]);
 
 	// Build a label-aware, hidden-aware module list. We keep DEFAULT_MODULES'
 	// icons as the base and override label + slug + order + enabled from org
@@ -156,8 +156,7 @@ function SidebarFooterUtils() {
 			style={{
 				display: "grid",
 				gridTemplateColumns: isExpanded ? "repeat(3, 1fr)" : "1fr",
-				transition:
-					"grid-template-columns 200ms linear, padding 200ms linear",
+				transition: "grid-template-columns 200ms linear, padding 200ms linear",
 				padding: isExpanded ? "4px 8px" : "4px 0",
 				justifyItems: "center",
 				gap: "2px",

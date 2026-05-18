@@ -50,16 +50,14 @@ export function ChatAvatar({
 
 	const wrapperClasses = cn(
 		"relative shrink-0 rounded-full",
-		onClick && "cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+		onClick &&
+			"cursor-pointer transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
 		className,
 	);
 
 	const inner = (
 		<>
-			<Avatar
-				style={{ ...sizeStyle, fontSize: `${size / 2.5}rem` }}
-				className="rounded-full"
-			>
+			<Avatar style={{ ...sizeStyle, fontSize: `${size / 2.5}rem` }} className="rounded-full">
 				<AvatarImage src={src} alt={name ?? "Avatar"} />
 				<AvatarFallback className="rounded-full">{initials}</AvatarFallback>
 			</Avatar>

@@ -45,7 +45,14 @@ export function BufferedTagsPicker({
 	className,
 }: BufferedTagsPickerProps) {
 	const [open, setOpen] = useState(false);
-	const allTags = useQuery(api.crm.shared.tags.queries.listByOrg, orgId ? { orgId } : "skip");
+	// `listByOrg` powers the in-popover picker — only fire while it's open.
+	// Mirrors the lazy-load pattern in `TagsCell` so opening multiple
+	// create-mode drawers (or rendering many BufferedTagsPickers in a
+	// settings panel) doesn't fan out to one subscription per instance.
+	const allTags = useQuery(
+		api.crm.shared.tags.queries.listByOrg,
+		orgId && open ? { orgId } : "skip",
+	);
 	const createTag = useMutation(api.crm.shared.tags.mutations.create);
 
 	const options = useMemo(

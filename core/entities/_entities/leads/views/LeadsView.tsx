@@ -26,7 +26,7 @@
  *   - Briefly flash-highlighted so they're easy to spot.
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { ArrowRightCircleIcon, PencilIcon, PlusIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -45,6 +45,7 @@ import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns"
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
+import { useCompaniesByPersonCodes } from "@/core/entities/shared/hooks/useCompaniesByPersonCodes";
 import { useModuleDisplay } from "@/core/entities/shared/hooks/useModuleDisplay";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import {
@@ -54,6 +55,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
@@ -128,16 +130,24 @@ export function LeadsView(_props: { orgSlug: string }) {
 		(store, args) => {
 			const list = store.getQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId });
 			if (!list) return;
-			const now = Date.now();
-			const next = list.map((l) =>
-				l._id === args.leadId ? { ...l, ...args, updatedAt: now } : l,
-			);
+			// Per AGENTS.md "Every list-affecting mutation has
+			// `withOptimisticUpdate`":
+			//   "The optimistic update MUST NOT bump `updatedAt: Date.now()`
+			//    — that changes row identity on every render and cascades
+			//    list invalidations."
+			// Patch ONLY the user-visible fields the mutation touches; let
+			// the server stamp `updatedAt`. We reuse the existing object's
+			// `updatedAt` so the row's reactive identity stays stable until
+			// the real server roundtrip lands (no flash, no list re-fetch).
+			const next = list.map((l) => (l._id === args.leadId ? { ...l, ...args } : l));
 			store.setQuery(api.crm.entities.leads.queries.list, { orgId: args.orgId }, next);
 		},
 	);
 
 	// Org-level staleness thresholds (falls back gracefully when not configured)
-	const org = useQuery(api.orgs.queries.get, orgId ? { orgId } : "skip");
+	// Read from shared OrgProvider context — no extra `orgs.get` subscription.
+	const { fullOrgEntry } = useCurrentOrg();
+	const org = fullOrgEntry?.org;
 	const staleness = useMemo(
 		() => ({
 			staleAfterDays: org?.settings?.leadStaleAfterDays,
@@ -156,7 +166,16 @@ export function LeadsView(_props: { orgSlug: string }) {
 	// Persisted view-options — survive navigation. Keyed by slot so each
 	// entity has its own persisted preferences (board fields for leads, board
 	// fields for contacts, etc.).
-	const [cardFields, setCardFields] = usePersistedState<string[]>("viewopts:lead:cardFields", []);
+	//
+	// `cardFields` key is bumped to `v2` (2026-05-18) so old sessions that
+	// expected the always-on built-in field strip get a fresh, default-seeded
+	// list. Old `:cardFields` entries are simply ignored — we don't migrate
+	// because the previous values are still semantically valid; we just
+	// want a clean re-seed against the current admin-visible field set.
+	const [cardFields, setCardFields] = usePersistedState<string[]>(
+		"viewopts:lead:cardFields:v2",
+		[],
+	);
 	const [revealedStatuses, setRevealedStatuses] = usePersistedState<string[]>(
 		"viewopts:lead:revealedStatuses",
 		[],
@@ -211,9 +230,17 @@ export function LeadsView(_props: { orgSlug: string }) {
 	// for board grouping by tag. One index read covers every lead in the org.
 	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "lead");
 
+	// Batched company lookup — eliminates per-row CompanyCell subscriptions.
+	const personCodes = useMemo(
+		() => (items ?? []).map((it) => (it as Record<string, unknown>).personCode as string).filter(Boolean),
+		[items],
+	);
+	const companiesByPersonCode = useCompaniesByPersonCodes(orgId, personCodes);
+
 	const { columns } = useEntityColumns<NonNullable<typeof items>[number]>("lead", orgId, {
 		customValuesByEntityId,
 		tagsByEntityId,
+		companiesByPersonCode,
 		onDelete: async (row) => {
 			try {
 				await remove(row.id as Id<"leads">);
@@ -250,7 +277,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 	//   - source    → LEAD_SOURCES + any in-use values
 	//   - tag       → one per unique tag (+ "Untagged")
 	//   - default   → one column per unique raw value of the field
-	const members = useQuery(api.orgs.queries.listMembers, orgId ? { orgId } : "skip");
+	const members = useOrgMembers();
 	const memberNameById = useMemo(() => {
 		const map = new Map<string, string>();
 		for (const m of members ?? []) {
@@ -400,22 +427,20 @@ export function LeadsView(_props: { orgSlug: string }) {
 		return grouped;
 	}, [rankedItems.items, rankedItems.matchedIds, boardColumns, groupBy, tagsByEntityId]);
 
-	// Drag card → update whichever field is the current groupBy + persist
-	// the dropped position (sortOrder). Free-position semantics: the user
-	// can drop a card at any index inside any column, including reordering
-	// within the same column. Cross-column move and in-column reorder are
-	// dispatched through the same mutation — the kanban primitive emits
-	// (itemId, fromCol, toCol, newIndex) for both. The destination column's
-	// post-drop items array is reconstructed from `itemsByColumnId` so we
-	// can compute a midpoint sortOrder between the dropped card's new
-	// neighbours.
+	// Drag card → persist position via sortOrder + (when groupBy is one of
+	// the writable axes) update the column-field. Cross-column move and
+	// in-column reorder dispatch through the same callback.
+	//
+	// Tag groupBy is a special case: tags live in a join table (`entityTags`),
+	// so a column move means detach(fromTag) + attach(toTag). We do NOT also
+	// detach all OTHER tags — a lead can carry multiple tags, and dragging
+	// only changes whether THIS one is attached. The NO_GROUP_KEY column
+	// represents "untagged"; dropping there detaches the source tag without
+	// attaching anything new.
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
+	const detachTag = useMutation(api.crm.shared.tags.mutations.detachFromEntity);
 	const handleCardMove = useCallback(
-		async (
-			itemId: string,
-			fromCol: string,
-			toCol: string,
-			newIndex: number,
-		) => {
+		async (itemId: string, fromCol: string, toCol: string, newIndex: number) => {
 			if (!orgId) return;
 			// Reconstruct the destination column AFTER the drop so we can
 			// read the two cards on either side of `newIndex`. The kanban
@@ -468,6 +493,28 @@ export function LeadsView(_props: { orgSlug: string }) {
 					});
 				} else if (groupBy === "source") {
 					await updateLead({ ...baseArgs, source: toCol });
+				} else if (groupBy === "tag" || groupBy === "tags") {
+					// Tag move: persist position first (so the card sticks),
+					// then mutate the join table. Detach from `fromCol` and
+					// attach to `toCol`. NO_GROUP_KEY columns are virtual
+					// (no tag id), so we skip the join mutation for them.
+					await updateLead(baseArgs);
+					if (fromCol !== NO_GROUP_KEY) {
+						await detachTag({
+							orgId,
+							tagId: fromCol as Id<"tags">,
+							entityType: "lead",
+							entityId: itemId,
+						});
+					}
+					if (toCol !== NO_GROUP_KEY) {
+						await attachTag({
+							orgId,
+							tagId: toCol as Id<"tags">,
+							entityType: "lead",
+							entityId: itemId,
+						});
+					}
 				} else {
 					// Custom groupBy — only persist position, not the field.
 					await updateLead(baseArgs);
@@ -478,7 +525,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 				});
 			}
 		},
-		[orgId, updateLead, groupBy, itemsByColumnId, rankedItems.items],
+		[orgId, updateLead, groupBy, itemsByColumnId, rankedItems.items, attachTag, detachTag],
 	);
 
 	const leadLookup = useMemo(() => {
@@ -539,6 +586,18 @@ export function LeadsView(_props: { orgSlug: string }) {
 		if (reveal && !next.includes(reveal)) next = [reveal, ...next];
 		return next;
 	}, [cardFields, groupBy]);
+
+	// Resolver for the EntityCard's "fill the gap" indicator. Leads' reveal
+	// matrix only ever surfaces clean string fields (status / source) so we
+	// only need to resolve `assignedTo` for the dot-tooltip case. Wrapped in
+	// useCallback so the card can rely on a stable reference.
+	const resolveReplacementLabel = useCallback(
+		(fieldName: string, raw: string): string | undefined => {
+			if (fieldName === "assignedTo") return memberNameById.get(raw);
+			return undefined;
+		},
+		[memberNameById],
+	);
 
 	// Highlighted field defs — every visible non-pinned custom field with a
 	// kind/type useful enough to render as a chip. EntityCard caps the actual
@@ -636,6 +695,9 @@ export function LeadsView(_props: { orgSlug: string }) {
 						isDragging={isDragging}
 						isHighlighted={search ? rankedItems.matchedIds.has(item.id) : false}
 						highlightEpoch={flashEpoch}
+						groupBy={groupBy}
+						resolveReplacementLabel={resolveReplacementLabel}
+						prefetchedTags={tagsByEntityId[item.id]}
 						onConvert={() => handleInstantConvert(item.id as Id<"leads">)}
 						onConvertWithOptions={() => openConvertFor([item.id as Id<"leads">])}
 						onDelete={() => handleDelete(item.id as Id<"leads">)}

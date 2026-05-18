@@ -32,6 +32,7 @@ import {
 	useMarkConversationRead,
 	useMessagesForConversationPaginated,
 } from "@/core/comms/messages/hooks";
+import { useCurrentOrg, useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { MessageInput } from "./MessageInput";
 import { MessageList } from "./MessageList";
@@ -70,11 +71,12 @@ export function MessagesThread(props: MessagesThreadProps) {
 	// panel case). The entity-path query returns `null` until the user sends
 	// the first message; in that case the conversation is auto-created
 	// server-side on first `messages.send`.
+	const isEntityMode = "entityType" in props && Boolean(props.entityType) && Boolean(props.entityId);
 	const byEntity = useConversationForEntity({
-		orgId,
-		entityType: "entityType" in props && props.entityType ? props.entityType : "person",
-		entityId: "entityId" in props && props.entityId ? props.entityId : "",
-		threadId: "threadId" in props ? props.threadId : undefined,
+		orgId: isEntityMode ? orgId : undefined,
+		entityType: isEntityMode ? (props as MessagesThreadByEntityProps).entityType : "person",
+		entityId: isEntityMode ? (props as MessagesThreadByEntityProps).entityId : "",
+		threadId: isEntityMode ? (props as MessagesThreadByEntityProps).threadId : undefined,
 		// We only need the conversation lookup; the messages live in the
 		// paginated hook below. Cap the embedded query at 1 row.
 		limit: 1,
@@ -167,9 +169,9 @@ export function MessagesThread(props: MessagesThreadProps) {
 		return () => paginated.loadMore(30);
 	}, [paginated]);
 
-	const members = useQuery(api.orgs.queries.listMembers, { orgId });
-	const me = useQuery(api.users.queries.me);
-	const myMembership = useQuery(api.orgs.queries.getMyMembership, me ? { orgId } : "skip");
+	const members = useOrgMembers();
+	const me = useMe();
+	const { membership: orgMembership } = useCurrentOrg();
 
 	const authorsById = useMemo(() => {
 		const map = new Map<string, { name: string; avatarUrl?: string }>();
@@ -183,8 +185,8 @@ export function MessagesThread(props: MessagesThreadProps) {
 	}, [members]);
 
 	const canDeleteAny = useMemo(
-		() => Boolean(myMembership?.permissions?.includes("messages.deleteAny")),
-		[myMembership],
+		() => Boolean(orgMembership?.permissions?.includes("messages.deleteAny")),
+		[orgMembership],
 	);
 
 	// 2-participant conversations are direct messages — bubbles hide names.
@@ -209,17 +211,31 @@ export function MessagesThread(props: MessagesThreadProps) {
 	}, [intentKey]);
 
 	// Mark-read.
+	//
+	// OCC fix (2026-05-18): The previous implementation depended on
+	// `liveLastMessageId` which changes reference on every pagination
+	// revalidation — not just on genuinely new messages. This caused
+	// `markRead` to fire on every subscription tick, producing 45 OCC
+	// failures + 223 retries per minute on `conversationMembers`.
+	//
+	// New approach: depend on the conversation's `lastMessageAt` timestamp
+	// (a primitive number that only changes when a NEW message is sent) and
+	// the conversation id. Additionally, debounce with a ref so rapid
+	// conversation switches don't fire multiple concurrent mutations.
 	const markRead = useMarkConversationRead();
-	// `paginated.results` is newest-first; the first element is the latest message.
-	// Use the LIVE conversation (not the stale display fallback) so we don't
-	// repeatedly mark conversation A as read while it briefly lingers on
-	// screen during a switch to B.
-	const liveLastMessageId = (paginated.results as Doc<"messages">[] | undefined)?.[0]?._id;
-	// biome-ignore lint/correctness/useExhaustiveDependencies: see MessageList for rationale
+	const liveConversationId = liveConversation?._id;
+	const liveLastMessageAt = liveConversation?.lastMessageAt;
+	const markReadInFlight = useRef(false);
+	// biome-ignore lint/correctness/useExhaustiveDependencies: deps are intentionally narrow — see comment above
 	useEffect(() => {
-		if (!liveConversation) return;
-		void markRead({ orgId, conversationId: liveConversation._id }).catch(() => {});
-	}, [liveConversation, liveLastMessageId, markRead, orgId]);
+		if (!liveConversationId || markReadInFlight.current) return;
+		markReadInFlight.current = true;
+		void markRead({ orgId, conversationId: liveConversationId })
+			.catch(() => {})
+			.finally(() => {
+				markReadInFlight.current = false;
+			});
+	}, [liveConversationId, liveLastMessageAt, orgId]);
 
 	// No conversation yet, but we have entity coords → composer that auto-creates.
 	if (!conversation && "entityType" in props && props.entityType && props.entityId) {
@@ -275,14 +291,21 @@ export function MessagesThread(props: MessagesThreadProps) {
 					onClearReply: () => setReplyTo(null),
 				};
 
+	// Resolve conversation-level membership from the getById query to pass
+	// to ThreadHeader, avoiding a duplicate subscription.
+	const conversationMembership = convoForId?.myMembership ?? null;
+
 	return (
 		<div className={cn("flex h-full flex-1 flex-col bg-background", className)}>
 			<ThreadHeader
 				orgId={orgId}
 				conversation={conversation}
+				participants={participants ?? undefined}
+				myMembership={conversationMembership}
 				onOpenSidebar={props.onOpenSidebar}
 			/>
 			<MessageList
+				orgId={orgId}
 				messages={messages}
 				authorsById={authorsById}
 				currentUserId={me?._id}

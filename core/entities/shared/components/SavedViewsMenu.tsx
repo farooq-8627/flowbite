@@ -22,7 +22,7 @@
  * explicitly saved view is active (i.e. not the implicit "All").
  */
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -38,6 +38,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
+import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 
 export interface SavedView {
@@ -68,7 +69,7 @@ export function SavedViewsMenu({
 	onApply,
 	className,
 }: SavedViewsMenuProps) {
-	const me = useQuery(api.users.queries.me);
+	const me = useMe();
 	const updatePreferences = useMutation(api.users.mutations.updatePreferences);
 
 	const allSaved = useMemo<SavedView[]>(() => {

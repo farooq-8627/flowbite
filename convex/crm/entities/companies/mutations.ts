@@ -101,6 +101,16 @@ export const update = orgMutation({
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.update");
 
+		// Drag-rate guard — same shared 120/min budget as the other
+		// kanban-driven mutations (`leads.update`, `deals.update`, etc.).
+		await enforceRateLimit(ctx, {
+			scope: "companies.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
 			throw new ConvexError(ERRORS.NOT_FOUND);

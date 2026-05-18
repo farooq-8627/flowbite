@@ -41,7 +41,8 @@ import {
 } from "@/components/ui/dialog";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useInbox, useSendMessage } from "@/core/comms/messages/hooks";
-import { useEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplay";
+import type { BatchedEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
+import { useEntityDisplaysBatched } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 
@@ -62,23 +63,18 @@ type InboxRow = {
 const FORWARD_HEADER = "↪ Forwarded";
 
 function ForwardTargetRow({
-	orgId,
 	row,
 	checked,
 	onToggle,
+	display,
 }: {
-	orgId: Id<"orgs">;
 	row: InboxRow;
 	checked: boolean;
 	onToggle: () => void;
+	display: BatchedEntityDisplay | undefined;
 }) {
 	const { conversation } = row;
-	const display = useEntityDisplay({
-		orgId,
-		entityType: conversation.entityType,
-		entityId: conversation.entityId,
-	});
-	const title = conversation.title ?? display.name;
+	const title = conversation.title ?? display?.name ?? conversation.entityId ?? "Thread";
 	const preview = conversation.lastMessagePreview ?? "No messages yet";
 	return (
 		<li>
@@ -93,7 +89,7 @@ function ForwardTargetRow({
 					checked && "bg-accent text-accent-foreground",
 				)}
 			>
-				<ChatAvatar name={title} src={display.avatarUrl} size={2} />
+				<ChatAvatar name={title} src={display?.avatarUrl} size={2} />
 				<div className="flex min-w-0 flex-1 flex-col">
 					<span className="truncate text-sm text-foreground">{title}</span>
 					<span className="truncate text-xs text-muted-foreground">{preview}</span>
@@ -121,6 +117,20 @@ export function ForwardDialog({ orgId, message, open, onOpenChange }: ForwardDia
 
 	const inbox = useInbox({ orgId: open ? orgId : undefined, filter: "all" });
 	const sendMessage = useSendMessage();
+
+	// Batched entity display — one subscription for all visible rows.
+	const displayItems = useMemo(
+		() =>
+			(inbox ?? []).map((r: InboxRow) => ({
+				entityType: r.conversation.entityType,
+				entityId: r.conversation.entityId,
+			})),
+		[inbox],
+	);
+	const displaysMap = useEntityDisplaysBatched({
+		orgId: open ? orgId : undefined,
+		items: displayItems,
+	});
 
 	const visible = useMemo(() => {
 		if (!inbox) return [];
@@ -241,10 +251,10 @@ export function ForwardDialog({ orgId, message, open, onOpenChange }: ForwardDia
 						{visible.map((row: InboxRow) => (
 							<ForwardTargetRow
 								key={String(row.conversation._id)}
-								orgId={orgId}
 								row={row}
 								checked={selected.has(String(row.conversation._id))}
 								onToggle={() => toggle(row.conversation._id)}
+								display={displaysMap?.[`${row.conversation.entityType}:${row.conversation.entityId}`]}
 							/>
 						))}
 					</ul>

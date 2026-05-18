@@ -251,8 +251,8 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 						Search or start a conversation
 					</DialogTitle>
 					<DialogDescription>
-						Search by name, code, email, or phone — or pick a contact, deal, or
-						company to begin a new thread.
+						Search by name, code, email, or phone — or pick a contact, deal, or company
+						to begin a new thread.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -348,18 +348,11 @@ function EntityRow({
 			onSelect={() => onSelect(row)}
 			className={cn("flex items-center gap-3 py-2", disabled && "opacity-50")}
 		>
-			<ChatAvatar
-				name={row.primary}
-				src={row.avatarUrl}
-				size={2}
-				className="shrink-0"
-			/>
+			<ChatAvatar name={row.primary} src={row.avatarUrl} size={2} className="shrink-0" />
 			<div className="flex min-w-0 flex-1 flex-col">
 				<span className="truncate text-sm text-foreground">{row.primary}</span>
 				{row.secondary && (
-					<span className="truncate text-xs text-muted-foreground">
-						{row.secondary}
-					</span>
+					<span className="truncate text-xs text-muted-foreground">{row.secondary}</span>
 				)}
 			</div>
 			<div className="flex shrink-0 flex-col items-end gap-0.5">

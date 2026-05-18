@@ -236,6 +236,19 @@ export const setCategory = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 
+		// Same drag-rate guard as `reorder`. Cross-column drops fire
+		// `setCategory` instead of `reorder`, so the throttle has to gate
+		// both for full coverage. We use the SAME scope so the budget is
+		// shared — a user dragging non-stop across columns counts the
+		// same as one dragging within a column.
+		await enforceRateLimit(ctx, {
+			scope: "notes.reorder",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const note = await ctx.db.get(args.noteId);
 		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
@@ -302,6 +315,18 @@ export const reorder = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 
+		// Drag-rate guard. A single user dragging cards rapidly should not
+		// be able to flood the deployment. 120 reorders/min ≈ 2/sec is
+		// generous for a fast user but cuts off automated abuse / bug
+		// loops at 10× normal use.
+		await enforceRateLimit(ctx, {
+			scope: "notes.reorder",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
 		const note = await ctx.db.get(args.noteId);
 		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
@@ -343,9 +368,7 @@ async function topOfColumnSortOrder(
 ): Promise<number> {
 	const rows: Array<Doc<"notes">> = await ctx.db
 		.query("notes")
-		.withIndex("by_org_and_category", (q) =>
-			q.eq("orgId", orgId).eq("categoryId", categoryId),
-		)
+		.withIndex("by_org_and_category", (q) => q.eq("orgId", orgId).eq("categoryId", categoryId))
 		.take(500);
 	let min: number | undefined;
 	for (const r of rows) {
@@ -360,18 +383,29 @@ async function topOfColumnSortOrder(
  * Defensive rebalance: if any two adjacent cards in a category column have
  * an absolute sortOrder gap below `MIN_GAP`, renumber the entire column
  * with 1024-step gaps. Cheap (one column rarely exceeds a few hundred
- * cards) and rare in practice (1024-step allocation survives ~10 inserts
- * in the same gap before precision issues).
+ * cards) and rare in practice (1024-step allocation survives ~50 inserts
+ * in the same gap before precision issues — float64 mantissa is 53 bits,
+ * so the practical limit is ~2^40 successive midpoints before rounding
+ * actually causes ordering ambiguity).
  *
  * Called from `setCategory` and `reorder` after the patch. Idempotent:
  * if the column is already well-spaced, the function bails without
  * writing.
  *
- * Threshold: a gap < 1 means consecutive cards have effectively the same
- * `sortOrder` after a tight midpoint — re-numbering avoids ordering
- * ambiguity.
+ * Threshold rationale: previously `MIN_GAP = 1` collapsed after just ~10
+ * midpoint inserts (1024 → 512 → 256 → … → 1 → 0.5). That triggered the
+ * rebalance on every drop in a popular column, which patched every row
+ * in the column → every patch invalidated every `listForOrg` subscription
+ * → 100+ function calls/min for a single user dragging cards. The new
+ * threshold (`2 ** -10` ≈ 0.001) only fires when float precision is
+ * actually at risk — roughly 20+ consecutive midpoints in the same gap.
+ *
+ * Concurrency: the rebalance writes N rows in one transaction, so other
+ * mutations on the same column (a second user dragging) will OCC-conflict
+ * and retry. That's fine — rebalance is rare. We use `take(2000)` because
+ * Convex transactions read-set caps at 8000 docs; 2000 keeps headroom.
  */
-const MIN_GAP = 1;
+const MIN_GAP = 2 ** -10; // ≈ 0.000976
 const REBALANCE_STEP = 1024;
 
 async function rebalanceCategoryIfTight(
@@ -381,9 +415,7 @@ async function rebalanceCategoryIfTight(
 ): Promise<void> {
 	const rows: Array<Doc<"notes">> = await ctx.db
 		.query("notes")
-		.withIndex("by_org_and_category", (q) =>
-			q.eq("orgId", orgId).eq("categoryId", categoryId),
-		)
+		.withIndex("by_org_and_category", (q) => q.eq("orgId", orgId).eq("categoryId", categoryId))
 		.take(2000);
 	if (rows.length < 2) return;
 

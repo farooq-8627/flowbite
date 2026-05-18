@@ -178,6 +178,28 @@ function useKanbanContext(consumerName: string) {
 	return context;
 }
 
+/**
+ * Returns the *effective* items map for the surrounding `<Kanban>`.
+ *
+ * - While the user is mid-drag, this is the optimistic in-flight layout
+ *   (the dragged card has been visually inserted at the hover position).
+ * - Otherwise it's the parent-supplied `value` prop.
+ *
+ * Consumers that render their own card list (e.g. `KanbanBoard` rendering
+ * cards from `itemsByColumnId`) MUST use this hook instead of reading
+ * their parent prop directly during render — otherwise the visual reorder
+ * (cards making space, cross-column drop highlight) won't happen on
+ * Convex-backed boards where `value` is server-driven and doesn't change
+ * until `onCommit` fires.
+ */
+function useKanbanItems<T = unknown>(): Record<UniqueIdentifier, T[]> {
+	const context = React.useContext(KanbanContext);
+	if (!context) {
+		throw new Error(`\`useKanbanItems\` must be used within \`${ROOT_NAME}\``);
+	}
+	return context.items as Record<UniqueIdentifier, T[]>;
+}
+
 interface GetItemValue<T> {
 	/**
 	 * Callback that returns a unique identifier for each kanban item. Required for array of objects.
@@ -189,7 +211,39 @@ interface GetItemValue<T> {
 type KanbanProps<T> = Omit<DndContextProps, "collisionDetection"> &
 	(T extends object ? GetItemValue<T> : Partial<GetItemValue<T>>) & {
 		value: Record<UniqueIdentifier, T[]>;
+		/**
+		 * Fires on EVERY visual reorder during a drag (every drag-over) AND
+		 * on drag-end. Use this if you ONLY need to track the visual board
+		 * layout (e.g. to drive the rendered card list). DO NOT call
+		 * mutations from here — `onDragOver` fires once per crossed sibling
+		 * card during a single drag, so a drag across N cards would emit
+		 * N+1 mutations.
+		 *
+		 * For mutations, use `onCommit` instead — that fires exactly once
+		 * per drop with the final state.
+		 */
 		onValueChange?: (columns: Record<UniqueIdentifier, T[]>) => void;
+		/**
+		 * Fires EXACTLY ONCE per drop, in `onDragEnd`, with the final board
+		 * layout AND the id of the card that was physically dragged. This
+		 * is the ONLY callback safe for triggering mutations.
+		 *
+		 * The `draggedItemId` argument is critical: when a card is inserted
+		 * into a destination column, the cards in that column visually
+		 * reorder, but their server-side `sortOrder` does NOT need to
+		 * change — only the dragged card's sortOrder is rewritten as the
+		 * fractional midpoint of its new neighbours. Persistence callers
+		 * MUST use `draggedItemId` instead of walking the diff, otherwise
+		 * a single drop will fire one mutation per displaced card.
+		 *
+		 * For column-reorder drops (active.id is a column id), the
+		 * argument is the column id; consumers handling card-only
+		 * persistence should detect this case and ignore.
+		 *
+		 * When omitted, the Kanban falls back to firing `onValueChange` on
+		 * drag-end too — compatible with existing consumers.
+		 */
+		onCommit?: (columns: Record<UniqueIdentifier, T[]>, draggedItemId: string) => void;
 		onMove?: (event: DragEndEvent & { activeIndex: number; overIndex: number }) => void;
 		strategy?: SortableContextProps["strategy"];
 		orientation?: "horizontal" | "vertical";
@@ -200,6 +254,7 @@ function Kanban<T>(props: KanbanProps<T>) {
 	const {
 		value,
 		onValueChange,
+		onCommit,
 		modifiers,
 		strategy = verticalListSortingStrategy,
 		orientation = "horizontal",
@@ -214,6 +269,23 @@ function Kanban<T>(props: KanbanProps<T>) {
 	const [activeId, setActiveId] = React.useState<UniqueIdentifier | null>(null);
 	const lastOverIdRef = React.useRef<UniqueIdentifier | null>(null);
 	const hasMovedRef = React.useRef(false);
+	/**
+	 * The "as-if-already-applied" board layout during a drag. While the
+	 * user is mid-drag we render this layout (cards reflow / make space /
+	 * cross-column drop targets light up) WITHOUT firing any server
+	 * mutations. On `onDragEnd` we commit it via `onCommit` exactly once,
+	 * then clear it back to `null` so the board falls back to the parent's
+	 * `value` prop (which by then will reflect the server's accepted
+	 * truth via the optimistic update on the mutation).
+	 *
+	 * Stored in `useState` not `useRef` because we DO need to re-render
+	 * during drag — that's what gives the visual "card makes space" effect
+	 * even on Convex-backed boards where `value` is derived from server
+	 * data and is therefore not driven by `onValueChange`.
+	 */
+	const [pendingLayout, setPendingLayout] = React.useState<Record<UniqueIdentifier, T[]> | null>(
+		null,
+	);
 	const sensors = useSensors(
 		useSensor(MouseSensor),
 		useSensor(TouchSensor),
@@ -221,6 +293,12 @@ function Kanban<T>(props: KanbanProps<T>) {
 			coordinateGetter,
 		}),
 	);
+
+	// Effective layout used by render (context). During a drag this is
+	// the optimistic pending layout; otherwise it's the parent-supplied
+	// `value` prop. This is the single source of truth for any descendant
+	// reading `items` from `KanbanContext`.
+	const effectiveValue = pendingLayout ?? value;
 
 	const getItemValue = React.useCallback(
 		(item: T): UniqueIdentifier => {
@@ -314,50 +392,67 @@ function Kanban<T>(props: KanbanProps<T>) {
 			const { active, over } = event;
 			if (!over) return;
 
-			const activeColumn = getColumn(active.id);
-			const overColumn = getColumn(over.id);
+			// Render source: prefer the in-flight pending layout from a
+			// previous onDragOver this drag; otherwise the parent-supplied
+			// `value` prop.
+			setPendingLayout((prev) => {
+				const layout = prev ?? value;
 
-			if (!activeColumn || !overColumn) return;
+				const getColumnFrom = (id: UniqueIdentifier): UniqueIdentifier | null => {
+					if (id in layout) return id;
+					for (const [columnId, items] of Object.entries(layout)) {
+						if (items.some((item) => getItemValue(item) === id)) {
+							return columnId;
+						}
+					}
+					return null;
+				};
 
-			if (activeColumn === overColumn) {
-				const items = value[activeColumn];
-				if (!items) return;
+				const activeColumn = getColumnFrom(active.id);
+				const overColumn = getColumnFrom(over.id);
+				if (!activeColumn || !overColumn) return prev;
 
-				const activeIndex = items.findIndex((item) => getItemValue(item) === active.id);
-				const overIndex = items.findIndex((item) => getItemValue(item) === over.id);
+				if (activeColumn === overColumn) {
+					const items = layout[activeColumn];
+					if (!items) return prev;
 
-				if (activeIndex !== overIndex) {
-					const newColumns = { ...value };
+					const activeIndex = items.findIndex((item) => getItemValue(item) === active.id);
+					const overIndex = items.findIndex((item) => getItemValue(item) === over.id);
+					if (activeIndex === overIndex || activeIndex === -1) return prev;
+
+					const newColumns = { ...layout };
 					newColumns[activeColumn] = arrayMove(items, activeIndex, overIndex);
 					onValueChange?.(newColumns);
+					return newColumns;
 				}
-			} else {
-				const activeItems = value[activeColumn];
-				const overItems = value[overColumn];
 
-				if (!activeItems || !overItems) return;
+				// Cross-column drag-over: move the active item from its
+				// current column into the destination column. Insertion
+				// position is end-of-column (dnd-kit's standard behaviour
+				// for cross-column hover that's not over a specific item).
+				const activeItems = layout[activeColumn];
+				const overItems = layout[overColumn];
+				if (!activeItems || !overItems) return prev;
 
 				const activeIndex = activeItems.findIndex(
 					(item) => getItemValue(item) === active.id,
 				);
-
-				if (activeIndex === -1) return;
-
+				if (activeIndex === -1) return prev;
 				const activeItem = activeItems[activeIndex];
-				if (!activeItem) return;
+				if (!activeItem) return prev;
 
 				const updatedItems = {
-					...value,
+					...layout,
 					[activeColumn]: activeItems.filter((item) => getItemValue(item) !== active.id),
 					[overColumn]: [...overItems, activeItem],
 				};
-
-				onValueChange?.(updatedItems);
 				hasMovedRef.current = true;
-			}
+				onValueChange?.(updatedItems);
+				return updatedItems;
+			});
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- kanbanProps is unstable object ref, using specific prop
-		[value, getColumn, getItemValue, onValueChange, kanbanProps.onDragOver],
+		[value, getItemValue, onValueChange, kanbanProps.onDragOver],
 	);
 
 	const onDragEnd = React.useCallback(
@@ -368,45 +463,75 @@ function Kanban<T>(props: KanbanProps<T>) {
 
 			const { active, over } = event;
 
+			// Snapshot the final layout so we can fire `onCommit` exactly
+			// once at the end of this handler. We rebuild it incrementally
+			// below — branches that re-arrange `value` write into
+			// `committedColumns`; branches that only `setActiveId(null)` and
+			// return leave it equal to `value` (no commit fires when there's
+			// no change anyway).
+			let committedColumns: Record<UniqueIdentifier, T[]> | null = null;
+
+			// Source-of-truth for this drop: any onDragOver during the drag
+			// will have populated `pendingLayout`. If it didn't (no reorder
+			// happened — drop on origin), fall back to `value`.
+			const layout = pendingLayout ?? value;
+
 			if (!over) {
+				setPendingLayout(null);
 				setActiveId(null);
 				return;
 			}
 
 			if (active.id in value && over.id in value) {
-				const activeIndex = Object.keys(value).indexOf(active.id as string);
-				const overIndex = Object.keys(value).indexOf(over.id as string);
+				// Column reorder — active and over are both column ids.
+				const activeIndex = Object.keys(layout).indexOf(active.id as string);
+				const overIndex = Object.keys(layout).indexOf(over.id as string);
 
 				if (activeIndex !== overIndex) {
-					const orderedColumns = Object.keys(value);
+					const orderedColumns = Object.keys(layout);
 					const newOrder = arrayMove(orderedColumns, activeIndex, overIndex);
 
 					const newColumns: Record<UniqueIdentifier, T[]> = {};
 					for (const key of newOrder) {
-						const items = value[key];
+						const items = layout[key];
 						if (items) {
 							newColumns[key] = items;
 						}
 					}
 
+					committedColumns = newColumns;
 					if (onMove) {
 						onMove({ ...event, activeIndex, overIndex });
-					} else {
+					} else if (!onCommit) {
+						// Legacy path: caller still listens via onValueChange.
 						onValueChange?.(newColumns);
 					}
 				}
 			} else {
-				const activeColumn = getColumn(active.id);
-				const overColumn = getColumn(over.id);
+				// Item reorder — one of in-column or cross-column.
+				const lookupColumn = (id: UniqueIdentifier): UniqueIdentifier | null => {
+					if (id in layout) return id;
+					for (const [columnId, items] of Object.entries(layout)) {
+						if (items.some((item) => getItemValue(item) === id)) {
+							return columnId;
+						}
+					}
+					return null;
+				};
+
+				const activeColumn = lookupColumn(active.id);
+				const overColumn = lookupColumn(over.id);
 
 				if (!activeColumn || !overColumn) {
+					setPendingLayout(null);
 					setActiveId(null);
 					return;
 				}
 
 				if (activeColumn === overColumn) {
-					const items = value[activeColumn];
+					const items = layout[activeColumn];
 					if (!items) {
+						setPendingLayout(null);
 						setActiveId(null);
 						return;
 					}
@@ -415,26 +540,63 @@ function Kanban<T>(props: KanbanProps<T>) {
 					const overIndex = items.findIndex((item) => getItemValue(item) === over.id);
 
 					if (activeIndex !== overIndex) {
-						const newColumns = { ...value };
+						const newColumns = { ...layout };
 						newColumns[activeColumn] = arrayMove(items, activeIndex, overIndex);
+						committedColumns = newColumns;
 						if (onMove) {
 							onMove({
 								...event,
 								activeIndex,
 								overIndex,
 							});
-						} else {
+						} else if (!onCommit) {
 							onValueChange?.(newColumns);
 						}
+					} else if (hasMovedRef.current) {
+						// Cross-column move that ended at a different
+						// column — `layout` already reflects it via the
+						// pending ref; commit as-is.
+						committedColumns = layout;
 					}
+				} else if (hasMovedRef.current) {
+					// Cross-column move — `layout` (via pendingLayout)
+					// already has the item in `overColumn`. Commit as-is.
+					committedColumns = layout;
 				}
 			}
 
+			// Single commit point — fires AT MOST ONCE per drop with the
+			// final layout. Mutations belong here, never in onDragOver.
+			// We forward `active.id` so the consumer knows which item was
+			// physically dragged (vs the items merely displaced by the
+			// insertion). Persisting only the dragged card avoids the
+			// per-displaced-card mutation explosion on dense boards.
+			if (onCommit && committedColumns !== null) {
+				onCommit(committedColumns, active.id as string);
+			}
+
+			// Keep the optimistic layout visible for one frame after the
+			// drop so the card doesn't snap to its old position before the
+			// server confirms. The optimistic update on the mutation will
+			// re-render the parent's `value` to reflect the new sortOrder
+			// in the next frame; clearing on the same tick would otherwise
+			// flash. Setting to null inline here is safe because React
+			// schedules the parent's optimistic re-render synchronously
+			// alongside our commit callback.
+			setPendingLayout(null);
 			setActiveId(null);
 			hasMovedRef.current = false;
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- kanbanProps is unstable object ref, using specific prop
-		[value, getColumn, getItemValue, onValueChange, onMove, kanbanProps.onDragEnd],
+		[
+			value,
+			getItemValue,
+			onValueChange,
+			onCommit,
+			onMove,
+			pendingLayout,
+			kanbanProps.onDragEnd,
+		],
 	);
 
 	const onDragCancel = React.useCallback(
@@ -443,6 +605,7 @@ function Kanban<T>(props: KanbanProps<T>) {
 
 			if (event.activatorEvent.defaultPrevented) return;
 
+			setPendingLayout(null);
 			setActiveId(null);
 			hasMovedRef.current = false;
 		},
@@ -557,7 +720,7 @@ function Kanban<T>(props: KanbanProps<T>) {
 	const contextValue = React.useMemo<KanbanContextValue<T>>(
 		() => ({
 			id,
-			items: value,
+			items: effectiveValue,
 			modifiers,
 			strategy,
 			orientation,
@@ -566,7 +729,7 @@ function Kanban<T>(props: KanbanProps<T>) {
 			getItemValue,
 			flatCursor,
 		}),
-		[id, value, activeId, modifiers, strategy, orientation, getItemValue, flatCursor],
+		[id, effectiveValue, activeId, modifiers, strategy, orientation, getItemValue, flatCursor],
 	);
 
 	return (
@@ -1057,6 +1220,7 @@ export {
 	KanbanItem,
 	KanbanItemHandle,
 	KanbanOverlay,
+	useKanbanItems,
 	//
 	type KanbanProps,
 };

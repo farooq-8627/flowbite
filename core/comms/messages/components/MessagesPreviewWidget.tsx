@@ -14,11 +14,10 @@ import { formatDistanceToNow } from "date-fns";
 import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
-import { useQuery } from "convex/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useRecentMessages } from "@/core/comms/messages/hooks";
+import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { ChatAvatar } from "./ChatAvatar";
 
 type Author = { name: string; avatarUrl?: string };
@@ -40,7 +39,7 @@ function actionUrlFor(orgSlug: string, entityType: string, entityId: string): st
 
 export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: Props) {
 	const messages = useRecentMessages({ orgId, limit });
-	const members = useQuery(api.orgs.queries.listMembers, { orgId });
+	const members = useOrgMembers();
 	const authorsById = useMemo(() => {
 		const map = new Map<string, Author>();
 		for (const m of members ?? []) {

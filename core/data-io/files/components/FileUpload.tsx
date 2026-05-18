@@ -19,7 +19,6 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { ImageIcon, Loader2Icon, PaperclipIcon, Trash2Icon, UploadIcon } from "lucide-react";
-import { useParams } from "next/navigation";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +29,7 @@ import {
 	type FileCategory,
 	isFileAllowed,
 } from "@/core/data-io/files/file-categories";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -61,23 +61,26 @@ export interface UseFileAttachmentsArgs {
 }
 
 // ─── Hook: read the org's allowed-file-types setting ─────────────────────────
+//
+// Both `useAllowedCategories` and `useMaxSizeMb` read the same
+// `org.settings.fileUpload` block. We resolve the org once via the shared
+// `OrgProvider` context (`useCurrentOrg().fullOrgEntry`) — no extra
+// `listMyOrgs` subscription per AGENTS.md "Identity/auth/labels via context,
+// not subscriptions". With multiple `<FileUpload>` instances on a single
+// entity drawer, this previously fired one `listMyOrgs` registration per
+// instance. Now: zero new subscriptions, fully reactive (settings changes
+// stream live through OrgProvider).
 
 function useAllowedCategories(): FileCategory[] | undefined {
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const org = orgs?.find((o) => o.org.slug === orgSlug)?.org;
-	const allowed = org?.settings?.fileUpload?.allowedMimeCategories;
+	const { fullOrgEntry } = useCurrentOrg();
+	const allowed = fullOrgEntry?.org.settings?.fileUpload?.allowedMimeCategories;
 	if (!allowed || allowed.length === 0) return undefined;
 	return allowed as FileCategory[];
 }
 
 function useMaxSizeMb(): number | undefined {
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
-	const org = orgs?.find((o) => o.org.slug === orgSlug)?.org;
-	return org?.settings?.fileUpload?.maxSizeMb;
+	const { fullOrgEntry } = useCurrentOrg();
+	return fullOrgEntry?.org.settings?.fileUpload?.maxSizeMb;
 }
 
 // ─── Hook: one-stop upload/list/remove ────────────────────────────────────────

@@ -21,6 +21,7 @@ import type * as _migrations_tightenReminderSourceAndAddPriority from "../_migra
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
+import type * as _shared_fieldUpdateLog from "../_shared/fieldUpdateLog.js";
 import type * as _shared_notificationKeys from "../_shared/notificationKeys.js";
 import type * as _shared_orgStats from "../_shared/orgStats.js";
 import type * as _shared_permissions_catalog from "../_shared/permissions/catalog.js";
@@ -124,6 +125,7 @@ declare const fullApi: ApiFromModules<{
   "_shared/constants": typeof _shared_constants;
   "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;
+  "_shared/fieldUpdateLog": typeof _shared_fieldUpdateLog;
   "_shared/notificationKeys": typeof _shared_notificationKeys;
   "_shared/orgStats": typeof _shared_orgStats;
   "_shared/permissions/catalog": typeof _shared_permissions_catalog;

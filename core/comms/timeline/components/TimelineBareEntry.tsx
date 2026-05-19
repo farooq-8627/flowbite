@@ -58,6 +58,14 @@ export function TimelineBareEntry({ entry, isLast, gapPx }: TimelineBareEntryPro
 		actorType: entry.actorType,
 	});
 
+	// `field_updated` entries carry the precise change in their
+	// description (e.g. "Status: new → qualified"). Surface that as the
+	// headline directly so the user sees WHAT changed at a glance,
+	// instead of a generic "Lead updated" verb. Other actions fall
+	// through to the theme's resolved verb.
+	const headline =
+		entry.action === "field_updated" && entry.description ? entry.description : theme.titleVerb;
+
 	const subject = extractSubject(entry);
 
 	return (
@@ -69,9 +77,7 @@ export function TimelineBareEntry({ entry, isLast, gapPx }: TimelineBareEntryPro
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
 				{/* Title row */}
 				<div className="flex items-baseline justify-between gap-3">
-					<div className="text-sm font-semibold text-foreground">
-						{theme.titleVerb}
-					</div>
+					<div className="text-sm font-semibold text-foreground">{headline}</div>
 					<TrailingMeta
 						time={entry.createdAt}
 						actorName={actorName}
@@ -82,9 +88,7 @@ export function TimelineBareEntry({ entry, isLast, gapPx }: TimelineBareEntryPro
 				{/* Subject row — the affected entity */}
 				{subject && (
 					<div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-						{subject.name && (
-							<span className="text-foreground/80">{subject.name}</span>
-						)}
+						{subject.name && <span className="text-foreground/80">{subject.name}</span>}
 						{subject.code && (
 							<>
 								{subject.name && <span aria-hidden>·</span>}
@@ -169,9 +173,7 @@ export function TrailingMeta({
 			<span className="hidden whitespace-nowrap sm:inline">by {actorName}</span>
 			<Avatar size="sm" className="size-4 shrink-0">
 				<AvatarImage src={actorAvatarUrl} alt={actorName} />
-				<AvatarFallback className="text-[8px]">
-					{getInitials(actorName)}
-				</AvatarFallback>
+				<AvatarFallback className="text-[8px]">{getInitials(actorName)}</AvatarFallback>
 			</Avatar>
 		</div>
 	);
@@ -221,8 +223,12 @@ function extractSubject(entry: TimelineActivityEntry): {
 
 	// Pull the display name out of the description ("Lead created: Acme Corp"
 	// → "Acme Corp"). If no colon, drop the description (it's just the verb).
+	//
+	// `field_updated` is special — its description IS the headline
+	// ("Status: new → qualified"), not a subject hint. Skip the colon
+	// split so we don't mis-render half the change pair as the subject.
 	let name: string | undefined;
-	if (entry.description) {
+	if (entry.description && entry.action !== "field_updated") {
 		const colonIdx = entry.description.indexOf(":");
 		if (colonIdx >= 0 && colonIdx < entry.description.length - 1) {
 			name = entry.description.slice(colonIdx + 1).trim();

@@ -42,7 +42,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
-import { usePaginatedTimeline, type TimelineScope } from "../hooks";
+import { type TimelineScope, usePaginatedTimeline } from "../hooks";
 import { TimelineComposer } from "./TimelineComposer";
 import { TimelineEntry } from "./TimelineEntry";
 import { TimelineFilters } from "./TimelineFilters";
@@ -65,6 +65,8 @@ interface TimelineFeedProps {
 	/** When set the internal filter state is ignored — caller owns the filter. */
 	externalFilter?: TimelineFilter;
 }
+
+export type { TimelineFeedProps };
 
 export function TimelineFeed({
 	scope,
@@ -161,8 +163,7 @@ export function TimelineFeed({
 		if (!el) return;
 		function onScroll() {
 			if (!el) return;
-			const distanceFromBottom =
-				el.scrollHeight - (el.scrollTop + el.clientHeight);
+			const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
 			if (distanceFromBottom > 32) {
 				userHasScrolledRef.current = true;
 			}
@@ -228,57 +229,43 @@ export function TimelineFeed({
 
 	// ── Render ───────────────────────────────────────────────────────
 	const isLoading = status === "LoadingFirstPage";
-	const showComposerResolved =
-		showComposer ?? (scope.kind !== "org" && Boolean(composerEntity));
-
-	if (isLoading) {
-		return (
-			<div
-				className={cn(
-					"flex h-full min-h-[200px] items-center justify-center",
-					className,
-				)}
-			>
-				<Loader2 className="size-5 animate-spin text-muted-foreground" />
-			</div>
-		);
-	}
-
-	const isEmpty = filtered.length === 0;
+	const showComposerResolved = showComposer ?? (scope.kind !== "org" && Boolean(composerEntity));
+	const isEmpty = !isLoading && filtered.length === 0;
 
 	return (
-		<div className={cn("flex h-full min-h-0 flex-col gap-3", className)}>
-			{/* Filters — only shown when caller hasn't taken control via externalFilter */}
+		<div className={cn("flex h-full min-h-0 flex-col", className)}>
+			{/* ─── Top: filter chips (outside scroll, sticky-by-flex) ──── */}
 			{showFilters && !externalFilter && (
-				<div className="flex shrink-0 items-center justify-between gap-2 px-1">
+				<div className="flex shrink-0 items-center justify-between gap-2 border-b bg-background px-3 py-2">
 					<TimelineFilters value={internalFilter} onChange={setFilter} counts={counts} />
 				</div>
 			)}
 
-			{/* Scrollable feed */}
+			{/* ─── Middle: scrollable feed (the ONLY scrolling region) ─── */}
 			<div
 				ref={containerRef}
 				data-timeline-scroll="true"
-				className="relative flex-1 min-h-0 overflow-y-auto"
+				className="relative min-h-0 flex-1 overflow-y-auto"
 			>
 				{/* Top-sentinel — invisible, triggers load-more when in view */}
 				<div ref={topSentinelRef} aria-hidden className="h-1" />
 
-				{/* Load-more spinner */}
+				{/* Load-more spinner — shown when fetching older pages */}
 				{status === "LoadingMore" && (
 					<div className="flex justify-center py-3">
 						<Loader2 className="size-4 animate-spin text-muted-foreground" />
 					</div>
 				)}
 
-				{isEmpty ? (
+				{isLoading ? (
+					<div className="flex h-full min-h-[200px] items-center justify-center">
+						<Loader2 className="size-5 animate-spin text-muted-foreground" />
+					</div>
+				) : isEmpty ? (
 					<EmptyState emptyState={emptyState} />
 				) : (
-					<div className="relative px-2 py-3">
-						<ul
-							className="flex flex-col"
-							style={{ rowGap: `${entryGapPx}px` }}
-						>
+					<div className="relative px-3 py-3">
+						<ul className="flex flex-col" style={{ rowGap: `${entryGapPx}px` }}>
 							{filtered.map((entry, idx) => (
 								<li key={entry._id}>
 									<TimelineEntry
@@ -293,9 +280,9 @@ export function TimelineFeed({
 				)}
 			</div>
 
-			{/* Composer */}
+			{/* ─── Bottom: composer (always outside scroll) ─────────── */}
 			{showComposerResolved && composerEntity && (
-				<div className="shrink-0">
+				<div className="shrink-0 border-t bg-background p-3">
 					<TimelineComposer
 						entityType={composerEntity.entityType}
 						entityId={composerEntity.entityId}
@@ -309,15 +296,10 @@ export function TimelineFeed({
 
 // ─── Empty state ─────────────────────────────────────────────────────────────
 
-function EmptyState({
-	emptyState,
-}: {
-	emptyState?: { title: string; body?: string };
-}) {
+function EmptyState({ emptyState }: { emptyState?: { title: string; body?: string } }) {
 	const title = emptyState?.title ?? "No activity yet";
 	const body =
-		emptyState?.body ??
-		"Activity, notes, and reminders will appear here as they happen.";
+		emptyState?.body ?? "Activity, notes, and reminders will appear here as they happen.";
 	return (
 		<div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-1 px-6 text-center">
 			<p className="text-sm font-medium text-foreground">{title}</p>

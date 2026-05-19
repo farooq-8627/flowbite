@@ -1,7 +1,21 @@
 # Follow-ups — State
 
-> Updated: 2026-05-19
-> Status: 100% Complete (Phase A) — settings, view, panel, form, hooks, route, sidebar nav, reserved slug all shipped. **Phase B is deferred** — see "Deferred (intentionally, agreed 2026-05-19)" below.
+> Updated: 2026-05-19 (evening — EntityFollowups facade + profile mount)
+> Status: 100% Complete (Phase A) — settings, view, panel, form, hooks, route, sidebar nav, reserved slug all shipped. Profile-page mount has now landed via the new `EntityFollowups` facade. **Phase B is deferred** — see "Deferred (intentionally, agreed 2026-05-19)" below.
+
+## 2026-05-19 (evening) — `EntityFollowups` facade
+
+Added `core/scheduling/followups/components/EntityFollowups.tsx`. Same
+shape as `EntityTimeline`: callers pass either `{ personCode }` or
+`{ entityType, entityId }` and the facade routes to the existing
+`FollowUpsPanel` correctly. This gives entity-scoped surfaces (profile,
+deal, company, project) ONE named entry point so the discriminated-union
+prop shape of `FollowUpsPanel` doesn't have to be threaded across
+modules.
+
+Profile page Reminders tab now mounts `<EntityFollowups personCode={...} />`
+beside the existing `<RemindersPanel>` (chromeless). New section
+registered: `reminders.followups` in `core/platform/profile/config/profile-sections.ts`.
 
 ## Conceptual model — locked
 
@@ -52,22 +66,22 @@ abandoned, but parked until the AI turn / detail-page tab turn arrives.
 Tracked here so the next session can pick them up without reverse-engineering
 the conversation.
 
-### 1. Mount `FollowUpsPanel` in profile / deal / company detail views — **HIGH** (next-tabs turn)
+### 1. Mount `FollowUpsPanel` in profile / deal / company detail views — **PARTIAL** (profile done 2026-05-19)
 
-The panel itself is built and works in isolation. The only blocker is wiring
-it into the three detail surfaces alongside `RemindersPanel`. The pattern is
-identical for all three.
+The panel itself is built and works in isolation. **Profile mount has shipped
+2026-05-19** via the new `EntityFollowups` facade — the panel now appears
+alongside `RemindersPanel` on the person profile Reminders tab. Deal +
+company mounts remain.
 
-| Detail view | File | Mount as |
+| Detail view | File | Status |
 |---|---|---|
-| Person profile (lead OR contact, by `personCode`) | `core/platform/profile/views/ProfileContent.tsx` | `<FollowUpsPanel personCode={personCode} />` next to existing `<RemindersPanel personCode={personCode} />` (line ~218). |
-| Deal detail | `core/entities/_entities/deals/views/DealDetailView.tsx` | `<FollowUpsPanel entityType="deal" entityId={deal.dealCode} defaults={{ personCode: deal.personCode }} />` next to existing `<RemindersPanel ... />` (line ~1015). |
-| Company detail | `core/entities/_entities/companies/views/CompanyDetailView.tsx` (currently has no Reminders or Follow-ups panel) | Add BOTH `<RemindersPanel personCode={primary?.personCode} />` (if a primary contact exists) and `<FollowUpsPanel entityType="company" entityId={company.companyCode} defaults={{ personCode: primary?.personCode }} />`. |
+| Person profile (lead OR contact, by `personCode`) | `core/platform/profile/views/ProfileContent.tsx::RemindersGroup` | ✅ DONE 2026-05-19 — `<EntityFollowups personCode={personCode} />` rendered chromeless. |
+| Deal detail | `core/entities/_entities/deals/views/DealDetailView.tsx` | ⬜ pending — `<EntityFollowups entityType="deal" entityId={deal.dealCode} defaults={{ personCode: deal.personCode }} />` next to existing `<RemindersPanel ... />` (line ~1015). |
+| Company detail | `core/entities/_entities/companies/views/CompanyDetailView.tsx` (currently has no Reminders or Follow-ups panel) | ⬜ pending — Add BOTH `<RemindersPanel personCode={primary?.personCode} />` (if a primary contact exists) and `<EntityFollowups entityType="company" entityId={company.companyCode} defaults={{ personCode: primary?.personCode }} />`. |
 
-Why deferred: the panels need to slot into the detail tabs UI, which is
-currently being reworked alongside the timeline + activity feed. Doing it now
-risks merge churn with that work. Pick this up immediately after the tabs
-refactor lands.
+Why deferred (deal/company): the detail-view tabs are still being reworked
+alongside the timeline + activity feed. Doing it now risks merge churn with
+that work. Pick this up immediately after the tabs refactor lands.
 
 ### 2. Register `create_followup` AI tool — **HIGH** (next-AI turn)
 

@@ -10,6 +10,7 @@ import { orgMutation, requireOrgMember } from "../../../_functions/authenticated
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import { ERRORS } from "../../../_shared/errors";
+import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -175,14 +176,16 @@ export const update = orgMutation({
 			}
 		}
 
-		await logActivity(ctx, {
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId,
-			action: "updated",
 			entityType: "contact",
 			entityId: args.contactId,
 			personCode: contact.personCode,
-			description: `Contact updated: ${contact.displayName}`,
+			displayName: contact.displayName,
+			before: contact as unknown as Record<string, unknown>,
+			after: { ...contact, ...patch } as unknown as Record<string, unknown>,
+			fields: ["displayName", "email", "phone", "companyId", "assignedTo"],
 		});
 	},
 });

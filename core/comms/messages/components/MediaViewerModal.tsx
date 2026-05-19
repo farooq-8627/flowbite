@@ -255,12 +255,19 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 		</div>
 	);
 
+	// Stage — for desktop, this contains the absolutely-positioned media so
+	// the parent's natural size is the media's intrinsic size constrained by
+	// `max-w-[90vw] max-h-[calc(90vh-3rem)]`. Mobile uses the same JSX but
+	// fills the full screen via the parent's flex-1.
 	const Stage = (
 		// biome-ignore lint/a11y/noStaticElementInteractions: Stage handles wheel/drag for zoom-and-pan; semantic role would mislead AT.
 		<div
 			ref={stageRef}
 			className={cn(
-				"relative flex size-full items-center justify-center overflow-hidden bg-black",
+				"relative flex items-center justify-center overflow-hidden bg-black",
+				// Mobile fills its flex-1 parent. Desktop is intrinsic-sized
+				// by the inner media (max-w/max-h on the <img>/<video>).
+				isMobile ? "size-full" : "min-h-0",
 				scale > 1 && !isMobile && "cursor-grab active:cursor-grabbing",
 			)}
 			onWheel={onWheel}
@@ -276,7 +283,12 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 					src={file.url}
 					alt={file.name}
 					draggable={false}
-					className="max-h-full max-w-full select-none object-contain"
+					className={cn(
+						"select-none object-contain",
+						// On desktop the image's natural size drives the
+						// dialog width; mobile uses the full screen.
+						isMobile ? "max-h-full max-w-full" : "max-h-[calc(90vh-3rem)] max-w-[90vw]",
+					)}
 					style={transformStyle}
 				/>
 			)}
@@ -286,7 +298,10 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 					controls
 					autoPlay
 					playsInline
-					className="max-h-full max-w-full"
+					className={cn(
+						"object-contain",
+						isMobile ? "max-h-full max-w-full" : "max-h-[calc(90vh-3rem)] max-w-[90vw]",
+					)}
 				>
 					<track kind="captions" />
 				</video>
@@ -354,16 +369,27 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 	}
 
 	// Desktop modal.
+	//
+	// The media drives the modal size (Twitter / Instagram / lightgallery
+	// pattern). The <img> / <video> inside `Stage` carries
+	// `max-w-[90vw] max-h-[calc(90vh-3rem)]` + `object-contain`, so:
+	//   - 16:9 landscape → width binds at 90vw, height adjusts proportionally
+	//   - 9:16 portrait  → height binds at 90vh-3rem, width adjusts (~25vw)
+	// The DialogContent uses `w-fit max-w-[95vw]` so it shrink-wraps the
+	// media's natural rendered size — no wasted black space on the sides
+	// for portrait videos. We also override the base dialog's `grid` with
+	// `flex flex-col` so the toolbar row + stage stack without grid
+	// auto-sizing fighting the intrinsic-width layout.
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				showCloseButton={false}
-				className="max-h-[90vh] w-[90vw] max-w-5xl gap-0 overflow-hidden border-0 bg-black p-0 text-white"
+				className="flex h-fit max-h-[95vh] w-fit max-w-[95vw] flex-col gap-0 overflow-hidden border-0 bg-black p-0 text-white sm:max-w-[95vw]"
 			>
 				<DialogTitle className="sr-only">{file.name}</DialogTitle>
-				<div className="flex items-center justify-between px-3 py-2">
+				<div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2">
 					<span className="truncate text-sm">{file.name}</span>
-					<div className="flex items-center gap-2">
+					<div className="flex shrink-0 items-center gap-2">
 						{Toolbar}
 						<DialogClose asChild>
 							<Button
@@ -378,7 +404,7 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 						</DialogClose>
 					</div>
 				</div>
-				<div className="relative h-[calc(90vh-3rem)]">
+				<div className="relative flex min-h-0 flex-1 items-center justify-center">
 					{Stage}
 					{NavButtons}
 				</div>

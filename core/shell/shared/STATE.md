@@ -1,7 +1,24 @@
 # Shared — State
 
-> Updated: 2026-05-19
+> Updated: 2026-05-19 (round 3 — ShellLayout fillHeight chain fix)
 > Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome live here.
+>
+> **2026-05-19 round 3 — ShellLayout fillHeight chain fix.**
+> The shell `<main>` is `flex-1 overflow-y-auto`; its inner wrapper
+> previously was `<div className="max-w-full space-y-6">` which had no
+> height. ProfileSection's `fillHeight` workaround used a fixed
+> `h-[calc(100vh-7rem)]` magic number — but the actual main height
+> rarely matched 100vh-7rem (varying topnav + toolbar chrome), leaving
+> a bottom gap on Messages and Timeline tabs.
+>
+> Fix: shell main inner is now `flex min-h-full max-w-full flex-col
+> space-y-6`. The flex-col claims at-least the full main height so a
+> single fillHeight section can flex into it; when content exceeds main
+> height, the natural overflow + main's `overflow-y-auto` still
+> scrolls. ProfileSection's fillHeight is now `flex flex-1 min-h-[26rem]
+> min-h-0 flex-col` — proper flex chain, no magic number, perfectly
+> fills the column whatever the actual main height ends up being. File:
+> `core/shell/shared/layouts/ShellLayout.tsx`.
 >
 > **2026-05-19 — Currency rendering fixed (`narrowSymbol`).**
 > `formatCurrency()` in `useOrgDefaultCurrency.ts` now defaults to

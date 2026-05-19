@@ -93,7 +93,11 @@ export function TimelineComposer({
 	return (
 		<div
 			className={cn(
-				"flex flex-col gap-2 rounded-[var(--radius)] border bg-card p-3",
+				// Borderless by default — TimelineFeed wraps the composer in
+				// its own bordered container so the composer doesn't draw a
+				// second visual frame. Pass a className with `border` to
+				// re-enable when used standalone.
+				"flex flex-col gap-2",
 				className,
 			)}
 		>
@@ -108,8 +112,8 @@ export function TimelineComposer({
 					}
 				}}
 				placeholder="Write your comment…"
-				rows={3}
-				className="min-h-[68px] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+				rows={2}
+				className="min-h-[44px] resize-none border bg-background p-2 text-sm shadow-none focus-visible:ring-1"
 				aria-label="Write a comment"
 			/>
 			<div className="flex items-center justify-end gap-2">

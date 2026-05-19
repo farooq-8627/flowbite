@@ -14,10 +14,25 @@
  * files for that personCode. Use it on the deal/contact/lead detail views so
  * an attachment uploaded to "the contact" appears on the deal too.
  *
- * Renders a unified, deduped, date-sorted list with the standard `<FileList>`
- * + an inline `<FileUpload>` to attach new files. Upload destination defaults
+ * Renders ONE merged, deduped, date-sorted list (`<FileList>`) plus an inline
+ * dropzone (`<FileDropzone>`) to attach new files. Upload destination defaults
  * to the entity's own scope; pass `uploadScope`/`uploadScopeId` to override
  * (e.g. attach to the person profile instead of the deal).
+ *
+ * Why we don't use `<FileUpload>` (the dropzone+list combo) here
+ * ─────────────────────────────────────────────────────────────
+ *   `<FileUpload>` ships its own internal `<FileList>` driven by
+ *   `useFileAttachments(...).files` which only returns DIRECT-scope files.
+ *   Pairing it with our merged `<FileList>` (driven by `listForEntity`)
+ *   produced TWO list rows for every direct-scope file — one with a trash
+ *   icon (the inner FileUpload list) and one without (the merged list).
+ *   Reported by user 2026-05-19: "see one set with trash icon and another
+ *   without trash icon can you please remove the duplicate which dont have
+ *   trash icon".
+ *
+ *   Fix: render the dropzone alone + the merged list alone, wired to the
+ *   same `useFileAttachments.remove` mutation so the trash icon shows on
+ *   every row regardless of which scope it came from.
  *
  * Used by Lead/Contact/Deal/Company detail views, Profile detail, and any
  * future entity that wants a Files tab. Zero per-call configuration beyond
@@ -25,12 +40,14 @@
  */
 
 import { useQuery } from "convex/react";
+import { useCallback, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
 	type AttachedFile,
+	FileDropzone,
 	FileList,
-	FileUpload,
+	useFileAttachments,
 } from "@/core/data-io/files/components/FileUpload";
 
 type EntityType = "lead" | "contact" | "deal" | "company" | "user" | "org" | "person";
@@ -65,14 +82,37 @@ export function EntityFilesPanel({
 	description,
 	className,
 }: EntityFilesPanelProps) {
+	const resolvedScope = uploadScope ?? entityType;
+	const resolvedScopeId = uploadScopeId ?? entityId;
+
+	// Upload + remove handlers. We attach a `tags` marker so cross-entity
+	// queries (`listForEntity`) can surface the file via the tag-bridge even
+	// when uploaded to a different scope (e.g. `personCode`). The hook's
+	// own `files` list (direct-scope only) is intentionally ignored here —
+	// we render the merged `listForEntity` result instead.
+	const { upload, remove, uploading } = useFileAttachments({
+		orgId,
+		scope: resolvedScope,
+		scopeId: resolvedScopeId,
+	});
+
 	// One query replaces the previous 3 subscriptions (direct + tagged + person scope).
 	// Dedup + sort are done server-side.
-	const files = useQuery(
+	const merged = useQuery(
 		api.files.queries.listForEntity,
 		orgId
 			? { orgId, scope: entityType, scopeId: entityId, ...(personCode ? { personCode } : {}) }
 			: "skip",
 	) as AttachedFile[] | undefined;
+
+	const tags = useMemo(() => [`${entityType}:${entityId}`], [entityType, entityId]);
+
+	const handleUpload = useCallback(
+		(list: File[]) => {
+			void upload(list, { tags });
+		},
+		[upload, tags],
+	);
 
 	if (!orgId) return null;
 
@@ -86,15 +126,11 @@ export function EntityFilesPanel({
 			)}
 
 			<div className="flex flex-col gap-3">
-				<FileUpload
-					orgId={orgId}
-					scope={uploadScope ?? entityType}
-					scopeId={uploadScopeId ?? entityId}
-					multiple
-					tags={[`${entityType}:${entityId}`]}
-				/>
+				<FileDropzone onFiles={handleUpload} multiple />
 				<FileList
-					files={files ?? []}
+					files={merged ?? []}
+					uploading={uploading}
+					onRemove={remove}
 					emptyText="No files attached yet. Drop one above to get started."
 				/>
 			</div>

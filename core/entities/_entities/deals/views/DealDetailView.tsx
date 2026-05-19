@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import {
@@ -62,6 +63,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
+import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
 import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
@@ -897,6 +899,8 @@ export function DealDetailView({ orgSlug, dealId }: { orgSlug: string; dealId: s
 
 	const tabs = [
 		{ id: "overview" as const, label: "Overview" },
+		{ id: "timeline" as const, label: "Timeline" },
+		{ id: "followups" as const, label: "Follow-ups" },
 		{ id: "calendar" as const, label: "Calendar" },
 		{ id: "reminders" as const, label: "Reminders" },
 	];
@@ -1001,11 +1005,74 @@ export function DealDetailView({ orgSlug, dealId }: { orgSlug: string; dealId: s
 								) : null}
 							</dl>
 						</div>
-						<p className="text-xs text-muted-foreground">
-							Full {labels.deal.singular.toLowerCase()} detail (notes, files,
-							timeline) lands in Slice 4.
-						</p>
+
+						{/* Embedded summary cards: 2-column grid mirroring the
+						    profile Overview layout. Timeline + Follow-ups
+						    surface the most important context without forcing
+						    a tab switch. */}
+						<div className="grid gap-3 lg:grid-cols-2">
+							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
+								<div className="flex items-center justify-between border-b px-3 py-2">
+									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										Recent activity
+									</h3>
+									<button
+										type="button"
+										onClick={() => setActiveTab("timeline")}
+										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+									>
+										View all
+									</button>
+								</div>
+								<div className="flex min-h-0 flex-1 flex-col">
+									<EntityTimeline
+										entityType="deal"
+										entityId={deal.dealCode}
+										personCode={deal.personCode}
+										pageSize={20}
+										visibleCap={20}
+										showFilters={false}
+										showComposer={false}
+									/>
+								</div>
+							</div>
+							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
+								<div className="flex items-center justify-between border-b px-3 py-2">
+									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										Open follow-ups
+									</h3>
+									<button
+										type="button"
+										onClick={() => setActiveTab("followups")}
+										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+									>
+										View all
+									</button>
+								</div>
+								<div className="flex min-h-0 flex-1 flex-col p-3">
+									<EntityFollowups
+										entityType="deal"
+										entityId={deal.dealCode}
+										defaults={{ personCode: deal.personCode }}
+									/>
+								</div>
+							</div>
+						</div>
 					</div>
+				)}
+				{activeTab === "timeline" && (
+					<EntityTimeline
+						entityType="deal"
+						entityId={deal.dealCode}
+						personCode={deal.personCode}
+					/>
+				)}
+				{activeTab === "followups" && (
+					<EntityFollowups
+						entityType="deal"
+						entityId={deal.dealCode}
+						defaults={{ personCode: deal.personCode }}
+					/>
 				)}
 				{activeTab === "calendar" && (
 					<EntityCalendarPanel

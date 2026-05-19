@@ -9,6 +9,7 @@ import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
+import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -182,14 +183,20 @@ export const update = orgMutation({
 			}
 		}
 
-		await logActivity(ctx, {
+		// Field-level activity logging — one log per changed field with
+		// {field, fromValue, toValue} metadata. Replaces the old "Lead
+		// updated: <name>" generic entry that fired on every drag even
+		// when only sortOrder changed.
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId,
-			action: "updated",
 			entityType: "lead",
 			entityId: args.leadId,
 			personCode: lead.personCode,
-			description: `Lead updated: ${lead.displayName}`,
+			displayName: lead.displayName,
+			before: lead as unknown as Record<string, unknown>,
+			after: { ...lead, ...patch } as unknown as Record<string, unknown>,
+			fields: ["displayName", "email", "phone", "status", "source", "assignedTo"],
 		});
 	},
 });

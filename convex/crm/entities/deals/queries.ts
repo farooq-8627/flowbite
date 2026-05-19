@@ -115,3 +115,36 @@ export const getByDealCode = orgQuery({
 			.first();
 	},
 });
+
+/**
+ * listByPersonCode — every deal linked to one person.
+ *
+ * Used by `OverviewCard` to surface the latest deals on a profile or
+ * hover quick-view. Scopes via the `by_org_and_personCode` index so the
+ * query is O(log n) regardless of org size, and filters out soft-deleted
+ * rows on the way out. Capped at `limit` (default 5) — the card never
+ * needs more than a handful.
+ */
+export const listByPersonCode = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		personCode: v.string(),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "deals.view");
+
+		const cap = args.limit ?? 5;
+		const rows = await ctx.db
+			.query("deals")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.take(cap * 2);
+		return rows
+			.filter((d) => d.deletedAt === undefined)
+			.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+			.slice(0, cap);
+	},
+});

@@ -76,7 +76,7 @@ export function TopNav({
 				<div className="flex-1" />
 
 				{/* Right */}
-				<div className="flex shrink-0 items-center gap-1">
+				<div className="flex shrink-0 items-center sm:gap-1">
 					<QuickAddMenu />
 					<Tooltip>
 						<TooltipTrigger asChild>

@@ -10,6 +10,7 @@ import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
+import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -162,14 +163,16 @@ export const update = orgMutation({
 
 		await ctx.db.patch(args.dealId, { ...patch, updatedAt: Date.now() });
 
-		await logActivity(ctx, {
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId,
-			action: "updated",
 			entityType: "deal",
 			entityId: args.dealId,
 			personCode: deal.personCode,
-			description: `Deal updated: ${deal.title}`,
+			displayName: deal.title,
+			before: deal as unknown as Record<string, unknown>,
+			after: { ...deal, ...patch } as unknown as Record<string, unknown>,
+			fields: ["title", "value", "currency", "assignedTo", "expectedCloseDate"],
 		});
 	},
 });

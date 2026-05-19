@@ -1,11 +1,23 @@
-// STATUS: NOT_STARTED — Phase 2 frontend (Slice 1)
-// Combined people list — leads + contacts, filterable by ?type=lead|contact
-export default async function ProfileListPage({
+import { ProfilesView } from "@/core/platform/profile/views/ProfilesView";
+
+/**
+ * All-profiles page — combined people view (leads + contacts).
+ *
+ * URL: `/{locale}/{orgSlug}/profile`.
+ *
+ * People are one mental model — leads and contacts are just two stages of
+ * the same person's lifecycle. This page renders BOTH on a single board:
+ * a Leads column (excluding converted) and a Contacts column. One search,
+ * one toolbar, one place to scan the whole pipeline.
+ *
+ * Rendering happens in `ProfilesView`. Per "app/ pages are thin wrappers"
+ * rule, this file does nothing but unwrap params and forward.
+ */
+export default async function AllProfilesPage({
 	params,
 }: {
 	params: Promise<{ orgSlug: string }>;
 }) {
 	const { orgSlug } = await params;
-	// TODO Slice 1: import ProfileListView from @/core/entities/profile/views/ProfileListView
-	return <div data-org={orgSlug}>All profiles — coming soon</div>;
+	return <ProfilesView orgSlug={orgSlug} />;
 }

@@ -13,6 +13,13 @@ import { orgQuery, requireOrgMember } from "../../_functions/authenticated";
  * Checks contacts first (converted leads are contacts — more current state).
  * Falls back to leads (unconverted leads).
  * Returns null if not found in either table.
+ *
+ * Also resolves the *creator* of the row by reading the `created` activity
+ * log entry for this person (cheap — bounded `take(20)` on the personCode
+ * index, then linear filter for `action === "created"`). Returned as
+ * `createdBy: { userId, name, email, avatarUrl }` so the profile overview
+ * card can render a "created by" pill without a second round-trip. Falls
+ * back to `null` when the activity log was pruned (legacy rows, archive).
  */
 export const getByPersonCode = orgQuery({
 	args: {
@@ -30,8 +37,39 @@ export const getByPersonCode = orgQuery({
 			)
 			.first();
 
+		// Resolve the creator from activity logs (shared by both branches).
+		// We read newest-first then linearly find the oldest "created" entry.
+		// `take(50)` is a hard cap — far more than any single person should
+		// need, and still O(log n) thanks to the `by_org_and_personCode`
+		// index. No `.collect()` (per AGENTS.md backend rules).
+		const logs = await ctx.db
+			.query("activityLogs")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.order("asc")
+			.take(50);
+		const createdLog = logs.find((l) => l.action === "created");
+		let createdBy: {
+			userId: string;
+			name?: string;
+			email?: string;
+			avatarUrl?: string;
+		} | null = null;
+		if (createdLog) {
+			const creator = await ctx.db.get(createdLog.userId);
+			if (creator) {
+				createdBy = {
+					userId: creator._id as string,
+					name: creator.name,
+					email: creator.email,
+					avatarUrl: creator.avatarUrl,
+				};
+			}
+		}
+
 		if (contact && !contact.deletedAt) {
-			return { entity: contact, type: "contact" as const };
+			return { entity: contact, type: "contact" as const, createdBy };
 		}
 
 		// Fall back to leads — unconverted person
@@ -43,7 +81,7 @@ export const getByPersonCode = orgQuery({
 			.first();
 
 		if (lead && !lead.deletedAt) {
-			return { entity: lead, type: "lead" as const };
+			return { entity: lead, type: "lead" as const, createdBy };
 		}
 
 		return null;

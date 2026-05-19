@@ -1,12 +1,23 @@
 "use client";
-"use client";
 
-import type { Id } from "@/convex/_generated/dataModel";
+import { useQuery } from "convex/react";
+import { Sparkles } from "lucide-react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { Badge } from "@/components/ui/badge";
+import { api } from "@/convex/_generated/api";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
+import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
+import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
+import { getStatusColor } from "@/core/entities/shared/config/defaults";
+import { OverviewCard } from "@/core/platform/profile/components/OverviewCard";
 import { PersonCalendarPanel } from "@/core/scheduling/calendar/panels/PersonCalendarPanel";
+import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
 import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
 import { ProfileSection } from "./ProfileSection";
@@ -21,13 +32,20 @@ type Props = {
 /**
  * ProfileContent — dispatches to the correct profile group.
  *
- * Each group returns a stack of `<ProfileSection>` cards. Every card id MUST
- * match an entry in `PROFILE_SECTIONS` so it shows up in the toolbar pills and
- * is searchable through the shell's Fuse index.
+ * Section chrome rules (asked for explicitly 2026-05-19):
+ *   - Overview rows           → cards (Vitals / Contact / Company / Tags / Custom Fields)
+ *   - Messages                → CHROMELESS (Messages panel is itself a full surface)
+ *   - Timeline                → CHROMELESS (entity timeline feed is the surface)
+ *   - Notes — AI briefing     → card (small summary block — looks odd without it)
+ *   - Notes — entries         → CHROMELESS (the notes kanban is the surface)
+ *   - Deals                   → card (placeholder for now)
+ *   - Files                   → card (looks odd without — explicit user request)
+ *   - Reminders               → CHROMELESS (reminders + follow-ups stack)
+ *   - Calendar                → CHROMELESS (calendar grid is the surface)
  *
- * Every tab is a placeholder for now. Slice 2 of
- * `ENTITY_SCAFFOLDS_ARCHITECTURE.md` replaces these with real content
- * (PersonHeader, PersonOverviewTab, UnifiedTimeline, etc.).
+ * "Chromeless" sections still register with the shell's search system so the
+ * topnav pill highlight and Fuse search behave identically — only the visual
+ * card box is dropped. See `ProfileSection.chromeless` for details.
  */
 export function ProfileContent({ activeGroup, personCode, orgSlug, orgId }: Props) {
 	switch (activeGroup) {
@@ -52,104 +70,84 @@ export function ProfileContent({ activeGroup, personCode, orgSlug, orgId }: Prop
 	}
 }
 
-// ─── Placeholder groups (Slice 2 replaces these with real content) ────────────
+// ─── Overview — single unified OverviewCard (replaces the 5-card layout) ─────
 
 function OverviewGroup({ personCode }: { personCode: string }) {
-	// Labels are reactive — rename "Company" → "Venue" in Settings and the
-	// section title + description update here without a reload.
-	const labels = useEntityLabels();
 	return (
-		<div className="grid gap-6">
-			<ProfileSection
-				id="overview.vitals"
-				title="Vitals"
-				description="Name, personCode, avatar, status, and assignee."
-			>
-				<PlaceholderRow personCode={personCode} label="Vitals" />
-			</ProfileSection>
-			<ProfileSection
-				id="overview.contact"
-				title="Contact"
-				description="Email, phone, WhatsApp, and preferred channel."
-			>
-				<PlaceholderRow personCode={personCode} label="Contact info" />
-			</ProfileSection>
-			<ProfileSection
-				id="overview.company"
-				title={labels.company.singular}
-				description={`Linked ${labels.company.singular.toLowerCase()} and role at that ${labels.company.singular.toLowerCase()}.`}
-			>
-				<PlaceholderRow personCode={personCode} label={`${labels.company.singular} link`} />
-			</ProfileSection>
-			<ProfileSection
-				id="overview.tags"
-				title="Tags"
-				description="Tags applied to this person."
-			>
-				<PlaceholderRow personCode={personCode} label="Tag picker" />
-			</ProfileSection>
-			<ProfileSection
-				id="overview.custom-fields"
-				title="Custom Fields"
-				description="Workspace-defined fields, stage-aware."
-			>
-				<PlaceholderRow personCode={personCode} label="Dynamic fields" />
-			</ProfileSection>
-		</div>
+		<ProfileSection
+			id="overview.card"
+			title="Overview"
+			description="Vitals, contact, owner, tags, latest messages, reminders, and deals."
+			chromeless
+		>
+			<OverviewCard personCode={personCode} />
+		</ProfileSection>
 	);
 }
+
+// ─── Messages — CHROMELESS, full-height panel ────────────────────────────────
 
 function MessagesGroup({ personCode }: { personCode: string }) {
 	return (
-		<div className="grid gap-6">
-			<ProfileSection
-				id="messages.thread"
-				title="Conversation"
-				description="Human messages and AI on-behalf replies — synced with WhatsApp and email when those channels are wired up."
-			>
-				<MessagesPanel entityType="person" entityId={personCode} />
-			</ProfileSection>
-		</div>
+		<ProfileSection
+			id="messages.thread"
+			title="Conversation"
+			description="Human messages and AI on-behalf replies — synced with WhatsApp and email when those channels are wired up."
+			chromeless
+			fillHeight
+		>
+			<MessagesPanel entityType="person" entityId={personCode} />
+		</ProfileSection>
 	);
 }
 
-function TimelineGroup({ personCode, orgSlug }: { personCode: string; orgSlug: string }) {
+// ─── Timeline — CHROMELESS, entity timeline feed ─────────────────────────────
+
+function TimelineGroup({ personCode, orgSlug: _orgSlug }: { personCode: string; orgSlug: string }) {
 	return (
-		<div className="grid gap-6">
-			<ProfileSection
-				id="timeline.feed"
-				title="Feed"
-				description="Unified log — created, updated, stage change, AI action, WhatsApp, reminders."
-			>
-				<PlaceholderRow
-					personCode={personCode}
-					label={`Unified timeline (org: ${orgSlug})`}
-				/>
-			</ProfileSection>
-		</div>
+		<ProfileSection
+			id="timeline.feed"
+			title="Feed"
+			description="Unified log — created, updated, stage change, AI action, WhatsApp, reminders."
+			chromeless
+			fillHeight
+		>
+			<EntityTimeline personCode={personCode} />
+		</ProfileSection>
 	);
 }
+
+// ─── Notes — AI briefing stub + chromeless notes panel ──────────────────────
 
 function NotesGroup({ personCode }: { personCode: string }) {
 	return (
 		<div className="grid gap-6">
+			{/* AI briefing — Phase 3 stub. Pulls aiContext.summary off the
+			    person if any, otherwise renders a "no briefing yet" state.
+			    The full Phase 3 build will replace this with a streaming AI
+			    summary that reblits whenever the entity changes. */}
 			<ProfileSection
 				id="notes.ai-briefing"
 				title="AI Briefing"
 				description="AI-generated summary of the most important context."
 			>
-				<PlaceholderRow personCode={personCode} label="AI briefing" />
+				<AiBriefingBlock personCode={personCode} />
 			</ProfileSection>
+
+			{/* Notes panel is its own surface — render chromeless. */}
 			<ProfileSection
 				id="notes.entries"
 				title="Notes"
 				description="Sticky notes — color-code, filter, and drag between categories. Notes added here also appear on the org-wide Notes page."
+				chromeless
 			>
 				<NotesPanel entityType="person" entityId={personCode} personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);
 }
+
+// ─── Deals — real list keyed by personCode ─────────────────────────────────
 
 function DealsGroup({ personCode }: { personCode: string }) {
 	const labels = useEntityLabels();
@@ -160,30 +158,14 @@ function DealsGroup({ personCode }: { personCode: string }) {
 				title={labels.deal.plural}
 				description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode.`}
 			>
-				<PlaceholderRow
-					personCode={personCode}
-					label={`${labels.deal.plural} for this person`}
-				/>
+				<PersonDealsList personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);
 }
 
-/**
- * FilesGroup — drag-and-drop attachments scoped to a single person.
- *
- * Uses the universal `<EntityFilesPanel>`. For a person profile the
- * attachments live in `scope="person", scopeId=personCode` and tagged
- * `person:<personCode>`. Setting `entityType="person"` everywhere keeps
- * the three internal queries (direct scope + tag + personFiles) all
- * pointing at the SAME slot, so the dedupe loop can collapse the
- * "this file matches via tag AND via direct scope" case to one row
- * (instead of one row per query — which is what produced the
- * "every file shows twice" bug pre-2026-05-19).
- *
- * Future passes will gate AI access to these files through a per-person
- * consent flag.
- */
+// ─── Files — KEEPS its card (explicit user request) ──────────────────────────
+
 function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs"> | undefined }) {
 	return (
 		<div className="grid gap-6">
@@ -207,6 +189,8 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 	);
 }
 
+// ─── Reminders — CHROMELESS reminders + follow-ups stack ─────────────────────
+
 function RemindersGroup({ personCode }: { personCode: string }) {
 	return (
 		<div className="grid gap-6">
@@ -214,32 +198,224 @@ function RemindersGroup({ personCode }: { personCode: string }) {
 				id="reminders.list"
 				title="Reminders"
 				description="All follow-ups scheduled for this person."
+				chromeless
 			>
 				<RemindersPanel personCode={personCode} />
 			</ProfileSection>
-		</div>
-	);
-}
-
-function CalendarGroup({ personCode }: { personCode: string }) {
-	return (
-		<div className="grid gap-6">
 			<ProfileSection
-				id="calendar.upcoming"
-				title="Upcoming"
-				description="Scheduled meetings and follow-up plan."
+				id="reminders.followups"
+				title="Follow-ups"
+				description="Cadence-driven follow-ups attached to this person."
+				chromeless
 			>
-				<PersonCalendarPanel personCode={personCode} />
+				<EntityFollowups personCode={personCode} />
 			</ProfileSection>
 		</div>
 	);
 }
 
-function PlaceholderRow({ personCode, label }: { personCode: string; label: string }) {
+// ─── Calendar — CHROMELESS calendar panel ────────────────────────────────────
+
+function CalendarGroup({ personCode }: { personCode: string }) {
 	return (
-		<div className="text-xs text-muted-foreground">
-			{label} for <span className="font-mono text-foreground">{personCode}</span> — coming
-			soon.
+		<ProfileSection
+			id="calendar.upcoming"
+			title="Upcoming"
+			description="Scheduled meetings and follow-up plan."
+			chromeless
+			fillHeight
+		>
+			<PersonCalendarPanel personCode={personCode} />
+		</ProfileSection>
+	);
+}
+
+// ─── AI Briefing block (Phase 3 stub) ───────────────────────────────────────
+
+/**
+ * AiBriefingBlock — renders the precomputed `aiContext.summary` field from
+ * the person's lead/contact row when available. This is a STUB ahead of the
+ * full Phase 3 build:
+ *   - We don't trigger a fresh AI call here; we just surface whatever the
+ *     last refresh wrote to `aiContext.summary` (could come from voice/OCR
+ *     ingestion or future scheduled rebuilds).
+ *   - When no summary exists we render a friendly "AI briefing not ready"
+ *     muted line so the section doesn't look broken.
+ *
+ * Why surface aiContext today? Because the data is already there — voice
+ * note + OCR pipelines have been writing to it since Phase 2. Phase 3 will
+ * add a "Refresh briefing" button + a system-prompt-aware AI tool, but the
+ * field itself doesn't change shape. See `convex/_shared/validators.ts` for
+ * the canonical aiContext shape.
+ */
+function AiBriefingBlock({ personCode }: { personCode: string }) {
+	const { orgId } = useCurrentOrg();
+	const person = useQuery(
+		api.crm.people.queries.getByPersonCode,
+		orgId ? { orgId, personCode } : "skip",
+	);
+
+	if (person === undefined) {
+		return <p className="text-xs text-muted-foreground">Loading briefing…</p>;
+	}
+	if (!person) {
+		return <p className="text-xs text-muted-foreground">Person not found.</p>;
+	}
+
+	const ai = (person.entity as Doc<"leads"> | Doc<"contacts">).aiContext;
+	const summary = ai?.summary;
+	const keyFacts = ai?.keyFacts ?? [];
+	const lastUpdatedAt = ai?.lastUpdatedAt;
+
+	if (!summary && keyFacts.length === 0) {
+		return (
+			<div className="flex items-start gap-2 rounded-[var(--radius)] border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+				<Sparkles className="mt-0.5 size-3 shrink-0" aria-hidden />
+				<p>
+					No AI briefing yet. As messages, notes, and follow-ups accumulate, the AI
+					assistant will summarize key context here automatically.
+				</p>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex flex-col gap-2">
+			{summary && (
+				<div className="flex items-start gap-2 rounded-[var(--radius)] border bg-muted/30 px-3 py-2 text-xs">
+					<Sparkles
+						className="mt-0.5 size-3 shrink-0 text-muted-foreground"
+						aria-hidden
+					/>
+					<p className="leading-relaxed text-foreground">{summary}</p>
+				</div>
+			)}
+			{keyFacts.length > 0 && (
+				<ul className="grid gap-1 px-1 text-xs">
+					{keyFacts.slice(0, 5).map((fact) => (
+						<li key={fact} className="flex items-start gap-1.5 text-muted-foreground">
+							<span
+								aria-hidden
+								className="mt-1 size-1 shrink-0 rounded-full bg-current"
+							/>
+							<span className="text-foreground">{fact}</span>
+						</li>
+					))}
+				</ul>
+			)}
+			{lastUpdatedAt && (
+				<p className="px-1 text-[10px] text-muted-foreground tabular-nums">
+					Updated {new Date(lastUpdatedAt).toLocaleString()}
+				</p>
+			)}
 		</div>
 	);
+}
+
+// ─── Deals list keyed by personCode ─────────────────────────────────────────
+
+/**
+ * PersonDealsList — replaces the previous "coming soon" placeholder on the
+ * profile Deals tab. Reads via `deals.listByPersonCode` (already used by the
+ * OverviewCard summary block) and renders ALL linked deals, not just the
+ * first three. Each row is a clickable link to the deal detail page.
+ *
+ * Sort order matches the OverviewCard: newest `updatedAt` first.
+ */
+function PersonDealsList({ personCode }: { personCode: string }) {
+	const params = useParams();
+	const orgSlug = params?.orgSlug as string | undefined;
+	const locale = params?.locale as string | undefined;
+	const { orgId } = useCurrentOrg();
+	const labels = useEntityLabels();
+
+	const deals = useQuery(
+		api.crm.entities.deals.queries.listByPersonCode,
+		orgId ? { orgId, personCode, limit: 50 } : "skip",
+	) as Array<Doc<"deals">> | undefined;
+
+	if (deals === undefined) {
+		return (
+			<p className="text-xs text-muted-foreground">
+				Loading {labels.deal.plural.toLowerCase()}…
+			</p>
+		);
+	}
+	if (deals.length === 0) {
+		return (
+			<p className="text-xs text-muted-foreground">
+				No {labels.deal.plural.toLowerCase()} linked to this person yet.
+			</p>
+		);
+	}
+
+	const baseHref = orgSlug ? `/${locale ?? "en"}/${orgSlug}/${labels.deal.slug}` : null;
+
+	return (
+		<ul className="flex flex-col divide-y rounded-[var(--radius)] border">
+			{deals.map((deal) => {
+				const stageColor = getStatusColor("deal", deal.currentStageId);
+				const stageLabel = deal.wonAt
+					? "Won"
+					: deal.lostAt
+						? "Lost"
+						: deal.currentStageId.replace(/^stage_/, "");
+				return (
+					<li
+						key={deal._id}
+						className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30"
+					>
+						<IdentityBadge
+							entityType="deal"
+							code={deal.dealCode}
+							layout="code"
+							size="xs"
+						/>
+						{baseHref ? (
+							<Link
+								href={`${baseHref}/${deal.dealCode}`}
+								className="min-w-0 flex-1 truncate text-foreground hover:underline"
+							>
+								{deal.title}
+							</Link>
+						) : (
+							<span className="min-w-0 flex-1 truncate text-foreground">
+								{deal.title}
+							</span>
+						)}
+						<Badge
+							variant="outline"
+							className="h-5 px-1.5 text-[10px] capitalize"
+							style={{
+								backgroundColor: `${stageColor}1a`,
+								borderColor: `${stageColor}66`,
+								color: stageColor,
+							}}
+						>
+							{stageLabel}
+						</Badge>
+						<span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+							{deal.value !== undefined && deal.value !== null
+								? formatCompactCurrency(deal.value, deal.currency)
+								: "—"}
+						</span>
+					</li>
+				);
+			})}
+		</ul>
+	);
+}
+
+function formatCompactCurrency(value: number, currency: string | undefined): string {
+	const code = currency ?? "USD";
+	try {
+		return new Intl.NumberFormat(undefined, {
+			style: "currency",
+			currency: code,
+			notation: "compact",
+			maximumFractionDigits: 1,
+		}).format(value);
+	} catch {
+		return `${code} ${value}`;
+	}
 }

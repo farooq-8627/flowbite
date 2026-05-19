@@ -1,7 +1,35 @@
 # Timeline — State
 
-> Updated: 2026-05-19 (afternoon — UI redesign per user feedback)
-> Status: 100% complete (Phase A) — backend paginated query + full UI shipped, action-first redesign applied, dashboard widget mounted.
+> Updated: 2026-05-19 (round 2 — layout fix + field_updated headline)
+> Status: 100% complete (Phase A) — backend paginated query + full UI shipped, action-first redesign applied, dashboard widget mounted, EntityTimeline facade for entity-scoped surfaces, composer always outside scroll area.
+
+## 2026-05-19 round 2 — layout + per-field headline
+
+| Change | File |
+|---|---|
+| TimelineFeed restructured: filters at top with bottom-border, scroll-only middle area, composer fixed at bottom outside the scroll container. Loading + empty states render INSIDE the scroll area so the composer is always visible. | `components/TimelineFeed.tsx` |
+| TimelineComposer drops its own card border because the parent feed wrapper provides it. Smaller default rows + tighter spacing so the input feels chat-like, not journal-like. | `components/TimelineComposer.tsx` |
+| Per-field headline: `TimelineBareEntry` uses `entry.description` for `field_updated` actions so the user sees "Status: new → qualified" directly. `extractSubject` skips its colon-split for the same action to avoid mis-rendering the change pair as a subject. | `components/TimelineBareEntry.tsx`, `components/action-theme.ts` |
+
+## 2026-05-19 (evening) — `EntityTimeline` facade
+
+Added `core/comms/timeline/components/EntityTimeline.tsx`. It's the single
+component every entity-scoped surface (profile / deal / company / project /
+dashboard widget) should mount when it wants a timeline. Callers pass either
+`{ personCode }` or `{ entityType, entityId, personCode? }` and the component
+routes to the right `<TimelineFeed>` scope and composer entity under the
+hood.
+
+Why we didn't delete `PersonTimelinePanel` + `EntityTimelinePanel`: those
+are still wired into deal/company detail views. EntityTimeline is the new
+canonical entry point — refactors should reach for it; existing panels keep
+working unchanged.
+
+Profile page Timeline tab now mounts `<EntityTimeline personCode={...} />`
+in chromeless mode (per the profile-page card-removal pass on 2026-05-19).
+
+Also exported `TimelineFeedProps` from `TimelineFeed.tsx` so the facade can
+pick a subset of its props without redefining them.
 
 ## 2026-05-19 (afternoon) — Action-first redesign
 

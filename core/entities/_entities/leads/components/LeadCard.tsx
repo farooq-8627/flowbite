@@ -24,12 +24,15 @@ import {
 	type EntityShortcut,
 	type MenuAction,
 } from "@/core/entities/shared/components/EntityCard";
+import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 type LeadCardItem = EntityCardItem & {
 	_id?: Id<"leads">;
 	orgId?: Id<"orgs">;
 	displayName: string;
+	/** Lead status — used for the top-right status dot tooltip. */
+	status?: string;
 };
 
 interface LeadCardProps {
@@ -151,6 +154,17 @@ export function LeadCard({
 		});
 	}
 
+	// Status dot — always rendered for leads so the profiles page (and the
+	// leads board itself) can glance the lead's lifecycle stage without
+	// having to read the column header. Falls back to "new" + grey when
+	// the status field hasn't been set yet.
+	const status = item.status ?? "new";
+	const statusDot = {
+		color: getStatusColor("lead", status),
+		label: status,
+		tooltip: `${labels.lead.singular} status: ${status}`,
+	};
+
 	return (
 		<EntityCard
 			slot="lead"
@@ -167,6 +181,7 @@ export function LeadCard({
 			groupBy={groupBy}
 			resolveReplacementLabel={resolveReplacementLabel}
 			prefetchedTags={prefetchedTags}
+			statusDot={statusDot}
 		/>
 	);
 }

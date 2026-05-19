@@ -1,9 +1,70 @@
 # Entities — State
 
-> Updated: 2026-05-18
-> Status: ~99% complete. Forms now match production-grade density. Card +
-> drawer + file UX polished across all four entities. Stage filter +
-> saved views shipped. Only the AI summary pipeline remains in this lane.
+> Updated: 2026-05-19 (round 3 — DealDetail + CompanyDetail get Timeline/Follow-ups, EntityFilesPanel duplicate row fix)
+> Status: ~99% complete. Detail pages for deals + companies now match the profile parity (Timeline + Follow-ups tabs, Overview embeds summary cards). EntityFilesPanel no longer renders a duplicate trash-less row. Forms, cards, and drawer UX remain at production-grade density.
+>
+> **2026-05-19 round 3 — detail-page parity + Files dedup.**
+>
+> 1. **DealDetailView gets Timeline + Follow-ups tabs.** Added two new
+>    tabs (Timeline, Follow-ups) using `<EntityTimeline entityType="deal">`
+>    and `<EntityFollowups entityType="deal">`. Overview tab gets two
+>    embedded summary cards (Recent activity + Open follow-ups) with
+>    `View all` links that switch tabs. Tabs: Overview / Timeline /
+>    Follow-ups / Calendar / Reminders. File: `core/entities/_entities/deals/views/DealDetailView.tsx`.
+>
+> 2. **CompanyDetailView gets Timeline + Follow-ups tabs.** Same pattern
+>    (passes `entityType="company"` + `entityId=company.companyCode`,
+>    no `personCode` since companies don't have a primary person).
+>    Tabs: Overview / Timeline / Follow-ups / Calendar.
+>    File: `core/entities/_entities/companies/views/CompaniesView.tsx`.
+>
+> 3. **EntityFilesPanel — no more duplicate row.** Previously the panel
+>    stacked `<FileUpload>` (which has its own internal `<FileList>`
+>    from `useFileAttachments.listByScope`) on top of a separate merged
+>    `<FileList>` from `listForEntity`. Direct-scope files appeared
+>    twice — once with trash, once without. Refactored to render the
+>    dropzone alone (`<FileDropzone>`) + a single merged `<FileList>`
+>    wired to `useFileAttachments.remove`, so every row has a trash
+>    icon and there are no duplicates. File:
+>    `core/entities/shared/components/EntityFilesPanel.tsx`.
+>
+> **2026-05-19 round 2 — activity logs are now field-level + EntityHoverCard
+> delegation.**
+>
+> 1. New helper `convex/_shared/fieldUpdateLog.ts::logFieldUpdates` diffs
+>    the old document against the patch and emits ONE activity log per
+>    actually-changed field with `action: "field_updated"` and metadata
+>    `{ field, fromValue, toValue }`. `leads.update`,
+>    `contacts.update`, `deals.update`, and `companies.update` all use
+>    this in place of the old generic "Lead updated: name" entry.
+>
+> 2. `TimelineBareEntry` now uses `entry.description` as the headline for
+>    `field_updated` rows so the user sees "Status: new → qualified"
+>    directly instead of a generic "Lead updated" — `extractSubject`
+>    skips its colon-split for `field_updated` to avoid mis-rendering
+>    the change pair as a subject.
+>
+> 3. `convex/crm/entities/deals/queries.ts::listByPersonCode` added —
+>    used by the new `OverviewCard` to surface the latest 3 deals on a
+>    profile page or hover preview.
+>
+> 4. `EntityHoverCard` now delegates person previews to
+>    `<OverviewCard compact />` so hover and the profile Overview tab
+>    share one source of truth. Deal/company hover still uses the older
+>    `EntityOverview`.
+>
+> **2026-05-19 — `EntityCard.statusDot` + LeadCard.** Added an optional
+> `statusDot` prop on `EntityCard` rendered in the top-right of row 1,
+> just before the tags slot. The dot is a small coloured circle with a
+> tooltip; it shares row 1's `ms-auto` cluster with the tags so the
+> layout is stable whether tags are present or not. `LeadCard` now
+> always passes `statusDot` (computed from `item.status` via
+> `getStatusColor("lead", status)`), so on the new All-Profiles page
+> (which can't groupBy=status because it stacks two boards) every lead
+> card still surfaces its lifecycle stage. ContactCard parity is
+> automatic — both views render through the SAME `EntityCard`, so
+> tags + assignee + AI summary + group-replacement strip all work
+> identically on the profiles page.
 >
 > **2026-05-18 — Task 5 wiring + EntityCodeSelector.** Added
 > `core/entities/shared/components/EntityCodeSelector.tsx`: a Combobox-style

@@ -98,6 +98,12 @@ function capitalise(s: string): string {
  *   ("reminder", "created")           → "Reminder set"
  *   ("note",     "created")           → "Note added"
  *   ("contact",  "deleted")           → "Contact deleted"
+ *
+ * Special case `field_updated`: the caller-supplied description (set by
+ * `logFieldUpdates`) already reads "Status: new → qualified" — that's
+ * what the user wants to see in the title. We let the renderer fall
+ * back to the description when present; otherwise we synthesise a
+ * generic "{Entity} updated" so the row is still meaningful.
  */
 function resolveHeadline(entityType: string, action: string): string {
 	const label = entityLabel(entityType);
@@ -110,6 +116,12 @@ function resolveHeadline(entityType: string, action: string): string {
 	if (action === "lost") return `${label} lost`;
 	if (action === "stage_changed") return `${label} stage changed`;
 	if (action === "status_changed") return `${label} status changed`;
+
+	// Granular field-level update — the headline lives in `description`.
+	// Bare-entry renderer reads `description` first when action ===
+	// "field_updated"; we still return a sensible fallback here for
+	// surfaces that ignore `description`.
+	if (action === "field_updated") return `${label} updated`;
 
 	// Reminder verbs
 	if (action === "reminder_created" || action === "followup_created") return "Reminder set";
@@ -180,7 +192,12 @@ export function resolveActionTheme(args: {
 			titleVerb,
 		};
 	}
-	if (action === "won" || action === "deal_won" || action === "completed" || action.includes("completed")) {
+	if (
+		action === "won" ||
+		action === "deal_won" ||
+		action === "completed" ||
+		action.includes("completed")
+	) {
 		return {
 			ringClass: "border-emerald-500/70",
 			iconClass: "text-emerald-700",

@@ -46,7 +46,14 @@ export function MessagesPanel({ entityType, entityId, threadId, emptyState, clas
 	return (
 		<div
 			className={cn(
-				"flex h-[28rem] min-h-0 w-full flex-col overflow-hidden rounded-[var(--radius)] border border-border",
+				// Fill the parent's height. The chromeless ProfileSection
+				// (`fillHeight`) wraps the panel in a flex column with
+				// `h-full min-h-0` — we mirror that here so the inner
+				// `MessagesThread` (which itself is a flex column with a
+				// fixed-bottom composer + scroll-up thread) takes every
+				// available pixel. Falls back to a sensible minimum so
+				// standalone callers without a flex parent still render.
+				"flex h-full min-h-[24rem] w-full flex-col overflow-hidden rounded-[var(--radius)] border border-border",
 				className,
 			)}
 		>

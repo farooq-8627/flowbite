@@ -190,6 +190,19 @@ export interface EntityCardProps {
 	 * still correct for embedded panels that don't have a board-wide map.
 	 */
 	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
+	/**
+	 * Optional small coloured dot rendered in the TOP-right corner BEFORE
+	 * the tags slot. Wrapped in a tooltip that discloses the underlying
+	 * label on hover. Used by `LeadCard` to surface the lead's status
+	 * (new/contacted/qualified/converted/lost) on every profiles-page card,
+	 * regardless of the active board groupBy. ContactCard / DealCard /
+	 * CompanyCard do NOT pass this — only entities that have a meaningful
+	 * "status" field outside of the pipeline use it.
+	 *
+	 * The dot stays on the same line as the tags so the layout is stable
+	 * even when tags are hidden (`cardFields` doesn't include "tags").
+	 */
+	statusDot?: { color: string; label: string; tooltip: string };
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -209,6 +222,7 @@ export function EntityCard({
 	groupBy,
 	resolveReplacementLabel,
 	prefetchedTags,
+	statusDot,
 }: EntityCardProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -390,32 +404,58 @@ export function EntityCard({
 						subtitle={subtitle}
 					/>
 
-					{/* Tags — TOP-right corner */}
-					{showTags && (
-						// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates tag editor from drag listeners
-						<div
-							className="shrink-0"
-							onPointerDown={(e) => e.stopPropagation()}
-							onClick={(e) => e.stopPropagation()}
-							onKeyDown={(e) => e.stopPropagation()}
-						>
-							<TagsCell
-								orgId={orgId as Id<"orgs">}
-								entityType={slot}
-								entityId={itemId}
-								size="xs"
-								readOnlyAfterFirst
-								prefetchedTags={prefetchedTags}
-							/>
-						</div>
-					)}
+					{/* Top-right cluster — status dot first, then tags (or
+					    a "fill the gap" replacement strip when grouping by
+					    tags hides the tags slot). Wrapping this in one
+					    `ms-auto` flex keeps the layout stable whether
+					    individual pieces are present or not. */}
+					<div className="ms-auto flex shrink-0 items-center gap-1.5">
+						{/* Status dot — small coloured circle with tooltip,
+						    rendered just before tags. Currently only LeadCard
+						    sets this so the user can glance the lead's status
+						    even when groupBy is not "status". */}
+						{statusDot && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span
+										role="img"
+										aria-label={`Status: ${statusDot.label}`}
+										className="inline-block size-2 shrink-0 rounded-full"
+										style={{ backgroundColor: statusDot.color }}
+									/>
+								</TooltipTrigger>
+								<TooltipContent side="top" className="text-xs capitalize">
+									{statusDot.tooltip}
+								</TooltipContent>
+							</Tooltip>
+						)}
 
-					{/* "Fill the gap" replacement — when grouping by tags hides
-					    the tags slot, surface the reveal-matrix field here so
-					    the user still has a glance-able hint. */}
-					{!showTags && groupReplacement?.location === "top-right" && (
-						<GroupReplacementStrip replacement={groupReplacement} />
-					)}
+						{/* Tags — TOP-right corner */}
+						{showTags && (
+							// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates tag editor from drag listeners
+							<div
+								onPointerDown={(e) => e.stopPropagation()}
+								onClick={(e) => e.stopPropagation()}
+								onKeyDown={(e) => e.stopPropagation()}
+							>
+								<TagsCell
+									orgId={orgId as Id<"orgs">}
+									entityType={slot}
+									entityId={itemId}
+									size="xs"
+									readOnlyAfterFirst
+									prefetchedTags={prefetchedTags}
+								/>
+							</div>
+						)}
+
+						{/* "Fill the gap" replacement — when grouping by tags hides
+						    the tags slot, surface the reveal-matrix field here so
+						    the user still has a glance-able hint. */}
+						{!showTags && groupReplacement?.location === "top-right" && (
+							<GroupReplacementStrip replacement={groupReplacement} />
+						)}
+					</div>
 				</div>
 
 				{/* ── Row 2: AI summary (collapsed 2 lines, ▾ to expand) ── */}

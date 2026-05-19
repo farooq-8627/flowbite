@@ -22,6 +22,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
 import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
@@ -50,6 +51,7 @@ import {
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
 import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
+import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
@@ -611,6 +613,8 @@ export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; com
 
 	const tabs = [
 		{ id: "overview" as const, label: "Overview" },
+		{ id: "timeline" as const, label: "Timeline" },
+		{ id: "followups" as const, label: "Follow-ups" },
 		{ id: "calendar" as const, label: "Calendar" },
 	];
 	const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("overview");
@@ -702,11 +706,64 @@ export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; com
 								) : null}
 							</dl>
 						</div>
-						<p className="text-xs text-muted-foreground">
-							Full {labels.company.singular.toLowerCase()} detail (people, deals,
-							notes) lands in Slice 3.
-						</p>
+
+						{/* Embedded summary cards: 2-column grid mirroring the
+						    profile + deal Overview layout. Timeline +
+						    Follow-ups surface the most important context
+						    without forcing a tab switch. */}
+						<div className="grid gap-3 lg:grid-cols-2">
+							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
+								<div className="flex items-center justify-between border-b px-3 py-2">
+									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										Recent activity
+									</h3>
+									<button
+										type="button"
+										onClick={() => setActiveTab("timeline")}
+										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+									>
+										View all
+									</button>
+								</div>
+								<div className="flex min-h-0 flex-1 flex-col">
+									<EntityTimeline
+										entityType="company"
+										entityId={company.companyCode}
+										pageSize={20}
+										visibleCap={20}
+										showFilters={false}
+										showComposer={false}
+									/>
+								</div>
+							</div>
+							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
+								<div className="flex items-center justify-between border-b px-3 py-2">
+									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+										Open follow-ups
+									</h3>
+									<button
+										type="button"
+										onClick={() => setActiveTab("followups")}
+										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
+									>
+										View all
+									</button>
+								</div>
+								<div className="flex min-h-0 flex-1 flex-col p-3">
+									<EntityFollowups
+										entityType="company"
+										entityId={company.companyCode}
+									/>
+								</div>
+							</div>
+						</div>
 					</div>
+				)}
+				{activeTab === "timeline" && (
+					<EntityTimeline entityType="company" entityId={company.companyCode} />
+				)}
+				{activeTab === "followups" && (
+					<EntityFollowups entityType="company" entityId={company.companyCode} />
 				)}
 				{activeTab === "calendar" && (
 					<EntityCalendarPanel entityType="company" entityId={company.companyCode} />

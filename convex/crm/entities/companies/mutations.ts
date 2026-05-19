@@ -12,6 +12,7 @@
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
+import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -123,14 +124,23 @@ export const update = orgMutation({
 
 		await ctx.db.patch(args.companyId, { ...patch, updatedAt: Date.now() });
 
-		await logActivity(ctx, {
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId,
-			action: "updated",
 			entityType: "company",
 			entityId: args.companyId,
-			description: `Company updated: ${company.name}`,
-			metadata: { companyCode: company.companyCode },
+			displayName: company.name,
+			before: company as unknown as Record<string, unknown>,
+			after: { ...company, ...patch } as unknown as Record<string, unknown>,
+			fields: [
+				"name",
+				"industry",
+				"website",
+				"size",
+				"assignedTo",
+				"assignees",
+				"personCodes",
+			],
 		});
 	},
 });

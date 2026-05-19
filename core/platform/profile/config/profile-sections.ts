@@ -64,39 +64,22 @@ export const DEFAULT_PROFILE_GROUP: ProfileGroupId = "overview";
 export const PROFILE_SECTIONS: ShellSection[] = [
 	// Overview
 	{
-		id: "overview.vitals",
+		id: "overview.card",
 		groupId: "overview",
-		label: "Vitals",
-		description: "Name, personCode, avatar, status / stage, assignee.",
-		keywords: ["avatar", "status", "stage", "assignee", "owner"],
-	},
-	{
-		id: "overview.contact",
-		groupId: "overview",
-		label: "Contact",
-		description: "Email, phone, WhatsApp, and preferred channel.",
-		keywords: ["email", "phone", "whatsapp", "channel", "contact"],
-	},
-	{
-		id: "overview.company",
-		groupId: "overview",
-		label: "Company",
-		description: "Linked company and role at that company.",
-		keywords: ["company", "organization", "account", "employer", "role"],
-	},
-	{
-		id: "overview.tags",
-		groupId: "overview",
-		label: "Tags",
-		description: "Tags applied to this person.",
-		keywords: ["tag", "label", "categorize"],
-	},
-	{
-		id: "overview.custom-fields",
-		groupId: "overview",
-		label: "Custom Fields",
-		description: "Workspace-defined fields, stage-aware.",
-		keywords: ["custom", "fields", "extras", "properties"],
+		label: "Overview",
+		description:
+			"Vitals, contact, owner, tags, latest messages, reminders, and deals — all in one card.",
+		keywords: [
+			"vitals",
+			"contact",
+			"company",
+			"tags",
+			"owner",
+			"messages",
+			"reminders",
+			"deals",
+			"summary",
+		],
 	},
 
 	// Messages
@@ -160,6 +143,14 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 		label: "Reminders",
 		description: "All follow-ups scheduled for this person.",
 		keywords: ["follow-up", "reminder", "due", "overdue"],
+		permission: "reminders.view",
+	},
+	{
+		id: "reminders.followups",
+		groupId: "reminders",
+		label: "Follow-ups",
+		description: "Cadence-driven follow-ups attached to this person.",
+		keywords: ["follow-up", "cadence", "sequence", "outreach"],
 		permission: "reminders.view",
 	},
 

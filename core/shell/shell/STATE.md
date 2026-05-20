@@ -1,7 +1,42 @@
 # Shell — State
 
-> Updated: 2026-05-19
+> Updated: 2026-05-21
 > Status: 100% Complete for Phase 1 — wired to dynamic entity labels + module visibility flags.
+>
+> **2026-05-21 — Friendly 404 + restored pretty error UI.**
+>
+> 1. **Pretty `<DashboardError>` restored.** The component had been swapped
+>    out for a "show raw error" debugging surface earlier in the session.
+>    Now back to a calm, production-grade UI: ringed alert icon, `Try
+>    again` / `Reload page` / `Go back` actions, and the raw error
+>    message + stack trace tucked into a collapsed `<details>` so the
+>    info is still recoverable when reporting an issue. Lives at
+>    `components/errors/DashboardError.tsx`.
+> 2. **`<DashboardNotFound>` added** at `components/errors/DashboardNotFound.tsx`
+>    — the 404 counterpart, same visual language (compass icon, headline
+>    + description, `usePathname()` chip showing the requested URL,
+>    primary CTA back to the dashboard, secondary `Go back` button).
+> 3. **`app/[locale]/not-found.tsx`** — universal 404 fallback at the
+>    locale root. Rendered when an unmatched URL hits the public routing
+>    surface or when a server component above the dashboard segment
+>    calls `notFound()`.
+> 4. **`app/[locale]/(private)/[orgSlug]/not-found.tsx`** — segment-scoped
+>    404. This is the critical one: when `EntitySlugView` calls
+>    `notFound()` (e.g. user navigates to `/en/{org}/some-bad-slug`) the
+>    file renders INSIDE the dashboard shell — sidebar + topnav stay
+>    visible, the user keeps their navigation context, and the
+>    `(private)/error.tsx` boundary never sees the 404 digest. Without
+>    this file, `notFound()` fell through to Next.js's default 404 →
+>    threw `NEXT_HTTP_ERROR_FALLBACK;404` → was caught by `error.tsx` →
+>    surfaced as a raw stack trace.
+> 5. **`(private)/error.tsx` JSDoc updated** to clarify that 404s are
+>    handled by `not-found.tsx` and should never reach the error boundary
+>    in normal operation. If they do, that's a missing `not-found.tsx` in
+>    the route hierarchy.
+>
+> Verified: `pnpm typecheck` 0 errors · `pnpm exec biome check` 0 issues
+> on all touched files · `pnpm build` all 18 routes generated, including
+> the new `/_not-found` static prerender.
 >
 > **2026-05-19 — Dashboard cards split + currency fix + calendar route deleted.**
 >

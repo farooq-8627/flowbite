@@ -52,6 +52,7 @@ import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurre
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 
 type CompanyRow = Record<string, unknown> & { id: string };
 
@@ -545,12 +546,34 @@ export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; com
 						<div className="rounded-[var(--radius)] border bg-card p-4">
 							<h3 className="text-sm font-semibold">Details</h3>
 							<dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-								{company.website ? (
-									<>
-										<dt className="text-muted-foreground">Website</dt>
-										<dd className="font-medium truncate">{company.website}</dd>
-									</>
-								) : null}
+								{company.website
+									? (() => {
+											const safeUrl = normalizeExternalUrl(company.website);
+											return (
+												<>
+													<dt className="text-muted-foreground">
+														Website
+													</dt>
+													<dd className="font-medium truncate">
+														{safeUrl ? (
+															<a
+																href={safeUrl}
+																target="_blank"
+																rel="noopener noreferrer external"
+																className="text-primary hover:underline"
+															>
+																{displayUrlLabel(safeUrl, 36)}
+															</a>
+														) : (
+															<span className="text-muted-foreground">
+																{company.website}
+															</span>
+														)}
+													</dd>
+												</>
+											);
+										})()
+									: null}
 								{company.industry ? (
 									<>
 										<dt className="text-muted-foreground">Industry</dt>

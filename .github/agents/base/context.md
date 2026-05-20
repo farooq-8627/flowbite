@@ -1,7 +1,54 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never append.
-> Last Updated: 2026-05-20 (late evening)
+> Last Updated: 2026-05-21 (website-link 404 fix + restored pretty error UI)
+
+---
+
+## 2026-05-21 — Website-link 404 fix + project-wide URL safety + pretty 404/error UI
+
+A user reported `NEXT_HTTP_ERROR_FALLBACK;404` after clicking a company's
+Website link. Investigation found a 3-symptom bug, all fixed atomically:
+
+**Symptom 1 — relative-URL navigation:**
+Three renderers (`EntityOverview` company hovercard, `cell-dispatcher` `kind:"url"`,
+`FieldValueRenderer` `kind:"link"`) were emitting `<a href={value} target="_blank">`
+straight from a user-entered string. When the value lacked a scheme
+(`reimaginy.com`), the browser treated it as a relative URL → routed to
+`/en/{org}/reimaginy.com` inside the app instead of opening the external site.
+
+**Symptom 2 — bad slug → notFound() → no 404 page:**
+The fake-internal route matched `[orgSlug]/[entitySlug]/page.tsx`, `EntitySlugView`
+couldn't resolve the slug, called `notFound()`. The project had no `not-found.tsx`
+anywhere, so Next.js's default fallback threw `NEXT_HTTP_ERROR_FALLBACK;404`.
+
+**Symptom 3 — error UI was a debug surface:**
+`DashboardError` had been swapped out earlier in the session for a "show raw error"
+version (to diagnose a different issue). The user wanted the pretty production UI back.
+
+**Fix:**
+
+| File | Change |
+|---|---|
+| `lib/url.ts` | NEW. `normalizeExternalUrl()` + `displayUrlLabel()`. Prepends `https://` when missing, rejects `javascript:` / `data:` / `vbscript:` / `file:` / `about:`, validates via `new URL()`. |
+| `core/entities/shared/components/EntityOverview.tsx` | Company hovercard "Website" row goes through `normalizeExternalUrl`. Falls back to plain text if invalid. |
+| `core/entities/shared/components/cells/cell-dispatcher.tsx` | `kind:"url"` cell renderer normalizes. |
+| `core/entities/shared/components/FieldValueRenderer.tsx` | `kind:"link"` field-value renderer normalizes. |
+| `core/entities/_entities/companies/views/CompaniesView.tsx` | Company detail "Details" card website is now also a clickable link via `normalizeExternalUrl` (was plain text). |
+| `components/errors/DashboardError.tsx` | Restored the production-grade UI (calm icon, headline, recovery actions; raw stack tucked into a collapsed `<details>`). |
+| `components/errors/DashboardNotFound.tsx` | NEW. Friendly 404 component (compass icon, headline, `usePathname` chip, "Go to dashboard" / "Go back" actions). |
+| `app/[locale]/not-found.tsx` | NEW. Universal locale-root fallback. |
+| `app/[locale]/(private)/[orgSlug]/not-found.tsx` | NEW. Segment-scoped — renders inside the dashboard shell so sidebar + topnav stay visible when `notFound()` fires. |
+| `app/[locale]/(private)/error.tsx` | JSDoc updated — error boundary should never see 404 digests now; if it does, that means a `not-found.tsx` is missing somewhere in the route tree. |
+
+**Locked rule (added to project mental model):**
+Any `<a href={…} target="_blank">` rendering a user-entered URL MUST go through
+`normalizeExternalUrl`. If it returns `null`, render plain text. Never emit a
+relative `<a>` to user-entered text — it will navigate inside the app, hit a
+404 fallback, and surface in the error boundary.
+
+**Verified:** `pnpm typecheck` 0 errors · `pnpm exec biome check` on all 10
+touched files 0 issues · `pnpm build` all 18 routes (incl. `/_not-found`).
 
 ---
 

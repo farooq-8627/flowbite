@@ -1,7 +1,50 @@
 # Entities — State
 
-> Updated: 2026-05-21 (Contacts/Companies/Deals tables migrated to `useEntityColumns`; deals tables become stage-aware; dead `useDealsListColumns` hook deleted).
+> Updated: 2026-05-21 (Website link bug fix + project-wide URL helper; pretty 404/error UIs restored).
 > Status: 100% complete (Phase 2).
+
+## 2026-05-21 — External-URL renderers normalize protocol; segment-scoped 404 added
+
+**Problem reported:**
+A user typed `reimaginy.com` (no protocol) in the company `website` field. Clicking
+the Website link in the company hovercard navigated to
+`/en/{orgSlug}/reimaginy.com` instead of opening the external site. That route
+matched `[orgSlug]/[entitySlug]/page.tsx`, `EntitySlugView` couldn't resolve the
+slug, called `notFound()`, and — because the project had no `not-found.tsx`
+anywhere — Next.js's default fallback threw `NEXT_HTTP_ERROR_FALLBACK;404`. The
+parent `(private)/error.tsx` boundary then rendered `<DashboardError>` with the
+raw stack trace (the debug version that had been swapped in earlier).
+
+**Root cause:**
+Three renderers built `<a href={value} target="_blank">` directly from a
+user-entered string, with no scheme normalization. Browsers treat scheme-less
+strings as relative URLs.
+
+**What was done:**
+
+| File | Change |
+|---|---|
+| `lib/url.ts` | NEW. `normalizeExternalUrl(value)` prepends `https://` when missing, rejects `javascript:` / `data:` / `vbscript:` / `file:` / `about:`, validates with `new URL()`, returns `null` when the value can't be safely turned into an external link. `displayUrlLabel(url, max)` strips scheme + `www.` for tidy labels. |
+| `core/entities/shared/components/EntityOverview.tsx` | Company hovercard "Website" row now goes through `normalizeExternalUrl`. Falls back to plain text when invalid. `rel="noopener noreferrer external"`. |
+| `core/entities/shared/components/cells/cell-dispatcher.tsx` | `kind: "url"` cell renderer same treatment. |
+| `core/entities/shared/components/FieldValueRenderer.tsx` | `kind: "link"` field-value renderer same treatment. |
+| `core/entities/_entities/companies/views/CompaniesView.tsx` | Company detail "Details" card was rendering website as plain text — now also a clickable link via `normalizeExternalUrl`. |
+
+### Rule of thumb (lock for future code)
+
+Any place that renders a user-supplied URL as `<a href={…} target="_blank">` MUST go
+through `normalizeExternalUrl`. If it returns `null`, render plain text — never
+emit a relative `<a>` to a user-entered string. Audited via:
+`rg "href=\{.*website|href=\{String\(value" --type tsx`.
+
+### Verification
+
+- `pnpm typecheck` → 0 errors.
+- `pnpm exec biome check` on all 10 touched files → 0 issues.
+- `pnpm build` → all 18 routes generated, including the new `/_not-found` static
+  prerender.
+
+---
 
 ## 2026-05-21 — Tables unified through `useEntityColumns`; deals tables become stage-aware
 

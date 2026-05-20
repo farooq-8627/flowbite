@@ -8,6 +8,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 import { PersonCodeBadge } from "../PersonCodeBadge";
 import type { PersonRef } from "../types";
 
@@ -155,20 +156,30 @@ export function EntityOverview({ person, deal, company }: EntityOverviewProps) {
 							<span className="tabular-nums">{company.openDealCount}</span>
 						</>
 					)}
-					{company.website && (
-						<>
-							<span className="text-muted-foreground">Website</span>
-							<a
-								href={company.website}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="truncate text-primary hover:underline"
-								onClick={(e) => e.stopPropagation()}
-							>
-								{company.website.replace(/^https?:\/\//, "")}
-							</a>
-						</>
-					)}
+					{company.website &&
+						(() => {
+							const safeUrl = normalizeExternalUrl(company.website);
+							return (
+								<>
+									<span className="text-muted-foreground">Website</span>
+									{safeUrl ? (
+										<a
+											href={safeUrl}
+											target="_blank"
+											rel="noopener noreferrer external"
+											className="truncate text-primary hover:underline"
+											onClick={(e) => e.stopPropagation()}
+										>
+											{displayUrlLabel(safeUrl, 32)}
+										</a>
+									) : (
+										<span className="truncate text-muted-foreground">
+											{company.website}
+										</span>
+									)}
+								</>
+							);
+						})()}
 				</div>
 			</div>
 		);

@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ExternalLinkIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 import { PersonCodeBadge } from "../PersonCodeBadge";
 import type { FieldRenderKind } from "../types";
 import { StaleIndicator } from "./StaleIndicator";
@@ -134,16 +135,22 @@ export function FieldValueRenderer({
 		}
 
 		case "link": {
-			const url = String(value);
+			const safeUrl = normalizeExternalUrl(value);
+			// Render plain text when the value can't be safely turned into an
+			// absolute external URL — prevents navigating inside the app via
+			// a relative `<a href>`.
+			if (!safeUrl) {
+				return <span className="truncate text-sm">{String(value)}</span>;
+			}
 			return (
 				<a
-					href={url}
+					href={safeUrl}
 					target="_blank"
-					rel="noopener noreferrer"
+					rel="noopener noreferrer external"
 					className="inline-flex items-center gap-1 text-sm text-primary hover:underline"
 					onClick={(e) => e.stopPropagation()}
 				>
-					{url.replace(/^https?:\/\//, "").slice(0, 30)}
+					{displayUrlLabel(safeUrl, 30)}
 					<ExternalLinkIcon className="size-3" />
 				</a>
 			);

@@ -26,6 +26,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { useOrgDefaultCurrency } from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
+import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 import { PersonCodeBadge } from "../../PersonCodeBadge";
 import { AssigneeCell } from "../AssigneeCell";
 import { CompanyCell } from "../CompanyCell";
@@ -195,15 +196,26 @@ const KIND_RENDERERS: Record<string, (ctx: CellContext) => ReactNode> = {
 	url: ({ slot, field, row, customValues }) => {
 		const value = readFieldValue(field, row, customValues);
 		if (!value) return <EmptyCell slot={slot} field={field} row={row} />;
+		const safeUrl = normalizeExternalUrl(value);
+		// If the user-entered URL is unsafe / unparseable, render plain text
+		// so we never produce a relative `<a href>` that navigates inside the
+		// app (the bug that triggered this fix).
+		if (!safeUrl) {
+			return (
+				<span className="truncate text-xs text-muted-foreground max-w-[200px] inline-block">
+					{String(value)}
+				</span>
+			);
+		}
 		return (
 			<a
-				href={String(value)}
+				href={safeUrl}
 				target="_blank"
-				rel="noopener noreferrer"
+				rel="noopener noreferrer external"
 				className="text-xs text-primary hover:underline truncate inline-block max-w-[200px]"
 				onClick={(e) => e.stopPropagation()}
 			>
-				{String(value).replace(/^https?:\/\//, "")}
+				{displayUrlLabel(safeUrl, 40)}
 			</a>
 		);
 	},

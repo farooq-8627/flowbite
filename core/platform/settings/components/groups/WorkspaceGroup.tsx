@@ -7,11 +7,13 @@ import { EntityLabelsSection } from "./workspace/EntityLabelsSection";
 import { FilePolicySection } from "./workspace/FilePolicySection";
 import { GeneralSection } from "./workspace/GeneralSection";
 import { ModuleVisibilitySection } from "./workspace/ModuleVisibilitySection";
+import { WorkspaceTemplateSection } from "./workspace/WorkspaceTemplateSection";
 
 export function WorkspaceGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	return (
 		<div className="grid gap-6">
 			<GeneralSection org={org} orgId={orgId} />
+			<WorkspaceTemplateSection org={org} orgId={orgId} />
 			<EntityLabelsSection org={org} orgId={orgId} />
 			<ModuleVisibilitySection org={org} orgId={orgId} />
 			<CodePrefixesSection org={org} orgId={orgId} />

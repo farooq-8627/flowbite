@@ -2,26 +2,474 @@
  * Template seeding mutations — convex/crm/fields/templates/mutations.ts
  *
  * Single entry point for seeding an org with a complete industry template.
- * Idempotent: re-running with the same template is safe — pipelines, fields,
- * and entity labels are only inserted/patched if they don't already exist.
+ * Idempotent: re-running with the same template is safe — every step is a
+ * "skip-if-exists" check on the natural key for that table.
+ *
+ * Seeds (in order):
+ *   1.  Workspace defaults (currency, timezone, locale, leadStaleAfterDays)
+ *   2.  Code prefixes (person/deal/company/followup)
+ *   3.  Entity labels (singular/plural/slug, with Arabic where present)
+ *   4.  Pipelines (deal default + any extras) — Default stage auto-injected
+ *   5.  Field definitions per entity (showInStages codes → ids)
+ *   6.  Modules slot map (orgs.settings.modules[])
+ *   7.  Reminder defaults
+ *   8.  Follow-up cadence defaults
+ *   9.  File-upload policy
+ *   10. Note categories (sticky-note kanban columns)
+ *   11. Tags
+ *   12. Saved views
+ *   13. Custom roles
+ *   14. AI persona (org.aiContext, only if currently unset)
+ *   15. org.industry pin (records which template was applied)
  *
  * Callers:
- *   - Onboarding wizard (via a thin orgMutation wrapper, future).
+ *   - `orgs.applyTemplate` (public mutation — onboarding wizard, settings).
+ *   - Migrations / dev `npx convex run` for one-off seeding.
  *   - Phase 3 AI tool `setup_workspace_from_template`.
- *   - Tests + the dev `npx convex run` flow for quick org seeding.
  */
 import { ConvexError, v } from "convex/values";
-import { internalMutation } from "../../../_generated/server";
+import { internal } from "../../../_generated/api";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import { isKnownPermission } from "../../../_shared/permissions/derive";
 import { getTemplate } from "./registry";
+import type {
+	CodePrefixesSeed,
+	CustomRoleSeed,
+	FieldDefSeed,
+	FileUploadSeed,
+	FollowupDefaultsSeed,
+	IndustryTemplate,
+	ModuleSeed,
+	NoteCategorySeed,
+	PipelineSeed,
+	ReminderDefaultsSeed,
+	SavedViewSeed,
+	StageSeed,
+	TagSeed,
+	WorkspaceDefaultsSeed,
+} from "./types";
+
+// ─── nanoid (deterministic 12-char id used by the existing pipelines code) ──
 
 function nanoid12(): string {
 	return Math.random().toString(36).slice(2, 14).padEnd(12, "0");
 }
 
+// ─── Internal seed helpers (one per slot, all idempotent) ───────────────────
+
+/**
+ * Resolve the template's pipeline list into a single normalized array.
+ * Accepts the legacy `pipeline:{name,stages}` shape AND the new
+ * `pipelines:[…]` shape.
+ */
+function collectPipelines(t: IndustryTemplate): PipelineSeed[] {
+	const out: PipelineSeed[] = [];
+	if (t.pipeline) {
+		out.push({
+			entityType: "deal",
+			name: t.pipeline.name,
+			isDefault: true,
+			stages: t.pipeline.stages,
+		});
+	}
+	if (t.pipelines) {
+		for (const p of t.pipelines) out.push(p);
+	}
+	return out;
+}
+
+/**
+ * Insert a pipeline if (orgId, entityType, name) doesn't exist. Returns the
+ * pipeline document (existing or new) plus a code→id map for stages so
+ * field-definition seeding can resolve `showInStages`.
+ */
+async function seedOnePipeline(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	seed: PipelineSeed,
+	now: number,
+): Promise<{
+	pipelineId: Id<"pipelines">;
+	stageCodeToId: Map<string, string>;
+	created: boolean;
+}> {
+	// Find by entityType + name (templates always carry a stable name).
+	const existing = await ctx.db
+		.query("pipelines")
+		.withIndex("by_org_and_entity", (q) =>
+			q.eq("orgId", orgId).eq("entityType", seed.entityType),
+		)
+		.collect();
+	const match = existing.find((p) => p.name === seed.name);
+	const stageCodeToId = new Map<string, string>();
+
+	if (match) {
+		for (const stage of match.stages) stageCodeToId.set(stage.code, stage.id);
+		return { pipelineId: match._id, stageCodeToId, created: false };
+	}
+
+	// Auto-inject a Default stage when none of the seed stages is marked as one.
+	const hasDefault = seed.stages.some((s) => s.isDefaultStage === true);
+	const stages: StageSeed[] = hasDefault
+		? seed.stages
+		: [
+				{ name: "Default", code: "DFL", color: "#94a3b8", isDefaultStage: true },
+				...seed.stages,
+			];
+
+	const persisted = stages.map((s, i) => {
+		const id = `stage_${nanoid12()}`;
+		stageCodeToId.set(s.code, id);
+		return {
+			id,
+			name: s.name,
+			code: s.code,
+			order: i,
+			color: s.color,
+			isFinal: s.isFinal,
+			finalType: s.finalType,
+			staleAfterDays: s.staleAfterDays,
+			warningAfterDays: s.warningAfterDays,
+			isDefaultStage: s.isDefaultStage ?? i === 0,
+		};
+	});
+
+	const pipelineId = await ctx.db.insert("pipelines", {
+		orgId,
+		name: seed.name,
+		entityType: seed.entityType,
+		isDefault: seed.isDefault,
+		stageTransitionPolicy: seed.stageTransitionPolicy ?? "warn",
+		allowSkipStages: seed.allowSkipStages ?? false,
+		markDoneRequiresAllFields: seed.markDoneRequiresAllFields ?? true,
+		stages: persisted,
+		createdAt: now,
+		updatedAt: now,
+	});
+	return { pipelineId, stageCodeToId, created: true };
+}
+
+/**
+ * Insert field definitions, deduping on (orgId, entityType, name).
+ * Resolves `showInStages` codes to stage ids using the supplied map.
+ */
+async function seedFieldDefinitions(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	defs: { [k in "lead" | "contact" | "deal" | "company"]?: FieldDefSeed[] },
+	stageCodeToId: Map<string, string>,
+	now: number,
+): Promise<number> {
+	let inserted = 0;
+	for (const [entityType, list] of Object.entries(defs)) {
+		const existing = await ctx.db
+			.query("fieldDefinitions")
+			.withIndex("by_org_and_entity", (q) =>
+				q.eq("orgId", orgId).eq("entityType", entityType),
+			)
+			.collect();
+		const existingNames = new Set(existing.map((r) => r.name));
+		let maxOrder = existing.reduce((acc, r) => (r.order > acc ? r.order : acc), -1);
+
+		for (const def of list ?? []) {
+			if (existingNames.has(def.name)) continue;
+			maxOrder += 1;
+			const resolvedShowInStages = def.showInStages
+				?.map((code) => stageCodeToId.get(code))
+				.filter((v): v is string => !!v);
+
+			await ctx.db.insert("fieldDefinitions", {
+				orgId,
+				entityType: def.entityType,
+				name: def.name,
+				label: def.label,
+				labelAr: def.labelAr,
+				type: def.type,
+				kind: def.kind,
+				storage: def.storage,
+				columnKey: def.columnKey,
+				system: def.system ?? false,
+				protected: def.protected ?? false,
+				hidden: false,
+				options: def.options,
+				required: def.required ?? false,
+				order: def.order ?? maxOrder,
+				groupName: def.groupName,
+				sensitive: def.sensitive,
+				defaultValue: def.defaultValue,
+				showInStages:
+					resolvedShowInStages && resolvedShowInStages.length > 0
+						? resolvedShowInStages
+						: undefined,
+				createdAt: now,
+				updatedAt: now,
+			});
+			inserted += 1;
+		}
+	}
+	return inserted;
+}
+
+/** Patch org-level settings via shallow merge (template wins for keys it sets). */
+async function patchOrgSettings(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	args: {
+		entityLabels?: IndustryTemplate["entityLabels"];
+		entityVisibility?: IndustryTemplate["entityVisibility"];
+		defaults?: WorkspaceDefaultsSeed;
+		codePrefixes?: CodePrefixesSeed;
+		modules?: ModuleSeed[];
+		reminderDefaults?: ReminderDefaultsSeed;
+		followupDefaults?: FollowupDefaultsSeed;
+		fileUpload?: FileUploadSeed;
+		aiPersona?: string;
+		industryId: string;
+	},
+	now: number,
+): Promise<void> {
+	const org = await ctx.db.get(orgId);
+	if (!org) return;
+
+	const existingSettings: NonNullable<typeof org.settings> = org.settings ?? {};
+	const newSettings: NonNullable<typeof org.settings> = { ...existingSettings };
+
+	if (args.defaults?.currency && !existingSettings.defaultCurrency) {
+		newSettings.defaultCurrency = args.defaults.currency;
+	}
+	if (args.defaults?.timezone && !existingSettings.timezone) {
+		newSettings.timezone = args.defaults.timezone;
+	}
+	if (
+		args.defaults?.leadStaleAfterDays !== undefined &&
+		existingSettings.leadStaleAfterDays === undefined
+	) {
+		newSettings.leadStaleAfterDays = args.defaults.leadStaleAfterDays;
+	}
+	if (args.codePrefixes) {
+		newSettings.codePrefixes = {
+			...(existingSettings.codePrefixes ?? {}),
+			...args.codePrefixes,
+		};
+	}
+	if (args.reminderDefaults) {
+		newSettings.reminderDefaults = {
+			...(existingSettings.reminderDefaults ?? {}),
+			...args.reminderDefaults,
+		};
+	}
+	if (args.followupDefaults) {
+		newSettings.followupDefaults = {
+			...(existingSettings.followupDefaults ?? {}),
+			...args.followupDefaults,
+		};
+	}
+	if (args.fileUpload) {
+		newSettings.fileUpload = {
+			...(existingSettings.fileUpload ?? {}),
+			...args.fileUpload,
+		};
+	}
+	if (args.modules && args.modules.length > 0 && !existingSettings.modules) {
+		// Only seed modules when the org doesn't already have a slot map —
+		// otherwise we risk clobbering user customizations.
+		newSettings.modules = args.modules.map((m) => ({
+			slot: m.slot,
+			label: m.label,
+			hidden: m.hidden,
+			order: m.order,
+			defaultView: m.defaultView,
+			cardFields: m.cardFields,
+			listColumns: m.listColumns,
+			boardGroupBy: m.boardGroupBy,
+			defaultFilters: m.defaultFilters,
+			meta: m.meta,
+		}));
+	}
+
+	const patch: {
+		settings: typeof newSettings;
+		entityLabels?: typeof org.entityLabels;
+		industry: string;
+		aiContext?: string;
+		updatedAt: number;
+	} = {
+		settings: newSettings,
+		industry: args.industryId,
+		updatedAt: now,
+	};
+
+	if (args.entityLabels) {
+		patch.entityLabels = {
+			...(org.entityLabels ?? {}),
+			...args.entityLabels,
+		};
+	}
+
+	// Only set aiContext if currently unset — never overwrite owner edits.
+	if (args.aiPersona && !org.aiContext) {
+		patch.aiContext = args.aiPersona;
+	}
+
+	await ctx.db.patch(orgId, patch);
+}
+
+/** Insert sticky-note categories, deduping on (orgId, name). */
+async function seedNoteCategories(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	categories: NoteCategorySeed[] | undefined,
+	now: number,
+): Promise<number> {
+	if (!categories || categories.length === 0) return 0;
+	const existing = await ctx.db
+		.query("noteCategories")
+		.withIndex("by_org_and_position", (q) => q.eq("orgId", orgId))
+		.collect();
+	const existingNames = new Set(existing.map((c) => c.name));
+	const hasAnyDefault = existing.some((c) => c.isDefault && !c.isArchived);
+
+	let nextPosition = existing.reduce((acc, r) => (r.position >= acc ? r.position + 1 : acc), 0);
+	let inserted = 0;
+	let defaultClaimed = hasAnyDefault;
+
+	for (const seed of categories) {
+		if (existingNames.has(seed.name)) continue;
+		const isDefault = !!seed.isDefault && !defaultClaimed;
+		await ctx.db.insert("noteCategories", {
+			orgId,
+			name: seed.name,
+			bgColor: seed.bgColor,
+			textColor: seed.textColor,
+			position: seed.position ?? nextPosition,
+			isDefault,
+			isArchived: false,
+			createdAt: now,
+			updatedAt: now,
+		});
+		nextPosition += 1;
+		inserted += 1;
+		if (isDefault) defaultClaimed = true;
+	}
+	return inserted;
+}
+
+/** Insert tags, deduping on (orgId, name). */
+async function seedTags(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	tags: TagSeed[] | undefined,
+	now: number,
+): Promise<number> {
+	if (!tags || tags.length === 0) return 0;
+	const existing = await ctx.db
+		.query("tags")
+		.withIndex("by_org", (q) => q.eq("orgId", orgId))
+		.collect();
+	const existingNames = new Set(existing.map((t) => t.name.toLowerCase()));
+	let inserted = 0;
+	for (const seed of tags) {
+		if (existingNames.has(seed.name.toLowerCase())) continue;
+		await ctx.db.insert("tags", {
+			orgId,
+			name: seed.name,
+			color: seed.color,
+			createdAt: now,
+		});
+		inserted += 1;
+	}
+	return inserted;
+}
+
+/** Insert saved views, deduping on (orgId, entityType, scope, name). */
+async function seedSavedViews(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	createdBy: Id<"users"> | undefined,
+	views: SavedViewSeed[] | undefined,
+	now: number,
+): Promise<number> {
+	if (!views || views.length === 0 || !createdBy) return 0;
+	const existing = await ctx.db
+		.query("savedViews")
+		.withIndex("by_org_and_creator", (q) => q.eq("orgId", orgId).eq("createdBy", createdBy))
+		.collect();
+	const existingKeys = new Set(existing.map((v) => `${v.entityType}::${v.scope}::${v.name}`));
+	let inserted = 0;
+	for (const seed of views) {
+		const key = `${seed.entityType}::${seed.scope}::${seed.name}`;
+		if (existingKeys.has(key)) continue;
+		await ctx.db.insert("savedViews", {
+			orgId,
+			name: seed.name,
+			entityType: seed.entityType,
+			scope: seed.scope,
+			filters: seed.filters,
+			sortBy: seed.sortBy,
+			sortOrder: seed.sortOrder,
+			columns: seed.columns,
+			isPinned: seed.isPinned ?? false,
+			createdBy,
+			createdAt: now,
+			updatedAt: now,
+		});
+		inserted += 1;
+	}
+	return inserted;
+}
+
+/**
+ * Insert custom roles. Skips any role whose name already exists in
+ * `orgRoles` for the org. Validates every permission against the SSOT
+ * catalog so a typo'd template can't ship a broken role.
+ */
+async function seedCustomRoles(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	roles: CustomRoleSeed[] | undefined,
+	now: number,
+): Promise<number> {
+	if (!roles || roles.length === 0) return 0;
+	const existing = await ctx.db
+		.query("orgRoles")
+		.withIndex("by_orgId", (q) => q.eq("orgId", orgId))
+		.collect();
+	const existingNames = new Set(existing.map((r) => r.name.toLowerCase()));
+	let inserted = 0;
+	for (const seed of roles) {
+		if (existingNames.has(seed.name.toLowerCase())) continue;
+		const validPerms = seed.permissions.filter((p) => isKnownPermission(p));
+		await ctx.db.insert("orgRoles", {
+			orgId,
+			name: seed.name,
+			description: seed.description,
+			permissions: validPerms,
+			isSystem: false,
+			isDefault: false,
+			color: seed.color,
+			createdAt: now,
+			updatedAt: now,
+		});
+		inserted += 1;
+	}
+	return inserted;
+}
+
+// ─── Internal mutation entry point ──────────────────────────────────────────
+
+/**
+ * Internal seeder. Apply a registered template to an org by id. Idempotent.
+ *
+ * `actorUserId` is optional — when supplied (typical) we attribute saved
+ * views to that user. Without it, saved views are skipped (the table requires
+ * createdBy).
+ */
 export const setupWorkspaceFromTemplate = internalMutation({
 	args: {
 		orgId: v.id("orgs"),
 		templateId: v.string(),
+		actorUserId: v.optional(v.id("users")),
 	},
 	handler: async (ctx, args) => {
 		const t = getTemplate(args.templateId);
@@ -33,142 +481,105 @@ export const setupWorkspaceFromTemplate = internalMutation({
 		}
 		const now = Date.now();
 
-		// ─── 1. Pipeline ──────────────────────────────────────────────────
-		// Skip if the org already has a deal pipeline (re-running the
-		// template should never duplicate the pipeline).
-		const existingPipeline = await ctx.db
-			.query("pipelines")
-			.withIndex("by_org_and_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", "deal"),
-			)
-			.first();
+		// 1+2+3+5+6+7+8+9+14+15 — settings (single ctx.db.patch on org)
+		await patchOrgSettings(
+			ctx,
+			args.orgId,
+			{
+				entityLabels: t.entityLabels,
+				entityVisibility: t.entityVisibility,
+				defaults: t.defaults,
+				codePrefixes: t.codePrefixes,
+				modules: t.modules,
+				reminderDefaults: t.reminderDefaults,
+				followupDefaults: t.followupDefaults,
+				fileUpload: t.fileUpload,
+				aiPersona: t.aiPersona,
+				industryId: t.id,
+			},
+			now,
+		);
 
-		// Resolve stage code → stage id once, so field showInStages can
-		// reference codes (e.g. "DOC", "EJ") and we map them to nanoid ids.
-		const stageCodeToId = new Map<string, string>();
-		let pipelineId: string | null = null;
-
-		if (existingPipeline) {
-			pipelineId = existingPipeline._id as unknown as string;
-			for (const stage of existingPipeline.stages) {
-				stageCodeToId.set(stage.code, stage.id);
-			}
-		} else {
-			const stages = t.pipeline.stages.map((s, i) => {
-				const id = `stage_${nanoid12()}`;
-				stageCodeToId.set(s.code, id);
-				return {
-					id,
-					name: s.name,
-					code: s.code,
-					order: i,
-					color: s.color,
-					isFinal: s.isFinal,
-					finalType: s.finalType,
-					staleAfterDays: s.staleAfterDays,
-				};
-			});
-			pipelineId = (await ctx.db.insert("pipelines", {
-				orgId: args.orgId,
-				name: t.pipeline.name,
-				entityType: "deal",
-				isDefault: true,
-				stages,
-				createdAt: now,
-				updatedAt: now,
-			})) as unknown as string;
-		}
-
-		// ─── 2. Field definitions ────────────────────────────────────────
-		let fieldsInserted = 0;
-		if (t.fieldDefinitions) {
-			for (const [entityType, defs] of Object.entries(t.fieldDefinitions)) {
-				// Track per-entity max order so newly-seeded rows append cleanly.
-				const existingForEntity = await ctx.db
-					.query("fieldDefinitions")
-					.withIndex("by_org_and_entity", (q) =>
-						q.eq("orgId", args.orgId).eq("entityType", entityType),
-					)
-					.collect();
-				const existingNames = new Set(existingForEntity.map((r) => r.name));
-				let maxOrder = existingForEntity.reduce(
-					(acc, r) => (r.order > acc ? r.order : acc),
-					-1,
-				);
-
-				for (const def of defs ?? []) {
-					if (existingNames.has(def.name)) continue;
-					maxOrder += 1;
-
-					// Resolve `showInStages` (template authors write codes;
-					// we store stage ids so the field continues to work
-					// after a stage rename).
-					const resolvedShowInStages = def.showInStages
-						?.map((code) => stageCodeToId.get(code))
-						.filter((v): v is string => !!v);
-
-					await ctx.db.insert("fieldDefinitions", {
-						orgId: args.orgId,
-						entityType: def.entityType,
-						name: def.name,
-						label: def.label,
-						labelAr: def.labelAr,
-						type: def.type,
-						kind: def.kind,
-						storage: def.storage,
-						columnKey: def.columnKey,
-						system: def.system ?? false,
-						protected: def.protected ?? false,
-						hidden: false,
-						options: def.options,
-						required: def.required ?? false,
-						order: def.order ?? maxOrder,
-						groupName: def.groupName,
-						sensitive: def.sensitive,
-						defaultValue: def.defaultValue,
-						showInStages:
-							resolvedShowInStages && resolvedShowInStages.length > 0
-								? resolvedShowInStages
-								: undefined,
-						createdAt: now,
-						updatedAt: now,
-					});
-					fieldsInserted += 1;
+		// 4 — pipelines (collect codes per pipeline so field defs can resolve)
+		const pipelineSeeds = collectPipelines(t);
+		const aggregateStageCodeToId = new Map<string, string>();
+		const pipelineIds: Id<"pipelines">[] = [];
+		for (const seed of pipelineSeeds) {
+			const r = await seedOnePipeline(ctx, args.orgId, seed, now);
+			pipelineIds.push(r.pipelineId);
+			for (const [code, id] of r.stageCodeToId) {
+				// First seen wins. Templates SHOULD avoid duplicate codes
+				// across pipelines, but if they collide we keep the first.
+				if (!aggregateStageCodeToId.has(code)) {
+					aggregateStageCodeToId.set(code, id);
 				}
 			}
 		}
 
-		// ─── 3. Entity labels (merge into org doc) ───────────────────────
-		let labelsApplied = false;
-		if (t.entityLabels) {
-			const org = await ctx.db.get(args.orgId);
-			if (org) {
-				const merged = {
-					...(org.entityLabels ?? {}),
-					...t.entityLabels,
-				};
-				await ctx.db.patch(args.orgId, {
-					entityLabels: merged,
-					industry: t.id,
-					updatedAt: now,
-				});
-				labelsApplied = true;
-			}
-		} else {
-			// At minimum, persist the industry id so we know which template
-			// the org started with.
-			const org = await ctx.db.get(args.orgId);
-			if (org && org.industry !== t.id) {
-				await ctx.db.patch(args.orgId, { industry: t.id, updatedAt: now });
-			}
+		// 5 — field definitions (pin to default stage when template author left it empty)
+		let fieldsInserted = 0;
+		if (t.fieldDefinitions) {
+			fieldsInserted = await seedFieldDefinitions(
+				ctx,
+				args.orgId,
+				t.fieldDefinitions,
+				aggregateStageCodeToId,
+				now,
+			);
 		}
+
+		// 10 — note categories
+		const noteCategoriesInserted = await seedNoteCategories(
+			ctx,
+			args.orgId,
+			t.noteCategories,
+			now,
+		);
+
+		// 11 — tags
+		const tagsInserted = await seedTags(ctx, args.orgId, t.tags, now);
+
+		// 12 — saved views
+		const savedViewsInserted = await seedSavedViews(
+			ctx,
+			args.orgId,
+			args.actorUserId,
+			t.savedViews,
+			now,
+		);
+
+		// 13 — custom roles
+		const customRolesInserted = await seedCustomRoles(ctx, args.orgId, t.customRoles, now);
 
 		return {
 			ok: true,
 			templateId: t.id,
-			pipelineId,
+			pipelineIds,
 			fieldsInserted,
-			labelsApplied,
+			noteCategoriesInserted,
+			tagsInserted,
+			savedViewsInserted,
+			customRolesInserted,
 		};
 	},
 });
+
+// ─── Schedulable wrapper used by `orgs.applyTemplate` ───────────────────────
+
+/**
+ * The public-facing `orgs.applyTemplate` mutation does the RBAC check and
+ * then calls this internal helper, so callers don't need to know about
+ * `internal.crm.fields.templates.mutations`.
+ */
+export async function runSetupWorkspaceFromTemplate(
+	ctx: MutationCtx,
+	orgId: Id<"orgs">,
+	templateId: string,
+	actorUserId: Id<"users">,
+): Promise<void> {
+	await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
+		orgId,
+		templateId,
+		actorUserId,
+	});
+}

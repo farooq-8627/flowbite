@@ -73,16 +73,40 @@ export const orgs = defineTable({
 	entityLabels: v.optional(
 		v.object({
 			lead: v.optional(
-				v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
 			),
 			contact: v.optional(
-				v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
 			),
 			deal: v.optional(
-				v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
 			),
 			company: v.optional(
-				v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
 			),
 		}),
 	),

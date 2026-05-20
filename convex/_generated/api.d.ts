@@ -18,6 +18,7 @@ import type * as _migrations_pinDealFieldsToDefaultStage from "../_migrations/pi
 import type * as _migrations_recomputeOrgStats from "../_migrations/recomputeOrgStats.js";
 import type * as _migrations_seedNoteCategories from "../_migrations/seedNoteCategories.js";
 import type * as _migrations_seedSortOrder from "../_migrations/seedSortOrder.js";
+import type * as _migrations_seedTemplateDefaults from "../_migrations/seedTemplateDefaults.js";
 import type * as _migrations_setOrgDefaultCurrency from "../_migrations/setOrgDefaultCurrency.js";
 import type * as _migrations_setOrgPlan from "../_migrations/setOrgPlan.js";
 import type * as _migrations_tightenReminderSourceAndAddPriority from "../_migrations/tightenReminderSourceAndAddPriority.js";
@@ -61,8 +62,10 @@ import type * as crm_fields_pipelines_mutations from "../crm/fields/pipelines/mu
 import type * as crm_fields_pipelines_queries from "../crm/fields/pipelines/queries.js";
 import type * as crm_fields_templates_definitions_b2b_saas from "../crm/fields/templates/definitions/b2b_saas.js";
 import type * as crm_fields_templates_definitions_freelancer from "../crm/fields/templates/definitions/freelancer.js";
+import type * as crm_fields_templates_definitions_generic from "../crm/fields/templates/definitions/generic.js";
 import type * as crm_fields_templates_definitions_real_estate from "../crm/fields/templates/definitions/real_estate.js";
 import type * as crm_fields_templates_mutations from "../crm/fields/templates/mutations.js";
+import type * as crm_fields_templates_queries from "../crm/fields/templates/queries.js";
 import type * as crm_fields_templates_registry from "../crm/fields/templates/registry.js";
 import type * as crm_fields_templates_types from "../crm/fields/templates/types.js";
 import type * as crm_people_queries from "../crm/people/queries.js";
@@ -90,6 +93,7 @@ import type * as featureFlags_queries from "../featureFlags/queries.js";
 import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
 import type * as http from "../http.js";
+import type * as invitations_actions from "../invitations/actions.js";
 import type * as invitations_index from "../invitations/index.js";
 import type * as invitations_mutations from "../invitations/mutations.js";
 import type * as invitations_queries from "../invitations/queries.js";
@@ -132,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/recomputeOrgStats": typeof _migrations_recomputeOrgStats;
   "_migrations/seedNoteCategories": typeof _migrations_seedNoteCategories;
   "_migrations/seedSortOrder": typeof _migrations_seedSortOrder;
+  "_migrations/seedTemplateDefaults": typeof _migrations_seedTemplateDefaults;
   "_migrations/setOrgDefaultCurrency": typeof _migrations_setOrgDefaultCurrency;
   "_migrations/setOrgPlan": typeof _migrations_setOrgPlan;
   "_migrations/tightenReminderSourceAndAddPriority": typeof _migrations_tightenReminderSourceAndAddPriority;
@@ -175,8 +180,10 @@ declare const fullApi: ApiFromModules<{
   "crm/fields/pipelines/queries": typeof crm_fields_pipelines_queries;
   "crm/fields/templates/definitions/b2b_saas": typeof crm_fields_templates_definitions_b2b_saas;
   "crm/fields/templates/definitions/freelancer": typeof crm_fields_templates_definitions_freelancer;
+  "crm/fields/templates/definitions/generic": typeof crm_fields_templates_definitions_generic;
   "crm/fields/templates/definitions/real_estate": typeof crm_fields_templates_definitions_real_estate;
   "crm/fields/templates/mutations": typeof crm_fields_templates_mutations;
+  "crm/fields/templates/queries": typeof crm_fields_templates_queries;
   "crm/fields/templates/registry": typeof crm_fields_templates_registry;
   "crm/fields/templates/types": typeof crm_fields_templates_types;
   "crm/people/queries": typeof crm_people_queries;
@@ -204,6 +211,7 @@ declare const fullApi: ApiFromModules<{
   "files/mutations": typeof files_mutations;
   "files/queries": typeof files_queries;
   http: typeof http;
+  "invitations/actions": typeof invitations_actions;
   "invitations/index": typeof invitations_index;
   "invitations/mutations": typeof invitations_mutations;
   "invitations/queries": typeof invitations_queries;

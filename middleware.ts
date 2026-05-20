@@ -35,10 +35,14 @@ const intlMiddleware = createIntlMiddleware(routing);
 
 /** Routes accessible without authentication */
 const isPublicRoute = createRouteMatcher([
+	"/",
+	"/:locale",
 	"/signin",
 	"/:locale/signin",
 	"/signup",
 	"/:locale/signup",
+	"/:locale/join",
+	"/:locale/join/:token",
 ]);
 
 export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {

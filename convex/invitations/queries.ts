@@ -5,7 +5,7 @@
  */
 import { v } from "convex/values";
 import { orgQuery } from "../_functions/authenticated";
-import { query } from "../_generated/server";
+import { internalQuery, query } from "../_generated/server";
 import { requireRole } from "../_shared/permissions";
 import { getOrgMember } from "../orgs/helpers";
 
@@ -73,5 +73,30 @@ export const listAll = orgQuery({
 			.query("invitations")
 			.withIndex("by_orgId_and_status", (q) => q.eq("orgId", args.orgId))
 			.take(100);
+	},
+});
+
+/**
+ * Internal query — returns the data needed by the `sendInvitationEmail`
+ * action: token + role + expiry + orgName + inviter name + inviter email.
+ *
+ * Action runtimes can't read DB directly; this is the bridge.
+ */
+export const getForEmail = internalQuery({
+	args: { invitationId: v.id("invitations") },
+	handler: async (ctx, args) => {
+		const invitation = await ctx.db.get(args.invitationId);
+		if (!invitation) return null;
+		const org = await ctx.db.get(invitation.orgId);
+		const inviter = await ctx.db.get(invitation.invitedBy);
+		return {
+			token: invitation.token,
+			email: invitation.email,
+			role: invitation.role,
+			expiresAt: invitation.expiresAt,
+			orgName: org?.name ?? "your workspace",
+			inviterName: inviter?.name ?? null,
+			inviterEmail: inviter?.email ?? null,
+		};
 	},
 });

@@ -24,15 +24,17 @@ const STEPS = [
 ] as const;
 
 const INDUSTRIES = [
-	{ id: "real-estate", label: "Real Estate" },
+	{ id: "real-estate", label: "Real Estate (Gulf)" },
+	{ id: "b2b-saas", label: "B2B SaaS" },
+	{ id: "agency-freelance", label: "Agency / Freelance" },
+	{ id: "recruiting", label: "Recruiting / Staffing" },
+	{ id: "freelancer", label: "Freelancer / Solo" },
 	{ id: "finance", label: "Finance & Banking" },
 	{ id: "retail", label: "Retail & E-commerce" },
 	{ id: "healthcare", label: "Healthcare" },
 	{ id: "technology", label: "Technology" },
 	{ id: "construction", label: "Construction" },
 	{ id: "hospitality", label: "Hospitality & Tourism" },
-	{ id: "b2b-sales", label: "B2B Sales" },
-	{ id: "freelancer", label: "Freelancer / Solo" },
 	{ id: "other", label: "Other" },
 ] as const;
 
@@ -193,6 +195,8 @@ function IndustryStep({
 	const [loading, setLoading] = useState(false);
 
 	const updateOrgIndustry = useMutation(api.orgs.mutations.updateOrgIndustry);
+	const templates = useQuery(api.crm.fields.templates.queries.list, {});
+	const templatesById = new Map((templates ?? []).map((t) => [t.id, t] as const));
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -209,11 +213,11 @@ function IndustryStep({
 	};
 
 	return (
-		<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[380px]">
+		<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[440px]">
 			<div className="space-y-2 text-center">
 				<h1 className="font-medium text-3xl">About your business</h1>
 				<p className="text-muted-foreground text-sm">
-					Help us set up the right defaults for you.
+					Pick what fits — we'll seed your pipeline, fields, tags, and AI persona.
 				</p>
 			</div>
 
@@ -221,21 +225,42 @@ function IndustryStep({
 				<div className="space-y-2">
 					<p className="text-sm font-medium">Industry</p>
 					<div className="grid grid-cols-2 gap-2">
-						{INDUSTRIES.map((item) => (
-							<button
-								key={item.id}
-								type="button"
-								onClick={() => setIndustry(item.id)}
-								className={cn(
-									"rounded-[var(--radius)] border px-3 py-2 text-start text-sm transition-colors",
-									industry === item.id
-										? "border-primary bg-primary/10 font-medium text-primary"
-										: "border-border bg-background hover:bg-muted",
-								)}
-							>
-								{item.label}
-							</button>
-						))}
+						{INDUSTRIES.map((item) => {
+							const t = templatesById.get(item.id);
+							const isSelected = industry === item.id;
+							const isCurated = !!t;
+							return (
+								<button
+									key={item.id}
+									type="button"
+									onClick={() => setIndustry(item.id)}
+									className={cn(
+										"flex flex-col gap-1 rounded-[var(--radius)] border px-3 py-2 text-start text-sm transition-colors",
+										isSelected
+											? "border-primary bg-primary/10 font-medium text-primary"
+											: "border-border bg-background hover:bg-muted",
+										isCurated && "min-h-[68px]",
+									)}
+								>
+									<span className="flex items-center gap-1.5">
+										{t?.icon && <span aria-hidden="true">{t.icon}</span>}
+										<span className="truncate">{item.label}</span>
+									</span>
+									{isCurated && t.description && (
+										<span
+											className={cn(
+												"line-clamp-2 font-normal text-[11px] leading-snug",
+												isSelected
+													? "text-primary/80"
+													: "text-muted-foreground",
+											)}
+										>
+											{t.description}
+										</span>
+									)}
+								</button>
+							);
+						})}
 					</div>
 				</div>
 

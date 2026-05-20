@@ -7,6 +7,10 @@
  *     invited user isn't a member yet).
  *   - Every mutation calls `logActivity()` for audit trail.
  *   - `create` and `accept` call `sendNotification()`.
+ *   - `create` schedules `internal.invitations.actions.sendInvitationEmail`
+ *     which delivers the accept URL via Resend. Email is best-effort —
+ *     when RESEND_API_KEY is unset the mutation still returns the accept URL
+ *     so the inviter can share it manually (Copy invite link in the UI).
  *   - Token-based: each invitation has a UUID token for email links.
  *
  * Sources:
@@ -15,6 +19,8 @@
  */
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import { internal } from "../_generated/api";
+import { internalMutation } from "../_generated/server";
 import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";
@@ -23,6 +29,18 @@ import { invitationRoleValidator } from "../_shared/validators";
 import { logActivity } from "../activityLogs/helpers";
 import { sendNotification } from "../notifications/helpers";
 import { getOrgMember } from "../orgs/helpers";
+
+/**
+ * Build the public accept URL for a given token.
+ *
+ * Reads `APP_PUBLIC_URL` from the Convex env (NOT NEXT_PUBLIC_APP_URL —
+ * Convex backend has its own env scope). Falls back to localhost so dev
+ * works out of the box.
+ */
+function buildAcceptUrl(token: string): string {
+	const base = (process.env.APP_PUBLIC_URL ?? "http://localhost:3000").replace(/\/$/, "");
+	return `${base}/join/${token}`;
+}
 
 /**
  * Create an invitation. Requires `members.invite` permission (owner/admin).
@@ -90,7 +108,15 @@ export const create = orgMutation({
 			description: `Invited ${args.email} as ${args.role}`,
 		});
 
-		return { invitationId, token };
+		// Schedule the email send. Runs as an internal action (Node runtime)
+		// so it can call Resend. Soft-fails when RESEND_API_KEY is unset —
+		// the inviter still gets the accept URL via the return value below
+		// so they can share the link manually.
+		await ctx.scheduler.runAfter(0, internal.invitations.actions.sendInvitationEmail, {
+			invitationId,
+		});
+
+		return { invitationId, token, acceptUrl: buildAcceptUrl(token) };
 	},
 });
 
@@ -274,6 +300,34 @@ export const cancel = orgMutation({
 			entityType: ENTITY_TYPES.INVITATION,
 			entityId: invitation._id,
 			description: `Cancelled invitation for ${invitation.email}`,
+		});
+	},
+});
+
+/**
+ * Internal — called by `sendInvitationEmail` action to record the email
+ * delivery outcome on the activity log. Never throws (a failed write here
+ * shouldn't break the user-visible flow).
+ */
+export const recordEmailDelivery = internalMutation({
+	args: {
+		invitationId: v.id("invitations"),
+		ok: v.boolean(),
+		detail: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const invitation = await ctx.db.get(args.invitationId);
+		if (!invitation) return;
+
+		await logActivity(ctx, {
+			orgId: invitation.orgId,
+			userId: invitation.invitedBy,
+			action: args.ok ? "updated" : "updated",
+			entityType: ENTITY_TYPES.INVITATION,
+			entityId: args.invitationId,
+			description: args.ok
+				? `Invitation email delivered to ${invitation.email}`
+				: `Invitation email NOT delivered to ${invitation.email}: ${args.detail}`,
 		});
 	},
 });

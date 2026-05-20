@@ -19,6 +19,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import { DEFAULT_ORG_PLAN, ENTITY_TYPES } from "../_shared/constants";
@@ -32,11 +33,10 @@ import {
 } from "../_shared/permissions/derive";
 import { RESERVED_SLUGS, validateSlug } from "../_shared/reservedSlugs";
 import { logActivity } from "../activityLogs/helpers";
-import { seedFieldDefinitionsForOrg } from "../crm/fields/fieldDefinitions/internal";
+import { INDUSTRY_ID_ALIASES, INDUSTRY_TEMPLATES } from "../crm/fields/templates/registry";
 import { seedNoteCategoriesForOrg } from "../crm/shared/noteCategories/internal";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
-import { getDefaultStages } from "./templates/pipelineStages";
 
 // Platform prefix is read from env — never hardcoded.
 // Set PLATFORM_PREFIX in your Convex environment variables.
@@ -276,7 +276,19 @@ export const create = authenticatedMutation({
 
 /**
  * Update org industry + team size (onboarding Step 2).
- * Requires the calling user to be an active member of the org.
+ *
+ * Now a thin wrapper around `applyTemplate` — every industry id resolves
+ * via the registry (`convex/crm/fields/templates/registry.ts`). The legacy
+ * `getDefaultStages(...)` + `seedFieldDefinitionsForOrg(...)` call path is
+ * REMOVED — every onboarding now seeds via `setupWorkspaceFromTemplate`,
+ * giving the workspace a complete set of pipelines, fields, entity labels,
+ * note categories, tags, reminder defaults, follow-up cadence, file-upload
+ * policy, AI persona, modules slot map, code prefixes, currency, and
+ * timezone in one atomic transaction.
+ *
+ * Backwards compat: `industry` is still a free-form string (no narrowing).
+ * Unknown ids transparently fall through to the `generic` template via the
+ * registry's alias map — never throws TEMPLATE_NOT_FOUND from this path.
  */
 export const updateOrgIndustry = authenticatedMutation({
 	args: {
@@ -291,33 +303,22 @@ export const updateOrgIndustry = authenticatedMutation({
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		await ctx.db.patch(args.orgId, {
-			industry: args.industry,
 			teamSize: args.teamSize,
 			onboardingStep: 1,
 			updatedAt: now,
 		});
 
-		// Seed default pipeline (idempotent)
-		const existingPipeline = await ctx.db
-			.query("pipelines")
-			.withIndex("by_org_and_default", (q) => q.eq("orgId", args.orgId).eq("isDefault", true))
-			.first();
+		// Resolve via the alias map; default to "generic" so onboarding never
+		// blocks on an uncurated industry id.
+		const templateId = INDUSTRY_TEMPLATES[args.industry]
+			? args.industry
+			: (INDUSTRY_ID_ALIASES[args.industry] ?? "generic");
 
-		if (!existingPipeline) {
-			const stages = getDefaultStages(args.industry, args.orgId);
-			await ctx.db.insert("pipelines", {
-				orgId: args.orgId,
-				name: "Sales Pipeline",
-				entityType: "deal",
-				isDefault: true,
-				stages,
-				createdAt: now,
-				updatedAt: now,
-			});
-		}
-
-		// Seed default fieldDefinitions (idempotent)
-		await seedFieldDefinitionsForOrg(ctx, args.orgId, args.industry, now);
+		await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
+			orgId: args.orgId,
+			templateId,
+			actorUserId: ctx.userId,
+		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -325,8 +326,56 @@ export const updateOrgIndustry = authenticatedMutation({
 			action: "updated",
 			entityType: ENTITY_TYPES.ORG,
 			entityId: args.orgId,
-			description: `Set industry to "${args.industry}"`,
+			description: `Set industry to "${args.industry}" (template: ${templateId})`,
 		});
+	},
+});
+
+/**
+ * Apply (or re-apply) an industry template to an org.
+ *
+ * Requires `org.editSettings`. Idempotent — every step inside the seeder is
+ * a "skip-if-exists" check on natural keys, so re-running with the same
+ * template only inserts the rows that were missing.
+ *
+ * Use cases:
+ *   - Onboarding wizard (calls this from Step 2 once industry+team size are picked)
+ *   - Settings → Workspace → "Re-apply template" / "Switch template"
+ *   - Phase 3 AI tool `setup_workspace_from_template`
+ */
+export const applyTemplate = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		templateId: v.string(),
+	},
+	handler: async (ctx, args): Promise<{ ok: true; templateId: string }> => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined)
+			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+
+		requireRole(member.permissions, "org.editSettings");
+
+		// Resolve via alias map (so callers can pass picker ids transparently).
+		const resolved = INDUSTRY_TEMPLATES[args.templateId]
+			? args.templateId
+			: (INDUSTRY_ID_ALIASES[args.templateId] ?? "generic");
+
+		await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
+			orgId: args.orgId,
+			templateId: resolved,
+			actorUserId: ctx.userId,
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId: ctx.userId,
+			action: "updated",
+			entityType: ENTITY_TYPES.ORG,
+			entityId: args.orgId,
+			description: `Applied industry template "${resolved}"`,
+		});
+
+		return { ok: true, templateId: resolved };
 	},
 });
 
@@ -378,16 +427,40 @@ export const update = orgMutation({
 		entityLabels: v.optional(
 			v.object({
 				lead: v.optional(
-					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+					v.object({
+						singular: v.string(),
+						plural: v.string(),
+						slug: v.string(),
+						singularAr: v.optional(v.string()),
+						pluralAr: v.optional(v.string()),
+					}),
 				),
 				contact: v.optional(
-					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+					v.object({
+						singular: v.string(),
+						plural: v.string(),
+						slug: v.string(),
+						singularAr: v.optional(v.string()),
+						pluralAr: v.optional(v.string()),
+					}),
 				),
 				deal: v.optional(
-					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+					v.object({
+						singular: v.string(),
+						plural: v.string(),
+						slug: v.string(),
+						singularAr: v.optional(v.string()),
+						pluralAr: v.optional(v.string()),
+					}),
 				),
 				company: v.optional(
-					v.object({ singular: v.string(), plural: v.string(), slug: v.string() }),
+					v.object({
+						singular: v.string(),
+						plural: v.string(),
+						slug: v.string(),
+						singularAr: v.optional(v.string()),
+						pluralAr: v.optional(v.string()),
+					}),
 				),
 			}),
 		),

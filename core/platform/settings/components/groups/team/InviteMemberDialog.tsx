@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { Plus } from "lucide-react";
+import { Copy, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
@@ -58,6 +58,7 @@ export function InviteMemberDialog({
 	roles: Role[] | undefined;
 }) {
 	const [open, setOpen] = useState(false);
+	const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
 	const invite = useMutation(api.invitations.mutations.create);
 
 	const inviteRoles = useMemo(() => {
@@ -74,15 +75,35 @@ export function InviteMemberDialog({
 		schema: inviteSchema,
 		values: { email: "", role: "member" as const },
 		onSubmit: async (data) => {
-			await invite({ orgId, email: data.email, role: data.role });
-			toast.success(`Invitation sent to ${data.email}`);
+			const result = await invite({ orgId, email: data.email, role: data.role });
+			toast.success(`Invitation sent to ${data.email}`, {
+				description:
+					"They'll get an email with a link to accept. You can also copy the link below.",
+			});
+			setLastAcceptUrl(result.acceptUrl);
 			form.reset({ email: "", role: "member" });
-			setOpen(false);
 		},
 	});
 
+	const handleCopyLink = async () => {
+		if (!lastAcceptUrl) return;
+		try {
+			await navigator.clipboard.writeText(lastAcceptUrl);
+			toast.success("Invite link copied to clipboard");
+		} catch {
+			toast.error("Couldn't copy. Select the text manually.");
+		}
+	};
+
+	const handleClose = () => {
+		setOpen(false);
+		// Clear the cached link a moment after the dialog finishes its close
+		// animation so the next open starts fresh.
+		setTimeout(() => setLastAcceptUrl(null), 200);
+	};
+
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
+		<Dialog open={open} onOpenChange={(o) => (o ? setOpen(true) : handleClose())}>
 			<DialogTrigger asChild>
 				<Button size="sm">
 					<Plus className="size-4" />
@@ -93,7 +114,9 @@ export function InviteMemberDialog({
 				<DialogHeader>
 					<DialogTitle>Invite a new member</DialogTitle>
 					<DialogDescription>
-						They'll get an email with a link to join this workspace.
+						{lastAcceptUrl
+							? "Invitation created. Email is on its way — copy the link below if you'd rather share it directly."
+							: "They'll get an email with a link to join this workspace."}
 					</DialogDescription>
 				</DialogHeader>
 				<Form {...form}>
@@ -149,17 +172,33 @@ export function InviteMemberDialog({
 								</FormItem>
 							)}
 						/>
+
+						{lastAcceptUrl && (
+							<div className="space-y-2 rounded-[var(--radius)] border bg-muted/40 p-3">
+								<p className="text-muted-foreground text-xs">Direct invite link</p>
+								<div className="flex items-center gap-2">
+									<code className="flex-1 truncate rounded-[var(--radius)] border bg-background px-2 py-1 text-xs">
+										{lastAcceptUrl}
+									</code>
+									<Button
+										type="button"
+										size="sm"
+										variant="outline"
+										onClick={handleCopyLink}
+									>
+										<Copy className="size-3.5" />
+										Copy
+									</Button>
+								</div>
+							</div>
+						)}
+
 						<DialogFooter>
-							<Button
-								type="button"
-								variant="outline"
-								size="sm"
-								onClick={() => setOpen(false)}
-							>
-								Cancel
+							<Button type="button" variant="outline" size="sm" onClick={handleClose}>
+								{lastAcceptUrl ? "Done" : "Cancel"}
 							</Button>
 							<Button type="submit" size="sm" disabled={isSubmitting}>
-								Send invitation
+								{lastAcceptUrl ? "Send another" : "Send invitation"}
 							</Button>
 						</DialogFooter>
 					</form>

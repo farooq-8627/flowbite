@@ -92,7 +92,18 @@ export function EntityListPage<TRow extends { id: string }>({
 	emptyDescription,
 	emptyAction,
 }: EntityListPageProps<TRow>) {
+	// `items` is the canonical signal for both views — list parents pass the
+	// flat query result, board parents flatten their grouped result so the
+	// scaffold can rely on a single shape:
+	//   undefined → still loading
+	//   []        → loaded, no rows yet
+	//   [...]     → loaded, render the table or board
+	// The board branch uses `itemsByColumnId` for actual rendering; this
+	// scaffold only uses `items` for the loading / empty distinction so it
+	// works identically for list-only entities (contacts/companies) and
+	// board-as-primary entities (deals/leads).
 	const isLoading = items === undefined;
+	const isEmpty = (items?.length ?? 0) === 0;
 
 	// Default sort: newest first. The "createdAt" column is appended by
 	// `useEntityColumns` for the leads board, but the deals / contacts /
@@ -132,7 +143,7 @@ export function EntityListPage<TRow extends { id: string }>({
 				</>
 			}
 		>
-			{isLoading ? null : items.length === 0 ? (
+			{isLoading ? null : isEmpty ? (
 				<EmptyState
 					title={emptyTitle ?? "Nothing here yet"}
 					description={emptyDescription}

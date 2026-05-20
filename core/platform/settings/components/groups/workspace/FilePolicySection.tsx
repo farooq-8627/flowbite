@@ -70,6 +70,7 @@ export function FilePolicySection({ org, orgId }: { org: OrgSettings; orgId: Id<
 			<SettingsRow
 				label="Allowed file types"
 				description="Leave empty to allow every category."
+				controlClassName="sm:min-w-auto"
 			>
 				<MultiSelect
 					value={categories}
@@ -80,7 +81,7 @@ export function FilePolicySection({ org, orgId }: { org: OrgSettings; orgId: Id<
 					emptyText="No categories found."
 				/>
 			</SettingsRow>
-			<SettingsRow label="Max file size (MB)" description="Per-file upload limit.">
+			<SettingsRow label="Max file size (MB)" description="Per-file upload limit." controlClassName="sm:min-w-auto">
 				<Input
 					type="number"
 					min={1}

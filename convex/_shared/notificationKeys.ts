@@ -46,6 +46,13 @@ export const NOTIFICATION_PREFERENCE_CATALOG: readonly NotificationPreferenceEnt
 	},
 	{ key: "deal_assigned", category: "crm", label: "Deal assigned to me", defaultValue: true },
 	{ key: "deal_stage_changed", category: "crm", label: "Deal stage changed", defaultValue: true },
+	{
+		key: "deal_pipeline_changed",
+		category: "crm",
+		label: "Deal moved to a different pipeline",
+		description: "Fires when a deal you own is moved across pipelines.",
+		defaultValue: true,
+	},
 	{ key: "deal_won", category: "crm", label: "Deal won", defaultValue: true },
 	{ key: "deal_stale", category: "crm", label: "Deal becoming stale", defaultValue: true },
 	{

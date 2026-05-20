@@ -20,12 +20,76 @@ export const pipelines = defineTable({
 	name: v.string(),
 	entityType: v.string(),
 	isDefault: v.boolean(),
+	/**
+	 * Per-pipeline policy controlling what happens when a deal moves to a
+	 * stage but is missing one or more `required` fields that are scoped
+	 * to that stage (via `fieldDefinitions.showInStages`).
+	 *
+	 *   - `"block"` — mutation throws `MISSING_REQUIRED_FIELDS`; the move
+	 *     does not happen. UI prompts the user to fill the gaps and
+	 *     auto-retries. Best for compliance-heavy stages.
+	 *   - `"warn"`  — move succeeds; an `stage_changed_with_missing_fields`
+	 *     activity row is logged; UI shows an amber pill on the card and
+	 *     highlights the gaps in the deal-detail form. **Default.**
+	 *   - `"off"`   — no checks at all. Use when stage-aware required
+	 *     fields don't apply to this pipeline.
+	 *
+	 * Optional for backwards compatibility — when missing, treated as `"warn"`.
+	 */
+	stageTransitionPolicy: v.optional(
+		v.union(v.literal("block"), v.literal("warn"), v.literal("off")),
+	),
+	/**
+	 * Whether deals can skip stages (jump from Default → 3rd → Final), or
+	 * must advance one stage at a time. Only enforced when
+	 * `stageTransitionPolicy === "block"` — under "warn" / "off" there is
+	 * no enforcement at all so this flag is irrelevant.
+	 *
+	 * Default `false` (one-stage-at-a-time when policy is "block").
+	 */
+	allowSkipStages: v.optional(v.boolean()),
+	/**
+	 * Whether *all* required fields across every non-final stage must be
+	 * filled before a deal can be marked as done (won/neutral). Lost is
+	 * NEVER gated by this — owners can mark a deal lost from any stage.
+	 *
+	 * Default `true` — closing a deal demands a complete record.
+	 */
+	markDoneRequiresAllFields: v.optional(v.boolean()),
 	stages: v.array(
 		v.object({
 			id: v.string(),
 			name: v.string(),
+			/**
+			 * Short, human-typeable, org-pipeline-unique stage code.
+			 *
+			 * Format: `^[A-Z0-9_-]{2,16}$` (validated server-side in
+			 * mutations + helpers). Owner-typed, auto-suggested from the
+			 * stage name on first save, freely renameable.
+			 *
+			 * Used everywhere ambiguity must collapse to one value:
+			 * activity-log entries, AI tool calls, WhatsApp voice notes,
+			 * URL hash filters, saved-view filters.
+			 *
+			 * REQUIRED — see `convex/crm/fields/pipelines/MODULE.md`.
+			 */
+			code: v.string(),
 			order: v.number(),
 			color: v.optional(v.string()),
+			/**
+			 * The "Default" stage of the pipeline.
+			 *
+			 *   - Auto-created on `pipelines.create` (one per pipeline).
+			 *   - Cannot be removed.
+			 *   - Holds the **default fields** that show on every stage of
+			 *     the pipeline (every deal carries them regardless of
+			 *     where it currently is).
+			 *   - Other stages cannot have `isDefaultStage = true`.
+			 *   - Label is editable (default = "Default") but the role is
+			 *     fixed.
+			 *   - Always sits at `order = 0`.
+			 */
+			isDefaultStage: v.optional(v.boolean()),
 			isFinal: v.optional(v.boolean()),
 			finalType: v.optional(
 				v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),

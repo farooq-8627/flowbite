@@ -30,6 +30,7 @@ import { Label } from "@/components/ui/label";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useDefaultDealPipeline } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
@@ -75,10 +76,10 @@ export function ConvertLeadDrawer({
 	const allLeads = useQuery(api.crm.entities.leads.queries.list, orgId ? { orgId } : "skip");
 	const createDealMutation = useMutation(api.crm.entities.deals.mutations.create);
 	const copyTagsMutation = useMutation(api.crm.shared.tags.mutations.copyEntityTags);
-	const defaultPipeline = useQuery(
-		api.crm.fields.pipelines.queries.getDefault,
-		orgId && createDeal ? { orgId, entityType: "deal" } : "skip",
-	);
+	// Centralized — single subscription per (orgId), shared with the deals
+	// board and settings UI. We only need the default pipeline here.
+	const defaultPipelineFromHook = useDefaultDealPipeline(orgId && createDeal ? orgId : undefined);
+	const defaultPipeline = defaultPipelineFromHook ?? undefined;
 
 	// Re-seed selected ids ONLY when the drawer transitions closed → open.
 	// We compare the previous `open` value via a ref so React state changes

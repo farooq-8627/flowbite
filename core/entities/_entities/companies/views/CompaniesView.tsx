@@ -10,29 +10,24 @@
  * - Toolbar search with rank-to-top + flash highlight on matches.
  */
 
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMutation, useQuery } from "convex/react";
-import { formatDistanceToNow } from "date-fns";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
-import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
 import { CompanyDrawer } from "@/core/entities/_entities/companies/components/CompanyDrawer";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
 import { EntityCard } from "@/core/entities/shared/components/EntityCard";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
+import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
 import {
@@ -78,7 +73,6 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const [view, setView] = useViewToggle("company");
 	const { visibleFields: companyFields } = useEntityFields("company", orgId);
 	const defaultCardFields = useMemo(() => companyFields.map((f) => f.name), [companyFields]);
-	const listColumns = defaultCardFields;
 	const _createCompany = useMutation(api.crm.entities.companies.mutations.create);
 	const deleteCompany = useSoftDeleteCompany();
 
@@ -321,181 +315,40 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		[orgId, updateCompany, groupBy, itemsByColumnId, rankedItems.items, attachTag, detachTag],
 	);
 
-	// List columns
-	const columns: ColumnDef<CompanyRow, unknown>[] = useMemo(() => {
-		const cols: ColumnDef<CompanyRow, unknown>[] = [
-			{
-				id: "select",
-				header: ({ table }) => (
-					<Checkbox
-						checked={table.getIsAllPageRowsSelected()}
-						onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-						aria-label="Select all"
-					/>
-				),
-				cell: ({ row }) => (
-					<Checkbox
-						checked={row.getIsSelected()}
-						onCheckedChange={(v) => row.toggleSelected(!!v)}
-						aria-label="Select row"
-					/>
-				),
-				enableSorting: false,
-				size: 40,
-			},
-		];
-		for (const key of listColumns) {
-			switch (key) {
-				case "companyCode":
-					cols.push({
-						accessorKey: "companyCode",
-						header: "Code",
-						cell: ({ row }) => (
-							<Badge variant="outline" className="font-mono text-xs">
-								{row.getValue("companyCode") as string}
-							</Badge>
-						),
-						size: 100,
-					});
-					break;
-				case "name":
-					cols.push({
-						accessorKey: "name",
-						header: "Name",
-						cell: ({ row }) => (
-							<span className="font-medium">{row.getValue("name") as string}</span>
-						),
-					});
-					break;
-				case "industry":
-					cols.push({
-						accessorKey: "industry",
-						header: "Industry",
-						cell: ({ row }) => (
-							<Badge variant="secondary" className="capitalize text-xs">
-								{(row.getValue("industry") as string) ?? "—"}
-							</Badge>
-						),
-					});
-					break;
-				case "assignedTo":
-					cols.push({
-						accessorKey: "assignedTo",
-						header: "Assignee",
-						cell: ({ row }) => (
-							<AssigneeCell
-								orgId={orgId}
-								userId={row.getValue("assignedTo") as string}
-							/>
-						),
-					});
-					break;
-				case "contactCount":
-					cols.push({
-						accessorKey: "contactCount",
-						header: "Contacts",
-						cell: ({ row }) => (
-							<span className="tabular-nums text-sm">
-								{String(row.getValue("contactCount") ?? "0")}
-							</span>
-						),
-					});
-					break;
-				case "openDealCount":
-					cols.push({
-						accessorKey: "openDealCount",
-						header: "Open Deals",
-						cell: ({ row }) => (
-							<span className="tabular-nums text-sm">
-								{String(row.getValue("openDealCount") ?? "0")}
-							</span>
-						),
-					});
-					break;
-				case "createdAt":
-					cols.push({
-						accessorKey: "createdAt",
-						header: "Created",
-						cell: ({ row }) => (
-							<span className="text-xs text-muted-foreground">
-								{formatDistanceToNow(
-									new Date(row.getValue("createdAt") as number),
-									{ addSuffix: true },
-								)}
-							</span>
-						),
-					});
-					break;
-				default:
-					cols.push({
-						accessorKey: key,
-						header: key,
-						cell: ({ row }) => {
-							const direct = row.getValue(key);
-							if (direct !== undefined && direct !== null && direct !== "") {
-								return <span className="text-sm">{String(direct)}</span>;
-							}
-							const r = row.original as CompanyRow;
-							const v = customValuesByEntityId[r.id]?.[key];
-							if (v === undefined || v === null || v === "") {
-								return <span className="text-sm text-muted-foreground">—</span>;
-							}
-							if (Array.isArray(v))
-								return <span className="text-sm">{v.join(", ")}</span>;
-							return <span className="text-sm">{String(v)}</span>;
-						},
-					});
+	// Columns flow through the central `useEntityColumns` factory — same
+	// path as LeadsView. The factory iterates `tableFields` from
+	// `useEntityFields("company")` and dispatches each field through the
+	// shared cell renderer (so tags get TagsCell with the batched
+	// tagsByEntityId, assignee gets AssigneeCell, empty cells get the `+`
+	// inline-edit button), and wraps every header in
+	// `<DataTableColumnHeader>` so the table is sortable everywhere.
+	const { columns } = useEntityColumns<CompanyRow>("company", orgId, {
+		customValuesByEntityId,
+		tagsByEntityId,
+		onDelete: async (row) => {
+			if (!orgId) return;
+			try {
+				await deleteCompany({
+					orgId,
+					companyId: (row._id ?? row.id) as Id<"companies">,
+				});
+				toast.success(`${labels.company.singular} deleted`);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Couldn't delete");
 			}
-		}
-		// Row actions — Edit + Delete
-		cols.push({
-			id: "actions",
-			enableSorting: false,
-			enableHiding: false,
-			size: 44,
-			cell: ({ row }) => {
-				const company = row.original as unknown as Doc<"companies">;
-				return (
-					// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates the dots menu from row click
-					<div
-						className="flex justify-end"
-						onClick={(e) => e.stopPropagation()}
-						onKeyDown={(e) => e.stopPropagation()}
-					>
-						<DataTableRowActions
-							row={row}
-							extraItems={
-								<DropdownMenuItem
-									onClick={() => {
-										setEditingCompany(company);
-										setEditOpen(true);
-									}}
-								>
-									<PencilIcon className="me-2 size-4" />
-									Edit {labels.company.singular.toLowerCase()}
-								</DropdownMenuItem>
-							}
-							onDelete={async () => {
-								if (!orgId) return;
-								try {
-									await deleteCompany({
-										orgId,
-										companyId: company._id as Id<"companies">,
-									});
-									toast.success(`${labels.company.singular} deleted`);
-								} catch (err) {
-									toast.error(
-										err instanceof Error ? err.message : "Couldn't delete",
-									);
-								}
-							}}
-						/>
-					</div>
-				);
-			},
-		});
-		return cols;
-	}, [listColumns, orgId, deleteCompany, labels.company.singular, customValuesByEntityId]);
+		},
+		rowExtraActions: (row) => (
+			<DropdownMenuItem
+				onClick={() => {
+					setEditingCompany(row as unknown as Doc<"companies">);
+					setEditOpen(true);
+				}}
+			>
+				<PencilIcon className="me-2 size-4" />
+				Edit {labels.company.singular.toLowerCase()}
+			</DropdownMenuItem>
+		),
+	});
 
 	const primaryAction: PrimaryActionConfig = {
 		label: `Add ${labels.company.singular}`,

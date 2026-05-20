@@ -83,6 +83,13 @@ export const update = orgMutation({
 		options: v.optional(v.array(v.string())),
 		defaultValue: v.optional(v.any()),
 		hidden: v.optional(v.boolean()),
+		/**
+		 * Stage IDs this field should appear on. `undefined` / empty array =
+		 * show on every stage. Pass `[]` explicitly to clear an existing
+		 * restriction. Validated against the deal pipeline if `entityType
+		 * === "deal"` so admins can't ship references to deleted stages.
+		 */
+		showInStages: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
@@ -97,6 +104,29 @@ export const update = orgMutation({
 				code: "PROTECTED",
 				message: "This field is required by the system and cannot be hidden.",
 			});
+		}
+
+		// Validate stage IDs exist in at least one of the org's pipelines for
+		// this entity type. Skips when entityType is not deal-like (only
+		// deals have pipelines today).
+		if (args.showInStages && args.showInStages.length > 0) {
+			const pipelines = await ctx.db
+				.query("pipelines")
+				.withIndex("by_org_and_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", field.entityType),
+				)
+				.collect();
+			const validStageIds = new Set<string>();
+			for (const p of pipelines) {
+				for (const s of p.stages) validStageIds.add(s.id);
+			}
+			const unknown = args.showInStages.filter((id) => !validStageIds.has(id));
+			if (unknown.length > 0) {
+				throw new ConvexError({
+					code: "INVALID_STAGE",
+					message: `Unknown stage id(s): ${unknown.join(", ")}`,
+				});
+			}
 		}
 
 		const { orgId: _o, fieldId: _f, ...updates } = args;
@@ -139,6 +169,20 @@ export const remove = orgMutation({
 			throw new ConvexError({
 				code: "PROTECTED",
 				message: "This field is required by the system and cannot be deleted.",
+			});
+		}
+
+		// Assignee fields are also undeletable — the user can hide them, but
+		// we need the field-definition row to stay around so the
+		// "Assignee" option in the field selector / view options menu
+		// always has something to point at and can be re-shown later
+		// without re-seeding the whole entity. (`protected: true` would
+		// block hide too; we want hide-yes / delete-no.)
+		if (field.kind === "assignee") {
+			throw new ConvexError({
+				code: "UNDELETABLE",
+				message:
+					"Assignee fields can be hidden but not deleted, so they can be brought back any time.",
 			});
 		}
 

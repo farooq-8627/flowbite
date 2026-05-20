@@ -7,7 +7,10 @@
  * Selecting a tab renders the sections that apply to that slot:
  *   - Every slot: <ModuleDisplaySection>
  *   - Every slot: <SlotFieldsSection>           (Custom fields)
- *   - Deal slot only: <SlotPipelinesSection>    (Pipelines)
+ *
+ * Pipelines used to live here under the Deal tab. They moved to their own
+ * top-level Pipelines settings group on 2026-05-20 — see
+ * `core/platform/settings/components/groups/PipelinesGroup.tsx`.
  *
  * The active tab persists in the URL as `?tab=<slug>` using the org's renamed
  * entity slug (e.g. `?tab=inquiries` when Lead is renamed to Inquiry). If an
@@ -27,7 +30,6 @@ import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../../types";
 import { ModuleDisplaySection } from "./ModuleDisplaySection";
 import { SlotFieldsSection } from "./SlotFieldsSection";
-import { SlotPipelinesSection } from "./SlotPipelinesSection";
 
 const SLOTS: EntitySlot[] = ["lead", "contact", "deal", "company"];
 
@@ -122,7 +124,6 @@ export function ModulesGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs
 			<div id={`modules.${slot}`} className="grid gap-4 scroll-mt-4 rounded-[var(--radius)]">
 				<ModuleDisplaySection slot={slot} orgId={orgId} modules={org.settings?.modules} />
 				<SlotFieldsSection slot={slot} orgId={orgId} />
-				{slot === "deal" && <SlotPipelinesSection slot={slot} orgId={orgId} />}
 			</div>
 		</div>
 	);

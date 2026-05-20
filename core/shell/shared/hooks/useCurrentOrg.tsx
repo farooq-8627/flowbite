@@ -129,10 +129,19 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 		api.orgs.queries.listMembers,
 		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
 	);
-	const entityLabelsRaw = useQuery(
-		api.orgs.queries.getEntityLabels,
-		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
-	);
+	// Entity labels are derived from `listMyOrgs` (which already includes the
+	// full org doc) — NOT fetched via a separate `getEntityLabels` query.
+	// 2026-05-20 fix:
+	//   The old code subscribed to `getEntityLabels` independently. That
+	//   subscription resolved AFTER `listMyOrgs`, so for a brief window the
+	//   provider had `org` defined while `entityLabelsRaw === undefined`.
+	//   `useEntityLabels()` then returned the merged-default shape — fine
+	//   for orgs on default slugs, but a 404-trigger for orgs that have
+	//   renamed an entity (e.g. `lead.slug = "inquiry"`). When the user
+	//   visited `/inquiry`, `EntitySlugView` couldn't find the slot in
+	//   the default-only map and fired `notFound()`.
+	//   Reading from `entry.org.entityLabels` removes that race entirely:
+	//   labels arrive in the same Convex round-trip as the orgId itself.
 
 	// Feature flags are session-scoped — hoisted here so `useModuleEnabled`
 	// and `<ModuleGuard>` read from context instead of each mounting their
@@ -165,10 +174,12 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 			members,
 			memberMap,
 			memberNameMap,
-			entityLabels: mergeEntityLabelDefaults(entityLabelsRaw),
+			// Read straight from the org doc returned by listMyOrgs — single
+			// subscription, no cross-query race.
+			entityLabels: mergeEntityLabelDefaults(entry?.org.entityLabels),
 			featureFlags,
 		};
-	}, [orgs, orgSlug, me, membership, members, entityLabelsRaw, featureFlags]);
+	}, [orgs, orgSlug, me, membership, members, featureFlags]);
 
 	return (
 		<OrgContext.Provider value={value}>

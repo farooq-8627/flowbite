@@ -46,7 +46,30 @@ export interface InputContext {
 	onChange: (value: unknown) => void;
 	/** Provide when editing an existing entity (file uploads need a stable id). */
 	orgId?: Id<"orgs">;
+	/**
+	 * The entity's Convex `_id` (a string). Used by joins-style cells like
+	 * `<TagsCell>` whose backing table (`entityTags`) keys on the Convex id.
+	 */
 	entityId?: string;
+	/**
+	 * The entity's HUMAN code (`personCode`, `dealCode`, `companyCode`).
+	 * Used by file-type fields because `convex/files/mutations.ts::record`
+	 * validates `scopeId` against the per-slot human code, not the Convex
+	 * `_id`. Must be derived from the entity in edit mode by `EntityFieldForm`
+	 * — passing `entityId` (Convex id) here would cause `validateScopeId`
+	 * to throw "Resource not found" because the lookup index is by code.
+	 *
+	 * Undefined in create mode (no entity yet) — `<CreateModeFileField>`
+	 * buffers locally and the parent commits later via `fileBuffer.commitAll`
+	 * with the freshly-generated code.
+	 */
+	fileScopeId?: string;
+	/**
+	 * The person code associated with this entity (for deals: deal.personCode).
+	 * Used to tag file uploads with `person:<code>` so they surface on the
+	 * person's Files tab.
+	 */
+	filePersonCode?: string;
 	disabled?: boolean;
 }
 
@@ -311,9 +334,9 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 			className={inputClass}
 		/>
 	),
-	file: ({ field, slot, orgId, entityId }) => {
+	file: ({ field, slot, orgId, entityId, fileScopeId, filePersonCode }) => {
 		if (!orgId) return <FileFieldPlaceholder label={field.label} multiple={false} />;
-		if (!entityId) {
+		if (!entityId || !fileScopeId) {
 			return (
 				<CreateModeFileField
 					orgId={orgId}
@@ -323,20 +346,22 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 				/>
 			);
 		}
+		const tags = filePersonCode ? [`person:${filePersonCode}`] : undefined;
 		return (
 			<FileUpload
 				orgId={orgId}
 				scope={slot}
-				scopeId={entityId}
+				scopeId={fileScopeId}
 				fieldKey={field.name}
 				multiple={false}
 				label={`Drop ${field.label.toLowerCase()} here or click to browse`}
+				tags={tags}
 			/>
 		);
 	},
-	files: ({ field, slot, orgId, entityId }) => {
+	files: ({ field, slot, orgId, entityId, fileScopeId, filePersonCode }) => {
 		if (!orgId) return <FileFieldPlaceholder label={field.label} multiple={true} />;
-		if (!entityId) {
+		if (!entityId || !fileScopeId) {
 			return (
 				<CreateModeFileField
 					orgId={orgId}
@@ -346,14 +371,16 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 				/>
 			);
 		}
+		const tags = filePersonCode ? [`person:${filePersonCode}`] : undefined;
 		return (
 			<FileUpload
 				orgId={orgId}
 				scope={slot}
-				scopeId={entityId}
+				scopeId={fileScopeId}
 				fieldKey={field.name}
 				multiple={true}
 				label={`Drop ${field.label.toLowerCase()} here or click to browse`}
+				tags={tags}
 			/>
 		);
 	},

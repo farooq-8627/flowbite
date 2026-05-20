@@ -8,12 +8,15 @@
  *
  * Lists all pipelines for the slot's entityType and renders one
  * PipelineEditor per row. Each editor is self-contained (inline rename,
- * color change, drag-reorder stages).
+ * color change, drag-reorder stages, stage codes, default-stage action).
+ *
+ * Reads pipelines from the centralized `usePipelines` hook so the
+ * subscription is shared with the deals board and any other pipeline-
+ * aware surface — no duplicate `useQuery` per consumer.
  */
 
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { usePipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { SettingsSection } from "../../shared/SettingsSection";
 import { PipelineEditor } from "../crm/PipelineEditor";
@@ -29,10 +32,7 @@ interface Props {
 
 export function SlotPipelinesSection({ slot, orgId }: Props) {
 	const entityType = SLOT_TO_ENTITY_TYPE[slot];
-	const pipelines = useQuery(
-		api.crm.fields.pipelines.queries.listByOrg,
-		entityType ? { orgId } : "skip",
-	);
+	const pipelines = usePipelines(orgId);
 
 	if (!entityType) return null;
 
@@ -42,7 +42,7 @@ export function SlotPipelinesSection({ slot, orgId }: Props) {
 		<SettingsSection
 			id={`modules.${slot}.pipelines`}
 			title="Pipelines"
-			description="Stage workflows. Drag stages to reorder, click a stage to rename, click the color dot to recolor."
+			description="Stage workflows. Drag stages to reorder, click a stage to rename, click the color dot to recolor. Stage codes are used by AI and saved views."
 		>
 			<div className="flex flex-col gap-4 py-2">
 				{pipelines === undefined ? null : filtered.length === 0 ? (

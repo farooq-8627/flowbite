@@ -10,14 +10,18 @@
 
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
+import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
 import type * as _migrations_consolidatePersonConversations from "../_migrations/consolidatePersonConversations.js";
+import type * as _migrations_pinDealFieldsToDefaultStage from "../_migrations/pinDealFieldsToDefaultStage.js";
 import type * as _migrations_recomputeOrgStats from "../_migrations/recomputeOrgStats.js";
 import type * as _migrations_seedNoteCategories from "../_migrations/seedNoteCategories.js";
 import type * as _migrations_seedSortOrder from "../_migrations/seedSortOrder.js";
 import type * as _migrations_setOrgDefaultCurrency from "../_migrations/setOrgDefaultCurrency.js";
+import type * as _migrations_setOrgPlan from "../_migrations/setOrgPlan.js";
 import type * as _migrations_tightenReminderSourceAndAddPriority from "../_migrations/tightenReminderSourceAndAddPriority.js";
+import type * as _platform_limits from "../_platform/limits.js";
 import type * as _shared_constants from "../_shared/constants.js";
 import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
@@ -55,6 +59,12 @@ import type * as crm_fields_fieldValues_queries from "../crm/fields/fieldValues/
 import type * as crm_fields_pipelines_helpers from "../crm/fields/pipelines/helpers.js";
 import type * as crm_fields_pipelines_mutations from "../crm/fields/pipelines/mutations.js";
 import type * as crm_fields_pipelines_queries from "../crm/fields/pipelines/queries.js";
+import type * as crm_fields_templates_definitions_b2b_saas from "../crm/fields/templates/definitions/b2b_saas.js";
+import type * as crm_fields_templates_definitions_freelancer from "../crm/fields/templates/definitions/freelancer.js";
+import type * as crm_fields_templates_definitions_real_estate from "../crm/fields/templates/definitions/real_estate.js";
+import type * as crm_fields_templates_mutations from "../crm/fields/templates/mutations.js";
+import type * as crm_fields_templates_registry from "../crm/fields/templates/registry.js";
+import type * as crm_fields_templates_types from "../crm/fields/templates/types.js";
 import type * as crm_people_queries from "../crm/people/queries.js";
 import type * as crm_shared_calendar_queries from "../crm/shared/calendar/queries.js";
 import type * as crm_shared_conversations_internal from "../crm/shared/conversations/internal.js";
@@ -114,14 +124,18 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
+  "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
   "_migrations/consolidatePersonConversations": typeof _migrations_consolidatePersonConversations;
+  "_migrations/pinDealFieldsToDefaultStage": typeof _migrations_pinDealFieldsToDefaultStage;
   "_migrations/recomputeOrgStats": typeof _migrations_recomputeOrgStats;
   "_migrations/seedNoteCategories": typeof _migrations_seedNoteCategories;
   "_migrations/seedSortOrder": typeof _migrations_seedSortOrder;
   "_migrations/setOrgDefaultCurrency": typeof _migrations_setOrgDefaultCurrency;
+  "_migrations/setOrgPlan": typeof _migrations_setOrgPlan;
   "_migrations/tightenReminderSourceAndAddPriority": typeof _migrations_tightenReminderSourceAndAddPriority;
+  "_platform/limits": typeof _platform_limits;
   "_shared/constants": typeof _shared_constants;
   "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;
@@ -159,6 +173,12 @@ declare const fullApi: ApiFromModules<{
   "crm/fields/pipelines/helpers": typeof crm_fields_pipelines_helpers;
   "crm/fields/pipelines/mutations": typeof crm_fields_pipelines_mutations;
   "crm/fields/pipelines/queries": typeof crm_fields_pipelines_queries;
+  "crm/fields/templates/definitions/b2b_saas": typeof crm_fields_templates_definitions_b2b_saas;
+  "crm/fields/templates/definitions/freelancer": typeof crm_fields_templates_definitions_freelancer;
+  "crm/fields/templates/definitions/real_estate": typeof crm_fields_templates_definitions_real_estate;
+  "crm/fields/templates/mutations": typeof crm_fields_templates_mutations;
+  "crm/fields/templates/registry": typeof crm_fields_templates_registry;
+  "crm/fields/templates/types": typeof crm_fields_templates_types;
   "crm/people/queries": typeof crm_people_queries;
   "crm/shared/calendar/queries": typeof crm_shared_calendar_queries;
   "crm/shared/conversations/internal": typeof crm_shared_conversations_internal;

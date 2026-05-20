@@ -118,7 +118,7 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 					id: "modules.lead",
 					label: labels.lead.plural,
 					icon: Target,
-					description: `Display, custom fields, and pipelines for ${labels.lead.plural.toLowerCase()}`,
+					description: `Display and custom fields for ${labels.lead.plural.toLowerCase()}`,
 				},
 				{
 					id: "modules.contact",
@@ -130,7 +130,7 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 					id: "modules.deal",
 					label: labels.deal.plural,
 					icon: Workflow,
-					description: `Display, custom fields, and pipelines for ${labels.deal.plural.toLowerCase()}`,
+					description: `Display and custom fields for ${labels.deal.plural.toLowerCase()}`,
 				},
 				{
 					id: "modules.company",
@@ -141,10 +141,24 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 			],
 		},
 		{
+			id: "pipelines",
+			label: "Pipelines",
+			icon: Workflow,
+			permission: "pipelines.view",
+			subGroups: [
+				{
+					id: "pipelines.list",
+					label: "All Pipelines",
+					icon: LayoutList,
+					description: `Manage stage workflows for ${labels.deal.plural.toLowerCase()}`,
+				},
+			],
+		},
+		{
 			id: "crm",
 			label: "CRM",
 			icon: Target,
-			permission: "pipelines.view",
+			permission: "notes.view",
 			subGroups: [
 				{
 					id: "crm.tags",
@@ -303,6 +317,7 @@ export type SettingsGroupId =
 	| "workspace"
 	| "team"
 	| "modules"
+	| "pipelines"
 	| "crm"
 	| "ai"
 	| "appearance"

@@ -191,6 +191,18 @@ export interface EntityCardProps {
 	 */
 	prefetchedTags?: Array<{ _id: unknown; name: string; color?: string | null }>;
 	/**
+	 * Deal-only: when true, paints a yellow left border on the card to
+	 * indicate the deal is missing one or more required fields at its
+	 * current stage. Computed once at the parent via
+	 * `listDealsMissingFieldsByPipeline` so the card stays free of
+	 * Convex queries.
+	 *
+	 * Takes precedence over the warning-staleness border (amber by
+	 * threshold) but NOT the red staleness border — a deal that's both
+	 * stale AND incomplete should still read as stale first.
+	 */
+	hasMissingRequiredFields?: boolean;
+	/**
 	 * Optional small coloured dot rendered in the TOP-right corner BEFORE
 	 * the tags slot. Wrapped in a tooltip that discloses the underlying
 	 * label on hover. Used by `LeadCard` to surface the lead's status
@@ -222,6 +234,7 @@ export function EntityCard({
 	groupBy,
 	resolveReplacementLabel,
 	prefetchedTags,
+	hasMissingRequiredFields,
 	statusDot,
 }: EntityCardProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -285,7 +298,14 @@ export function EntityCard({
 	// localStorage from before the admin hid it.
 	const fields = effectiveFields;
 	const showName =
-		fields.length === 0 || fields.includes("displayName") || fields.includes("name");
+		fields.length === 0 ||
+		fields.includes("displayName") ||
+		fields.includes("name") ||
+		// Deal entities use a "title" field instead of "displayName" /
+		// "name". Treating any of those as the "show the heading" toggle
+		// keeps the IdentityCluster (avatar + title row 1, value row 2)
+		// rendering correctly when the deal is on the board.
+		fields.includes("title");
 	const showEmail = fields.includes("email") && !!item.email;
 	const showTags = fields.includes("tags") && !!orgId;
 	// PersonCode: leads/contacts use personCode field, companies/deals use companyCode/dealCode.
@@ -316,11 +336,24 @@ export function EntityCard({
 				: undefined;
 
 	// Staleness border colour (left edge only so it reads as a status bar)
-	const borderClass = useStalenessBorder(item.updatedAt, staleness);
+	const borderClass = useStalenessBorder(item.updatedAt, staleness, hasMissingRequiredFields);
 
-	// Detail link — derive from entity type + code.
+	// Detail link — derive from entity type + code. Per the user spec
+	// "we already have a deals page in profile of a person, redirect
+	// the link to it instead of a separate deals/[id] page", deal cards
+	// link straight to the owning person's profile (deals tab) when we
+	// have their personCode in scope. Falls back to /deals/<code> only
+	// when the deal somehow lacks a personCode (legacy / orphaned rows).
 	const detailHref =
-		codeValue && orgSlug ? buildDetailHref(slot, codeValue, orgSlug, locale) : null;
+		codeValue && orgSlug
+			? buildDetailHref(
+					slot,
+					codeValue,
+					orgSlug,
+					locale,
+					item.personCode as string | undefined,
+				)
+			: null;
 
 	const initials = getInitials(title);
 
@@ -898,18 +931,43 @@ function MenuItemRow({
 }
 
 /**
- * Derive a `border-s-*` colour class based on how long ago the record was
- * updated vs. the staleness thresholds from settings.
+ * Derive a border class based on staleness AND missing-required status.
+ * Priority order:
+ *   1. Stale (red)              — overrides everything, "this is dead in the water".
+ *   2. Missing-required (yellow) — surfaces when staleness is in the warning band
+ *                                  too, since "missing fields" is more actionable
+ *                                  than "approaching stale".
+ *   3. Warning-stale (amber)    — only when no missing-required flag.
+ *   4. Fresh (no border override).
+ *
+ * Stale and warning-stale paint a thick LEFT-edge border so they read
+ * like a status bar without competing with the card's content. The
+ * missing-required state instead recolours the entire 1px card border
+ * yellow — this is per the explicit user spec: "I want normal border
+ * not left border only with thick line, just border-1 in yellow color".
+ * The card already has a 1px `border`, so we override `border-color` and
+ * leave the width alone.
  */
 function useStalenessBorder(
 	updatedAt: number | undefined,
 	staleness: EntityCardProps["staleness"],
+	hasMissingRequiredFields?: boolean,
 ): string {
-	if (!updatedAt || !staleness) return "";
-	const { staleAfterDays, warningAfterDays } = staleness;
-	const days = Math.floor((Date.now() - updatedAt) / (1000 * 60 * 60 * 24));
-	if (staleAfterDays && days >= staleAfterDays) return "border-s-2 border-s-destructive";
-	if (warningAfterDays && days >= warningAfterDays) return "border-s-2 border-s-amber-500";
+	const days =
+		updatedAt !== undefined ? Math.floor((Date.now() - updatedAt) / (1000 * 60 * 60 * 24)) : 0;
+	if (staleness?.staleAfterDays && days >= staleness.staleAfterDays) {
+		return "border-s-2 border-s-destructive";
+	}
+	if (hasMissingRequiredFields) {
+		// Full yellow border at the default 1px width — distinct from the
+		// red/amber stale states (those use a thick left edge), so users
+		// learn to associate "yellow ring around the card" with "fields
+		// missing" rather than "going stale".
+		return "border-yellow-500";
+	}
+	if (staleness?.warningAfterDays && days >= staleness.warningAfterDays) {
+		return "border-s-2 border-s-amber-500";
+	}
 	return "";
 }
 
@@ -945,12 +1003,22 @@ function buildDetailHref(
 	code: string,
 	orgSlug: string,
 	locale: string | undefined,
+	personCode?: string,
 ): string {
 	const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
 	switch (slot) {
 		case "company":
 			return `${prefix}/companies/${code}`;
 		case "deal":
+			// Deals don't own a separate detail route. They live as a tab
+			// on the owning person's profile — follow that link directly
+			// so we land on the right view in one click. Fallback for the
+			// edge case of an orphaned deal (no personCode): keep the old
+			// /deals/<code> shape; the dynamic route handles the redirect
+			// server-side via getByDealCode → personCode.
+			if (personCode) {
+				return `${prefix}/profile/${personCode}?tab=deals`;
+			}
 			return `${prefix}/deals/${code}`;
 		default:
 			return `${prefix}/profile/${code}`;

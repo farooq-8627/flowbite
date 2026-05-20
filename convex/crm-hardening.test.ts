@@ -683,10 +683,11 @@ describe("deals.closeAsDone", () => {
 				entityType: "deal",
 				isDefault: true,
 				stages: [
-					{ id: "stage_new", name: "New", order: 0, color: "#3b82f6" },
+					{ id: "stage_new", name: "New", code: "NEW", order: 0, color: "#3b82f6" },
 					{
 						id: "stage_won",
 						name: "Won",
+						code: "WON",
 						order: 1,
 						color: "#22c55e",
 						isFinal: true,

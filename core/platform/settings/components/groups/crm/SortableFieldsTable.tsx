@@ -116,6 +116,13 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 	const isSystem = f.system === true;
 	const isProtected = f.protected === true;
 	const isHidden = f.hidden === true;
+	// Assignee fields are kept around so they can always be re-added from
+	// the field selector. Users can hide them; deletion is blocked
+	// client- and server-side. The "lock" icon is reserved for fully
+	// protected fields (which also can't be hidden), so assignee shows
+	// no badge — just a disabled trash button with a tooltip.
+	const isAssignee = f.kind === "assignee";
+	const canDelete = !isProtected && !isAssignee;
 
 	const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
 		id: f._id,
@@ -213,9 +220,9 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 						variant="ghost"
 						size="icon"
 						className="size-7 text-muted-foreground hover:text-destructive"
-						disabled={isProtected}
+						disabled={!canDelete}
 						onClick={async () => {
-							if (isProtected) return;
+							if (!canDelete) return;
 							if (
 								!confirm(
 									`Delete field "${f.label}"? All existing values will be removed.`,
@@ -232,7 +239,13 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 							}
 						}}
 						aria-label="Delete field"
-						title={isProtected ? "Protected fields cannot be deleted" : "Delete field"}
+						title={
+							isProtected
+								? "Protected fields cannot be deleted"
+								: isAssignee
+									? "Assignee can be hidden but not deleted — that way it stays available in the field selector to bring back later."
+									: "Delete field"
+						}
 					>
 						<Trash2 className="size-3.5" />
 					</Button>

@@ -1,16 +1,20 @@
 /**
  * Industry pipeline stage templates — convex/orgs/templates/pipelineStages.ts
  *
- * Seeds the default pipeline for a new org during onboarding (Step 2 —
- * `updateOrgIndustry`). The org admin can rename, reorder, recolor, and
- * re-threshold stages from Settings → Pipelines after seeding.
+ * LEGACY shim. Used by `orgs.mutations.updateOrgIndustry` for the existing
+ * onboarding flow. New consumers should use the richer template registry at
+ * `convex/crm/fields/templates/registry.ts` (which also seeds field
+ * definitions + entity labels).
  *
- * This file is the SSOT for default stage sets — never inline industry
- * stages elsewhere. To add a new industry, add a new entry below.
+ * To add a new industry: prefer adding it to the registry, not here. This
+ * file stays for backwards-compat with onboarding industry strings until
+ * the wizard migrates to the registry.
  */
+import { deriveStageCode } from "../../crm/fields/pipelines/helpers";
 
 export type StageInput = {
 	name: string;
+	code?: string;
 	color: string;
 	isFinal?: boolean;
 	finalType?: "positive" | "negative" | "neutral";
@@ -19,62 +23,90 @@ export type StageInput = {
 
 const INDUSTRY_STAGES: Record<string, StageInput[]> = {
 	"real-estate": [
-		{ name: "New Inquiry", color: "#3b82f6" },
-		{ name: "Viewing", color: "#8b5cf6", staleAfterDays: 3 },
-		{ name: "Offer / MOU", color: "#f59e0b", staleAfterDays: 5 },
-		{ name: "Under Contract", color: "#10b981" },
-		{ name: "Closed Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
+		{ name: "New Inquiry", code: "NEW", color: "#3b82f6" },
+		{ name: "Viewing", code: "VIEW", color: "#8b5cf6", staleAfterDays: 3 },
+		{ name: "Offer / MOU", code: "OFR", color: "#f59e0b", staleAfterDays: 5 },
+		{ name: "Under Contract", code: "CTR", color: "#10b981" },
+		{
+			name: "Closed Won",
+			code: "WON",
+			color: "#22c55e",
+			isFinal: true,
+			finalType: "positive",
+		},
+		{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
 	],
 	technology: [
-		{ name: "Prospecting", color: "#3b82f6" },
-		{ name: "Qualified", color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Demo", color: "#f59e0b" },
-		{ name: "Proposal", color: "#f97316", staleAfterDays: 5 },
-		{ name: "Negotiation", color: "#10b981" },
-		{ name: "Closed Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Closed Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
+		{ name: "Prospecting", code: "PROS", color: "#3b82f6" },
+		{ name: "Qualified", code: "QUAL", color: "#8b5cf6", staleAfterDays: 7 },
+		{ name: "Demo", code: "DEMO", color: "#f59e0b" },
+		{ name: "Proposal", code: "PROP", color: "#f97316", staleAfterDays: 5 },
+		{ name: "Negotiation", code: "NEG", color: "#10b981" },
+		{
+			name: "Closed Won",
+			code: "WON",
+			color: "#22c55e",
+			isFinal: true,
+			finalType: "positive",
+		},
+		{
+			name: "Closed Lost",
+			code: "LOST",
+			color: "#ef4444",
+			isFinal: true,
+			finalType: "negative",
+		},
 	],
 	finance: [
-		{ name: "Lead", color: "#3b82f6" },
-		{ name: "Discovery", color: "#8b5cf6", staleAfterDays: 7 },
-		{ name: "Proposal", color: "#f59e0b" },
-		{ name: "Due Diligence", color: "#f97316" },
-		{ name: "Closed", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
+		{ name: "Lead", code: "LEAD", color: "#3b82f6" },
+		{ name: "Discovery", code: "DISC", color: "#8b5cf6", staleAfterDays: 7 },
+		{ name: "Proposal", code: "PROP", color: "#f59e0b" },
+		{ name: "Due Diligence", code: "DD", color: "#f97316" },
+		{ name: "Closed", code: "WON", color: "#22c55e", isFinal: true, finalType: "positive" },
+		{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
 	],
 	healthcare: [
-		{ name: "Inquiry", color: "#3b82f6" },
-		{ name: "Assessment", color: "#8b5cf6" },
-		{ name: "Proposal", color: "#f59e0b" },
-		{ name: "Contract", color: "#10b981" },
-		{ name: "Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-		{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
+		{ name: "Inquiry", code: "INQ", color: "#3b82f6" },
+		{ name: "Assessment", code: "ASSESS", color: "#8b5cf6" },
+		{ name: "Proposal", code: "PROP", color: "#f59e0b" },
+		{ name: "Contract", code: "CTR", color: "#10b981" },
+		{ name: "Won", code: "WON", color: "#22c55e", isFinal: true, finalType: "positive" },
+		{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
 	],
 };
 
 const DEFAULT_STAGE_SET: StageInput[] = [
-	{ name: "New", color: "#3b82f6" },
-	{ name: "Contacted", color: "#8b5cf6", staleAfterDays: 7 },
-	{ name: "Proposal", color: "#f59e0b" },
-	{ name: "Won", color: "#22c55e", isFinal: true, finalType: "positive" },
-	{ name: "Lost", color: "#ef4444", isFinal: true, finalType: "negative" },
+	{ name: "New", code: "NEW", color: "#3b82f6" },
+	{ name: "Contacted", code: "CONT", color: "#8b5cf6", staleAfterDays: 7 },
+	{ name: "Proposal", code: "PROP", color: "#f59e0b" },
+	{ name: "Won", code: "WON", color: "#22c55e", isFinal: true, finalType: "positive" },
+	{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
 ];
 
 /**
  * Returns the seeded stage list for an industry. Falls back to DEFAULT_STAGE_SET
  * when the industry is unknown. Stage IDs are deterministic from the orgId so
  * the same id is generated across replays of the same input.
+ *
+ * Stage codes — required as of 2026-05-20 (see `pipelines/MODULE.md`).
+ * Hard-coded per stage above; falls back to `deriveStageCode` if a future
+ * edit forgets to set one.
  */
 export function getDefaultStages(industry: string, orgId: string) {
 	const set: StageInput[] = INDUSTRY_STAGES[industry] ?? DEFAULT_STAGE_SET;
-	return set.map((s, i) => ({
-		id: `stage_${orgId.slice(-6)}_${i}`,
-		name: s.name,
-		order: i,
-		color: s.color,
-		isFinal: s.isFinal,
-		finalType: s.finalType,
-		staleAfterDays: s.staleAfterDays,
-	}));
+	const usedCodes = new Set<string>();
+	return set.map((s, i) => {
+		const code = s.code ?? deriveStageCode(s, usedCodes);
+		usedCodes.add(code);
+		return {
+			id: `stage_${orgId.slice(-6)}_${i}`,
+			name: s.name,
+			code,
+			order: i,
+			color: s.color,
+			isFinal: s.isFinal,
+			finalType: s.finalType,
+			staleAfterDays: s.staleAfterDays,
+		};
+	});
 }

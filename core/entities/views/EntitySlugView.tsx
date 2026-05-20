@@ -19,14 +19,22 @@ type Slot = "lead" | "contact" | "deal" | "company";
  * EntitySlugView — the runtime resolver that turns a URL slug like
  * `/inquiries` (org-renamed "Leads") into the correct entity list view.
  *
- * RACE FIX:
- *   `useEntityLabels()` returns fallback defaults (`leads`, `contacts`, …)
- *   synchronously even while the real labels query is still loading.
- *   Calling `notFound()` during that window caused a
- *   `NEXT_HTTP_ERROR_FALLBACK;404` whenever the admin had renamed an entity
- *   (e.g. `leads` → `inquiries`). We wait for the org context to settle
- *   before deciding slug-doesn't-match. Now reads from `OrgProvider`
- *   instead of firing its own `listMyOrgs` + `getEntityLabels` queries.
+ * RACE FIX (revised 2026-05-20):
+ *   The old version of this view raced against `getEntityLabels` — that
+ *   subscription resolved AFTER `listMyOrgs`, so `useEntityLabels()`
+ *   briefly returned default slugs while the real (renamed) ones were
+ *   still loading. Visiting `/inquiry` during that window resolved to
+ *   `slot === null` and fired `notFound()` (the
+ *   `NEXT_HTTP_ERROR_FALLBACK;404` digest the user sees in the dashboard
+ *   error boundary).
+ *
+ *   The fix landed in `OrgProvider`: entity labels are now derived from
+ *   `listMyOrgs` (which returns the full org doc, including the
+ *   `entityLabels` field). One subscription, one truth — by the time
+ *   `org` is defined, the renamed slugs are already in scope.
+ *
+ *   We still keep the default slugs in the slug→slot map so old bookmarks
+ *   (`/leads` → `lead`) keep working after a rename.
  */
 export function EntitySlugView({ orgSlug, entitySlug }: { orgSlug: string; entitySlug: string }) {
 	const { org, orgId, fullOrgEntry, isLoading } = useCurrentOrg();
@@ -48,10 +56,8 @@ export function EntitySlugView({ orgSlug, entitySlug }: { orgSlug: string; entit
 	}, [labels, entitySlug]);
 
 	// Wait for the org context to settle. `isLoading` covers `listMyOrgs`;
-	// once `orgId` is known the labels subscription kicks in. While the
-	// labels are still `undefined`, `useEntityLabels()` returns the
-	// merged-defaults shape, so `slot` will resolve to a valid slot for
-	// any DEFAULT slug — that's enough to render the view safely.
+	// labels arrive in the same payload (no separate subscription), so
+	// once `org` is defined, `labels` reflects the renamed slugs.
 	if (isLoading || (orgId && !org)) return null;
 
 	if (!slot || hiddenSlots.has(slot)) {

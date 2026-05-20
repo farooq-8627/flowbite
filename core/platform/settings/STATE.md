@@ -1,6 +1,6 @@
 # Settings — State
 
-> Updated: 2026-05-17
+> Updated: 2026-05-20 (Default stage + settings redesign session) 2026-05-17
 > Status: ~94% Complete — dynamic entity labels wired through every settings group; Module Visibility shipped; **Note Categories editor shipped**; **CRM group absorbed Notes/Reminders/Follow-ups/Timeline** (Notes top-level group removed).
 
 ## ✅ Completed

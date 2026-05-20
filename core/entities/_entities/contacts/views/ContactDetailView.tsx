@@ -10,18 +10,14 @@
  * - Toolbar search with rank-to-top + flash highlight on matches.
  */
 
-import type { ColumnDef } from "@tanstack/react-table";
 import { useQuery } from "convex/react";
-import { formatDistanceToNow } from "date-fns";
 import { ArrowRightCircleIcon, PencilIcon, Undo2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { DataTableRowActions } from "@/core/data-display/datatable/components/DataTableRowActions";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
@@ -29,12 +25,11 @@ import { EditContactDrawer } from "@/core/entities/_entities/contacts/components
 import { ConvertLeadDrawer } from "@/core/entities/_entities/leads/components/ConvertLeadDrawer";
 import { useLeadMutations } from "@/core/entities/_entities/leads/hooks/useLeadMutations";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
-import { AssigneeCell } from "@/core/entities/shared/components/AssigneeCell";
-import { CompanyCell } from "@/core/entities/shared/components/CompanyCell";
 import { EntityCard } from "@/core/entities/shared/components/EntityCard";
-import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
+import { useCompaniesByPersonCodes } from "@/core/entities/shared/hooks/useCompaniesByPersonCodes";
+import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
 import {
@@ -46,7 +41,6 @@ import {
 } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
-import { PersonCodeBadge } from "@/core/entities/shared/PersonCodeBadge";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
 import {
 	getHiddenCardFieldsForGrouping,
@@ -94,7 +88,6 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const [view, setView] = useViewToggle("contact");
 	const { visibleFields: contactFields } = useEntityFields("contact", orgId);
 	const defaultCardFields = useMemo(() => contactFields.map((f) => f.name), [contactFields]);
-	const listColumns = defaultCardFields;
 	const { convert } = useLeadMutations(orgId);
 	const canConvert = useOrgPermission(orgId, "leads.convert");
 	const revertToLead = useRevertContactToLead();
@@ -171,6 +164,19 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	// Batched tag map — for table tag column + board tag-grouping.
 	const { tagsByEntityId, uniqueTags } = useEntityTagsMap(orgId, "contact");
 
+	// Batched company lookup — eliminates the per-row CompanyCell
+	// `getByPersonCode` subscription that was firing once per visible row
+	// (and re-firing on every list mutation), causing the "company keeps
+	// refetching" symptom on the contacts table.
+	const personCodes = useMemo(
+		() =>
+			(items ?? [])
+				.map((it) => (it as Record<string, unknown>).personCode as string)
+				.filter(Boolean),
+		[items],
+	);
+	const companiesByPersonCode = useCompaniesByPersonCodes(orgId, personCodes);
+
 	// ── Dynamic board columns ────────────────────────────────────────────────
 	const boardColumns: KanbanColumnConfig[] = useMemo(() => {
 		if (groupBy === "assignedTo") {
@@ -183,8 +189,12 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 			}));
 		}
 		if (groupBy === "tag" || groupBy === "tags") {
+			// Tag column id MUST be `tag._id` (Convex Id) so the drag
+			// handler can pass it straight through to
+			// `tags.attachToEntity` / `detachFromEntity`. Using the name
+			// fails server validation (`v.id("tags")` rejects "New", etc.).
 			const cols: KanbanColumnConfig[] = uniqueTags.map((t) => ({
-				id: t.name,
+				id: t._id as string,
 				title: t.name,
 				color: (t.color as string | undefined) ?? getStatusColor("contact", t.name),
 			}));
@@ -218,6 +228,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		const grouped: Record<string, typeof rankedItems.items> = {};
 		for (const col of boardColumns) grouped[col.id] = [];
 		if (groupBy === "tag" || groupBy === "tags") {
+			// Bucket key matches the column id (`tag._id`).
 			for (const item of rankedItems.items) {
 				const tagList = tagsByEntityId[item.id] ?? [];
 				if (tagList.length === 0) {
@@ -226,8 +237,9 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 					continue;
 				}
 				for (const tag of tagList) {
-					if (!grouped[tag.name]) grouped[tag.name] = [];
-					grouped[tag.name].push(item);
+					const key = tag._id as string;
+					if (!grouped[key]) grouped[key] = [];
+					grouped[key].push(item);
 				}
 			}
 		} else {
@@ -360,217 +372,52 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		[orgId, revertToLead, labels],
 	);
 
-	// List columns
-	const columns: ColumnDef<ContactRow, unknown>[] = useMemo(() => {
-		const cols: ColumnDef<ContactRow, unknown>[] = [
-			{
-				id: "select",
-				header: ({ table }) => (
-					<Checkbox
-						checked={table.getIsAllPageRowsSelected()}
-						onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-						aria-label="Select all"
-					/>
-				),
-				cell: ({ row }) => (
-					<Checkbox
-						checked={row.getIsSelected()}
-						onCheckedChange={(v) => row.toggleSelected(!!v)}
-						aria-label="Select row"
-					/>
-				),
-				enableSorting: false,
-				size: 40,
-			},
-		];
-		for (const key of listColumns) {
-			switch (key) {
-				case "personCode":
-					cols.push({
-						accessorKey: "personCode",
-						header: "Code",
-						cell: ({ row }) => (
-							<PersonCodeBadge personCode={row.getValue("personCode") as string} />
-						),
-						size: 100,
-					});
-					break;
-				case "displayName":
-					cols.push({
-						accessorKey: "displayName",
-						header: "Name",
-						cell: ({ row }) => (
-							<span className="font-medium">
-								{row.getValue("displayName") as string}
-							</span>
-						),
-					});
-					break;
-				case "email":
-					cols.push({
-						accessorKey: "email",
-						header: "Email",
-						cell: ({ row }) => (
-							<span className="text-sm text-muted-foreground">
-								{(row.getValue("email") as string) ?? "—"}
-							</span>
-						),
-					});
-					break;
-				case "companyId":
-					cols.push({
-						accessorKey: "companyId",
-						header: "Company",
-						cell: ({ row }) => {
-							const r = row.original as ContactRow;
-							const personCode = r.personCode as string | undefined;
-							return (
-								<CompanyCell
-									orgId={orgId}
-									personCode={personCode}
-									entityType="contact"
-								/>
-							);
-						},
-					});
-					break;
-				case "tags":
-					cols.push({
-						accessorKey: "tags",
-						header: "Tags",
-						cell: ({ row }) => {
-							const r = row.original as ContactRow;
-							const id = (r._id ?? r.id) as string;
-							return orgId ? (
-								<TagsCell
-									orgId={orgId}
-									entityType="contact"
-									entityId={id}
-									size="xs"
-								/>
-							) : (
-								<span className="text-xs text-muted-foreground">—</span>
-							);
-						},
-					});
-					break;
-				case "assignedTo":
-					cols.push({
-						accessorKey: "assignedTo",
-						header: "Assignee",
-						cell: ({ row }) => (
-							<AssigneeCell
-								orgId={orgId}
-								userId={row.getValue("assignedTo") as string}
-							/>
-						),
-					});
-					break;
-				case "createdAt":
-					cols.push({
-						accessorKey: "createdAt",
-						header: "Created",
-						cell: ({ row }) => (
-							<span className="text-xs text-muted-foreground">
-								{formatDistanceToNow(
-									new Date(row.getValue("createdAt") as number),
-									{ addSuffix: true },
-								)}
-							</span>
-						),
-					});
-					break;
-				default:
-					cols.push({
-						accessorKey: key,
-						header: key,
-						cell: ({ row }) => {
-							const direct = row.getValue(key);
-							if (direct !== undefined && direct !== null && direct !== "") {
-								return <span className="text-sm">{String(direct)}</span>;
-							}
-							const r = row.original as ContactRow;
-							const v = customValuesByEntityId[r.id]?.[key];
-							if (v === undefined || v === null || v === "") {
-								return <span className="text-sm text-muted-foreground">—</span>;
-							}
-							if (Array.isArray(v))
-								return <span className="text-sm">{v.join(", ")}</span>;
-							return <span className="text-sm">{String(v)}</span>;
-						},
-					});
-			}
-		}
-
-		// Row actions — revert + delete
-		cols.push({
-			id: "actions",
-			enableSorting: false,
-			enableHiding: false,
-			size: 44,
-			cell: ({ row }) => {
-				const r = row.original as ContactRow;
-				const canRevert = !!r.leadId && canConvert === true;
-				return (
-					// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps the dots menu from opening row detail
-					<div
-						className="flex justify-end"
-						onClick={(e) => e.stopPropagation()}
-						onKeyDown={(e) => e.stopPropagation()}
-					>
-						<DataTableRowActions
-							row={row}
-							extraItems={
-								<>
-									<DropdownMenuItem
-										onClick={() => {
-											setEditingContact(r as unknown as Doc<"contacts">);
-											setEditOpen(true);
-										}}
-									>
-										<PencilIcon className="me-2 size-4" />
-										Edit
-									</DropdownMenuItem>
-									{canRevert && (
-										<DropdownMenuItem
-											onClick={() =>
-												handleRevert((r._id ?? r.id) as Id<"contacts">)
-											}
-										>
-											<Undo2Icon className="me-2 size-4" />
-											Revert to {labels.lead.singular.toLowerCase()}
-										</DropdownMenuItem>
-									)}
-								</>
-							}
-							onDelete={async (row) => {
-								const orig = row.original as ContactRow;
-								const contactId = (orig._id ?? orig.id) as Id<"contacts">;
-								if (!orgId) return;
-								try {
-									await softDeleteContact({ orgId, contactId });
-									toast.success("Contact deleted");
-								} catch (err) {
-									toast.error(
-										err instanceof Error ? err.message : "Failed to delete",
-									);
-								}
-							}}
-						/>
-					</div>
-				);
-			},
-		});
-		return cols;
-	}, [
-		listColumns,
-		orgId,
-		canConvert,
-		labels,
-		softDeleteContact,
-		handleRevert,
+	// Columns flow through the central `useEntityColumns` factory — same
+	// path as LeadsView. The factory iterates `tableFields` from
+	// `useEntityFields("contact")`, dispatches each through the cell
+	// renderer (so tags get TagsCell, company gets CompanyCell with the
+	// batched lookup, assignee gets AssigneeCell, empty cells get the `+`
+	// inline-edit button), and wraps every header in
+	// `<DataTableColumnHeader>` so the table is sortable everywhere.
+	const { columns } = useEntityColumns<ContactRow>("contact", orgId, {
 		customValuesByEntityId,
-	]);
+		tagsByEntityId,
+		companiesByPersonCode,
+		onDelete: async (row) => {
+			if (!orgId) return;
+			const contactId = (row._id ?? row.id) as Id<"contacts">;
+			try {
+				await softDeleteContact({ orgId, contactId });
+				toast.success(`${labels.contact.singular} deleted`);
+			} catch (err) {
+				toast.error(err instanceof Error ? err.message : "Failed to delete");
+			}
+		},
+		rowExtraActions: (row) => {
+			const canRevert = !!row.leadId && canConvert === true;
+			return (
+				<>
+					<DropdownMenuItem
+						onClick={() => {
+							setEditingContact(row as unknown as Doc<"contacts">);
+							setEditOpen(true);
+						}}
+					>
+						<PencilIcon className="me-2 size-4" />
+						Edit
+					</DropdownMenuItem>
+					{canRevert && (
+						<DropdownMenuItem
+							onClick={() => handleRevert((row._id ?? row.id) as Id<"contacts">)}
+						>
+							<Undo2Icon className="me-2 size-4" />
+							Revert to {labels.lead.singular.toLowerCase()}
+						</DropdownMenuItem>
+					)}
+				</>
+			);
+		},
+	});
 
 	// Primary action — Convert Lead (hidden if no permission)
 	const primaryAction: PrimaryActionConfig | undefined =

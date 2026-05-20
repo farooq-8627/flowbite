@@ -10,7 +10,6 @@ import {
 	MailIcon,
 	MessageSquareTextIcon,
 	PhoneIcon,
-	PlusIcon,
 	SparklesIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -236,11 +235,11 @@ function HeaderRow({
 					</div>
 					{/* Tags + source on second line */}
 					<div className="flex flex-wrap items-center gap-1.5">
-												{personType === "lead" && status && (
+						{personType === "lead" && status && (
 							<StatusPill slot="lead" value={status} kind="status" />
 						)}
 						{source && <StatusPill slot="lead" value={source} kind="source" />}
-												{orgId && (
+						{orgId && (
 							<TagsCell
 								orgId={orgId}
 								entityType={tagsEntityType}
@@ -260,12 +259,12 @@ function HeaderRow({
 					{createdBy && (
 						<Tooltip>
 							<TooltipTrigger asChild>
-									<Avatar className="size-6">
-										<AvatarImage src={createdBy.avatarUrl} alt="" />
-										<AvatarFallback className="text-[8px]">
-											{getInitials(createdBy.name ?? createdBy.email ?? "?")}
-										</AvatarFallback>
-									</Avatar>
+								<Avatar className="size-6">
+									<AvatarImage src={createdBy.avatarUrl} alt="" />
+									<AvatarFallback className="text-[8px]">
+										{getInitials(createdBy.name ?? createdBy.email ?? "?")}
+									</AvatarFallback>
+								</Avatar>
 							</TooltipTrigger>
 							<TooltipContent side="bottom" className="text-xs">
 								Created by {createdBy.name ?? createdBy.email ?? "Unknown"}

@@ -341,6 +341,20 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		defaultRoles: ["Owner", "Admin", "Member"],
 	},
 	{
+		key: "deals.changePipeline",
+		module: "deals",
+		label: "Move {deals} to a different pipeline",
+		description: "Higher-stakes than changing stage — typically only Owners and Admins.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "deals.viewValues",
+		module: "deals",
+		label: "View {deal} values (currency)",
+		description: "Members see deal currency amounts. Viewers see redacted '—' placeholders.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
 		key: "deals.close",
 		module: "deals",
 		label: "Close {deals} as won/lost",

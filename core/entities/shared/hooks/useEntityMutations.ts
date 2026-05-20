@@ -171,6 +171,7 @@ export function useRevertContactToLead() {
 export function useUpdateDeal() {
 	return useMutation(api.crm.entities.deals.mutations.update).withOptimisticUpdate(
 		(store, args) => {
+			// 1. Flat list cache — used by the list view.
 			const all = store.getAllQueries(api.crm.entities.deals.queries.list);
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
@@ -183,6 +184,35 @@ export function useUpdateDeal() {
 					list.map((d) => (d._id === args.dealId ? { ...d, ...patch } : d)),
 				);
 			}
+
+			// 2. Grouped-by-stage cache — used by the board view. The
+			// kanban also fires `update` for in-column reorder
+			// (sortOrder), assignedTo changes (groupBy=assignedTo), and
+			// tag swaps (groupBy=tag). For all of those the row stays
+			// in the same stage column; we just patch the matching row
+			// in place so the card doesn't flash back while the server
+			// commits.
+			const grouped = store.getAllQueries(api.crm.entities.deals.queries.listGroupedByStage);
+			for (const { args: qa, value: byStage } of grouped) {
+				if (!byStage) continue;
+				if (qa.orgId !== args.orgId) continue;
+				const { orgId: _o, dealId: _d, ...patch } = args;
+				let touched = false;
+				const next: typeof byStage = {};
+				for (const [stageId, rows] of Object.entries(byStage)) {
+					if (!rows.some((r) => r._id === args.dealId)) {
+						next[stageId] = rows;
+						continue;
+					}
+					touched = true;
+					next[stageId] = rows.map((r) =>
+						r._id === args.dealId ? { ...r, ...patch } : r,
+					);
+				}
+				if (touched) {
+					store.setQuery(api.crm.entities.deals.queries.listGroupedByStage, qa, next);
+				}
+			}
 		},
 	);
 }
@@ -190,6 +220,7 @@ export function useUpdateDeal() {
 export function useSoftDeleteDeal() {
 	return useMutation(api.crm.entities.deals.mutations.softDelete).withOptimisticUpdate(
 		(store, args) => {
+			// Flat list cache.
 			const all = store.getAllQueries(api.crm.entities.deals.queries.list);
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
@@ -201,20 +232,51 @@ export function useSoftDeleteDeal() {
 					list.filter((d) => d._id !== args.dealId),
 				);
 			}
+
+			// Grouped-by-stage cache.
+			const grouped = store.getAllQueries(api.crm.entities.deals.queries.listGroupedByStage);
+			for (const { args: qa, value: byStage } of grouped) {
+				if (!byStage) continue;
+				if (qa.orgId !== args.orgId) continue;
+				let touched = false;
+				const next: typeof byStage = {};
+				for (const [stageId, rows] of Object.entries(byStage)) {
+					if (!rows.some((r) => r._id === args.dealId)) {
+						next[stageId] = rows;
+						continue;
+					}
+					touched = true;
+					next[stageId] = rows.filter((r) => r._id !== args.dealId);
+				}
+				if (touched) {
+					store.setQuery(api.crm.entities.deals.queries.listGroupedByStage, qa, next);
+				}
+			}
 		},
 	);
 }
 
 /**
  * `moveToStage` — kanban drag handler for deals. Patches `currentStageId` +
- * `stageEnteredAt` in every cached `deals.list` variant.
+ * `stageEnteredAt` in every cached `deals.list` variant AND in
+ * `listGroupedByStage`, the query the board view actually subscribes to.
  *
- * We deliberately skip patching `listGroupedByStage`: its return value
- * carries server-derived fields (`daysInStage`, `isStale`) that we can't
- * recompute correctly on the client without duplicating the staleness
- * logic. The drag visual is driven by the flat `list` cache (which the
- * board view also reads via `flatDeals`); when the server response lands
- * for the grouped variant, it reconciles smoothly.
+ * Why we patch the grouped query
+ * ──────────────────────────────
+ * Earlier versions deliberately skipped `listGroupedByStage` because its
+ * rows carry server-derived `daysInStage` and `isStale` we couldn't
+ * recompute on the client without duplicating the staleness logic. The
+ * trade-off was visible: the card snapped back to the source column for
+ * the round-trip window before the server response landed. Per the
+ * AGENTS.md "Every list-affecting mutation has `withOptimisticUpdate`"
+ * rule, that's a no-go — the user-visible flash is exactly what
+ * optimistic updates are for.
+ *
+ * Reconciliation strategy: when the moved deal enters the new column we
+ * stamp `daysInStage = 0` and `isStale = false` (the deal just landed
+ * — 0 days is exactly correct). Any deviation gets reconciled when the
+ * server response arrives a few hundred ms later. This keeps the visual
+ * truth aligned with what the user just did.
  *
  * `stageEnteredAt` IS bumped optimistically (unlike `updatedAt`) because
  * it's a user-visible field rendered on the card ("In stage X for N
@@ -225,6 +287,8 @@ export function useMoveDealToStage() {
 	return useMutation(api.crm.entities.deals.mutations.moveToStage).withOptimisticUpdate(
 		(store, args) => {
 			const now = Date.now();
+
+			// 1. Flat list cache — used by the list view.
 			const all = store.getAllQueries(api.crm.entities.deals.queries.list);
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
@@ -243,6 +307,43 @@ export function useMoveDealToStage() {
 							: d,
 					),
 				);
+			}
+
+			// 2. Grouped-by-stage cache — used by the board view. We move
+			// the deal row out of its previous stage's bucket and into
+			// the new one in one patch so the card sticks in the column
+			// the user just dropped it into.
+			const grouped = store.getAllQueries(api.crm.entities.deals.queries.listGroupedByStage);
+			for (const { args: qa, value: byStage } of grouped) {
+				if (!byStage) continue;
+				if (qa.orgId !== args.orgId) continue;
+
+				let foundRow: (typeof byStage)[string][number] | undefined;
+				const next: typeof byStage = {};
+				for (const [stageId, rows] of Object.entries(byStage)) {
+					const idx = rows.findIndex((r) => r._id === args.dealId);
+					if (idx >= 0 && !foundRow) {
+						foundRow = rows[idx];
+						next[stageId] = rows.filter((_, i) => i !== idx);
+					} else {
+						next[stageId] = rows;
+					}
+				}
+				if (!foundRow) continue;
+
+				const moved = {
+					...foundRow,
+					currentStageId: args.stageId,
+					stageEnteredAt: now,
+					// Just landed in the new column — 0 days, never stale.
+					// Server will reconcile if the row had a different
+					// staleness rule attached on commit.
+					daysInStage: 0,
+					isStale: false,
+				};
+				next[args.stageId] = next[args.stageId] ? [...next[args.stageId], moved] : [moved];
+
+				store.setQuery(api.crm.entities.deals.queries.listGroupedByStage, qa, next);
 			}
 		},
 	);
@@ -306,9 +407,11 @@ export function useAttachTagToEntity() {
 	return useMutation(api.crm.shared.tags.mutations.attachToEntity).withOptimisticUpdate(
 		(store, args) => {
 			const all = store.getAllQueries(api.crm.shared.tags.queries.listTagsForEntities);
-			const tagDoc = store.getQuery(api.crm.shared.tags.queries.listByOrg, {
-				orgId: args.orgId,
-			})?.find((t) => t._id === args.tagId);
+			const tagDoc = store
+				.getQuery(api.crm.shared.tags.queries.listByOrg, {
+					orgId: args.orgId,
+				})
+				?.find((t) => t._id === args.tagId);
 			if (!tagDoc) return;
 			for (const { args: qa, value: byEntity } of all) {
 				if (!byEntity) continue;

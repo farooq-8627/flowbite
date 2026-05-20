@@ -180,7 +180,7 @@ export function getSettingsSections(
 			id: "modules.lead",
 			groupId: "modules",
 			label: lead.plural,
-			description: `Display, custom fields and pipelines for ${lead.plural.toLowerCase()}.`,
+			description: `Display and custom fields for ${lead.plural.toLowerCase()}.`,
 			keywords: [
 				"module",
 				"display",
@@ -188,7 +188,6 @@ export function getSettingsSections(
 				"card fields",
 				"list columns",
 				"custom field",
-				"pipeline",
 				lead.singular,
 				lead.plural,
 				"lead",
@@ -217,7 +216,7 @@ export function getSettingsSections(
 			id: "modules.deal",
 			groupId: "modules",
 			label: deal.plural,
-			description: `Display, custom fields and pipelines for ${deal.plural.toLowerCase()}.`,
+			description: `Display and custom fields for ${deal.plural.toLowerCase()}. Pipelines are managed under the Pipelines settings group.`,
 			keywords: [
 				"module",
 				"display",
@@ -225,9 +224,6 @@ export function getSettingsSections(
 				"card fields",
 				"list columns",
 				"custom field",
-				"pipeline",
-				"stage",
-				"kanban",
 				deal.singular,
 				deal.plural,
 				"deal",
@@ -251,6 +247,32 @@ export function getSettingsSections(
 				"company",
 				"companies",
 			],
+		},
+
+		// ── Pipelines ─────────────────────────────────────────────────────────
+		{
+			id: "pipelines.list",
+			groupId: "pipelines",
+			label: "All Pipelines",
+			description: `Stage workflows for ${deal.plural.toLowerCase()}. Drag to reorder, edit codes, mark a default stage. Each pipeline ships with its own ordered list of stages.`,
+			keywords: [
+				"pipeline",
+				"pipelines",
+				"stage",
+				"stages",
+				"workflow",
+				"kanban",
+				"code",
+				"default stage",
+				"won",
+				"lost",
+				"final",
+				deal.singular,
+				deal.plural,
+				"deal",
+				"deals",
+			],
+			permission: "pipelines.view",
 		},
 
 		// ── Team ──────────────────────────────────────────────────────────────
@@ -297,7 +319,7 @@ export function getSettingsSections(
 		{
 			id: "notes.categories",
 			groupId: "crm",
-			label: "Categories",
+			label: "Notes",
 			description:
 				"Coloured buckets that sticky-notes group into (Urgent, Today, Demo Scheduled, …). Used by the Notes board and per-entity panels.",
 			keywords: [
@@ -317,7 +339,7 @@ export function getSettingsSections(
 		{
 			id: "notes.reminders",
 			groupId: "crm",
-			label: "Reminder Defaults",
+			label: "Reminders",
 			description:
 				"Default timing for automated reminders, morning briefings, and stale-deal alerts.",
 			keywords: ["follow-up", "stale", "briefing", "alert", "due date", "overdue", "rent"],
@@ -325,7 +347,7 @@ export function getSettingsSections(
 		{
 			id: "notes.followups",
 			groupId: "crm",
-			label: "Follow-up Defaults",
+			label: "Follow-ups",
 			description:
 				"Default cadences for follow-up nudges sent from sticky notes and entity panels. UI ships when the Follow-ups module lands.",
 			keywords: ["follow-up", "cadence", "nudge", "sla", "reminder"],
@@ -333,7 +355,7 @@ export function getSettingsSections(
 		{
 			id: "notes.timeline",
 			groupId: "crm",
-			label: "Timeline Display",
+			label: "Timeline",
 			description:
 				"Choose which event types surface on entity and org-wide timelines. UI ships when the Timeline module lands.",
 			keywords: ["timeline", "activity", "events", "feed", "audit"],

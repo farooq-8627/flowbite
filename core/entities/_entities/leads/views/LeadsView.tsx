@@ -223,7 +223,10 @@ export function LeadsView(_props: { orgSlug: string }) {
 
 	// Batched company lookup — eliminates per-row CompanyCell subscriptions.
 	const personCodes = useMemo(
-		() => (items ?? []).map((it) => (it as Record<string, unknown>).personCode as string).filter(Boolean),
+		() =>
+			(items ?? [])
+				.map((it) => (it as Record<string, unknown>).personCode as string)
+				.filter(Boolean),
 		[items],
 	);
 	const companiesByPersonCode = useCompaniesByPersonCodes(orgId, personCodes);
@@ -319,8 +322,17 @@ export function LeadsView(_props: { orgSlug: string }) {
 
 		if (groupBy === "tag" || groupBy === "tags") {
 			// One column per tag, plus an "Untagged" bucket at the end.
+			//
+			// Column id MUST be the tag's `_id` (Convex Id), NOT the tag
+			// `name`. The drag handler (`handleCardMove`) passes
+			// `fromCol`/`toCol` as `tagId: Id<"tags">` to
+			// `tags.attachToEntity` / `detachFromEntity`. Using the tag
+			// name fails server validation
+			// (`v.id("tags")` rejects "New", "Hot", etc.) — exactly the
+			// `ArgumentValidationError: Path: .tagId Value: "New"` the
+			// dashboard was throwing. Title stays as `name` for display.
 			const cols: KanbanColumnConfig[] = uniqueTags.map((t) => ({
-				id: t.name,
+				id: t._id as string,
 				title: t.name,
 				color: (t.color as string | undefined) ?? getStatusColor("lead", t.name),
 			}));
@@ -375,6 +387,10 @@ export function LeadsView(_props: { orgSlug: string }) {
 		if (groupBy === "tag" || groupBy === "tags") {
 			// Fan out: one item can appear in many tag columns. Items with no
 			// tags fall into the "Untagged" (NO_GROUP_KEY) bucket.
+			//
+			// Bucket key MUST match the column id, which is now `tag._id`
+			// (Convex Id) so the drag handler can pass it straight through
+			// to `tags.attachToEntity` / `detachFromEntity`.
 			for (const item of rankedItems.items) {
 				const tagList = tagsByEntityId[item.id] ?? [];
 				if (tagList.length === 0) {
@@ -383,8 +399,9 @@ export function LeadsView(_props: { orgSlug: string }) {
 					continue;
 				}
 				for (const tag of tagList) {
-					if (!grouped[tag.name]) grouped[tag.name] = [];
-					grouped[tag.name].push(item);
+					const key = tag._id as string;
+					if (!grouped[key]) grouped[key] = [];
+					grouped[key].push(item);
 				}
 			}
 		} else {

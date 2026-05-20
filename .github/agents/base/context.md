@@ -1,7 +1,7 @@
 # Build Context — Current State
 
 > OVERWRITE this file at end of every session. Never append.
-> Last Updated: 2026-05-19
+> Last Updated: 2026-05-20 (late evening)
 
 ---
 
@@ -13,60 +13,66 @@
 | 1 — Shell, sidebar, nav, onboarding, dashboard | ✅ 100% Complete |
 | 2 Backend — all CRM tables, mutations, queries | ✅ 100% Complete |
 | 2 Frontend — Slices 0–7 | ✅ 100% Complete |
+| Pipelines — backend + multi-pipeline UI + per-stage field editor + transition policy | ✅ 100% Complete |
 | 3 — AI Assistant + WhatsApp | ⬜ Next |
 
-## What Was Completed in Phase 2 (summary)
+## Where to look first (in this order)
 
-All entity list/board views (Leads, Contacts, Deals, Companies), all detail views, profile page (unified lead+contact by personCode), Messages UI (thread/sidebar/composer/voice), Notes UI (category kanban), Calendar (month/week/day/list), Reminders (DataTable + 3 view modes), Follow-ups (org-wide cadence view + panel built), Timeline (person + entity + org), Settings (all groups), Dashboard (dense grid + real metrics).
+1. `AGENTS.md` (root) — global coding rules.
+2. `CODE-ARCHITECTURE-PIPELINES-2026-05-20.md` — pipelines + stage-aware fields architecture (avoids, pending, file map).
+3. `convex/crm/fields/pipelines/STATE.md` — line-item shipped/pending list for pipelines.
+4. `.github/agents/base/pipelines-plan.md` — locked decisions SSOT.
+5. `.github/agents/base/todos.md` — current task list.
+6. `.github/agents/base/deep-plan.md` §15 (Pipelines), §16 (Dynamic Fields), §20 (Deals Module) — the original strategic decisions.
 
-Backend: 28 tables, all mutations canonical pattern steps 1–6, step 7 wired as no-op for Phase 3. Follow-ups: `createFollowup` mutation + 3 list queries + UI surface + panel — all complete. Files: `listForEntity` query added (server-side merge).
+## Most recent work — 2026-05-20 evening (pipelines redesign + deals flow)
 
-Performance fixes landed 2026-05-18/19:
-- ContactsView: `companies.list` scoped to `groupBy === "companyId"` only
-- DealDetailView: `flatDeals` scoped to `view === "list"` only  
-- EntityFilesPanel: 3 subscriptions → 1 `listForEntity` server-side query
-- Tags batched via `useEntityTagsMap` on all list parents
-- Identity/RBAC via `useCurrentOrg()` context only — no per-component subscriptions
-- Drag: one mutation per drop via `onCommit`
+Complete pipeline settings + deals page redesign. All backend changes + migration shipped atomically.
 
-## What Is Pending (Phase 2 leftovers)
+**Backend:**
+- Schema: added `isDefaultStage` to stage shape, `allowSkipStages` + `markDoneRequiresAllFields` to pipeline.
+- `pipelines.create` auto-injects a Default stage at order 0. `addStage` never sets isDefaultStage. `removeStage` refuses to remove the Default stage. `reorderStages` keeps Default pinned to order 0. `setDefaultStage` is a deprecated no-op. `update` accepts the two new toggles.
+- `deals.create` resolves to the Default stage automatically when no stageId provided.
+- `deals.moveToStage` enforces allowSkipStages (one stage at a time forward when policy=block).
+- `deals.closeAsDone` gates positive/neutral close on `markDoneRequiresAllFields` (default true).
+- `deals.markAsLost` (NEW): confirmation gate via `deleteCodeConfirmation === dealCode`. Bypasses all-fields gate. From any stage.
+- `deals.queries.listDealsMissingFieldsByPipeline` (NEW): batched per-pipeline missing-fields map for yellow-border indicator.
+- Migration `_migrations/addDefaultStage.ts` ran on dev: 2 pipelines updated.
 
-1. **Mount FollowUpsPanel in 3 detail views** (panel is built, just needs wiring):
-   - `core/platform/profile/views/ProfileContent.tsx` — add `<FollowUpsPanel personCode={personCode} />` beside RemindersPanel ~line 218
-   - `core/entities/_entities/deals/views/DealDetailView.tsx` — add beside RemindersPanel ~line 1015
-   - `core/entities/_entities/companies/views/CompanyDetailView.tsx` — add both RemindersPanel and FollowUpsPanel (neither exists there yet)
+**Settings — Pipelines:**
+- PipelinesGroup: single pipeline dropdown selector + single editor box. Persisted per device.
+- PipelineEditor: "All stages" tab renamed "Defaults" mapped to the Default stage id. Three pipeline-level settings (policy / allowSkipStages / markDoneRequiresAllFields). StageRow: no "Make default" button, Default stage has disabled grip handle.
+- StageFieldsTable: `defaults` scope kind added.
 
-2. **Auto-close follow-ups cron** — `autoCloseAfterDays` setting exists in schema+UI but no cron. Details in PHASE-3-NEXT.md.
+**Deals page:**
+- Pipeline tabs injected into TopNav via `useNavSlot`. No more in-page tab strip row. "+ Pipeline" button removed.
+- `flatDeals` scoped to active `pipelineId`.
+- AddDealDrawer rebuilt with `EntityFieldForm`: Person picker only hardcoded, Default-stage fields render dynamically.
+- EntityCard: `hasMissingRequiredFields` prop → yellow border (priority: red stale > yellow missing > amber warning > none).
+- MarkAsLostDialog + MarkAsDoneDialog wired into deal-detail header action dropdown.
 
-3. **Production hardening** — email send, soft-delete recovery, GDPR export, billing. Details in PHASE-3-NEXT.md.
+- **Stage-aware field editor** shipped at Settings → Pipelines → [pipeline]. Pill-style stage tab strip + reused `SortableFieldsTable` editor scoped to the active stage. Adding a field auto-pins it; edit dialog has a "Visible on stages" multi-select. Identical UX to the lead/contact/company editor.
+- **Per-pipeline transition policy** — owners pick `block` (force fill) / `warn` (allow + flag) / `off` (no checks). Default `warn`. Enforced on `deals.moveToStage`. Activity log distinguishes warn-mode moves with missing fields.
+- **Modules → Deal Custom Fields** removed and replaced with a deep-link stub. Deal fields live with their pipeline.
+- Org plan upgraded to `enterprise` for multi-pipeline testing.
+- 404-on-renamed-entity race + kanban-empty-state bug fixed (earlier in the day).
 
-## Root File Map
+## Pipelines — pending (highest leverage first)
 
-```
-AGENTS.md              — Global coding rules (RTL, radius, labels, perf, etc.) — ALWAYS READ
-PHASE-2-PROGRESS.md    — Phase 2 completed + pending + all architecture decisions
-PHASE-3-NEXT.md        — Phase 3 AI plan + remaining perf improvements + future phases
-README.md              — Convex+Next.js project README
-```
+1. In-deal FillMissingFieldsDialog (auto-open on block-policy errors, fill + retry).
+2. Warn-mode banner on the deal detail view.
+3. Per-stage advanced settings UI (`staleAfterDays`, `isFinal` / `finalType`).
+4. AI tools `move_deal_stage`, `create_deal`, `setup_workspace_from_template` (Phase 3).
+5. Pipeline templates picker UI in `PipelinesGroup`.
 
-Root-level files deleted 2026-05-19 (consolidated into PHASE-2-PROGRESS.md + PHASE-3-NEXT.md):
-BUILD-ORDER.md, FRONTEND-DECISIONS.md, PRODUCTION-READINESS-AUDIT.md, SCHEDULING-IMPLEMENTATION.md, CORE-FEATURES-ARCHITECTURE.md, DYNAMIC_FIELDS_BLUEPRINT.md, INDUSTRY_ADAPTABILITY_ANALYSIS.md, CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md, PERFORMANCE-AUDIT-2026-05-19.md, Phase-2-progress.md
+Full list with effort + reasons: `convex/crm/fields/pipelines/STATE.md` and `CODE-ARCHITECTURE-PIPELINES-2026-05-20.md`.
 
-## Next Steps (Phase 3)
-
-1. Build AI tool registry (`convex/ai/toolRegistry.ts`)
-2. Fill in `convex/ai/systemPrompt.ts` — 3-layer prompt builder
-3. Build 11 core AI tools in `convex/ai/tools/`
-4. Fill in `convex/ai/internal.ts::rebuildEntityContext` body
-5. Build `core/ai/` frontend components (ChatSheet, ChatMessage, etc.)
-6. Wire WhatsApp webhook
-
-Full checklist in PHASE-3-NEXT.md.
-
-## Verification Before Writing Code
+## Verification before writing code
 
 ```bash
-pnpm typecheck        # must be 0 errors
-pnpm exec biome check # must be 0 issues
-pnpm test             # must be 100+ passing
+pnpm typecheck                              # 0 errors
+pnpm exec biome check <touched files>       # 0 issues
+pnpm test                                   # 113 pass (1 pre-existing unrelated failure)
+pnpm build                                  # all 18 routes
+pnpm guard:identity-subscriptions           # ✓ no leaks
 ```

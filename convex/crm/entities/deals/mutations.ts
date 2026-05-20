@@ -17,13 +17,21 @@ import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
+import { getRequiredFieldsForStage, pickMissingFields } from "../../fields/pipelines/helpers";
 
 export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		title: v.string(),
 		pipelineId: v.id("pipelines"),
-		currentStageId: v.string(),
+		/**
+		 * Optional — if omitted, the deal lands in the pipeline's auto-
+		 * created Default stage (`isDefaultStage: true`). Callers SHOULD
+		 * omit this for the AddDealDrawer flow; the only legitimate
+		 * caller passing an explicit stage is the legacy lead-conversion
+		 * path which still picks the first non-final stage.
+		 */
+		currentStageId: v.optional(v.string()),
 		contactId: v.optional(v.id("contacts")),
 		companyId: v.optional(v.id("companies")),
 		personCode: v.optional(v.string()),
@@ -47,13 +55,36 @@ export const create = orgMutation({
 		const pipeline = await ctx.db.get(args.pipelineId);
 		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 
-		// Validate stage exists in pipeline
-		const stageExists = pipeline.stages.some((s) => s.id === args.currentStageId);
-		if (!stageExists)
+		// Resolve the destination stage:
+		//   1. If caller passed `currentStageId` and it exists in the pipeline → use it.
+		//   2. Otherwise pick the Default stage (`isDefaultStage === true`).
+		//   3. Final fallback (pre-migration data without isDefaultStage) →
+		//      first non-final stage by order; first stage if all are final.
+		let resolvedStageId: string | undefined;
+		if (args.currentStageId) {
+			const exists = pipeline.stages.some((s) => s.id === args.currentStageId);
+			if (!exists) {
+				throw new ConvexError({
+					code: "INVALID_STAGE",
+					message: "Stage not found in pipeline",
+				});
+			}
+			resolvedStageId = args.currentStageId;
+		} else {
+			const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
+			if (defaultStage) {
+				resolvedStageId = defaultStage.id;
+			} else {
+				const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
+				resolvedStageId = (sorted.find((s) => !s.isFinal) ?? sorted[0])?.id;
+			}
+		}
+		if (!resolvedStageId) {
 			throw new ConvexError({
-				code: "INVALID_STAGE",
-				message: "Stage not found in pipeline",
+				code: "EMPTY_PIPELINE",
+				message: "Pipeline has no stages — add stages before creating deals.",
 			});
+		}
 
 		const dealCode = await generateEntityCode(ctx, args.orgId, "deal");
 		const now = Date.now();
@@ -63,7 +94,7 @@ export const create = orgMutation({
 			dealCode,
 			title: args.title,
 			pipelineId: args.pipelineId,
-			currentStageId: args.currentStageId,
+			currentStageId: resolvedStageId,
 			stageEnteredAt: now,
 			contactId: args.contactId,
 			companyId: args.companyId,
@@ -228,6 +259,78 @@ export const moveToStage = orgMutation({
 			});
 		}
 
+		// ── Skip-stage policy ───────────────────────────────────────────
+		// When `stageTransitionPolicy === "block"` AND `allowSkipStages` is
+		// false (the default), deals can advance ONLY one stage forward at
+		// a time. Backwards moves and lateral moves to final stages are
+		// always allowed (mark-as-lost / mark-as-done shouldn't be blocked
+		// by skip rules).
+		const policy = pipeline.stageTransitionPolicy ?? "warn";
+		const allowSkip = pipeline.allowSkipStages === true;
+		if (policy === "block" && !allowSkip && !toStage.isFinal) {
+			const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
+			const fromIdx = sorted.findIndex((s) => s.id === deal.currentStageId);
+			const toIdx = sorted.findIndex((s) => s.id === args.stageId);
+			if (fromIdx >= 0 && toIdx > fromIdx + 1) {
+				throw new ConvexError({
+					code: "STAGE_SKIP_NOT_ALLOWED",
+					message: `Move one stage at a time — go through "${
+						sorted[fromIdx + 1]?.name ?? "the next stage"
+					}" first, or enable "Allow skipping stages" on the pipeline.`,
+					nextStageId: sorted[fromIdx + 1]?.id,
+					nextStageName: sorted[fromIdx + 1]?.name,
+				});
+			}
+		}
+
+		// ── Stage-aware required-field policy ───────────────────────────
+		// Per-pipeline owner setting. Skip the check when the destination
+		// is a final stage AND the source is non-final — closing a deal is
+		// already gated by closeAsDone / outcome-reason flow, so blocking
+		// it here would double-gate. (We still warn on final-stage moves.)
+		let missingFields: ReturnType<typeof pickMissingFields> = [];
+		if (policy !== "off") {
+			const required = await getRequiredFieldsForStage(ctx, {
+				orgId: args.orgId,
+				entityType: "deal",
+				stageId: args.stageId,
+			});
+			if (required.length > 0) {
+				const fieldValueRows = await ctx.db
+					.query("fieldValues")
+					.withIndex("by_entity", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("entityType", "deal")
+							.eq("entityId", args.dealId),
+					)
+					.collect();
+				const valuesByName: Record<string, unknown> = {};
+				for (const v of fieldValueRows) valuesByName[v.fieldName] = v.value;
+
+				missingFields = pickMissingFields({
+					deal: deal as unknown as Record<string, unknown>,
+					fieldValuesByName: valuesByName,
+					requiredFields: required,
+				});
+			}
+
+			if (policy === "block" && missingFields.length > 0) {
+				throw new ConvexError({
+					code: "MISSING_REQUIRED_FIELDS",
+					message: `Cannot move to ${toStage.name} — ${missingFields.length} required field(s) missing`,
+					missingFields: missingFields.map((f) => ({
+						_id: f._id,
+						name: f.name,
+						label: f.label,
+						type: f.type,
+					})),
+					stageId: args.stageId,
+					stageName: toStage.name,
+				});
+			}
+		}
+
 		const now = Date.now();
 		const patch: Record<string, unknown> = {
 			currentStageId: args.stageId,
@@ -240,12 +343,31 @@ export const moveToStage = orgMutation({
 		await logActivity(ctx, {
 			orgId: args.orgId,
 			userId,
-			action: "stage_changed",
+			action:
+				policy === "warn" && missingFields.length > 0
+					? "stage_changed_with_missing_fields"
+					: "stage_changed",
 			entityType: "deal",
 			entityId: args.dealId,
 			personCode: deal.personCode,
-			description: `Deal moved to stage: ${toStage.name}`,
-			metadata: { fromStageId: deal.currentStageId, toStageId: args.stageId },
+			description:
+				policy === "warn" && missingFields.length > 0
+					? `Deal moved to stage "${toStage.name}" with ${missingFields.length} required field(s) missing`
+					: `Deal moved to stage: ${toStage.name}`,
+			metadata: {
+				fromStageId: deal.currentStageId,
+				toStageId: args.stageId,
+				toCode: toStage.code,
+				pipelineId: deal.pipelineId,
+				...(fromStage?.code !== undefined ? { fromCode: fromStage.code } : {}),
+				...(missingFields.length > 0
+					? {
+							missingFieldNames: missingFields.map((f) => f.name).join(","),
+							missingFieldsCount: missingFields.length,
+							stageTransitionPolicy: policy,
+						}
+					: {}),
+			},
 		});
 
 		if (deal.assignedTo && deal.assignedTo !== userId) {
@@ -281,6 +403,59 @@ export const closeAsDone = orgMutation({
 		const finalStage = pipeline?.stages.find(
 			(s) => s.isFinal && s.finalType === args.finalType,
 		);
+
+		// ── Mark-as-done all-fields gate ───────────────────────────────
+		// When `markDoneRequiresAllFields` is true (default), closing a
+		// deal as won / neutral demands EVERY required field across every
+		// non-final stage be filled. Mark-as-lost (`finalType === "negative"`)
+		// is unaffected — owners need to be able to close out dead deals
+		// regardless of completeness, that's the whole point of `markAsLost`.
+		if (
+			pipeline &&
+			args.finalType !== "negative" &&
+			pipeline.markDoneRequiresAllFields !== false
+		) {
+			// Default true when undefined.
+			const fieldValueRows = await ctx.db
+				.query("fieldValues")
+				.withIndex("by_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", "deal").eq("entityId", args.dealId),
+				)
+				.collect();
+			const valuesByName: Record<string, unknown> = {};
+			for (const fv of fieldValueRows) valuesByName[fv.fieldName] = fv.value;
+
+			const missingAcrossStages: Array<{ name: string; label: string; stageName: string }> =
+				[];
+			for (const stage of pipeline.stages) {
+				if (stage.isFinal) continue;
+				const required = await getRequiredFieldsForStage(ctx, {
+					orgId: args.orgId,
+					entityType: "deal",
+					stageId: stage.id,
+				});
+				const missing = pickMissingFields({
+					deal: deal as unknown as Record<string, unknown>,
+					fieldValuesByName: valuesByName,
+					requiredFields: required,
+				});
+				for (const m of missing) {
+					if (missingAcrossStages.some((x) => x.name === m.name)) continue;
+					missingAcrossStages.push({
+						name: m.name,
+						label: m.label,
+						stageName: stage.name,
+					});
+				}
+			}
+			if (missingAcrossStages.length > 0) {
+				throw new ConvexError({
+					code: "MISSING_REQUIRED_FIELDS_FOR_DONE",
+					message: `Cannot mark as done — ${missingAcrossStages.length} required field(s) still missing across the pipeline. Disable "Require all fields before mark as done" on the pipeline if this isn't needed.`,
+					missingFields: missingAcrossStages,
+				});
+			}
+		}
 
 		const now = Date.now();
 		const patch: Record<string, unknown> = {
@@ -374,5 +549,247 @@ export const softDelete = orgMutation({
 			personCode: deal.personCode,
 			description: `Deal deleted: ${deal.title}`,
 		});
+	},
+});
+
+/**
+ * changePipeline — move an existing deal to a different pipeline.
+ *
+ * Invariants:
+ *   - Both pipelines belong to the same org.
+ *   - Both pipelines have entityType="deal".
+ *   - Closed deals (wonAt or lostAt set) cannot change pipeline. Reopen first.
+ *   - currentStageId resets to the new pipeline's first non-final stage by order.
+ *   - stageEnteredAt resets to now (deal restarts staleness clock).
+ *   - Old activity-log entries (referencing the OLD currentStageId) stay
+ *     intact — they're an audit trail and shouldn't be rewritten.
+ *
+ * RBAC:    deals.changePipeline (Owner / Admin only — see permissions/catalog.ts)
+ * Limit:   shared `deals.update` 120/min scope (drag-rate parity)
+ * Notify:  the assignee, if any, via deal_pipeline_changed pref.
+ * AI:      schedules rebuildEntityContext like every other deal mutation.
+ */
+export const changePipeline = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		dealId: v.id("deals"),
+		toPipelineId: v.id("pipelines"),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "deals.changePipeline");
+		await enforceRateLimit(ctx, {
+			scope: "deals.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+		if (deal.wonAt || deal.lostAt) {
+			throw new ConvexError({
+				code: "DEAL_CLOSED",
+				message: "Closed deals cannot change pipeline. Reopen first.",
+			});
+		}
+		if (deal.pipelineId === args.toPipelineId) {
+			throw new ConvexError({
+				code: "SAME_PIPELINE",
+				message: "Deal is already in this pipeline.",
+			});
+		}
+
+		const [fromPipeline, toPipeline] = await Promise.all([
+			ctx.db.get(deal.pipelineId),
+			ctx.db.get(args.toPipelineId),
+		]);
+		if (!toPipeline || toPipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+		if (toPipeline.entityType !== "deal")
+			throw new ConvexError({
+				code: "INVALID_PIPELINE",
+				message: "Target pipeline is not for deals.",
+			});
+
+		const sortedStages = [...toPipeline.stages].sort((a, b) => a.order - b.order);
+		const firstNonFinal = sortedStages.find((s) => !s.isFinal) ?? sortedStages[0];
+		if (!firstNonFinal)
+			throw new ConvexError({
+				code: "EMPTY_PIPELINE",
+				message: "Target pipeline has no stages.",
+			});
+
+		const now = Date.now();
+		await ctx.db.patch(args.dealId, {
+			pipelineId: args.toPipelineId,
+			currentStageId: firstNonFinal.id,
+			stageEnteredAt: now,
+			updatedAt: now,
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "deal_pipeline_changed",
+			entityType: "deal",
+			entityId: args.dealId,
+			personCode: deal.personCode,
+			description: `Pipeline changed: ${fromPipeline?.name ?? "?"} → ${toPipeline.name}`,
+			metadata: {
+				fromPipelineId: deal.pipelineId,
+				toPipelineId: args.toPipelineId,
+				fromStageId: deal.currentStageId,
+				toStageId: firstNonFinal.id,
+				toStageCode: firstNonFinal.code,
+			},
+		});
+
+		if (deal.assignedTo && deal.assignedTo !== userId) {
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: deal.assignedTo,
+				type: "deal.pipeline_changed",
+				title: `Deal moved to ${toPipeline.name}: ${deal.title}`,
+				entityType: "deal",
+				entityId: args.dealId,
+			});
+		}
+
+		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+			orgId: args.orgId,
+			entityType: "deal",
+			entityId: args.dealId,
+			personCode: deal.personCode,
+		});
+	},
+});
+
+
+/**
+ * markAsLost — close a deal as lost from any stage (no need to move it to
+ * a final stage first). The user must type the deal's `dealCode` exactly
+ * as a confirmation so a runaway click can never delete real pipeline
+ * data — the user said:
+ *
+ *   "From any stage we will have mark as lost in a deal that too
+ *    confirmation box as well … input asking (delete deal-code requried
+ *    please to confirm)."
+ *
+ * Behaviour
+ * ─────────
+ *   - `deleteCodeConfirmation` MUST exactly equal the deal's `dealCode`
+ *     (case-sensitive) — otherwise throw `CONFIRMATION_MISMATCH`.
+ *   - Moves the deal into the pipeline's negative-final stage (if one
+ *     exists). If no negative-final stage is configured, leaves the
+ *     deal at its current stage but stamps `lostAt` so it's filtered
+ *     out of open-deal queries.
+ *   - Bypasses `markDoneRequiresAllFields` — losing a deal must always
+ *     be possible regardless of completeness.
+ *   - Logs `lost` activity with `outcomeReason` if provided.
+ *
+ * RBAC: `deals.close`. Rate limit: shared `deals.update` 120/min budget.
+ */
+export const markAsLost = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		dealId: v.id("deals"),
+		deleteCodeConfirmation: v.string(),
+		outcomeReason: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "deals.close");
+		await enforceRateLimit(ctx, {
+			scope: "deals.update",
+			key: `${userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
+		const deal = await ctx.db.get(args.dealId);
+		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+		if (deal.lostAt) {
+			throw new ConvexError({
+				code: "ALREADY_LOST",
+				message: "Deal is already marked lost.",
+			});
+		}
+		if (deal.wonAt) {
+			throw new ConvexError({
+				code: "ALREADY_WON",
+				message: "Deal is already marked won — reopen it first.",
+			});
+		}
+
+		// Confirmation gate — must match the dealCode exactly.
+		if (args.deleteCodeConfirmation.trim() !== deal.dealCode) {
+			throw new ConvexError({
+				code: "CONFIRMATION_MISMATCH",
+				message: `Confirmation didn't match. Type "${deal.dealCode}" exactly to mark this deal as lost.`,
+			});
+		}
+
+		const pipeline = await ctx.db.get(deal.pipelineId);
+		const negativeFinal = pipeline?.stages.find(
+			(s) => s.isFinal && s.finalType === "negative",
+		);
+
+		const now = Date.now();
+		const patch: Record<string, unknown> = {
+			lostAt: now,
+			outcomeReason: args.outcomeReason,
+			updatedAt: now,
+		};
+		if (negativeFinal) {
+			patch.currentStageId = negativeFinal.id;
+			patch.stageEnteredAt = now;
+		}
+
+		await ctx.db.patch(args.dealId, patch);
+
+		// Counter rebalance — leaving the open pool.
+		await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+		if (deal.value && deal.value > 0) {
+			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+		}
+		await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId,
+			action: "lost",
+			entityType: "deal",
+			entityId: args.dealId,
+			personCode: deal.personCode,
+			description: `Deal lost: ${deal.title}`,
+			metadata: {
+				dealCode: deal.dealCode,
+				...(negativeFinal ? { toStageId: negativeFinal.id, toCode: negativeFinal.code } : {}),
+				...(args.outcomeReason ? { outcomeReason: args.outcomeReason } : {}),
+			},
+		});
+
+		if (deal.assignedTo && deal.assignedTo !== userId) {
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: deal.assignedTo,
+				type: "deal.lost",
+				title: `Deal closed lost: ${deal.title}`,
+				body: args.outcomeReason ? args.outcomeReason : undefined,
+				entityType: "deal",
+				entityId: args.dealId,
+				metadata: {
+					dealCode: deal.dealCode,
+					value: deal.value ?? 0,
+					currency: deal.currency ?? "",
+				},
+			});
+		}
 	},
 });

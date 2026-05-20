@@ -20,6 +20,19 @@ const CASCADE_BATCH = 500;
 /**
  * Seed missing field definitions for a (orgId, industry).
  * Returns the number of rows inserted.
+ *
+ * Default-stage pinning
+ * ─────────────────────
+ * Locked decision (2026-05-20): every `entityType: "deal"` field MUST be
+ * pinned to at least one stage. Empty `showInStages` no longer means
+ * "show on every stage". When seeding deal fields we therefore pin them
+ * to the Default stage of every existing deal pipeline in the org so
+ * they appear immediately in the Defaults tab.
+ *
+ * If no deal pipelines exist yet (org just created), we still seed the
+ * field rows but leave their `showInStages` empty. The
+ * `pipelines.create` mutation backfills them onto the Default stage of
+ * the new pipeline as soon as the org's first pipeline is inserted.
  */
 export async function seedFieldDefinitionsForOrg(
 	ctx: MutationCtx,
@@ -34,6 +47,19 @@ export async function seedFieldDefinitionsForOrg(
 		.withIndex("by_org_and_entity", (q) => q.eq("orgId", orgId))
 		.collect();
 	const existingKey = new Set<string>(existing.map((r) => `${r.entityType}::${r.name}`));
+
+	// Pre-load default stage ids for deal pipelines so newly-seeded deal
+	// fields can be pinned in one shot. Other entity types use empty
+	// showInStages today (no pipelines).
+	const dealPipelines = await ctx.db
+		.query("pipelines")
+		.withIndex("by_org_and_entity", (q) => q.eq("orgId", orgId).eq("entityType", "deal"))
+		.collect();
+	const dealDefaultStageIds: string[] = [];
+	for (const p of dealPipelines) {
+		const def = p.stages.find((s) => s.isDefaultStage === true);
+		if (def) dealDefaultStageIds.push(def.id);
+	}
 
 	// Track per-entity max order so newly seeded rows append cleanly.
 	const maxOrderByEntity = new Map<string, number>();
@@ -50,6 +76,13 @@ export async function seedFieldDefinitionsForOrg(
 		const nextOrder = (maxOrderByEntity.get(seed.entityType) ?? -1) + 1;
 		maxOrderByEntity.set(seed.entityType, nextOrder);
 
+		// Auto-pin deal fields to every existing deal pipeline's Default
+		// stage. Other entity types stay empty.
+		const showInStages =
+			seed.entityType === "deal" && dealDefaultStageIds.length > 0
+				? dealDefaultStageIds
+				: undefined;
+
 		await ctx.db.insert("fieldDefinitions", {
 			orgId,
 			entityType: seed.entityType,
@@ -65,6 +98,7 @@ export async function seedFieldDefinitionsForOrg(
 			options: seed.options,
 			required: seed.required ?? false,
 			order: nextOrder,
+			showInStages,
 			createdAt: now,
 			updatedAt: now,
 		});

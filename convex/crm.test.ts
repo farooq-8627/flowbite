@@ -102,10 +102,11 @@ async function seedPipeline(t: ReturnType<typeof convexTest>, orgId: string) {
 			entityType: "deal",
 			isDefault: true,
 			stages: [
-				{ id: "stage_new", name: "New", order: 0, color: "#3b82f6" },
+				{ id: "stage_new", name: "New", code: "NEW", order: 0, color: "#3b82f6" },
 				{
 					id: "stage_qualified",
 					name: "Qualified",
+					code: "QUAL",
 					order: 1,
 					color: "#8b5cf6",
 					staleAfterDays: 7,
@@ -113,6 +114,7 @@ async function seedPipeline(t: ReturnType<typeof convexTest>, orgId: string) {
 				{
 					id: "stage_won",
 					name: "Won",
+					code: "WON",
 					order: 2,
 					color: "#22c55e",
 					isFinal: true,
@@ -121,6 +123,7 @@ async function seedPipeline(t: ReturnType<typeof convexTest>, orgId: string) {
 				{
 					id: "stage_lost",
 					name: "Lost",
+					code: "LOST",
 					order: 3,
 					color: "#ef4444",
 					isFinal: true,

@@ -72,6 +72,11 @@ interface EntityFieldFormProps {
 	onFieldChange?: (field: FieldDef, value: unknown) => void;
 	/** Create mode: hand the form a getter for current values when ready to persist. */
 	registerGetValues?: (getter: () => EntityFormValues) => void;
+	/**
+	 * When true, required fields with no value are highlighted in destructive
+	 * color. Pass `true` after the first submit attempt to show validation state.
+	 */
+	submittedOnce?: boolean;
 	className?: string;
 }
 
@@ -92,6 +97,7 @@ export function EntityFieldForm({
 	excludeNames,
 	onFieldChange,
 	registerGetValues,
+	submittedOnce = false,
 	className,
 }: EntityFieldFormProps) {
 	const { formFields } = useEntityFields(slot, orgId, { currentStageId });
@@ -150,6 +156,48 @@ export function EntityFieldForm({
 		});
 	}, [customValuesForEntity]);
 
+	// Reactive sync for COLUMN values (the bootstrapping fix).
+	//
+	// `columnValues` is initialized via a `useState(() => ...)` lazy
+	// initializer that iterates `formFields`. On first render `formFields`
+	// is `[]` because the underlying `useEntityFields` Convex query hasn't
+	// resolved yet — so the initializer produces `{}` even when an
+	// `entity` was supplied. The `initedFor` ref-guard above only re-syncs
+	// when `entity._id` CHANGES; on the same entity (a normal edit-drawer
+	// open), it never fires.
+	//
+	// Without this effect, opening the edit drawer for a deal whose
+	// `formFields` haven't resolved at mount time leaves `columnValues`
+	// empty until the user types — which means the parent's submit
+	// handler reads `col.title === undefined` and any client-side guard
+	// like `if (!col.title) toast.error("title required")` falsely fires
+	// even though `entity.title` has a value.
+	//
+	// This effect re-fills `columnValues` from `entity` once `formFields`
+	// has actually loaded (or any time the entity prop changes), with the
+	// same `touchedRef` guard so values the user has personally edited
+	// stay protected.
+	useEffect(() => {
+		if (!entity) return;
+		// Bail out until the field schema has loaded — otherwise we'd
+		// erase whatever defaults the lazy initializer produced.
+		const columnDefs = formFields.filter((f) => f.storage === "column");
+		if (columnDefs.length === 0) return;
+		setColumnValues((prev) => {
+			let changed = false;
+			const next = { ...prev };
+			for (const f of columnDefs) {
+				if (touchedRef.current.has(f.name)) continue;
+				const fromEntity = entity[f.columnKey ?? f.name];
+				if (next[f.name] !== fromEntity) {
+					next[f.name] = fromEntity;
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+	}, [entity, formFields]);
+
 	// Expose values to the parent for create-mode bulk persist.
 	if (registerGetValues) {
 		registerGetValues(() => {
@@ -186,10 +234,18 @@ export function EntityFieldForm({
 				// the appropriate join mutation (e.g. tags.attachToEntity).
 				touchedRef.current.add(field.name);
 				setCustomValues((prev) => ({ ...prev, [field.name]: value }));
-				// Edit-mode write-through is for `fieldValues` only — `join`
-				// fields own their own writes via dedicated cells (e.g. TagsCell)
+				// Edit-mode write-through. Fires for both `storage === "fieldValues"`
+				// AND `storage === undefined` (the implicit default for any
+				// non-column / non-join field — e.g. the real-estate template's
+				// `ejari_number` field, which omits `storage` in its seed).
+				// Without this, typing into an undefined-storage field updates
+				// only local state and nothing ever persists; the drawer closes,
+				// state is thrown away, and the field reads as empty next time.
+				// Excludes `storage === "join"` because join fields (tags) own
+				// their own write path via dedicated cells like `<TagsCell>`
 				// when an entity already exists.
-				if (field.storage === "fieldValues" && entity?._id && orgId) {
+				const persistsAsFieldValue = field.storage === "fieldValues" || !field.storage;
+				if (persistsAsFieldValue && entity?._id && orgId) {
 					void setFieldValue({
 						orgId,
 						entityType: slot,
@@ -247,8 +303,20 @@ export function EntityFieldForm({
 					name={name}
 					fields={fields}
 					showHeader={idx > 0 || groups.length > 1}
+					submittedOnce={submittedOnce}
+					valueFor={valueFor}
 					render={(field) => {
 						const renderer = getInputRenderer(field);
+						const fileScopeId = entity
+							? slot === "deal"
+								? (entity.dealCode as string | undefined)
+								: slot === "company"
+									? (entity.companyCode as string | undefined)
+									: (entity.personCode as string | undefined)
+							: undefined;
+						const filePersonCode = entity
+							? (entity.personCode as string | undefined)
+							: undefined;
 						return renderer({
 							field,
 							slot,
@@ -256,6 +324,8 @@ export function EntityFieldForm({
 							onChange: (v) => handleChange(field, v),
 							orgId,
 							entityId: entity?._id,
+							fileScopeId,
+							filePersonCode,
 						});
 					}}
 				/>
@@ -270,10 +340,12 @@ interface FieldGroupProps {
 	name: string;
 	fields: FieldDef[];
 	showHeader: boolean;
+	submittedOnce: boolean;
+	valueFor: (field: FieldDef) => unknown;
 	render: (field: FieldDef) => React.ReactNode;
 }
 
-function FieldGroup({ name, fields, showHeader, render }: FieldGroupProps) {
+function FieldGroup({ name, fields, showHeader, submittedOnce, valueFor, render }: FieldGroupProps) {
 	// Pair adjacent half-width fields so they render side-by-side.
 	const rows = useMemo(() => groupIntoRows(fields), [fields]);
 
@@ -290,21 +362,24 @@ function FieldGroup({ name, fields, showHeader, render }: FieldGroupProps) {
 			{rows.map((row) => {
 				if (row.length === 1) {
 					const f = row[0]!;
+					const isEmpty = !valueFor(f) && valueFor(f) !== 0 && valueFor(f) !== false;
 					return (
-						<FormRow key={f._id} field={f}>
+						<FormRow key={f._id} field={f} hasError={submittedOnce && !!f.required && isEmpty}>
 							{render(f)}
 						</FormRow>
 					);
 				}
-				// Pair-rows are stable: keyed by the concatenated field _ids of the pair.
 				const pairKey = row.map((f) => f._id).join("__");
 				return (
 					<div key={pairKey} className="grid grid-cols-2 gap-2.5">
-						{row.map((f) => (
-							<FormRow key={f._id} field={f}>
-								{render(f)}
-							</FormRow>
-						))}
+						{row.map((f) => {
+							const isEmpty = !valueFor(f) && valueFor(f) !== 0 && valueFor(f) !== false;
+							return (
+								<FormRow key={f._id} field={f} hasError={submittedOnce && !!f.required && isEmpty}>
+									{render(f)}
+								</FormRow>
+							);
+						})}
 					</div>
 				);
 			})}
@@ -348,13 +423,14 @@ function groupIntoRows(fields: FieldDef[]): FieldDef[][] {
 interface FormRowProps {
 	field: FieldDef;
 	children: React.ReactNode;
+	hasError?: boolean;
 }
 
-function FormRow({ field, children }: FormRowProps) {
+function FormRow({ field, children, hasError }: FormRowProps) {
 	const id = `field-${field._id}`;
 	return (
 		<div className="flex flex-col gap-1">
-			<Label htmlFor={id} className="text-[11px] font-medium leading-none text-foreground/90">
+			<Label htmlFor={id} className={cn("text-[11px] font-medium leading-none", hasError ? "text-destructive" : "text-foreground/90")}>
 				{field.label}
 				{field.required && (
 					<span className="ms-0.5 text-destructive/60" title="Required">
@@ -362,7 +438,12 @@ function FormRow({ field, children }: FormRowProps) {
 					</span>
 				)}
 			</Label>
-			<div className="w-full min-w-0">{children}</div>
+			<div className={cn("w-full min-w-0", hasError && "[&>*]:ring-1 [&>*]:ring-destructive [&>*]:ring-offset-0")}>
+				{children}
+			</div>
+			{hasError && (
+				<p className="text-[10px] text-destructive">This field is required</p>
+			)}
 		</div>
 	);
 }

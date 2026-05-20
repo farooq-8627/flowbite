@@ -14,8 +14,13 @@
  *   `allFields`        — every row, ordered.
  *   `visibleFields`    — `!hidden` (admin-global hide).
  *   `tableFields`      — visible, presentable as a column. Today this equals
- *                        `visibleFields`. We deliberately do NOT filter tables
- *                        by `showInStages` — tables are cross-stage views.
+ *                        `visibleFields`. The hook itself does NOT honor
+ *                        `showInStages` for tables — that filtering is a
+ *                        view-level concern. DealsView passes a
+ *                        `hiddenColumnIds` set into `useEntityColumns` to
+ *                        narrow the deal table to "Default-stage pinned +
+ *                        active-stage pinned" when its `StageFilter` is on.
+ *                        Other entity tables remain cross-stage.
  *   `formFields`       — visible, editable, AND honors `showInStages` when
  *                        `currentStageId` is provided (deal forms).
  *   `cardPinnedKinds`  — fixed by design (avatar, name, email, code, tags).
@@ -105,14 +110,32 @@ export function useEntityFields(
 		const form = visible.filter((f) => {
 			// Read-only, system-generated kinds are never edited in forms.
 			if (f.kind === "personCode" || f.kind === "entityCode") return false;
-			// Stage-aware filtering: if `showInStages` is set, only include the
-			// field when the current stage matches (deal forms). When no current
-			// stage is supplied, default to "show all" (admin editing template).
-			if (f.showInStages && f.showInStages.length > 0) {
-				if (!options?.currentStageId) return true;
-				return f.showInStages.includes(options.currentStageId);
+			// Stage-aware filtering — applies only to entity types that have
+			// pipelines (deal today).
+			//
+			// Locked rule (2026-05-20): empty/missing `showInStages` means
+			// "not pinned to any stage". The field will not show on any
+			// form for that entity type. The Default stage of every pipeline
+			// is the home for "always-on" fields — admins must explicitly
+			// pin a field to the Default stage to make it appear in the
+			// AddDealDrawer / detail form.
+			//
+			// For other entity types (lead/contact/company), there are no
+			// pipelines today, so we keep the legacy "show always" behavior
+			// — `showInStages` simply doesn't apply to them.
+			const isStageAwareEntity = entityType === "deal";
+			if (!isStageAwareEntity) {
+				return true;
 			}
-			return true;
+			if (!f.showInStages || f.showInStages.length === 0) {
+				// Stage-aware entity, no pin — exclude from forms entirely.
+				return false;
+			}
+			if (!options?.currentStageId) {
+				// Admin-only "show all stages" mode (e.g. settings preview).
+				return true;
+			}
+			return f.showInStages.includes(options.currentStageId);
 		});
 
 		return {
@@ -123,5 +146,5 @@ export function useEntityFields(
 			cardPinnedKinds: CARD_PINNED_KINDS,
 			isLoading: rows === undefined,
 		};
-	}, [rows, options?.currentStageId]);
+	}, [rows, entityType, options?.currentStageId]);
 }

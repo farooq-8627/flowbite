@@ -9,6 +9,7 @@ import { CRMGroup } from "./groups/CRMGroup";
 import { DataGroup } from "./groups/DataGroup";
 import { ModulesGroup } from "./groups/modules";
 import { NotificationsGroup } from "./groups/NotificationsGroup";
+import { PipelinesGroup } from "./groups/PipelinesGroup";
 import { ShortcutsGroup } from "./groups/ShortcutsGroup";
 import { TeamGroup } from "./groups/TeamGroup";
 import { WorkspaceGroup } from "./groups/WorkspaceGroup";
@@ -53,9 +54,15 @@ export function SettingsContent({ activeGroup, org, orgId, permissions }: Props)
 					<ModulesGroup org={org} orgId={orgId} />
 				</PermissionGate>
 			);
+		case "pipelines":
+			return (
+				<PermissionGate orgId={orgId} permission="pipelines.view">
+					<PipelinesGroup orgId={orgId} />
+				</PermissionGate>
+			);
 		case "crm":
 			return (
-				<PermissionGate orgId={orgId} permission="pipelines.manage">
+				<PermissionGate orgId={orgId} permission="notes.view">
 					<CRMGroup org={org} orgId={orgId} />
 				</PermissionGate>
 			);

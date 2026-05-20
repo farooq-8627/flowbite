@@ -101,6 +101,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 						name="defaultDueOffsetDays"
 						label="Default due offset"
 						description="Days from now when a follow-up is created without a date. Used by the form's “Use default” preset and the AI tool create_followup."
+						controlClassName="sm:min-w-auto"
 					>
 						{(field) => (
 							<div className="flex items-center gap-2">
@@ -121,6 +122,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 						name="defaultPriority"
 						label="Default priority"
 						description="Initial chip on a new follow-up. Per-follow-up overrides are always allowed."
+						controlClassName="sm:min-w-auto"
 					>
 						{(field) => (
 							<Select
@@ -146,6 +148,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 						name="autoCloseAfterDays"
 						label="Auto-close stale follow-ups"
 						description="If a follow-up sits past-due for this many days it will be marked completed automatically. Set to 0 to disable."
+						controlClassName="sm:min-w-auto"
 					>
 						{(field) => (
 							<div className="flex items-center gap-2">
@@ -190,6 +193,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 						name="notifyAssignee"
 						label="Notify assignee"
 						description="Send a notification when a follow-up is assigned or updated."
+						controlClassName="sm:min-w-auto"
 					>
 						{(field) => (
 							<Switch
@@ -204,6 +208,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 						name="requireDealCode"
 						label="Require deal link"
 						description="Prevent saving a follow-up unless it is linked to a deal. Useful for sales teams that need every cadence touch tied to a pipeline deal."
+						controlClassName="sm:min-w-auto"
 					>
 						{(field) => (
 							<Switch

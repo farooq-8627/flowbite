@@ -61,3 +61,11 @@
 |---|---|---|
 | 1 | `Settings → CRM → Note Categories` was rendering the read-only view for the Owner. Root cause: `myMembership.permissions` was undefined because `orgMembers.permissions` is an optional override field that `createOrg` never writes. | Patched `convex/orgs/queries.ts::getMyMembership` to resolve `permissions` from the role doc before returning. No schema or migration change required. `backfillRolePermissions` already keeps `orgRoles.permissions` aligned with the catalog SSOT. |
 | 2 | Every settings group that gates UI on `myMembership.permissions` (CRMGroup, others) now sees the correct set. | No changes needed in `CRMGroup.tsx` or any other consumer. Manual verification: Owner now sees Add / Edit / Up / Down / Default / Archive on every category row. |
+
+
+## 2026-05-21 — Invite member dialog mobile + send-another fix
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | `InviteMemberDialog` body is now a `flex min-h-0 flex-1 flex-col overflow-y-auto` block inside a `max-h-[85vh]` `DialogContent`. Header and footer are `shrink-0`. Once the success state appears (form fields + invite-link block + Done/Send-another), only the body scrolls — the dialog can no longer overflow the viewport on phones. | Mobile no longer pushes "Send another" off-screen. Dialog matches the FormDrawer rhythm (header/body/footer separation). |
+| 2 | "Send another" is now a `type="button"` that calls a dedicated `handleSendAnother` — it clears `lastAcceptUrl`, resets the form to `{ email: "", role: "member" }`, and refocuses the email input. It NO LONGER submits the form. | Fixes the `ConvexError: An active invitation already exists for this email address.` that fired when the user clicked "Send another" while the previous email was still in the field — the old click triggered a form submit with the same email, which the server's duplicate-pending guard rejected. Now the user must type a new email before "Send invitation" appears again, matching the natural mental model. |

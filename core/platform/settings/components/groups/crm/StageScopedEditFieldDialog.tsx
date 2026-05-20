@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 import { parseOptions } from "./CreateFieldDialog";
 
@@ -97,7 +98,7 @@ export function StageScopedEditFieldDialog({
 				toast.success("Field updated");
 				onOpenChange(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to update field");
+				toast.error(normalizeError(err, "Failed to update field"));
 			}
 		},
 	});

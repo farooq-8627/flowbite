@@ -8,6 +8,7 @@ import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-selec
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FILE_CATEGORIES } from "@/core/data-io/files/file-categories";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 import type { OrgSettings } from "../../../types";
 import { SettingsRow } from "../../shared/SettingsRow";
 import { SettingsSection } from "../../shared/SettingsSection";
@@ -54,7 +55,7 @@ export function FilePolicySection({ org, orgId }: { org: OrgSettings; orgId: Id<
 			toast.success("File policy saved");
 		} catch (err) {
 			toast.error("Couldn't save", {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		} finally {
 			setIsSaving(false);
@@ -81,7 +82,11 @@ export function FilePolicySection({ org, orgId }: { org: OrgSettings; orgId: Id<
 					emptyText="No categories found."
 				/>
 			</SettingsRow>
-			<SettingsRow label="Max file size (MB)" description="Per-file upload limit." controlClassName="sm:min-w-auto">
+			<SettingsRow
+				label="Max file size (MB)"
+				description="Per-file upload limit."
+				controlClassName="sm:min-w-auto"
+			>
 				<Input
 					type="number"
 					min={1}

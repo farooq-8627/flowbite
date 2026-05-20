@@ -3,37 +3,50 @@
 /**
  * CompanyDrawer — unified add + edit form for companies.
  *
- * Round 5 redesign:
- *   - Premium density (gap-2.5 between fields, h-9 inputs, 11px labels)
- *   - Section headers as small-caps + hairline divider (no heavy collapsibles)
- *   - Two-column layout for industry + website (related short fields)
- *   - MultiSelect for assignees + people (no pill row above the trigger)
+ * REDESIGN (2026-05-21):
+ *   - Body is rendered by `EntityFieldForm slot="company"` — all fields (name,
+ *     industry, website, assignee, tags + any user-added custom fields) come
+ *     from `fieldDefinitions`. Order follows the admin's reorder in
+ *     Settings → Modules → Company → Fields. Mirrors the AddDealDrawer
+ *     pattern so all entity forms behave identically.
+ *   - The `personCodes[]` "who works at this company" join is preserved as a
+ *     special section because it's a company-only n:m link that doesn't fit
+ *     the standard column/fieldValues/join field model. The MultiSelect
+ *     remains, but only for People — assignees are handled via the dynamic
+ *     `assignedTo` field which is single-assignee.
+ *   - Files are rendered after the dynamic form using the file buffer like
+ *     the deals form does (commits after company create with companyCode as
+ *     the scopeId).
  *
  * SCHEMA NOTES:
- *   - `assignees[]` is the canonical multi-assignee field.
+ *   - `assignees[]` (multi) was used by the legacy hardcoded form. The
+ *     dynamic form uses single `assignedTo` (the seeded "assignee" field is
+ *     single-relation). When the user picks an assignee we set both
+ *     `assignedTo` AND `assignees: [assignedTo]` so the multi-assignee badge
+ *     code paths still work.
  *   - `personCodes[]` is the canonical "who works at this company" join.
- *   - In edit mode, both arrays start populated from the doc and any change
- *     is written via `companies.mutations.update`.
  */
 
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
-	CreateModeFileField,
 	FileBufferProvider,
 	useFileBuffer,
 } from "@/core/data-io/files/components/CreateModeFileField";
+import {
+	EntityFieldForm,
+	type EntityFormValues,
+} from "@/core/entities/shared/components/EntityFieldForm";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
 import { useUpdateCompany } from "@/core/entities/shared/hooks/useEntityMutations";
-import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 type Mode = "add" | "edit";
 
@@ -46,95 +59,191 @@ interface CompanyDrawerProps {
 	company?: Doc<"companies"> | null;
 }
 
-interface UserOption extends MultiSelectOption {
-	avatarUrl?: string;
-}
-
 interface PersonOption extends MultiSelectOption {
 	personCode: string;
 }
 
+const EMPTY_VALUES: EntityFormValues = {
+	columnValues: {},
+	customValues: {},
+	joinValues: {},
+	fieldIdByName: {},
+};
+
 export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: CompanyDrawerProps) {
 	const labels = useEntityLabels();
 
-	const [name, setName] = useState("");
-	const [industry, setIndustry] = useState("");
-	const [website, setWebsite] = useState("");
-	const [assignees, setAssignees] = useState<string[]>([]); // userIds
 	const [personCodes, setPersonCodes] = useState<string[]>([]);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const create = useMutation(api.crm.entities.companies.mutations.create);
 	const update = useUpdateCompany();
+	const bulkSetCustom = useMutation(api.crm.fields.fieldValues.mutations.bulkSet);
 
-	// Buffered file uploads — files added during create are committed under
-	// scope="company" / scopeId=companyCode after the org row is written. For
-	// edit mode the same buffer commits using the existing companyCode so the
-	// pattern is symmetric. (Mirrors the wiring in AddLeadDrawer.)
+	// Shared tag subscription for the buffered tag picker (so we can resolve
+	// tag names → tagIds at submit time).
+	const tagsByOrg = useOrgTags(orgId);
+	const createTag = useMutation(api.crm.shared.tags.mutations.create);
+	const attachTag = useMutation(api.crm.shared.tags.mutations.attachToEntity);
+
+	// Buffered file uploads — committed under scope="company"/scopeId=companyCode
+	// after the row is written. Same wiring as AddDealDrawer / AddLeadDrawer.
 	const fileBuffer = useFileBuffer(orgId);
+	const { reset: resetFileBuffer } = fileBuffer;
 
-	const members = useOrgMembers();
 	const availablePersons = useQuery(
 		api.crm.entities.companies.queries.listPersonsWithoutCompany,
 		orgId ? { orgId } : "skip",
 	);
 
-	// Populate from the doc when (re)opened.
+	// Holder for the form-values getter (registered by EntityFieldForm).
+	const valuesGetterRef = useRef<() => EntityFormValues>(() => EMPTY_VALUES);
+
+	// Reset state when the drawer opens / closes / switches to a different
+	// company. EntityFieldForm handles its own column/custom value sync from
+	// the `entity` prop — we only manage the company-specific personCodes
+	// section here.
 	useEffect(() => {
 		if (!open) return;
-		fileBuffer.reset();
+		resetFileBuffer();
 		if (mode === "edit" && company) {
-			setName(company.name ?? "");
-			setIndustry(company.industry ?? "");
-			setWebsite(company.website ?? "");
-			setAssignees(((company.assignees ?? []) as string[]).slice());
 			setPersonCodes((company.personCodes ?? []).slice());
-		} else if (mode === "add") {
-			setName("");
-			setIndustry("");
-			setWebsite("");
-			setAssignees([]);
+		} else {
 			setPersonCodes([]);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- fileBuffer.reset is stable (useCallback with [])
-	}, [open, mode, company, fileBuffer.reset]);
+	}, [open, mode, company, resetFileBuffer]);
 
 	const handleSubmit = async () => {
-		if (!orgId || !name.trim()) return;
+		if (!orgId) return;
+		const values = valuesGetterRef.current();
+		const col = values.columnValues;
+		const name = String(col.name ?? company?.name ?? "").trim();
+		if (!name) {
+			toast.error("Name is required");
+			return;
+		}
 		setIsSubmitting(true);
+
 		try {
+			let entityId: Id<"companies"> | undefined;
 			let scopeId: string | undefined;
+
 			if (mode === "add") {
 				const created = await create({
 					orgId,
-					name: name.trim(),
-					industry: industry.trim() || undefined,
-					website: website.trim() || undefined,
-					assignedTo: assignees[0] as Id<"users"> | undefined,
-					assignees: assignees.length
-						? (assignees as unknown as Id<"users">[])
+					name,
+					industry:
+						typeof col.industry === "string" && col.industry.trim()
+							? col.industry.trim()
+							: undefined,
+					website:
+						typeof col.website === "string" && col.website.trim()
+							? col.website.trim()
+							: undefined,
+					assignedTo: col.assignedTo as Id<"users"> | undefined,
+					assignees: col.assignedTo
+						? ([col.assignedTo] as unknown as Id<"users">[])
 						: undefined,
 					personCodes: personCodes.length ? personCodes : undefined,
 				});
+				entityId = (created as { companyId?: Id<"companies"> } | undefined)?.companyId;
 				scopeId = (created as { companyCode?: string } | undefined)?.companyCode;
 				toast.success(`${labels.company.singular} created`);
 			} else if (mode === "edit" && company) {
 				await update({
 					orgId,
 					companyId: company._id as Id<"companies">,
-					name: name.trim(),
-					industry: industry.trim() || undefined,
-					website: website.trim() || undefined,
-					assignedTo: assignees[0] as Id<"users"> | undefined,
-					assignees: assignees as unknown as Id<"users">[],
+					name,
+					industry:
+						typeof col.industry === "string" && col.industry.trim()
+							? col.industry.trim()
+							: undefined,
+					website:
+						typeof col.website === "string" && col.website.trim()
+							? col.website.trim()
+							: undefined,
+					assignedTo: col.assignedTo as Id<"users"> | undefined,
+					assignees: col.assignedTo
+						? ([col.assignedTo] as unknown as Id<"users">[])
+						: undefined,
 					personCodes,
 				});
+				entityId = company._id as Id<"companies">;
 				scopeId = company.companyCode;
 				toast.success(`${labels.company.singular} updated`);
 			}
 
-			// Flush buffered file uploads to the company scope so they're
-			// reachable from the company detail view via files.queries.listByScope.
+			// Persist any custom fieldValues using the field-id map exposed by
+			// EntityFieldForm.
+			const customEntries = Object.entries(values.customValues).filter(
+				([, v]) => v !== undefined && v !== null && v !== "",
+			);
+			if (entityId && customEntries.length > 0) {
+				try {
+					const payload = customEntries
+						.map(([fieldName, value]) => {
+							const fid = values.fieldIdByName[fieldName];
+							return fid ? { fieldId: fid, value } : null;
+						})
+						.filter(
+							(x): x is { fieldId: Id<"fieldDefinitions">; value: unknown } =>
+								x !== null,
+						);
+					if (payload.length > 0) {
+						await bulkSetCustom({
+							orgId,
+							entityType: "company",
+							entityId: entityId as string,
+							values: payload,
+						});
+					}
+				} catch (err) {
+					toast.error("Couldn't save custom fields", {
+						description: normalizeErrorDescription(err),
+					});
+				}
+			}
+
+			// Buffered tags (create mode only — edit mode uses TagsCell directly).
+			if (mode === "add" && entityId && values.joinValues.tags) {
+				const tagBuf = values.joinValues.tags;
+				const tagNames = (
+					Array.isArray(tagBuf)
+						? (tagBuf as unknown[]).filter(
+								(t): t is string => typeof t === "string" && t.trim().length > 0,
+							)
+						: typeof tagBuf === "string" && tagBuf.trim()
+							? [tagBuf]
+							: []
+				).map((s) => s.trim());
+				if (tagNames.length > 0) {
+					try {
+						const existingByName = new Map(
+							(tagsByOrg ?? []).map((t) => [t.name.toLowerCase(), t._id] as const),
+						);
+						for (const tagName of tagNames) {
+							let tagId = existingByName.get(tagName.toLowerCase());
+							if (!tagId) {
+								tagId = await createTag({ orgId, name: tagName });
+							}
+							if (tagId) {
+								await attachTag({
+									orgId,
+									tagId,
+									entityType: "company",
+									entityId: entityId as string,
+								});
+							}
+						}
+					} catch (err) {
+						toast.error("Couldn't attach tags", {
+							description: normalizeErrorDescription(err),
+						});
+					}
+				}
+			}
+
+			// Flush buffered file uploads to the company scope.
 			if (scopeId) {
 				try {
 					await fileBuffer.commitAll({ scope: "company", scopeId });
@@ -147,27 +256,15 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 		} catch (err) {
 			toast.error(
 				`Couldn't ${mode === "add" ? "create" : "update"} ${labels.company.singular.toLowerCase()}`,
-				{ description: err instanceof Error ? err.message : undefined },
+				{ description: normalizeErrorDescription(err) },
 			);
 		} finally {
 			setIsSubmitting(false);
 		}
 	};
 
-	// MultiSelect options
-	const memberOptions: UserOption[] = useMemo(
-		() =>
-			(members ?? []).map((m) => ({
-				value: m.userId as string,
-				label: m.user?.name ?? m.user?.email ?? "Unknown",
-				subtitle: m.user?.email,
-				avatarUrl: m.user?.avatarUrl,
-			})),
-		[members],
-	);
-
-	// In edit mode, always include any already-selected personCodes that aren't
-	// in the available list (they're filtered out of `listPersonsWithoutCompany`).
+	// Person picker options — include any already-selected codes that are no
+	// longer in `listPersonsWithoutCompany` (already attached to a company).
 	const personOptions: PersonOption[] = useMemo(() => {
 		const base = (availablePersons ?? []).map((p) => ({
 			value: p.personCode,
@@ -199,92 +296,32 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 			onSubmit={handleSubmit}
 			isSubmitting={isSubmitting}
 			submitLabel={mode === "add" ? "Create" : "Save"}
-			submitDisabled={!name.trim()}
 		>
 			<FileBufferProvider value={fileBuffer}>
 				<div className="flex flex-col gap-4">
-					{/* Identity */}
-					<section className="flex flex-col gap-2.5">
-						<div className="flex flex-col gap-1">
-							<Label className="text-[11px] font-medium leading-none">
-								Name
-								<span className="ms-0.5 text-destructive/60">*</span>
-							</Label>
-							<Input
-								value={name}
-								onChange={(e) => setName(e.target.value)}
-								placeholder={`${labels.company.singular} name`}
-								className="h-9 w-full text-sm"
-							/>
-						</div>
-						{/* Industry + Website paired (both short single-line) */}
-						<div className="grid grid-cols-2 gap-2.5">
-							<div className="flex flex-col gap-1">
-								<Label className="text-[11px] font-medium leading-none">
-									Industry
-								</Label>
-								<Input
-									value={industry}
-									onChange={(e) => setIndustry(e.target.value)}
-									placeholder="Technology"
-									className="h-9 w-full text-sm"
-								/>
-							</div>
-							<div className="flex flex-col gap-1">
-								<Label className="text-[11px] font-medium leading-none">
-									Website
-								</Label>
-								<Input
-									value={website}
-									onChange={(e) => setWebsite(e.target.value)}
-									placeholder="https://…"
-									className="h-9 w-full text-sm"
-								/>
-							</div>
-						</div>
-					</section>
+					{/* Dynamic fields from `fieldDefinitions` for slot=company.
+					    Order follows Settings → Modules → Company → Fields. */}
+					<EntityFieldForm
+						slot="company"
+						orgId={orgId}
+						entity={mode === "edit" ? (company ?? undefined) : undefined}
+						registerGetValues={(getter) => {
+							valuesGetterRef.current = getter;
+						}}
+					/>
 
-					{/* Team */}
+					{/* People — company-specific n:m relationship. */}
 					<section className="flex flex-col gap-2.5">
 						<div className="flex items-center gap-2">
 							<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-								Team
+								People
 							</span>
 							<div className="h-px flex-1 bg-border" />
 						</div>
 						<div className="flex flex-col gap-1">
 							<Label className="text-[11px] font-medium leading-none">
-								Assignees
+								Works at this {labels.company.singular.toLowerCase()}
 							</Label>
-							<MultiSelect<UserOption>
-								value={assignees}
-								onChange={setAssignees}
-								options={memberOptions}
-								placeholder="Add team members…"
-								searchPlaceholder="Search members…"
-								emptyText="No members."
-								renderRow={(opt) => (
-									<>
-										<Avatar className="size-5 shrink-0">
-											<AvatarImage src={opt.avatarUrl} alt={opt.label} />
-											<AvatarFallback className="text-[8px]">
-												{opt.label.slice(0, 1).toUpperCase()}
-											</AvatarFallback>
-										</Avatar>
-										<div className="flex min-w-0 flex-col leading-tight">
-											<span className="truncate text-sm">{opt.label}</span>
-											{opt.subtitle && (
-												<span className="truncate text-[11px] text-muted-foreground">
-													{opt.subtitle}
-												</span>
-											)}
-										</div>
-									</>
-								)}
-							/>
-						</div>
-						<div className="flex flex-col gap-1">
-							<Label className="text-[11px] font-medium leading-none">People</Label>
 							<MultiSelect<PersonOption>
 								value={personCodes}
 								onChange={setPersonCodes}
@@ -310,24 +347,6 @@ export function CompanyDrawer({ open, onOpenChange, orgId, mode, company }: Comp
 							/>
 						</div>
 					</section>
-
-					{/* Files — buffered upload during create, committed on submit */}
-					{orgId && (
-						<section className="flex flex-col gap-2.5">
-							<div className="flex items-center gap-2">
-								<span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-									Files
-								</span>
-								<div className="h-px flex-1 bg-border" />
-							</div>
-							<CreateModeFileField
-								orgId={orgId}
-								fieldKey="_default"
-								label="Files"
-								multiple
-							/>
-						</section>
-					)}
 				</div>
 			</FileBufferProvider>
 		</FormDrawer>

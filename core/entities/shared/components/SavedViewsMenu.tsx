@@ -39,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/convex/_generated/api";
 import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
 export interface SavedView {
@@ -115,7 +116,7 @@ export function SavedViewsMenu({
 			onApply(next);
 		} catch (err) {
 			toast.error("Couldn't save view", {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		}
 	};
@@ -129,7 +130,7 @@ export function SavedViewsMenu({
 			onApply(null);
 		} catch (err) {
 			toast.error("Couldn't delete view", {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		}
 	};

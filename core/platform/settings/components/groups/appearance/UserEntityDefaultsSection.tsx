@@ -22,6 +22,7 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { EntitySlot, ViewKind } from "@/core/entities/shared/types";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 const SLOTS: EntitySlot[] = ["lead", "contact", "deal", "company"];
 
@@ -72,7 +73,7 @@ export function UserEntityDefaultsSection({
 			toast.success("Default view preferences saved");
 		} catch (err) {
 			toast.error("Failed to save", {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		} finally {
 			setSaving(false);

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import { SettingsSection } from "../../shared/SettingsSection";
 import { CreateRoleDialog, RoleEditorDialog } from "./RoleEditor";
 
@@ -27,13 +28,7 @@ type Role = Doc<"orgRoles">;
  * subscription — see AGENTS.md "Per-row data on a list view comes from one
  * batched query".
  */
-export function RolesSection({
-	orgId,
-	roles,
-}: {
-	orgId: Id<"orgs">;
-	roles: Role[] | undefined;
-}) {
+export function RolesSection({ orgId, roles }: { orgId: Id<"orgs">; roles: Role[] | undefined }) {
 	const remove = useMutation(api.orgRoles.mutations.remove);
 
 	const [editing, setEditing] = useState<Role | null>(null);
@@ -51,7 +46,7 @@ export function RolesSection({
 			await remove({ roleId: role._id });
 			toast.success(`Deleted role "${role.name}"`);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to delete role");
+			toast.error(normalizeError(err, "Failed to delete role"));
 		}
 	};
 

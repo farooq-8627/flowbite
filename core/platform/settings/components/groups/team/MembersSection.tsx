@@ -28,6 +28,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 import { SettingsSection } from "../../shared/SettingsSection";
 import { InviteMemberDialog } from "./InviteMemberDialog";
 
@@ -175,10 +176,10 @@ export function MembersSection({
 																						);
 																					} catch (err) {
 																						toast.error(
-																							err instanceof
-																								Error
-																								? err.message
-																								: "Failed to change role",
+																							normalizeError(
+																								err,
+																								"Failed to change role",
+																							),
 																						);
 																					}
 																				}}
@@ -208,9 +209,10 @@ export function MembersSection({
 																			);
 																		} catch (err) {
 																			toast.error(
-																				err instanceof Error
-																					? err.message
-																					: "Failed to remove member",
+																				normalizeError(
+																					err,
+																					"Failed to remove member",
+																				),
 																			);
 																		}
 																	}}

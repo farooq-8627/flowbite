@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/select";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
 import { DangerZone } from "../shared/DangerZone";
@@ -118,7 +119,7 @@ function DeleteWorkspaceDialog({ org, orgId }: { org: OrgSettings; orgId: Id<"or
 			setOpen(false);
 			router.push("/");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to delete workspace");
+			toast.error(normalizeError(err, "Failed to delete workspace"));
 			setDeleting(false);
 		}
 	};

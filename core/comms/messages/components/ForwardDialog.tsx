@@ -43,6 +43,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useInbox, useSendMessage } from "@/core/comms/messages/hooks";
 import type { BatchedEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
 import { useEntityDisplaysBatched } from "@/core/comms/messages/hooks/useEntityDisplaysBatched";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 
@@ -189,7 +190,7 @@ export function ForwardDialog({ orgId, message, open, onOpenChange }: ForwardDia
 				});
 				succeeded += 1;
 			} catch (err) {
-				errors.push(err instanceof Error ? err.message : "Unknown error");
+				errors.push(normalizeError(err, "Unknown error"));
 			}
 		}
 		setPending(false);
@@ -254,7 +255,11 @@ export function ForwardDialog({ orgId, message, open, onOpenChange }: ForwardDia
 								row={row}
 								checked={selected.has(String(row.conversation._id))}
 								onToggle={() => toggle(row.conversation._id)}
-								display={displaysMap?.[`${row.conversation.entityType}:${row.conversation.entityId}`]}
+								display={
+									displaysMap?.[
+										`${row.conversation.entityType}:${row.conversation.entityId}`
+									]
+								}
 							/>
 						))}
 					</ul>

@@ -5,16 +5,17 @@ import { toast } from "sonner";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
+import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import {
 	useAttachTagToEntity,
 	useDetachTagFromEntity,
 	useMoveDealToStage,
 	useUpdateDeal,
 } from "@/core/entities/shared/hooks/useEntityMutations";
-import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import { NO_GROUP_KEY } from "@/core/entities/shared/utils/board-grouping";
-import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { RankedSearchResult } from "@/core/entities/shared/utils/search";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 type DealRow = Record<string, unknown> & { id: string };
 
@@ -30,7 +31,9 @@ interface UseDealsBoardArgs {
 	orgId: Id<"orgs"> | undefined;
 	groupBy: string;
 	pipeline: Doc<"pipelines"> | undefined;
-	grouped: Record<string, Array<Doc<"deals"> & { daysInStage: number; isStale: boolean }>> | undefined;
+	grouped:
+		| Record<string, Array<Doc<"deals"> & { daysInStage: number; isStale: boolean }>>
+		| undefined;
 	rankedItems: RankedSearchResult<DealRow>;
 	memberNameById: Map<string, string>;
 	onBlockPolicy?: (data: BlockPolicyData) => void;
@@ -192,10 +195,20 @@ export function useDealsBoard({
 				if (groupBy === "tag" || groupBy === "tags") {
 					await updateDeal({ orgId, dealId: itemId as Id<"deals">, sortOrder });
 					if (fromCol !== NO_GROUP_KEY) {
-						await detachTag({ orgId, tagId: fromCol as Id<"tags">, entityType: "deal", entityId: itemId });
+						await detachTag({
+							orgId,
+							tagId: fromCol as Id<"tags">,
+							entityType: "deal",
+							entityId: itemId,
+						});
 					}
 					if (toCol !== NO_GROUP_KEY) {
-						await attachTag({ orgId, tagId: toCol as Id<"tags">, entityType: "deal", entityId: itemId });
+						await attachTag({
+							orgId,
+							tagId: toCol as Id<"tags">,
+							entityType: "deal",
+							entityId: itemId,
+						});
 					}
 					return;
 				}
@@ -233,7 +246,7 @@ export function useDealsBoard({
 					return;
 				}
 				toast.error(`Couldn't move ${labels.deal.singular.toLowerCase()}`, {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},

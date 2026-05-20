@@ -31,6 +31,7 @@ import {
 	isFileAllowed,
 } from "@/core/data-io/files/file-categories";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,7 +154,7 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 						});
 					} catch (err) {
 						toast.error(`Couldn't upload ${file.name}`, {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}
@@ -171,7 +172,7 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 				await removeMutation({ orgId, fileId });
 			} catch (err) {
 				toast.error("Couldn't delete file", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -246,7 +247,7 @@ export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
 						]);
 					} catch (err) {
 						toast.error(`Couldn't upload ${file.name}`, {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}
@@ -279,7 +280,7 @@ export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
 					});
 				} catch (err) {
 					toast.error(`Couldn't attach ${f.name}`, {
-						description: err instanceof Error ? err.message : undefined,
+						description: normalizeErrorDescription(err),
 					});
 				}
 			}
@@ -399,9 +400,7 @@ export function FileList({
 		[files],
 	);
 
-	const documents = files.filter(
-		(f) => !isImageMime(f.mimeType) && !isVideoMime(f.mimeType),
-	);
+	const documents = files.filter((f) => !isImageMime(f.mimeType) && !isVideoMime(f.mimeType));
 
 	if (files.length === 0 && uploading.length === 0) {
 		return <p className={cn("text-xs text-muted-foreground", className)}>{emptyText}</p>;
@@ -475,10 +474,7 @@ export function FileList({
 									)}
 								</button>
 								<div className="mt-1 flex items-baseline justify-between gap-2 px-0.5 text-[11px]">
-									<span
-										className="truncate text-foreground"
-										title={p.name}
-									>
+									<span className="truncate text-foreground" title={p.name}>
 										{p.name}
 									</span>
 									<span className="shrink-0 text-muted-foreground tabular-nums">

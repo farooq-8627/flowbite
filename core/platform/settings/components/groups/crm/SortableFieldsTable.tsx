@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import type { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 
 type FieldDef = Doc<"fieldDefinitions">;
 
@@ -64,7 +65,7 @@ export function SortableFieldsTable({
 		try {
 			await reorder({ orgId, fieldIds: next.map((f) => f._id) });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't reorder");
+			toast.error(normalizeError(err, "Couldn't reorder"));
 		}
 	};
 
@@ -198,11 +199,7 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 									isHidden ? `Showing "${f.label}"` : `Hidden "${f.label}"`,
 								);
 							} catch (err) {
-								toast.error(
-									err instanceof Error
-										? err.message
-										: "Failed to toggle visibility",
-								);
+								toast.error(normalizeError(err, "Failed to toggle visibility"));
 							}
 						}}
 						aria-label={isHidden ? "Show field" : "Hide field"}
@@ -233,9 +230,7 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 								await remove({ orgId, fieldId: f._id });
 								toast.success(`Deleted "${f.label}"`);
 							} catch (err) {
-								toast.error(
-									err instanceof Error ? err.message : "Failed to delete field",
-								);
+								toast.error(normalizeError(err, "Failed to delete field"));
 							}
 						}}
 						aria-label="Delete field"

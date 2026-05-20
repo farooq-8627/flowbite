@@ -38,6 +38,7 @@ import {
 	useUpdateLead,
 } from "@/core/entities/shared/hooks/useEntityMutations";
 import type { EntitySlot } from "@/core/entities/shared/types";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { type FieldDef, getInputRenderer } from "../inputs/input-dispatcher";
 
@@ -183,7 +184,7 @@ export function InlineFieldEdit({
 
 		// Fire-and-forget with a passive toast on success / explicit on error.
 		void work.catch((err: unknown) => {
-			toast.error(err instanceof Error ? err.message : `Couldn't save ${field.label}`);
+			toast.error(normalizeError(err, `Couldn't save ${field.label}`));
 		});
 	};
 

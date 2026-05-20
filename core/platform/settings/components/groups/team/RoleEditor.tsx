@@ -29,6 +29,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeError } from "@/lib/normalizeError";
 import { getPermissionModules } from "../../../config/permissions-catalog";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 
@@ -214,7 +215,7 @@ export function RoleEditorDialog({
 				toast.success(`Role "${role.name}" updated`);
 				onOpenChange(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to save role");
+				toast.error(normalizeError(err, "Failed to save role"));
 			}
 		},
 	});
@@ -364,7 +365,7 @@ export function CreateRoleDialog({
 				setSelected(new Set());
 				onOpenChange(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to create role");
+				toast.error(normalizeError(err, "Failed to create role"));
 			}
 		},
 	});

@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 import { type FileCategory, isFileAllowed } from "../file-categories";
 import { type BufferedFile, BufferedFileUpload } from "./FileUpload";
 
@@ -109,7 +110,7 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 						}));
 					} catch (err) {
 						toast.error(`Couldn't upload ${file.name}`, {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}
@@ -158,7 +159,7 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 						});
 					} catch (err) {
 						toast.error(`Couldn't attach ${f.name}`, {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}

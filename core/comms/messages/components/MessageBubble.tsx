@@ -61,6 +61,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useDeleteMessage, useEditMessage, useToggleReaction } from "@/core/comms/messages/hooks";
 import { formatChatDateTime, formatChatTime } from "@/lib/datetime";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 import { ForwardDialog } from "./ForwardDialog";
@@ -309,7 +310,7 @@ export function MessageBubble({
 			});
 			setIsEditing(false);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't save edit.");
+			toast.error(normalizeError(err, "Couldn't save edit."));
 		} finally {
 			setBusy(false);
 		}
@@ -326,7 +327,7 @@ export function MessageBubble({
 					mode,
 				});
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't delete.");
+				toast.error(normalizeError(err, "Couldn't delete."));
 			} finally {
 				setBusy(false);
 			}
@@ -343,7 +344,7 @@ export function MessageBubble({
 					emoji,
 				});
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't update reaction.");
+				toast.error(normalizeError(err, "Couldn't update reaction."));
 			}
 		},
 		[message._id, message.orgId, toggleReaction],

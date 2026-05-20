@@ -21,6 +21,7 @@ import {
 } from "@/core/entities/shared/components/EntityFieldForm";
 import { useUpdateLead } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 interface EditLeadDrawerProps {
 	open: boolean;
@@ -82,7 +83,7 @@ export function EditLeadDrawer({ open, onOpenChange, orgId, lead }: EditLeadDraw
 			onOpenChange(false);
 		} catch (err) {
 			toast.error(`Couldn't update ${labels.lead.singular.toLowerCase()}`, {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		} finally {
 			setIsSubmitting(false);

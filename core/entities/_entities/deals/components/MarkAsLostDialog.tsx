@@ -41,6 +41,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 
 interface MarkAsLostDialogProps {
 	deal: Doc<"deals">;
@@ -80,7 +81,7 @@ export function MarkAsLostDialog({ deal, open, onOpenChange, onMarked }: MarkAsL
 			onOpenChange(false);
 			onMarked?.();
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't mark as lost");
+			toast.error(normalizeError(err, "Couldn't mark as lost"));
 		} finally {
 			setSubmitting(false);
 		}
@@ -93,8 +94,7 @@ export function MarkAsLostDialog({ deal, open, onOpenChange, onMarked }: MarkAsL
 					<DialogTitle>Mark deal as lost</DialogTitle>
 					<DialogDescription>
 						This closes the deal and removes it from the open pipeline. You can still
-						see it in reports — but reminders, follow-ups, and notifications will
-						stop.
+						see it in reports — but reminders, follow-ups, and notifications will stop.
 					</DialogDescription>
 				</DialogHeader>
 

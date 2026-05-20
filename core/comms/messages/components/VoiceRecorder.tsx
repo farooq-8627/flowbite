@@ -25,6 +25,7 @@
 import { Loader2, Mic, Pause, Play, RotateCcw, Send, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -189,7 +190,7 @@ export function VoiceRecorder({ disabled, onSend, onClose, className }: Props) {
 			blobRef.current = null;
 			onClose();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Couldn't send voice note.");
+			setError(normalizeError(err, "Couldn't send voice note."));
 			setPhase("preview");
 		}
 	}, [onClose, onSend, previewUrl]);

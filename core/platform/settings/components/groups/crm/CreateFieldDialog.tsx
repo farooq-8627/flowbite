@@ -34,6 +34,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 
 export const FIELD_TYPES = [
@@ -142,7 +143,7 @@ export function CreateFieldDialog({
 				});
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to create field");
+				toast.error(normalizeError(err, "Failed to create field"));
 			}
 		},
 	});

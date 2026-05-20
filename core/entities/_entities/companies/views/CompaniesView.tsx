@@ -52,6 +52,7 @@ import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurre
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeError, normalizeErrorDescription } from "@/lib/normalizeError";
 import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 
 type CompanyRow = Record<string, unknown> & { id: string };
@@ -309,7 +310,7 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				}
 			} catch (err) {
 				toast.error("Couldn't update", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -335,7 +336,7 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				});
 				toast.success(`${labels.company.singular} deleted`);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't delete");
+				toast.error(normalizeError(err, "Couldn't delete"));
 			}
 		},
 		rowExtraActions: (row) => (

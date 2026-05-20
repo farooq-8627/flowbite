@@ -39,6 +39,7 @@ import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-o
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMenu";
 import { getStatusColor, LEAD_STATUSES } from "@/core/entities/shared/config/defaults";
+import { useCompaniesByPersonCodes } from "@/core/entities/shared/hooks/useCompaniesByPersonCodes";
 import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
@@ -48,7 +49,6 @@ import {
 	useUpdateLead,
 } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
-import { useCompaniesByPersonCodes } from "@/core/entities/shared/hooks/useCompaniesByPersonCodes";
 import { useModuleDisplay } from "@/core/entities/shared/hooks/useModuleDisplay";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import {
@@ -62,6 +62,7 @@ import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurre
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeError, normalizeErrorDescription } from "@/lib/normalizeError";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AddLeadDrawer } from "../components/AddLeadDrawer";
 import { ConvertLeadDrawer } from "../components/ConvertLeadDrawer";
@@ -239,7 +240,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 			try {
 				await remove(row.id as Id<"leads">);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't delete");
+				toast.error(normalizeError(err, "Couldn't delete"));
 			}
 		},
 		rowExtraActions: (row) => (
@@ -529,7 +530,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 				}
 			} catch (err) {
 				toast.error("Couldn't update", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -554,7 +555,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 		try {
 			await remove(leadId);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't delete");
+			toast.error(normalizeError(err, "Couldn't delete"));
 		}
 	};
 
@@ -564,7 +565,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 			await updateLead({ orgId, leadId, status: "lost" });
 			toast.success(`${labels.lead.singular} marked as lost`);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't mark as lost");
+			toast.error(normalizeError(err, "Couldn't mark as lost"));
 		}
 	};
 
@@ -578,7 +579,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 				);
 			} catch (err) {
 				toast.error("Convert failed", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},

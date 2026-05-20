@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
+import { normalizeError } from "@/lib/normalizeError";
 import type { resolveEntityLabels } from "../../../types";
 import { SettingsSection } from "../../shared/SettingsSection";
 
@@ -68,7 +69,7 @@ export function TagsSection({ orgId, labels }: TagsSectionProps) {
 			toast.success(`Added tag "${name}"`);
 			setNewTag("");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to add tag");
+			toast.error(normalizeError(err, "Failed to add tag"));
 		}
 	};
 
@@ -104,9 +105,7 @@ export function TagsSection({ orgId, labels }: TagsSectionProps) {
 											await remove({ orgId, tagId: t._id });
 										} catch (err) {
 											toast.error(
-												err instanceof Error
-													? err.message
-													: "Failed to remove tag",
+												normalizeError(err, "Failed to remove tag"),
 											);
 										}
 									}}

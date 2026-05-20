@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { APP_CONFIG } from "@/config/app-config";
 import { OnboardingLayout } from "@/core/shell/onboarding/layouts/OnboardingLayout";
 import { ONBOARDING_STEPS } from "@/core/shell/onboarding/steps/steps-config";
 
@@ -82,7 +83,7 @@ export function OrgNameStep() {
 						<FieldLabel htmlFor="org-slug">URL Slug</FieldLabel>
 						<div className="flex items-center rounded-[var(--radius)] border border-input bg-background ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
 							<span className="select-none border-r border-input px-3 py-2 text-muted-foreground text-sm">
-								orbitly.app/
+								{APP_CONFIG.url.replace(/https?:\/\//, "")}/
 							</span>
 							<input
 								id="org-slug"

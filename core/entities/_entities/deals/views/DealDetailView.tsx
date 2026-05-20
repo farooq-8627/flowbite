@@ -40,8 +40,8 @@ import { useDealsBoard } from "@/core/entities/_entities/deals/hooks/useDealsBoa
 import { useActiveDealPipeline } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
 import {
-	type EntityShortcut,
 	EntityCard,
+	type EntityShortcut,
 	type MenuAction,
 } from "@/core/entities/shared/components/EntityCard";
 import { SavedViewsMenu } from "@/core/entities/shared/components/SavedViewsMenu";
@@ -50,11 +50,13 @@ import { ViewOptionsMenu } from "@/core/entities/shared/components/ViewOptionsMe
 import { useEntityColumns } from "@/core/entities/shared/hooks/useEntityColumns";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
-import { useSoftDeleteDeal } from "@/core/entities/shared/hooks/useEntityMutations";
+import {
+	useMoveDealToStage,
+	useSoftDeleteDeal,
+} from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
 import { buildEntityBoardTour } from "@/core/entities/shared/tours";
-import { useMoveDealToStage } from "@/core/entities/shared/hooks/useEntityMutations";
 import {
 	getHiddenCardFieldsForGrouping,
 	getRevealedCardFieldForGrouping,
@@ -67,6 +69,7 @@ import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu"
 import { useNavSlot } from "@/core/shell/shell/context/nav-slot-context";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 type DealRow = Record<string, unknown> & { id: string };
 
@@ -80,8 +83,14 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const defaultCardFields = useMemo(() => dealFields.map((f) => f.name), [dealFields]);
 	const canViewValues = useOrgPermission(orgId, "deals.viewValues");
 	const [search, setSearch] = useState("");
-	const [cardFields, setCardFields] = usePersistedState<string[]>("viewopts:deal:cardFields:v2", []);
-	const [groupBy, setGroupBy] = usePersistedState<string>("viewopts:deal:groupBy", "currentStageId");
+	const [cardFields, setCardFields] = usePersistedState<string[]>(
+		"viewopts:deal:cardFields:v2",
+		[],
+	);
+	const [groupBy, setGroupBy] = usePersistedState<string>(
+		"viewopts:deal:groupBy",
+		"currentStageId",
+	);
 	const [stageFilter, setStageFilter] = useState<string | undefined>(undefined);
 	const [activeSavedViewId, setActiveSavedViewId] = useState<string | undefined>(undefined);
 
@@ -94,7 +103,11 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		});
 	}, [defaultCardFields, setCardFields]);
 
-	const { dealPipelines, activePipeline: pipelineOrNull, setActivePipelineId } = useActiveDealPipeline(orgId);
+	const {
+		dealPipelines,
+		activePipeline: pipelineOrNull,
+		setActivePipelineId,
+	} = useActiveDealPipeline(orgId);
 	const pipeline = pipelineOrNull ?? undefined;
 
 	const grouped = useQuery(
@@ -113,7 +126,8 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				.sort((a, b) => (b._creationTime ?? 0) - (a._creationTime ?? 0));
 		}
 		if (!grouped) return undefined;
-		const flat: Array<Doc<"deals"> & { id: string; daysInStage: number; isStale: boolean }> = [];
+		const flat: Array<Doc<"deals"> & { id: string; daysInStage: number; isStale: boolean }> =
+			[];
 		for (const stageDeals of Object.values(grouped)) {
 			for (const d of stageDeals) flat.push({ ...d, id: d._id as string });
 		}
@@ -127,7 +141,12 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	}, [items, stageFilter, view]);
 
 	const rankedItems = useMemo(
-		() => rankBySearch(filteredItems as SearchableItem[], search, DEAL_SEARCH_FIELDS as unknown as string[]),
+		() =>
+			rankBySearch(
+				filteredItems as SearchableItem[],
+				search,
+				DEAL_SEARCH_FIELDS as unknown as string[],
+			),
 		[filteredItems, search],
 	);
 
@@ -241,7 +260,7 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				toast.success(`${labels.deal.singular} deleted`);
 			} catch (err) {
 				toast.error(`Couldn't delete ${labels.deal.singular.toLowerCase()}`, {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -250,9 +269,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				onClick={() => {
 					setEditMode("edit");
 					setEditingDeal(
-						(rankedItems.items as Array<Record<string, unknown>>).find(
+						((rankedItems.items as Array<Record<string, unknown>>).find(
 							(d) => (d.id as string) === row.id,
-						) as Doc<"deals"> ?? null,
+						) as Doc<"deals">) ?? null,
 					);
 				}}
 			>
@@ -365,7 +384,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 									}
 									setActiveSavedViewId(v.id);
 									setCardFields(v.columns);
-									setStageFilter((v.filters?.stage as string | undefined) ?? undefined);
+									setStageFilter(
+										(v.filters?.stage as string | undefined) ?? undefined,
+									);
 								}}
 							/>
 						</div>
@@ -376,7 +397,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				renderCard={(item, isDragging) => {
 					const missingCount = missingFieldsByDealId?.[item.id] ?? 0;
 					const hasMissing = missingCount > 0;
-					const stageId = (item as Record<string, unknown>).currentStageId as string | undefined;
+					const stageId = (item as Record<string, unknown>).currentStageId as
+						| string
+						| undefined;
 					const stageName = stageId ? (stageNameById.get(stageId) ?? stageId) : "";
 
 					const shortcuts: EntityShortcut[] = hasMissing
@@ -387,9 +410,11 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 									onSelect: () => {
 										setEditMode("fillStage");
 										setEditingDeal(
-											(rankedItems.items as Array<Record<string, unknown>>).find(
+											((
+												rankedItems.items as Array<Record<string, unknown>>
+											).find(
 												(d) => (d.id as string) === item.id,
-											) as Doc<"deals"> ?? null,
+											) as Doc<"deals">) ?? null,
 										);
 									},
 									variant: "primary",
@@ -404,9 +429,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							onSelect: () => {
 								setEditMode("edit");
 								setEditingDeal(
-									(rankedItems.items as Array<Record<string, unknown>>).find(
+									((rankedItems.items as Array<Record<string, unknown>>).find(
 										(d) => (d.id as string) === item.id,
-									) as Doc<"deals"> ?? null,
+									) as Doc<"deals">) ?? null,
 								);
 							},
 						},
@@ -417,15 +442,26 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							separatorBefore: true,
 							onSelect: async () => {
 								if (!orgId) return;
-								const title = (item as Record<string, unknown>).title ?? (item as Record<string, unknown>).dealCode ?? "Untitled";
-								if (!confirm(`Delete ${labels.deal.singular.toLowerCase()} "${title}"?`)) return;
+								const title =
+									(item as Record<string, unknown>).title ??
+									(item as Record<string, unknown>).dealCode ??
+									"Untitled";
+								if (
+									!confirm(
+										`Delete ${labels.deal.singular.toLowerCase()} "${title}"?`,
+									)
+								)
+									return;
 								try {
 									await softDeleteDeal({ orgId, dealId: item.id as Id<"deals"> });
 									toast.success(`${labels.deal.singular} deleted`);
 								} catch (err) {
-									toast.error(`Couldn't delete ${labels.deal.singular.toLowerCase()}`, {
-										description: err instanceof Error ? err.message : undefined,
-									});
+									toast.error(
+										`Couldn't delete ${labels.deal.singular.toLowerCase()}`,
+										{
+											description: normalizeErrorDescription(err),
+										},
+									);
 								}
 							},
 						},
@@ -466,7 +502,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 
 			<EditDealDrawer
 				open={editingDeal !== null}
-				onOpenChange={(v) => { if (!v) setEditingDeal(null); }}
+				onOpenChange={(v) => {
+					if (!v) setEditingDeal(null);
+				}}
 				orgId={orgId}
 				deal={editingDeal}
 				mode={editMode}
@@ -475,7 +513,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 			{fillDialog && (
 				<FillMissingFieldsDialog
 					open={true}
-					onOpenChange={(v) => { if (!v) setFillDialog(null); }}
+					onOpenChange={(v) => {
+						if (!v) setFillDialog(null);
+					}}
 					orgId={orgId}
 					deal={fillDialog.deal}
 					targetStageName={fillDialog.targetStageName}
@@ -491,7 +531,7 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							});
 						} catch (err) {
 							toast.error("Couldn't move deal after filling fields", {
-								description: err instanceof Error ? err.message : undefined,
+								description: normalizeErrorDescription(err),
 							});
 						} finally {
 							setFillDialog(null);

@@ -37,6 +37,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
 interface CompanyCellProps {
@@ -52,7 +53,13 @@ interface CompanyCellProps {
 	prefetchedCompany?: { companyId: string; name: string; companyCode: string } | null;
 }
 
-export function CompanyCell({ orgId, personCode, entityType, className, prefetchedCompany }: CompanyCellProps) {
+export function CompanyCell({
+	orgId,
+	personCode,
+	entityType,
+	className,
+	prefetchedCompany,
+}: CompanyCellProps) {
 	const [open, setOpen] = useState(false);
 	const [tab, setTab] = useState<"existing" | "new">("existing");
 	const [search, setSearch] = useState("");
@@ -74,9 +81,8 @@ export function CompanyCell({ orgId, personCode, entityType, className, prefetch
 	);
 
 	// Resolve company from prefetched or query result.
-	const resolvedCompany = prefetchedCompany !== undefined
-		? (prefetchedCompany ?? undefined)
-		: company;
+	const resolvedCompany =
+		prefetchedCompany !== undefined ? (prefetchedCompany ?? undefined) : company;
 
 	const createCompany = useMutation(api.crm.entities.companies.mutations.create);
 	const addPerson = useMutation(api.crm.entities.companies.mutations.addPerson);
@@ -95,7 +101,7 @@ export function CompanyCell({ orgId, personCode, entityType, className, prefetch
 			toast.success("Company linked");
 			setOpen(false);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't link company");
+			toast.error(normalizeError(err, "Couldn't link company"));
 		}
 	};
 
@@ -115,7 +121,7 @@ export function CompanyCell({ orgId, personCode, entityType, className, prefetch
 			setNewIndustry("");
 			setNewWebsite("");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't create company");
+			toast.error(normalizeError(err, "Couldn't create company"));
 		}
 	};
 

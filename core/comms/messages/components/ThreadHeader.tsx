@@ -47,6 +47,7 @@ import {
 } from "@/core/comms/messages/hooks";
 import { useEntityDisplay } from "@/core/comms/messages/hooks/useEntityDisplay";
 import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 import { ParticipantsDialog } from "./ParticipantsDialog";
@@ -55,7 +56,10 @@ type ThreadHeaderProps = {
 	orgId: Id<"orgs">;
 	conversation: Doc<"conversations"> | null;
 	/** Pre-fetched participants from parent — avoids duplicate subscription. */
-	participants?: Array<{ membership: Doc<"conversationMembers">; user: Doc<"users"> & { avatarUrl?: string } }>;
+	participants?: Array<{
+		membership: Doc<"conversationMembers">;
+		user: Doc<"users"> & { avatarUrl?: string };
+	}>;
 	/** Pre-fetched myMembership from parent — avoids duplicate getById call. */
 	myMembership?: Doc<"conversationMembers"> | null;
 	/** Mobile-only: when supplied, a hamburger button opens the sidebar Sheet. */
@@ -78,7 +82,14 @@ const LEVELS = [
 
 type Level = (typeof LEVELS)[number]["id"];
 
-export function ThreadHeader({ orgId, conversation, participants: participantsProp, myMembership: myMembershipProp, onOpenSidebar, className }: ThreadHeaderProps) {
+export function ThreadHeader({
+	orgId,
+	conversation,
+	participants: participantsProp,
+	myMembership: myMembershipProp,
+	onOpenSidebar,
+	className,
+}: ThreadHeaderProps) {
 	const [participantsOpen, setParticipantsOpen] = useState(false);
 	const [levelPending, setLevelPending] = useState<Level | null>(null);
 
@@ -102,7 +113,8 @@ export function ThreadHeader({ orgId, conversation, participants: participantsPr
 	);
 	const updateLevel = useUpdateNotificationLevel();
 
-	const myLevel: Level | undefined = (myMembershipProp?.notificationLevel ?? detail?.myMembership?.notificationLevel) as Level | undefined;
+	const myLevel: Level | undefined = (myMembershipProp?.notificationLevel ??
+		detail?.myMembership?.notificationLevel) as Level | undefined;
 
 	const display = useEntityDisplay({
 		orgId,
@@ -116,7 +128,7 @@ export function ThreadHeader({ orgId, conversation, participants: participantsPr
 		try {
 			await updateLevel({ orgId, conversationId: conversation._id, level });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't update notifications.");
+			toast.error(normalizeError(err, "Couldn't update notifications."));
 		} finally {
 			setLevelPending(null);
 		}

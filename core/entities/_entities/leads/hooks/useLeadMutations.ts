@@ -6,8 +6,9 @@
  *
  * - Labels: toasts use `useEntityLabels()` so a renamed entity ("Inquiry")
  *   shows the right word everywhere.
- * - Errors: we surface the real ConvexError / Error message in the toast
- *   description so phone-parsing / validation failures stop being silent.
+ * - Errors: pass through `normalizeErrorDescription` so phone-parsing /
+ *   validation failures surface a clean message in the toast description
+ *   (no Convex transport noise — that's stripped centrally).
  */
 
 import { useMutation } from "convex/react";
@@ -15,21 +16,11 @@ import { useCallback } from "react";
 import { toast } from "sonner";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import {
-	useSoftDeleteLead,
-	useUpdateLead,
-} from "@/core/entities/shared/hooks/useEntityMutations";
+import { useSoftDeleteLead, useUpdateLead } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
-function describeError(err: unknown): string | undefined {
-	if (!err) return undefined;
-	if (err instanceof Error) return err.message;
-	if (typeof err === "object" && err !== null) {
-		const maybe = err as { data?: { message?: string }; message?: string };
-		return maybe.data?.message ?? maybe.message;
-	}
-	return String(err);
-}
+const describeError = normalizeErrorDescription;
 
 export function useLeadMutations(orgId: Id<"orgs"> | undefined) {
 	const labels = useEntityLabels();

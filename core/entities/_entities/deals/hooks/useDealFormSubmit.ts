@@ -8,6 +8,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { EntityFormValues } from "@/core/entities/shared/components/EntityFieldForm";
 import { useUpdateDeal } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 interface FileBuffer {
 	commitAll: (args: { scope: string; scopeId: string; tags?: string[] }) => Promise<void>;
@@ -79,7 +80,9 @@ export function useDealFormSubmit(orgId: Id<"orgs"> | undefined) {
 						const fid = fieldIdByName[name];
 						return fid ? { fieldId: fid, value } : null;
 					})
-					.filter((x): x is { fieldId: Id<"fieldDefinitions">; value: unknown } => x !== null);
+					.filter(
+						(x): x is { fieldId: Id<"fieldDefinitions">; value: unknown } => x !== null,
+					);
 
 				if (payload.length > 0) {
 					try {
@@ -91,7 +94,7 @@ export function useDealFormSubmit(orgId: Id<"orgs"> | undefined) {
 						});
 					} catch (err) {
 						toast.error("Couldn't save some custom fields", {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}

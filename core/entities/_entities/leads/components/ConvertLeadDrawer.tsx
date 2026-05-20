@@ -33,6 +33,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useDefaultDealPipeline } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { FormDrawer } from "@/core/entities/shared/components/FormDrawer";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 interface LeadOption extends MultiSelectOption {
 	leadId: Id<"leads">;
@@ -182,7 +183,7 @@ export function ConvertLeadDrawer({
 			onOpenChange(false);
 		} catch (err) {
 			toast.error("Conversion failed", {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		} finally {
 			setIsSubmitting(false);

@@ -24,17 +24,12 @@ const STEPS = [
 ] as const;
 
 const INDUSTRIES = [
-	{ id: "real-estate", label: "Real Estate (Gulf)" },
+	{ id: "dubai-real-estate", label: "Real Estate (Dubai / Gulf)" },
+	{ id: "real-estate", label: "Real Estate" },
 	{ id: "b2b-saas", label: "B2B SaaS" },
 	{ id: "agency-freelance", label: "Agency / Freelance" },
 	{ id: "recruiting", label: "Recruiting / Staffing" },
 	{ id: "freelancer", label: "Freelancer / Solo" },
-	{ id: "finance", label: "Finance & Banking" },
-	{ id: "retail", label: "Retail & E-commerce" },
-	{ id: "healthcare", label: "Healthcare" },
-	{ id: "technology", label: "Technology" },
-	{ id: "construction", label: "Construction" },
-	{ id: "hospitality", label: "Hospitality & Tourism" },
 	{ id: "other", label: "Other" },
 ] as const;
 

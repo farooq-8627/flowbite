@@ -11,13 +11,14 @@
  *
  * INDUSTRY_ID_ALIASES
  * ───────────────────
- * Maps the onboarding-picker industry strings ("technology", "finance", …)
+ * Maps the onboarding-picker industry strings (e.g. "technology", "agency")
  * onto curated template ids when no exact match exists. Lets us bring up a
  * full template story without forcing the picker UI to change every time we
  * add or rename a template.
  */
 import { agencyFreelanceTemplate } from "./definitions/agency_freelance";
 import { b2bSaasTemplate } from "./definitions/b2b_saas";
+import { dubaiRealEstateTemplate } from "./definitions/dubai_real_estate";
 import { freelancerTemplate } from "./definitions/freelancer";
 import { genericTemplate } from "./definitions/generic";
 import { realEstateTemplate } from "./definitions/real_estate";
@@ -27,6 +28,7 @@ import type { IndustryTemplate } from "./types";
 export const INDUSTRY_TEMPLATES: Record<string, IndustryTemplate> = {
 	"agency-freelance": agencyFreelanceTemplate,
 	"b2b-saas": b2bSaasTemplate,
+	"dubai-real-estate": dubaiRealEstateTemplate,
 	freelancer: freelancerTemplate,
 	"real-estate": realEstateTemplate,
 	recruiting: recruitingTemplate,
@@ -34,17 +36,14 @@ export const INDUSTRY_TEMPLATES: Record<string, IndustryTemplate> = {
 };
 
 /**
- * Aliases — onboarding picker ids that don't have a dedicated template yet.
+ * Aliases — onboarding picker ids that don't have a dedicated template.
  * Resolves to whichever curated template is the closest match. When you add
  * a curated definition for one of these, remove its alias.
+ *
+ * The onboarding picker now ships only the industries below + the curated
+ * ones above. Anything else falls through to `generic`.
  */
 export const INDUSTRY_ID_ALIASES: Record<string, string> = {
-	technology: "b2b-saas",
-	finance: "generic",
-	retail: "generic",
-	healthcare: "generic",
-	construction: "generic",
-	hospitality: "generic",
 	other: "generic",
 };
 

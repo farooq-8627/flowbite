@@ -10,13 +10,12 @@ import { ONBOARDING_STEPS } from "@/core/shell/onboarding/steps/steps-config";
 import { cn } from "@/lib/utils";
 
 const INDUSTRIES = [
+	{ id: "dubai-real-estate", label: "Real Estate (Dubai / Gulf)" },
 	{ id: "real-estate", label: "Real Estate" },
-	{ id: "finance", label: "Finance & Banking" },
-	{ id: "retail", label: "Retail & E-commerce" },
-	{ id: "healthcare", label: "Healthcare" },
-	{ id: "technology", label: "Technology" },
-	{ id: "construction", label: "Construction" },
-	{ id: "hospitality", label: "Hospitality & Tourism" },
+	{ id: "b2b-saas", label: "B2B SaaS" },
+	{ id: "agency-freelance", label: "Agency / Freelance" },
+	{ id: "recruiting", label: "Recruiting / Staffing" },
+	{ id: "freelancer", label: "Freelancer / Solo" },
 	{ id: "other", label: "Other" },
 ] as const;
 

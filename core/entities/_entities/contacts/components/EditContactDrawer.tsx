@@ -20,6 +20,7 @@ import {
 } from "@/core/entities/shared/components/EntityFieldForm";
 import { useUpdateContact } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 
 interface EditContactDrawerProps {
 	open: boolean;
@@ -79,7 +80,7 @@ export function EditContactDrawer({ open, onOpenChange, orgId, contact }: EditCo
 			onOpenChange(false);
 		} catch (err) {
 			toast.error(`Couldn't update ${labels.contact.singular.toLowerCase()}`, {
-				description: err instanceof Error ? err.message : undefined,
+				description: normalizeErrorDescription(err),
 			});
 		} finally {
 			setIsSubmitting(false);

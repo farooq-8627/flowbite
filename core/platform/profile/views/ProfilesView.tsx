@@ -82,6 +82,7 @@ import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
+import { normalizeError, normalizeErrorDescription } from "@/lib/normalizeError";
 
 type ProfileRow = Record<string, unknown> & {
 	id: string;
@@ -265,7 +266,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				);
 			} catch (err) {
 				toast.error("Convert failed", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -277,7 +278,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 			try {
 				await remove(leadId);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't delete");
+				toast.error(normalizeError(err, "Couldn't delete"));
 			}
 		},
 		[remove],
@@ -290,7 +291,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				await updateLead({ orgId, leadId, status: "lost" });
 				toast.success(`${labels.lead.singular} marked as lost`);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't mark as lost");
+				toast.error(normalizeError(err, "Couldn't mark as lost"));
 			}
 		},
 		[orgId, updateLead, labels],
@@ -305,7 +306,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 					`${labels.contact.singular} reverted to ${labels.lead.singular.toLowerCase()}`,
 				);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't revert");
+				toast.error(normalizeError(err, "Couldn't revert"));
 			}
 		},
 		[orgId, revertToLead, labels],
@@ -318,7 +319,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				await softDeleteContact({ orgId, contactId });
 				toast.success("Contact deleted");
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't delete");
+				toast.error(normalizeError(err, "Couldn't delete"));
 			}
 		},
 		[orgId, softDeleteContact],

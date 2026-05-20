@@ -22,6 +22,11 @@
  *     SettingsSection's tight CardHeader (gap-0).
  *   - Footer is always `flex-row` with buttons right-aligned. Overrides the shadcn
  *     SheetFooter default which is `flex-col gap-2`.
+ *   - Mobile width: clamps to viewport so the drawer never overflows on phones.
+ *     Uses `min(SIZE, 100vw)` so on small screens it falls back to 100vw, while
+ *     desktop keeps the configured size. Mirrors the sidebar mobile pattern
+ *     (SIDEBAR_WIDTH_MOBILE = 20rem) but keeps each drawer's own preferred width
+ *     when room is available.
  */
 
 import type { ReactNode } from "react";
@@ -71,18 +76,20 @@ export function FormDrawer({
 	submitDisabled,
 	bodyClassName,
 }: FormDrawerProps) {
-	const width = SIZE_MAP[size];
+	// `min(SIZE, 100vw)` keeps desktop looking the same (configured size wins
+	// because viewport is wider) while phones cap at 100vw and never overflow.
+	const width = `min(${SIZE_MAP[size]}, 100vw)`;
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent
 				side="right"
 				showCloseButton
-				className="flex flex-col gap-0 p-0"
-				style={{ width, maxWidth: "none" }}
+				className="flex w-full flex-col gap-0 p-0 sm:max-w-none"
+				style={{ width, maxWidth: "100vw" }}
 			>
 				{/* Header: tight, no border, no gap between title + description */}
-				<div className="shrink-0 px-6 pt-5 pb-4">
+				<div className="shrink-0 px-4 pt-5 pb-4 sm:px-6">
 					<SheetTitle className="text-base font-semibold leading-tight">
 						{title}
 					</SheetTitle>
@@ -96,7 +103,7 @@ export function FormDrawer({
 				{/* Body: native scroll, comfortable padding so focus rings don't clip */}
 				<div
 					className={cn(
-						"min-h-0 flex-1 overflow-y-auto px-6 pt-2 pb-6",
+						"min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-6 sm:px-6",
 						"[&_input]:focus-visible:z-10",
 						bodyClassName,
 					)}
@@ -105,7 +112,7 @@ export function FormDrawer({
 				</div>
 
 				{/* Footer: row, right-aligned, fit-content buttons */}
-				<div className="flex shrink-0 flex-row items-center justify-end gap-2 border-t bg-card px-6 py-3">
+				<div className="flex shrink-0 flex-row items-center justify-end gap-2 border-t bg-card px-4 py-3 sm:px-6">
 					{footer ?? (
 						<>
 							<Button

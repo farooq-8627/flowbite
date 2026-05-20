@@ -44,6 +44,7 @@ import {
 } from "@/core/entities/shared/config/defaults";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import type { EntitySlot, ViewKind } from "@/core/entities/shared/types";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../../types";
 import { SettingsRow } from "../../shared/SettingsRow";
@@ -105,7 +106,7 @@ export function ModuleDisplaySection({ slot, orgId, modules }: Props) {
 			await updateOrg({ orgId, settings: { modules: next } });
 			toast.success("Saved");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't save");
+			toast.error(normalizeError(err, "Couldn't save"));
 		} finally {
 			setIsSaving(false);
 		}

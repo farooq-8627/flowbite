@@ -53,3 +53,12 @@ templates/
 | 3 | Stage seeds carry hard-coded codes (e.g. `"DISC"`, `"NEG"`), not derived ones. | Template authors get full control + readability. The `deriveStageCode` helper is the runtime fallback for owner-typed codes only. |
 | 4 | `seedFromTemplate` (in `pipelines/helpers.ts`) is now a thin wrapper over `getTemplate(...)`. | Old callers (onboarding pipeline-only seed, tests) keep working without changes. |
 | 5 | `showInStages` references in template field defs use codes; mutation resolves to ids. | Template definitions stay grep-readable; persisted shape uses stable ids. |
+
+
+## 2026-05-21 — Real-estate split (Dubai vs general)
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | `realEstateTemplate` (id `"real-estate"`) is now the *general* real-estate template with no Gulf-specific compliance fields. The original Gulf template moved to `dubai_real_estate.ts` exporting `dubaiRealEstateTemplate` (id `"dubai-real-estate"`). Both registered in `registry.ts`. | Brokers outside the UAE can pick `Real Estate` without inheriting RERA / Form F / Ejari / Emirates ID + 90-day rent-renewal alerts. Dubai brokers pick the Gulf variant and get the full machinery. |
+| 2 | `INDUSTRY_ID_ALIASES` reduced to just `{ other: "generic" }`. Onboarding ships only the seven industries that have curated templates. | Picker no longer offers industries that fall through to `generic` silently — explicit choice. |
+| 3 | Migration `_migrations/renameRealEstateToDubai.ts` patched existing orgs' `industry` from `"real-estate"` to `"dubai-real-estate"` because they were originally seeded with the Gulf field set (rera_orn, ejari_number, …). Idempotent; ran on dev — 2 orgs renamed. | No data loss; the rent-renewal toggle, AI persona, and curated saved-views continue to work for these workspaces. |

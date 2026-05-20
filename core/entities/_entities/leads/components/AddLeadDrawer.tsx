@@ -41,6 +41,7 @@ import {
 import { useDedup } from "@/core/entities/shared/hooks/useDedup";
 import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
+import { normalizeErrorDescription } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
 interface AddLeadDrawerProps {
@@ -142,7 +143,7 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 						});
 					} catch (err) {
 						toast.error("Couldn't create company", {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				} else if (companyMode === "existing" && existingCompanyId) {
@@ -154,7 +155,7 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 						});
 					} catch (err) {
 						toast.error("Couldn't attach to company", {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}
@@ -186,7 +187,7 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 					}
 				} catch (err) {
 					toast.error("Couldn't save custom fields", {
-						description: err instanceof Error ? err.message : undefined,
+						description: normalizeErrorDescription(err),
 					});
 				}
 			}
@@ -226,7 +227,7 @@ export function AddLeadDrawer({ open, onOpenChange, orgId, onCreate }: AddLeadDr
 						}
 					} catch (err) {
 						toast.error("Couldn't attach tags", {
-							description: err instanceof Error ? err.message : undefined,
+							description: normalizeErrorDescription(err),
 						});
 					}
 				}

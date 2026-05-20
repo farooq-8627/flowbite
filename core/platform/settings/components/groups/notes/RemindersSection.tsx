@@ -56,7 +56,10 @@ export function RemindersSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 	});
 
 	const rentEnabled = form.watch("rentAlertEnabled");
-	const isRealEstate = (org.industry ?? "").toLowerCase() === "real-estate";
+	// The rent-renewal alert only makes sense for the Dubai / Gulf real-estate
+	// template (UAE law mandates 90-day renewal notice). The general
+	// "real-estate" template doesn't include it.
+	const isRealEstate = (org.industry ?? "").toLowerCase() === "dubai-real-estate";
 
 	return (
 		<SettingsSection

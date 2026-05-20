@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { TagsPickerPopoverContent } from "./TagsPickerPopover";
 
@@ -138,7 +139,7 @@ export function TagsCell({
 				});
 			}
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Tag update failed");
+			toast.error(normalizeError(err, "Tag update failed"));
 		}
 	};
 
@@ -160,7 +161,7 @@ export function TagsCell({
 			);
 			await attach({ orgId, tagId: newTagId, entityType, entityId });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't create tag");
+			toast.error(normalizeError(err, "Couldn't create tag"));
 		}
 	};
 

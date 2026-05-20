@@ -48,6 +48,7 @@ import { useDealPipelines } from "@/core/entities/_entities/deals/hooks/usePipel
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeError } from "@/lib/normalizeError";
 import { SettingsSection } from "../shared/SettingsSection";
 import { PipelineEditor } from "./crm/PipelineEditor";
 
@@ -119,7 +120,7 @@ export function PipelinesGroup({ orgId }: { orgId: Id<"orgs"> }) {
 			// adding stages immediately.
 			setActiveId(newPipelineId as unknown as Id<"pipelines">);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to create pipeline");
+			toast.error(normalizeError(err, "Failed to create pipeline"));
 		} finally {
 			setCreating(false);
 		}

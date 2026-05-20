@@ -63,6 +63,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 import { FIELD_TYPES, parseOptions } from "./CreateFieldDialog";
 import { SortableFieldsTable } from "./SortableFieldsTable";
@@ -268,7 +269,7 @@ function CreateScopedFieldDialog({
 				});
 				setOpen(false);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to create field");
+				toast.error(normalizeError(err, "Failed to create field"));
 			}
 		},
 	});
@@ -380,7 +381,8 @@ function CreateScopedFieldDialog({
 								<FormItem className="flex items-center justify-between rounded-[var(--radius)] border px-3 py-2">
 									<div>
 										<FormLabel className="text-sm">
-											Required {isDefaultStage ? "on every deal" : "at this stage"}
+											Required{" "}
+											{isDefaultStage ? "on every deal" : "at this stage"}
 										</FormLabel>
 										<p className="text-xs text-muted-foreground">
 											{isDefaultStage

@@ -2,10 +2,13 @@
  * DashboardError — friendly fallback for both the React `<ErrorBoundary>`
  * and the App Router `error.tsx` boundary.
  *
- * Top section is the production-grade UI: icon, calm headline, recovery
- * actions. The raw error message + stack trace are tucked into a collapsed
- * `<details>` so users can copy them when reporting an issue, but they're
- * not the first thing the user sees.
+ * This is the **production-grade surface**: icon, calm headline, supporting
+ * copy, recovery actions. We deliberately do NOT render the underlying
+ * error message, stack trace, or digest in the UI — those leak request ids,
+ * file paths, and "ConvexError" / "Uncaught" tokens that read like a
+ * crash. Engineers can still inspect everything via:
+ *   - the browser devtools console (we log the full error object below)
+ *   - Sentry (`captureException` runs in `error.tsx` and `ErrorBoundary`)
  *
  * The "Try again" button calls the App Router-supplied `reset()` to retry
  * the failing render. "Reload page" hard-refreshes. "Go back" pops history.
@@ -31,7 +34,8 @@ export function DashboardError({ error, reset }: DashboardErrorProps = {}) {
 	useEffect(() => {
 		if (!error) return;
 		// Keep the full error in the console for engineers debugging in dev or
-		// inspecting prod via the browser devtools.
+		// inspecting prod via the browser devtools. Sentry already captures it
+		// upstream — this is a developer-affordance, not user-facing.
 		// eslint-disable-next-line no-console
 		console.error("[DashboardError]", {
 			name: error.name,
@@ -41,10 +45,6 @@ export function DashboardError({ error, reset }: DashboardErrorProps = {}) {
 			cause: (error as { cause?: unknown }).cause,
 		});
 	}, [error]);
-
-	const errorMessage = error?.message;
-	const stackText = error?.stack;
-	const digest = error?.digest;
 
 	return (
 		<div className="flex min-h-[60vh] w-full items-center justify-center p-6">
@@ -57,7 +57,7 @@ export function DashboardError({ error, reset }: DashboardErrorProps = {}) {
 					<h1 className="text-xl font-semibold tracking-tight">Something went wrong</h1>
 					<p className="text-sm text-muted-foreground">
 						We hit an unexpected problem while loading this page. The team has been
-						notified.
+						notified and is looking into it.
 					</p>
 				</div>
 
@@ -87,31 +87,6 @@ export function DashboardError({ error, reset }: DashboardErrorProps = {}) {
 						Go back
 					</Button>
 				</div>
-
-				{(errorMessage || stackText || digest) && (
-					<details className="mt-2 w-full overflow-hidden rounded-[var(--radius)] border bg-muted/40 text-start">
-						<summary className="cursor-pointer select-none px-3 py-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground">
-							Technical details
-							{digest ? (
-								<span className="ms-2 font-mono text-[10px] opacity-70">
-									digest: {digest}
-								</span>
-							) : null}
-						</summary>
-						<div className="border-t bg-muted/30">
-							{errorMessage && (
-								<pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-[11px] text-foreground">
-									{errorMessage}
-								</pre>
-							)}
-							{stackText && (
-								<pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words border-t px-3 py-2 font-mono text-[10px] text-muted-foreground">
-									{stackText}
-								</pre>
-							)}
-						</div>
-					</details>
-				)}
 			</div>
 		</div>
 	);

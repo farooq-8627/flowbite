@@ -51,6 +51,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { type ChatEntityType, useSendMessage } from "@/core/comms/messages/hooks";
 import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 import { VoiceRecorder } from "./VoiceRecorder";
@@ -287,9 +288,7 @@ export function MessageInput({
 					]);
 				} catch (err) {
 					if (previewUrl) URL.revokeObjectURL(previewUrl);
-					toast.error(
-						err instanceof Error ? err.message : `Couldn't upload ${file.name}.`,
-					);
+					toast.error(normalizeError(err, `Couldn't upload ${file.name}.`));
 				} finally {
 					setUploadingNames((p) => p.filter((n) => n !== file.name));
 				}
@@ -365,7 +364,7 @@ export function MessageInput({
 					idempotencyKey,
 				});
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't send voice note.");
+				toast.error(normalizeError(err, "Couldn't send voice note."));
 				throw err;
 			}
 		},
@@ -421,8 +420,7 @@ export function MessageInput({
 			setDraft(draftSnapshot);
 			setMentionedIds(mentionsSnapshot);
 			setPendingAttachments(attachmentsSnapshot);
-			const message =
-				err instanceof Error ? err.message : "Couldn't send message. Please try again.";
+			const message = normalizeError(err, "Couldn't send message. Please try again.");
 			setError(message);
 		} finally {
 			setIsSending(false);

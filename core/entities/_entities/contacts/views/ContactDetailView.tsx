@@ -54,6 +54,7 @@ import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeError, normalizeErrorDescription } from "@/lib/normalizeError";
 
 type ContactRow = Record<string, unknown> & {
 	id: string;
@@ -350,7 +351,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				}
 			} catch (err) {
 				toast.error("Couldn't update", {
-					description: err instanceof Error ? err.message : undefined,
+					description: normalizeErrorDescription(err),
 				});
 			}
 		},
@@ -366,7 +367,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 					`${labels.contact.singular} reverted to ${labels.lead.singular.toLowerCase()}`,
 				);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Couldn't revert");
+				toast.error(normalizeError(err, "Couldn't revert"));
 			}
 		},
 		[orgId, revertToLead, labels],
@@ -390,7 +391,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				await softDeleteContact({ orgId, contactId });
 				toast.success(`${labels.contact.singular} deleted`);
 			} catch (err) {
-				toast.error(err instanceof Error ? err.message : "Failed to delete");
+				toast.error(normalizeError(err, "Failed to delete"));
 			}
 		},
 		rowExtraActions: (row) => {

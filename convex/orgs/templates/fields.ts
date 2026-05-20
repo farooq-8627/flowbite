@@ -282,6 +282,7 @@ const BUILT_IN_COMPANY_FIELDS: FieldDefinitionSeed[] = [
 		columnKey: "name",
 		system: true,
 		protected: true,
+		required: true,
 	},
 	{
 		entityType: "company",
@@ -310,7 +311,7 @@ const BUILT_IN_COMPANY_FIELDS: FieldDefinitionSeed[] = [
 		type: "relation",
 		kind: "assignee",
 		storage: "column",
-		columnKey: "assignees",
+		columnKey: "assignedTo",
 		system: true,
 	},
 	{
@@ -327,26 +328,35 @@ const BUILT_IN_COMPANY_FIELDS: FieldDefinitionSeed[] = [
 // ─── Industry overlays — extra fields per template ────────────────────────────
 // Empty for now; future templates (real-estate, recruiting, …) push their
 // industry-specific extras here. Returned together with the built-ins.
+// INDUSTRY_OVERLAYS — legacy lightweight overlays applied by the seed
+// fallback (`fieldDefinitions/internal.ts::seedFieldDefinitionsForOrg`).
+// Curated industry templates in `convex/crm/fields/templates/definitions/`
+// own the richer set of fields (RERA, Form F, Ejari for `dubai-real-estate`,
+// etc.). These overlays are kept only as a safety net for orgs whose
+// onboarding path didn't run the curated template seeder.
+const REAL_ESTATE_LEGACY_OVERLAY: FieldDefinitionSeed[] = [
+	{
+		entityType: "lead",
+		name: "propertyType",
+		label: "Property Type",
+		type: "select",
+		kind: "select",
+		storage: "fieldValues",
+		options: ["Apartment", "House", "Land", "Commercial"],
+	},
+	{
+		entityType: "lead",
+		name: "budget",
+		label: "Budget",
+		type: "number",
+		kind: "currency",
+		storage: "fieldValues",
+	},
+];
+
 const INDUSTRY_OVERLAYS: Record<string, FieldDefinitionSeed[]> = {
-	"real-estate": [
-		{
-			entityType: "lead",
-			name: "propertyType",
-			label: "Property Type",
-			type: "select",
-			kind: "select",
-			storage: "fieldValues",
-			options: ["Apartment", "House", "Land", "Commercial"],
-		},
-		{
-			entityType: "lead",
-			name: "budget",
-			label: "Budget",
-			type: "number",
-			kind: "currency",
-			storage: "fieldValues",
-		},
-	],
+	"real-estate": REAL_ESTATE_LEGACY_OVERLAY,
+	"dubai-real-estate": REAL_ESTATE_LEGACY_OVERLAY,
 	recruiting: [
 		{
 			entityType: "lead",

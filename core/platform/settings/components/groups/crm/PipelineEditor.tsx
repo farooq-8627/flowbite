@@ -41,6 +41,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { StageFieldsTable } from "./StageFieldsTable";
 
@@ -110,7 +111,7 @@ function StageRow({
 			await updateStage({ orgId, pipelineId, stageId: stage.id, name: next });
 			setEditing(false);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to rename stage");
+			toast.error(normalizeError(err, "Failed to rename stage"));
 		}
 	};
 
@@ -128,7 +129,7 @@ function StageRow({
 		try {
 			await updateStage({ orgId, pipelineId, stageId: stage.id, code: next });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update code");
+			toast.error(normalizeError(err, "Failed to update code"));
 			setDraftCode(stage.code);
 		}
 	};
@@ -137,7 +138,7 @@ function StageRow({
 		try {
 			await updateStage({ orgId, pipelineId, stageId: stage.id, color });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update color");
+			toast.error(normalizeError(err, "Failed to update color"));
 		}
 	};
 
@@ -150,11 +151,7 @@ function StageRow({
 		try {
 			await removeStage({ orgId, pipelineId, stageId: stage.id });
 		} catch (err) {
-			toast.error(
-				err instanceof Error
-					? err.message
-					: "Cannot remove stage — it may have active deals",
-			);
+			toast.error(normalizeError(err, "Cannot remove stage — it may have active deals"));
 		}
 	};
 
@@ -397,7 +394,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 		try {
 			await reorderStages({ orgId, pipelineId: pipeline._id, stageIds: newIds });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to reorder stages");
+			toast.error(normalizeError(err, "Failed to reorder stages"));
 			setOptimisticOrder(null);
 		} finally {
 			// Let the server-sourced order take over once the query revalidates.
@@ -416,7 +413,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 			});
 			setNewStageName("");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to add stage");
+			toast.error(normalizeError(err, "Failed to add stage"));
 		}
 	};
 
@@ -426,7 +423,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 		try {
 			await updatePipeline({ orgId, pipelineId: pipeline._id, stageTransitionPolicy: next });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update policy");
+			toast.error(normalizeError(err, "Failed to update policy"));
 		}
 	};
 
@@ -435,7 +432,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 		try {
 			await updatePipeline({ orgId, pipelineId: pipeline._id, allowSkipStages: next });
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update setting");
+			toast.error(normalizeError(err, "Failed to update setting"));
 		}
 	};
 
@@ -448,7 +445,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 				markDoneRequiresAllFields: next,
 			});
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update setting");
+			toast.error(normalizeError(err, "Failed to update setting"));
 		}
 	};
 
@@ -463,7 +460,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 			await updatePipeline({ orgId, pipelineId: pipeline._id, name: next });
 			setRenameDraft(null);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to rename pipeline");
+			toast.error(normalizeError(err, "Failed to rename pipeline"));
 			setRenameDraft(null);
 		}
 	};

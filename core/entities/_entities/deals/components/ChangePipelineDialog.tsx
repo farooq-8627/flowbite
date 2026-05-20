@@ -39,6 +39,7 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useDealPipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 
 interface Props {
 	deal: Doc<"deals">;
@@ -91,7 +92,7 @@ export function ChangePipelineDialog({ deal, open, onOpenChange }: Props) {
 			toast.success(`Moved to ${targetPipeline?.name}`);
 			onOpenChange(false);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to change pipeline");
+			toast.error(normalizeError(err, "Failed to change pipeline"));
 		} finally {
 			setSubmitting(false);
 		}

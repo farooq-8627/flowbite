@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgTags } from "@/core/entities/shared/hooks/useOrgTags";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { TagsPickerPopoverContent } from "./TagsPickerPopover";
 
@@ -89,7 +90,7 @@ export function BufferedTagsPicker({
 			await createTag({ orgId, name });
 			onChange(name);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't create tag");
+			toast.error(normalizeError(err, "Couldn't create tag"));
 		}
 	};
 

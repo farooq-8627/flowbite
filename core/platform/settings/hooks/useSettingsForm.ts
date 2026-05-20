@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { type UseFormReturn, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import type { ZodType } from "zod/v4";
+import { normalizeError } from "@/lib/normalizeError";
 
 /**
  * Shared form setup for every settings section.
@@ -57,7 +58,7 @@ export function useSettingsForm<T extends Record<string, unknown>>({
 			form.reset(data);
 			toast.success("Settings saved");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to save settings");
+			toast.error(normalizeError(err, "Failed to save settings"));
 		}
 	});
 

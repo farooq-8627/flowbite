@@ -36,6 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 
 interface MarkAsDoneDialogProps {
 	deal: Doc<"deals">;
@@ -76,9 +77,11 @@ export function MarkAsDoneDialog({ deal, open, onOpenChange }: MarkAsDoneDialogP
 					? (errorData.code as string | undefined)
 					: undefined;
 			if (code === "MISSING_REQUIRED_FIELDS_FOR_DONE") {
-				const missing = (errorData as {
-					missingFields?: Array<{ label: string; stageName: string }>;
-				}).missingFields;
+				const missing = (
+					errorData as {
+						missingFields?: Array<{ label: string; stageName: string }>;
+					}
+				).missingFields;
 				const labels = (missing ?? []).map((f) => `${f.label} (${f.stageName})`);
 				setMissingFieldList(labels);
 				toast.error("Some required fields are still missing", {
@@ -86,7 +89,7 @@ export function MarkAsDoneDialog({ deal, open, onOpenChange }: MarkAsDoneDialogP
 				});
 				return;
 			}
-			toast.error(err instanceof Error ? err.message : "Couldn't mark as done");
+			toast.error(normalizeError(err, "Couldn't mark as done"));
 		} finally {
 			setSubmitting(false);
 		}
@@ -99,8 +102,8 @@ export function MarkAsDoneDialog({ deal, open, onOpenChange }: MarkAsDoneDialogP
 					<DialogTitle>Mark deal as done</DialogTitle>
 					<DialogDescription>
 						This closes the deal as won. Confetti included. The pipeline policy may
-						require all stage fields to be filled first — if so, we'll point them
-						out below.
+						require all stage fields to be filled first — if so, we'll point them out
+						below.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -146,9 +149,9 @@ export function MarkAsDoneDialog({ deal, open, onOpenChange }: MarkAsDoneDialogP
 								)}
 							</ul>
 							<p className="mt-2 text-[10px] text-muted-foreground">
-								Open the deal, fill the gaps, then try again. To skip this check,
-								an admin can disable "Require all fields before mark as done" on
-								the pipeline in Settings.
+								Open the deal, fill the gaps, then try again. To skip this check, an
+								admin can disable "Require all fields before mark as done" on the
+								pipeline in Settings.
 							</p>
 						</div>
 					)}

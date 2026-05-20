@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { normalizeError } from "@/lib/normalizeError";
 import type { OrgSettings } from "../../../types";
 import { resolveEntityLabels } from "../../../types";
 import { SettingsRow } from "../../shared/SettingsRow";
@@ -51,7 +52,7 @@ export function ModuleVisibilitySection({ org, orgId }: { org: OrgSettings; orgI
 					: `${labels[slot].plural} visible in the sidebar`,
 			);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Failed to update module visibility");
+			toast.error(normalizeError(err, "Failed to update module visibility"));
 		}
 	};
 

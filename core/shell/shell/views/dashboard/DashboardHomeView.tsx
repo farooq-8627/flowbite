@@ -109,7 +109,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 						<MessagesPreviewWidget
 							orgId={orgId}
 							orgSlug={orgSlug}
-							limit={9}
+							limit={8}
 							className="h-full"
 						/>
 					</div>

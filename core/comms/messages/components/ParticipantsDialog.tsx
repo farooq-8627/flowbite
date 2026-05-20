@@ -21,6 +21,7 @@ import {
 	useRemoveParticipant,
 } from "@/core/comms/messages/hooks";
 import { useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 
@@ -106,7 +107,7 @@ export function ParticipantsDialog({
 			setSelectedIds(new Set());
 			setSearch("");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't add members.");
+			toast.error(normalizeError(err, "Couldn't add members."));
 		} finally {
 			setPending(false);
 		}
@@ -119,7 +120,7 @@ export function ParticipantsDialog({
 			await removeParticipant({ orgId, conversationId: conversation._id, userId });
 			toast.success("Removed from conversation.");
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't remove member.");
+			toast.error(normalizeError(err, "Couldn't remove member."));
 		} finally {
 			setPending(false);
 		}
@@ -133,7 +134,7 @@ export function ParticipantsDialog({
 			toast.success("You left the conversation.");
 			onOpenChange(false);
 		} catch (err) {
-			toast.error(err instanceof Error ? err.message : "Couldn't leave conversation.");
+			toast.error(normalizeError(err, "Couldn't leave conversation."));
 		} finally {
 			setPending(false);
 		}

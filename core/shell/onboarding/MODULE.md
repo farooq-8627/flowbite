@@ -220,3 +220,12 @@ export const onboardingEmailSequence = task({
 **Trigger point**: `convex/orgs/mutations.ts` → `create` handler → `ctx.scheduler.runAfter(0, internal.jobs.startOnboardingSequence, { userId, orgId })`
 
 **Unsubscribe**: Respect `users.notificationPreferences.onboarding_emails` toggle.
+
+
+## 2026-05-21 — Industry list pruned + Dubai vs general real-estate split
+
+| # | Decision | Outcome |
+|---|---|---|
+| 1 | Onboarding industry picker now lists only the seven industries that have a curated `IndustryTemplate` in the registry: `dubai-real-estate`, `real-estate`, `b2b-saas`, `agency-freelance`, `recruiting`, `freelancer`, `other` (alias → `generic`). The previous filler entries (technology, finance, retail, healthcare, construction, hospitality) are gone. | The picker no longer shows industries that don't have curated workflows. Anyone wanting one of the dropped industries can pick `Other` (uses `generic`) and customise from Settings. |
+| 2 | Split the legacy `real-estate` template into two: `dubai-real-estate` (the original Gulf-specific workflow with RERA, Form F, Ejari, Emirates ID, 90-day rent renewal) and `real-estate` (general property workflow — no region-specific compliance fields, currency / timezone left to user choice). | Brokers outside the UAE can now pick `Real Estate` without inheriting Gulf-only fields and the rent-renewal alert. Brokers in Dubai pick `Real Estate (Dubai / Gulf)` and get the full RERA + Ejari machinery. |
+| 3 | Existing orgs with `industry: "real-estate"` were onboarded into the Gulf workflow — their fieldDefinitions table already holds RERA / Ejari rows. Migration `convex/_migrations/renameRealEstateToDubai.ts` renames them to `industry: "dubai-real-estate"` so the rent-renewal toggle in Settings → Reminders, the AI persona overlay, and any future industry-aware code paths all keep matching the workflow they were set up with. Idempotent; ran on dev — 2 orgs renamed. | No data loss; the AI persona, reminders' "Rent Renewal Alert" toggle, and the curated saved-views all continue to work for these orgs. |

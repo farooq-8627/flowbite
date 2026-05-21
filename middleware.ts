@@ -52,21 +52,23 @@ import { routing } from "./i18n/routing";
 const intlMiddleware = createIntlMiddleware(routing);
 
 /**
- * Auth pages (signin, signup, join). Authenticated users get bounced off
- * these to `/` so they can't see the form while logged in. Patterns cover
- * both the un-prefixed path (`/signin` — before intl runs) and the locale-
+ * Auth pages (signin, signup). Authenticated users get bounced off these
+ * to `/` so they can't see the form while logged in. Patterns cover both
+ * the un-prefixed path (`/signin` — before intl runs) and the locale-
  * prefixed path (`/en/signin` — after intl runs).
  *
- * NOTE the leaf `/join/:token` is matched too — once accepted, an
- * authenticated user shouldn't see the join page again.
+ * NOTE: `/join/<token>` is NOT in this list. It's a protected route (see
+ * `isProtectedRoute` below) so unauthenticated users get redirected to
+ * /signin with `?redirect=/join/<token>` preserved. After auth they land
+ * back on the join page to actually accept. Authenticated users on
+ * `/join/<token>` always see the accept screen — even owners on a fresh
+ * incognito tab.
  */
 const isAuthPage = createRouteMatcher([
 	"/signin",
 	"/signup",
 	"/:locale/signin",
 	"/:locale/signup",
-	"/join/:token",
-	"/:locale/join/:token",
 ]);
 
 /**
@@ -77,18 +79,22 @@ const isAuthPage = createRouteMatcher([
  * Important: `/` and `/:locale` are intentionally excluded. The root page
  * makes its own redirect decision (signin / onboarding / org dashboard).
  *
- * `/onboarding`, `/[orgSlug]`, `/profile`, etc. all live under the private
- * group, so we use catch-alls.
+ * `/join/<token>` is in this list so the middleware can redirect to
+ * `/signin?redirect=/join/<token>` — the only way an invited brand-new
+ * user gets bounced through auth and then back to the accept screen
+ * instead of getting dumped into onboarding.
  */
 const isProtectedRoute = createRouteMatcher([
 	"/onboarding",
 	"/onboarding/(.*)",
 	"/profile",
 	"/profile/(.*)",
+	"/join/:token",
 	"/:locale/onboarding",
 	"/:locale/onboarding/(.*)",
 	"/:locale/profile",
 	"/:locale/profile/(.*)",
+	"/:locale/join/:token",
 	// All workspace routes /[locale]/[orgSlug]/(...) — but exclude the
 	// auth + onboarding + profile paths above, which we already match.
 	// Anything under "/<locale>/<slug>" with slug not in (signin, signup,
@@ -103,14 +109,26 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
 	// decision actually depends on server-verified auth status.
 	const token = await convexAuth.getToken();
 
-	// Authenticated user on an auth page → bounce to home.
+	// Authenticated user on an auth page (signin / signup) → bounce to
+	// home. /join/<token> is intentionally NOT in the auth-page set —
+	// signed-in users clicking an invite link must reach the accept
+	// screen.
 	if (isAuthPage(request) && token) {
 		return nextjsMiddlewareRedirect(request, "/");
 	}
 
-	// Unauthenticated user on a protected route → bounce to signin.
+	// Unauthenticated user on a protected route → bounce to signin, but
+	// preserve the original target so signin can return them after auth.
+	// This is the chain that makes invitation links work for brand-new
+	// users: /join/<token> → /signin?redirect=/join/<token> → (sign up)
+	// → /join/<token>. Without the redirect param the SignIn page falls
+	// back to "/" which then routes a no-org user into onboarding.
 	if (isProtectedRoute(request) && !token) {
-		return nextjsMiddlewareRedirect(request, "/signin");
+		const target = request.nextUrl.pathname + request.nextUrl.search;
+		return nextjsMiddlewareRedirect(
+			request,
+			`/signin?redirect=${encodeURIComponent(target)}`,
+		);
 	}
 
 	// Otherwise let next-intl handle locale negotiation + prefix.

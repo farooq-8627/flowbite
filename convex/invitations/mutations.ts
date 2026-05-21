@@ -25,7 +25,6 @@ import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";
 import { requireRole } from "../_shared/permissions";
-import { invitationRoleValidator } from "../_shared/validators";
 import { logActivity } from "../activityLogs/helpers";
 import { sendNotification } from "../notifications/helpers";
 import { getOrgMember } from "../orgs/helpers";
@@ -45,12 +44,22 @@ function buildAcceptUrl(token: string): string {
 /**
  * Create an invitation. Requires `members.invite` permission (owner/admin).
  * Prevents duplicate pending invitations to the same email in the same org.
+ *
+ * Role assignment
+ * ───────────────
+ * Caller passes `roleId: Id<"orgRoles">` — the role the invitee will be
+ * assigned on accept. Validations:
+ *   1. The role must belong to this org.
+ *   2. The role must NOT be the Owner role (creators only — never invite-able).
+ * The role's permissions are NOT copied here; they're resolved at accept time
+ * from whatever the role doc currently contains. This way a role rename or
+ * permission edit between invite and accept always uses the latest state.
  */
 export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		email: v.string(),
-		role: invitationRoleValidator,
+		roleId: v.id("orgRoles"),
 	},
 	handler: async (ctx, args) => {
 		const now = Date.now();
@@ -59,6 +68,21 @@ export const create = orgMutation({
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
 
 		requireRole(member.permissions, "members.invite");
+
+		// Validate the target role: must belong to this org, must NOT be Owner.
+		const role = await ctx.db.get(args.roleId);
+		if (!role || role.orgId !== args.orgId) {
+			throw new ConvexError({
+				code: "INVALID_ROLE",
+				message: "Selected role does not belong to this organization.",
+			});
+		}
+		if (role.name === "Owner") {
+			throw new ConvexError({
+				code: "OWNER_NOT_INVITABLE",
+				message: "Owner role cannot be assigned via invitation.",
+			});
+		}
 
 		// Check for existing pending invitation to same email
 		const existing = await ctx.db
@@ -90,7 +114,7 @@ export const create = orgMutation({
 		const invitationId = await ctx.db.insert("invitations", {
 			orgId: args.orgId,
 			email: args.email,
-			role: args.role,
+			roleId: args.roleId,
 			status: "pending",
 			invitedBy: ctx.userId,
 			token,
@@ -105,7 +129,7 @@ export const create = orgMutation({
 			action: "created",
 			entityType: ENTITY_TYPES.INVITATION,
 			entityId: invitationId,
-			description: `Invited ${args.email} as ${args.role}`,
+			description: `Invited ${args.email} as ${role.name}`,
 		});
 
 		// Schedule the email send. Runs as an internal action (Node runtime)
@@ -123,6 +147,11 @@ export const create = orgMutation({
 /**
  * Accept an invitation by token. The accepting user becomes an org member.
  * Authenticated — user must be logged in, but doesn't need to be an org member.
+ *
+ * Once accepted, the invitation's `status` flips to `"accepted"` and the
+ * link is dead. If the owner later removes the member, the same link
+ * cannot be reused — the user must be re-invited (which generates a new
+ * token). This is the "one-shot link" guarantee.
  */
 export const accept = authenticatedMutation({
 	args: { token: v.string() },
@@ -143,7 +172,19 @@ export const accept = authenticatedMutation({
 			throw new ConvexError(ERRORS.INVITATION_EMAIL_MISMATCH);
 		}
 
-		// Check if already a member (e.g. race condition or re-join)
+		// Resolve the role doc the inviter chose. If the role was deleted
+		// between invite and accept, refuse — admin should re-invite with a
+		// different role rather than silently fall back.
+		const roleDoc = await ctx.db.get(invitation.roleId);
+		if (!roleDoc || roleDoc.orgId !== invitation.orgId) {
+			throw new ConvexError({
+				code: "ROLE_GONE",
+				message:
+					"The role on this invitation no longer exists. Ask your admin to send a new invitation.",
+			});
+		}
+
+		// Check if already a member (e.g. race condition or re-join attempt)
 		const existingMember = await getOrgMember(ctx, invitation.orgId, ctx.userId);
 		if (existingMember && existingMember.deletedAt === undefined) {
 			// Already a member — just mark invitation as accepted
@@ -154,16 +195,8 @@ export const accept = authenticatedMutation({
 			return { orgId: invitation.orgId, alreadyMember: true };
 		}
 
-		// If previously soft-deleted, reactivate
+		// If previously soft-deleted, reactivate with the role from the invite.
 		if (existingMember && existingMember.deletedAt !== undefined) {
-			const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-			const roleDoc = await ctx.db
-				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", invitation.orgId).eq("name", capitalize(invitation.role)),
-				)
-				.first();
-			if (!roleDoc) throw new ConvexError("Role not found in this organization.");
 			await ctx.db.patch(existingMember._id, {
 				roleId: roleDoc._id,
 				deletedAt: undefined,
@@ -172,16 +205,6 @@ export const accept = authenticatedMutation({
 			});
 			await applyOrgStat(ctx, invitation.orgId, "members.active", +1);
 		} else {
-			const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-			const roleDoc = await ctx.db
-				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", invitation.orgId).eq("name", capitalize(invitation.role)),
-				)
-				.first();
-
-			if (!roleDoc) throw new ConvexError("Role not found in this organization.");
-
 			// Create new membership
 			await ctx.db.insert("orgMembers", {
 				orgId: invitation.orgId,
@@ -193,7 +216,7 @@ export const accept = authenticatedMutation({
 			await applyOrgStat(ctx, invitation.orgId, "members.active", +1);
 		}
 
-		// Mark invitation as accepted
+		// Mark invitation as accepted — link is now one-shot dead.
 		await ctx.db.patch(invitation._id, {
 			status: "accepted",
 			updatedAt: now,
@@ -213,7 +236,7 @@ export const accept = authenticatedMutation({
 			action: "created",
 			entityType: ENTITY_TYPES.MEMBER,
 			entityId: ctx.userId,
-			description: `Accepted invitation and joined as ${invitation.role}`,
+			description: `Accepted invitation and joined as ${roleDoc.name}`,
 		});
 
 		// Notify the person who invited

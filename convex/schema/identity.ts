@@ -247,7 +247,12 @@ export const orgMembers = defineTable({
 export const invitations = defineTable({
 	...orgScoped,
 	email: v.string(),
-	role: v.union(v.literal("admin"), v.literal("member"), v.literal("viewer")),
+	// Reference to the org's `orgRoles` doc. Replaces the legacy
+	// `role: "admin"|"member"|"viewer"` string union — see migration
+	// `convex/_migrations/2026_05_21_invitationRoleToRoleId.ts` for the
+	// backfill (idempotent, runs once). Migration ran successfully on
+	// dev on 2026-05-21 (6 rows updated), so the bridge fields are gone.
+	roleId: v.id("orgRoles"),
 	status: v.union(
 		v.literal("pending"),
 		v.literal("accepted"),

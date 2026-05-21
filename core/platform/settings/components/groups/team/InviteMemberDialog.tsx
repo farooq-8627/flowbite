@@ -2,7 +2,7 @@
 
 import { useMutation } from "convex/react";
 import { Copy, Plus } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
@@ -37,18 +37,30 @@ import { useSettingsForm } from "../../../hooks/useSettingsForm";
 
 type Role = Doc<"orgRoles">;
 
+/**
+ * Schema is dynamic — we validate `roleId` against the org's actual role
+ * docs, not a hardcoded list. Zod still enforces the email format and the
+ * fact that a role was picked.
+ */
 const inviteSchema = z.object({
 	email: z.string().email("Enter a valid email"),
-	role: z.union([z.literal("admin"), z.literal("member"), z.literal("viewer")]),
+	roleId: z.string().min(1, "Pick a role"),
 });
-
-const INVITE_SYSTEM_ROLE_NAMES = ["admin", "member", "viewer"] as const;
 
 /**
  * `roles` is provided by the parent (MembersSection → TeamGroup) so the
  * same role list is shared across the whole Team tab from a single
  * subscription. See AGENTS.md "Per-row data on a list view comes from
  * one batched query".
+ *
+ * ROLE LIST
+ * ─────────
+ * The dropdown shows EVERY role from `orgRoles.list` except `Owner`. This
+ * includes the system roles seeded for new orgs (Admin, Member) as well as
+ * any custom role the owner has created (Sales Manager, Support, etc.).
+ * The default selection is the role flagged `isDefault` on the org —
+ * usually Member — so admins inviting a regular teammate just type the
+ * email and submit.
  *
  * SUCCESS / SEND ANOTHER FLOW
  * ───────────────────────────
@@ -82,21 +94,31 @@ export function InviteMemberDialog({
 	const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
 	const invite = useMutation(api.invitations.mutations.create);
 
+	// Filter Owner out — Owner is the workspace creator, never invitable.
+	// Sort: default role first, then everything else by name.
 	const inviteRoles = useMemo(() => {
-		const byName = new Map<string, Role>();
-		for (const r of roles ?? []) {
-			byName.set(r.name.toLowerCase(), r);
-		}
-		return INVITE_SYSTEM_ROLE_NAMES.map((key) => ({ key, role: byName.get(key) })).filter(
-			(r): r is { key: (typeof INVITE_SYSTEM_ROLE_NAMES)[number]; role: Role } => !!r.role,
-		);
+		const list = (roles ?? []).filter((r) => r.name !== "Owner");
+		return list.sort((a, b) => {
+			if (a.isDefault && !b.isDefault) return -1;
+			if (!a.isDefault && b.isDefault) return 1;
+			return a.name.localeCompare(b.name);
+		});
 	}, [roles]);
+
+	const defaultRoleId = useMemo(() => {
+		const def = inviteRoles.find((r) => r.isDefault);
+		return def?._id ?? inviteRoles[0]?._id ?? "";
+	}, [inviteRoles]);
 
 	const { form, isSubmitting, handleSubmit } = useSettingsForm({
 		schema: inviteSchema,
-		values: { email: "", role: "member" as const },
+		values: { email: "", roleId: defaultRoleId },
 		onSubmit: async (data) => {
-			const result = await invite({ orgId, email: data.email, role: data.role });
+			const result = await invite({
+				orgId,
+				email: data.email,
+				roleId: data.roleId as Id<"orgRoles">,
+			});
 			toast.success(`Invitation sent to ${data.email}`, {
 				description:
 					"They'll get an email with a link to accept. You can also copy the link below.",
@@ -107,9 +129,20 @@ export function InviteMemberDialog({
 			// driven by the constant `values` prop above and the next render
 			// re-syncs them — the reset call here is what wins for the
 			// current render frame.
-			form.reset({ email: "", role: data.role });
+			form.reset({ email: "", roleId: data.roleId });
 		},
 	});
+
+	// Keep the form's roleId in sync once the prop arrives async — the
+	// query may be undefined on first render, so the initial value can be
+	// "" until orgRoles loads. Setting it here prevents the "Pick a role"
+	// validation from firing on an empty submit when the user hasn't
+	// touched the dropdown.
+	useEffect(() => {
+		if (!form.getValues("roleId") && defaultRoleId) {
+			form.setValue("roleId", defaultRoleId);
+		}
+	}, [defaultRoleId, form]);
 
 	const handleCopyLink = async () => {
 		if (!lastAcceptUrl) return;
@@ -133,7 +166,7 @@ export function InviteMemberDialog({
 	// "Send invitation" again after entering the new email.
 	const handleSendAnother = () => {
 		setLastAcceptUrl(null);
-		form.reset({ email: "", role: "member" });
+		form.reset({ email: "", roleId: defaultRoleId });
 		// Refocus the email input on the next paint.
 		queueMicrotask(() => {
 			const el = document.querySelector<HTMLInputElement>('input[name="email"]');
@@ -184,13 +217,14 @@ export function InviteMemberDialog({
 							/>
 							<FormField
 								control={form.control}
-								name="role"
+								name="roleId"
 								render={({ field }) => (
 									<FormItem>
 										<FormLabel>Role</FormLabel>
 										<Select
 											onValueChange={field.onChange}
 											value={field.value as string}
+											disabled={inviteRoles.length === 0}
 										>
 											<FormControl>
 												<SelectTrigger className="w-full">
@@ -198,8 +232,8 @@ export function InviteMemberDialog({
 												</SelectTrigger>
 											</FormControl>
 											<SelectContent>
-												{inviteRoles.map(({ key, role }) => (
-													<SelectItem key={key} value={key}>
+												{inviteRoles.map((role) => (
+													<SelectItem key={role._id} value={role._id}>
 														<span className="font-medium">
 															{role.name}
 														</span>

@@ -5,6 +5,7 @@ import { Building2, CheckCircle, Clock, Orbit, XCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { APP_CONFIG } from "@/config/app-config";
 import { api } from "@/convex/_generated/api";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
@@ -15,244 +16,272 @@ interface JoinOrgPageProps {
 }
 
 /**
- * JoinOrgPage — Accepts an org invitation by token.
- * User must be authenticated (middleware handles redirect to /signin?redirect=/join/[token]).
- * Shows invitation details, then calls invitations.accept mutation on confirm.
+ * JoinOrgPage — accept an org invitation by token.
+ *
+ * LAYOUT
+ * ──────
+ * Reuses the shared `<AuthShellLayout>` (same as signin / signup /
+ * onboarding) so the right-side branded panel is identical across the
+ * auth surface. Only the left-side card content changes per state.
+ *
+ * AUTH
+ * ────
+ * The middleware redirects unauthenticated users to
+ * `/signin?redirect=/join/<token>`, so by the time this component renders
+ * the user is signed in. The accept mutation itself also requires auth
+ * server-side as a final guarantee.
+ *
+ * STATES
+ * ──────
+ * - loading      — spinner card while `getByToken` resolves
+ * - not-found    — invalid token or already deleted invitation row
+ * - expired      — token still exists but `expiresAt` has passed
+ * - accepted     — invitation already used (one-shot link is dead)
+ * - pending      — happy path: show the accept card with org/role/email
+ *                  + "I accept" checkbox + Join button
  */
 export function JoinOrgPage({ token }: JoinOrgPageProps) {
 	const router = useRouter();
 	const [accepting, setAccepting] = useState(false);
+	const [agreed, setAgreed] = useState(false);
 	const invitation = useQuery(api.invitations.queries.getByToken, { token });
 	const accept = useMutation(api.invitations.mutations.accept);
 
+	const orgName = invitation?.orgName ?? "the workspace";
+
+	// Right-side panel — identical across every state of this page so the
+	// layout doesn't shift as the left-side card content changes.
+	const panel = {
+		icon: <Orbit className="size-10" />,
+		title: APP_CONFIG.name,
+		tagline: APP_CONFIG.description,
+		bottomLeft: {
+			heading: "Welcome to the team",
+			body: "One invite, one click. We handle the rest.",
+		},
+		bottomRight: {
+			heading: "Need help?",
+			body: "Ask the workspace admin for a fresh invite if anything looks off.",
+		},
+	};
+
 	const handleAccept = async () => {
+		if (!agreed || accepting) return;
 		setAccepting(true);
 		try {
 			const result = await accept({ token });
 			toast.success(
 				result.alreadyMember
-					? "You're already a member of this workspace."
-					: `Welcome to ${invitation?.orgName ?? "the workspace"}!`,
+					? `You're already a member of ${orgName}.`
+					: `Welcome to ${orgName}!`,
 			);
-			router.push(`/${invitation?.orgSlug}`);
+			router.push(invitation?.orgSlug ? `/${invitation.orgSlug}` : "/");
 		} catch (err) {
-			toast.mutationError(err as Error, "Failed to accept invitation.");
+			toast.mutationError(err as Error, "Couldn't accept the invitation.");
 			setAccepting(false);
 		}
 	};
 
-	// Loading state
+	// ── Loading ───────────────────────────────────────────────────────
 	if (invitation === undefined) {
 		return (
-			<AuthShellLayout
-				panel={{
-					icon: <Orbit className="size-10" />,
-					title: APP_CONFIG.name,
-					tagline: APP_CONFIG.description,
-					bottomLeft: {
-						heading: "Team collaboration",
-						body: "Work together with your team in one workspace.",
-					},
-					bottomRight: {
-						heading: "Need help?",
-						body: "Contact support if you have trouble joining.",
-					},
-				}}
-			>
-				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-4 sm:w-[380px]">
-					<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+			<AuthShellLayout panel={panel}>
+				<div className="mx-auto flex w-full flex-col items-center justify-center gap-4 sm:w-[380px]">
+					<div className="h-8 w-8 animate-spin rounded-full border-primary border-b-2" />
 					<p className="text-muted-foreground text-sm">Loading invitation…</p>
 				</div>
 			</AuthShellLayout>
 		);
 	}
 
-	// Not found
+	// ── Not found ─────────────────────────────────────────────────────
 	if (!invitation) {
 		return (
-			<AuthShellLayout
-				panel={{
-					icon: <Orbit className="size-10" />,
-					title: APP_CONFIG.name,
-					tagline: APP_CONFIG.description,
-					bottomLeft: {
-						heading: "Invalid link",
-						body: "This invitation link is not valid.",
-					},
-					bottomRight: {
-						heading: "Need help?",
-						body: "Contact the person who invited you for a new link.",
-					},
-				}}
-			>
-				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
-					<XCircle className="size-12 text-destructive" />
-					<div className="space-y-2 text-center">
-						<h1 className="font-medium text-2xl">Invitation not found</h1>
-						<p className="text-muted-foreground text-sm">
-							This invitation link is invalid or has already been used.
-						</p>
-					</div>
-					<Button
-						variant="outline"
-						className="w-full"
-						onClick={() => router.push("/signin")}
-					>
-						Go to sign in
-					</Button>
-				</div>
+			<AuthShellLayout panel={panel}>
+				<JoinStatusCard
+					icon={<XCircle className="size-7 text-destructive" />}
+					iconBg="bg-destructive/10"
+					title="Invitation not found"
+					description="This invitation link is invalid or has already been used. Ask the person who invited you for a new link."
+					action={
+						<Button
+							variant="outline"
+							className="w-full rounded-[var(--radius)]"
+							onClick={() => router.push("/")}
+						>
+							Go to {APP_CONFIG.name}
+						</Button>
+					}
+				/>
 			</AuthShellLayout>
 		);
 	}
 
-	// Expired
+	// ── Expired ───────────────────────────────────────────────────────
 	if (invitation.status === "expired" || invitation.expiresAt < Date.now()) {
 		return (
-			<AuthShellLayout
-				panel={{
-					icon: <Orbit className="size-10" />,
-					title: APP_CONFIG.name,
-					tagline: APP_CONFIG.description,
-					bottomLeft: {
-						heading: "Expired link",
-						body: "Ask your admin to send a new invitation.",
-					},
-					bottomRight: {
-						heading: "Need help?",
-						body: "Contact support if you need assistance.",
-					},
-				}}
-			>
-				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
-					<Clock className="size-12 text-muted-foreground" />
-					<div className="space-y-2 text-center">
-						<h1 className="font-medium text-2xl">Invitation expired</h1>
-						<p className="text-muted-foreground text-sm">
-							This invitation has expired. Ask your admin to send a new one.
-						</p>
-					</div>
-					<Button
-						variant="outline"
-						className="w-full"
-						onClick={() => router.push("/signin")}
-					>
-						Go to sign in
-					</Button>
-				</div>
+			<AuthShellLayout panel={panel}>
+				<JoinStatusCard
+					icon={<Clock className="size-7 text-muted-foreground" />}
+					iconBg="bg-muted"
+					title="Invitation expired"
+					description={`This invitation to ${orgName} has expired. Ask your admin to send a new one.`}
+					action={
+						<Button
+							variant="outline"
+							className="w-full rounded-[var(--radius)]"
+							onClick={() => router.push("/")}
+						>
+							Go to {APP_CONFIG.name}
+						</Button>
+					}
+				/>
 			</AuthShellLayout>
 		);
 	}
 
-	// Already accepted
+	// ── Already accepted ──────────────────────────────────────────────
 	if (invitation.status === "accepted") {
 		return (
-			<AuthShellLayout
-				panel={{
-					icon: <Orbit className="size-10" />,
-					title: APP_CONFIG.name,
-					tagline: APP_CONFIG.description,
-					bottomLeft: {
-						heading: "Already joined",
-						body: "You're already a member of this workspace.",
-					},
-					bottomRight: {
-						heading: "Need help?",
-						body: "Contact support if you have trouble accessing.",
-					},
-				}}
-			>
-				<div className="mx-auto flex w-full flex-col items-center justify-center space-y-6 sm:w-[380px]">
-					<CheckCircle className="size-12 text-green-500" />
-					<div className="space-y-2 text-center">
-						<h1 className="font-medium text-2xl">Already accepted</h1>
-						<p className="text-muted-foreground text-sm">
-							This invitation has already been accepted.
-						</p>
-					</div>
-					<Button
-						className="w-full"
-						onClick={() => router.push(`/${invitation.orgSlug}`)}
-					>
-						Go to workspace
-					</Button>
-				</div>
+			<AuthShellLayout panel={panel}>
+				<JoinStatusCard
+					icon={<CheckCircle className="size-7 text-green-600" />}
+					iconBg="bg-green-500/10"
+					title="Already accepted"
+					description={`This invitation has already been used. The link is now closed — if you need to rejoin ${orgName}, ask your admin to send a fresh invite.`}
+					action={
+						<Button
+							className="w-full rounded-[var(--radius)]"
+							onClick={() =>
+								router.push(invitation.orgSlug ? `/${invitation.orgSlug}` : "/")
+							}
+						>
+							Go to {orgName}
+						</Button>
+					}
+				/>
 			</AuthShellLayout>
 		);
 	}
 
-	// Valid pending invitation — show accept UI
+	// ── Pending — happy path ──────────────────────────────────────────
 	return (
-		<AuthShellLayout
-			panel={{
-				icon: <Orbit className="size-10" />,
-				title: APP_CONFIG.name,
-				tagline: APP_CONFIG.description,
-				bottomLeft: {
-					heading: "Join your team",
-					body: "Collaborate with your team in one workspace.",
-				},
-				bottomRight: {
-					heading: "Need help?",
-					body: "Contact support if you have trouble joining.",
-				},
-			}}
-		>
-			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[380px]">
-				<div className="space-y-2 text-center">
-					<div className="mx-auto flex h-14 w-14 items-center justify-center rounded-[var(--radius)] bg-primary/10">
+		<AuthShellLayout panel={panel}>
+			<div className="mx-auto flex w-full flex-col justify-center gap-6 sm:w-[380px]">
+				<div className="flex flex-col items-center gap-3 text-center">
+					<div
+						aria-hidden
+						className="flex size-14 items-center justify-center rounded-[var(--radius)] bg-primary/10"
+					>
 						<Building2 className="size-7 text-primary" />
 					</div>
-					<h1 className="font-medium text-2xl">You&apos;re invited</h1>
-					<p className="text-muted-foreground text-sm">
-						You&apos;ve been invited to join{" "}
-						<span className="font-medium text-foreground">{invitation.orgName}</span> as
-						a{" "}
-						<span className="font-medium text-foreground capitalize">
-							{invitation.role}
-						</span>
-						.
-					</p>
+					<div className="space-y-1.5">
+						<h1 className="font-medium text-2xl">You&apos;re invited</h1>
+						<p className="text-muted-foreground text-sm">
+							You&apos;ve been invited to join{" "}
+							<span className="font-medium text-foreground">{orgName}</span>.
+						</p>
+					</div>
 				</div>
 
 				<div className="rounded-[var(--radius)] border bg-muted/40 px-4 py-3 text-sm">
-					<div className="flex items-center justify-between">
-						<span className="text-muted-foreground">Invited email</span>
-						<span className="font-medium">{invitation.email}</span>
-					</div>
-					<div className="mt-2 flex items-center justify-between">
-						<span className="text-muted-foreground">Role</span>
-						<span className="font-medium capitalize">{invitation.role}</span>
-					</div>
-					<div className="mt-2 flex items-center justify-between">
-						<span className="text-muted-foreground">Workspace</span>
-						<span className="font-medium">{invitation.orgName}</span>
-					</div>
+					<dl className="flex flex-col gap-2">
+						<div className="flex items-baseline justify-between gap-3">
+							<dt className="text-muted-foreground">Workspace</dt>
+							<dd className="truncate text-end font-medium">{orgName}</dd>
+						</div>
+						<div className="flex items-baseline justify-between gap-3">
+							<dt className="text-muted-foreground">Role</dt>
+							<dd className="truncate text-end font-medium">
+								{invitation.roleName}
+							</dd>
+						</div>
+						<div className="flex items-baseline justify-between gap-3">
+							<dt className="text-muted-foreground">Invited email</dt>
+							<dd className="truncate text-end font-medium">{invitation.email}</dd>
+						</div>
+					</dl>
 				</div>
 
-				<div className="space-y-3">
+				<label
+					htmlFor="join-accept"
+					className="flex cursor-pointer items-start gap-3 rounded-[var(--radius)] border bg-card px-3 py-3 text-sm transition-colors hover:bg-muted/50"
+				>
+					<Checkbox
+						id="join-accept"
+						checked={agreed}
+						onCheckedChange={(v) => setAgreed(Boolean(v))}
+						className="mt-0.5"
+					/>
+					<span className="text-foreground">
+						I accept this invitation and agree to join{" "}
+						<span className="font-medium">{orgName}</span> as{" "}
+						<span className="font-medium">{invitation.roleName}</span>.
+					</span>
+				</label>
+
+				<div className="flex flex-col gap-2">
 					<Button
 						className="w-full rounded-[var(--radius)]"
 						onClick={handleAccept}
-						disabled={accepting}
+						disabled={!agreed || accepting}
 					>
-						{accepting ? "Joining…" : `Join ${invitation.orgName}`}
+						{accepting ? "Joining…" : `Join ${orgName}`}
 					</Button>
 					<Button
-						variant="outline"
+						variant="ghost"
 						className="w-full rounded-[var(--radius)]"
-						onClick={() => router.push("/signin")}
+						onClick={() => router.push("/")}
 						disabled={accepting}
 					>
-						Decline
+						Not now
 					</Button>
 				</div>
 
 				<p className="text-center text-muted-foreground text-xs">
 					Make sure you&apos;re signed in with{" "}
-					<span className="font-medium text-foreground">{invitation.email}</span> to
-					accept this invitation.
+					<span className="font-medium text-foreground">{invitation.email}</span> —
+					that&apos;s the email this invite was sent to.
 				</p>
 			</div>
 		</AuthShellLayout>
+	);
+}
+
+// ─── Reusable status-card body ────────────────────────────────────────────────
+//
+// The not-found / expired / already-accepted screens share the same shape:
+// icon bubble, headline, description, single action button. Extracting it
+// keeps the visual identity consistent across states.
+
+function JoinStatusCard({
+	icon,
+	iconBg,
+	title,
+	description,
+	action,
+}: {
+	icon: React.ReactNode;
+	iconBg: string;
+	title: string;
+	description: string;
+	action: React.ReactNode;
+}) {
+	return (
+		<div className="mx-auto flex w-full flex-col justify-center gap-6 sm:w-[380px]">
+			<div className="flex flex-col items-center gap-3 text-center">
+				<div
+					aria-hidden
+					className={`flex size-14 items-center justify-center rounded-[var(--radius)] ${iconBg}`}
+				>
+					{icon}
+				</div>
+				<div className="space-y-1.5">
+					<h1 className="font-medium text-2xl">{title}</h1>
+					<p className="text-muted-foreground text-sm">{description}</p>
+				</div>
+			</div>
+			{action}
+		</div>
 	);
 }

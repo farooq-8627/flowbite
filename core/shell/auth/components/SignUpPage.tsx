@@ -3,7 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Globe, Orbit } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { useState } from "react";
 
@@ -14,6 +14,19 @@ import { Separator } from "@/components/ui/separator";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
+
+/**
+ * Whitelist of post-signup redirect targets. See the parallel helper in
+ * `SignInPage` for rationale — only first-party in-app paths are allowed,
+ * so a hostile referer can't open-redirect through the signup flow.
+ */
+function safeRedirectTarget(raw: string | null): string | null {
+	if (!raw) return null;
+	if (!raw.startsWith("/")) return null;
+	if (raw.startsWith("//")) return null;
+	if (/^\/(?:[a-z]{2}\/)?join\/[^/?]+/.test(raw)) return raw;
+	return null;
+}
 
 function GoogleIcon() {
 	return (
@@ -52,6 +65,13 @@ export function SignUpPage() {
 	const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
 	const [joinExisting, setJoinExisting] = useState(false);
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
+	// If the user landed on signup via an invitation flow, send them
+	// straight to the accept screen after creating their account. Skip
+	// onboarding entirely — they're joining an existing workspace, not
+	// creating a new one. Otherwise default to the onboarding wizard.
+	const postSignupHref = redirectTarget ?? "/onboarding/org-name";
 
 	const handleOAuth = (provider: "github" | "google") => {
 		setOauthLoading(provider);
@@ -84,7 +104,11 @@ export function SignUpPage() {
 					<Link
 						prefetch={false}
 						className="text-foreground font-medium underline underline-offset-4"
-						href="/signin"
+						href={
+							redirectTarget
+								? `/signin?redirect=${encodeURIComponent(redirectTarget)}`
+								: "/signin"
+						}
 					>
 						Login
 					</Link>
@@ -151,7 +175,7 @@ export function SignUpPage() {
 										email,
 										method: "password",
 									});
-									router.push("/onboarding/org-name");
+									router.push(postSignupHref);
 								})
 								.catch((err: Error) => {
 									posthog.capture("sign_up_failed", {

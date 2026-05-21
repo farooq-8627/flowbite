@@ -10,6 +10,7 @@
 
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
+import type * as _migrations_2026_05_21_invitationRoleToRoleId from "../_migrations/2026_05_21_invitationRoleToRoleId.js";
 import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
@@ -133,6 +134,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
+  "_migrations/2026_05_21_invitationRoleToRoleId": typeof _migrations_2026_05_21_invitationRoleToRoleId;
   "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;

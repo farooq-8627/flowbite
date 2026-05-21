@@ -3,7 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Globe, Orbit } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import posthog from "posthog-js";
 import { useState } from "react";
 
@@ -14,6 +14,25 @@ import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
+
+/**
+ * Whitelist of post-auth redirect targets the signin page is allowed to
+ * route the user to. Anything else falls back to "/" so a hostile referer
+ * (e.g. `?redirect=https://evil.com`) can't open-redirect through the
+ * sign-in flow. We currently allow:
+ *
+ *   - `/join/<token>` and `/<locale>/join/<token>` — invitation accept link.
+ *
+ * Add new entries here ONLY for first-party in-app paths.
+ */
+function safeRedirectTarget(raw: string | null): string | null {
+	if (!raw) return null;
+	if (!raw.startsWith("/")) return null;
+	// Reject protocol-relative URLs ("//evil.com") and any non-internal path.
+	if (raw.startsWith("//")) return null;
+	if (/^\/(?:[a-z]{2}\/)?join\/[^/?]+/.test(raw)) return raw;
+	return null;
+}
 
 function GoogleIcon() {
 	return (
@@ -52,6 +71,11 @@ export function SignInPage() {
 	const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
 	const [remember, setRemember] = useState(false);
 	const router = useRouter();
+	const searchParams = useSearchParams();
+	const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
+	// Where to send the user after successful auth. Defaults to "/" (which
+	// then routes onward to onboarding or the user's default org).
+	const postAuthHref = redirectTarget ?? "/";
 
 	const handleOAuth = (provider: "github" | "google") => {
 		setOauthLoading(provider);
@@ -84,7 +108,11 @@ export function SignInPage() {
 					<Link
 						prefetch={false}
 						className="text-foreground font-medium underline underline-offset-4"
-						href="/signup"
+						href={
+							redirectTarget
+								? `/signup?redirect=${encodeURIComponent(redirectTarget)}`
+								: "/signup"
+						}
 					>
 						Register
 					</Link>
@@ -142,7 +170,7 @@ export function SignInPage() {
 										email,
 										method: "password",
 									});
-									router.push("/");
+									router.push(postAuthHref);
 								})
 								.catch((err: Error) => {
 									posthog.capture("sign_in_failed", {

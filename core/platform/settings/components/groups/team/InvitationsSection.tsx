@@ -104,7 +104,7 @@ export function InvitationsSection({
 							</TableCell>
 							<TableCell>
 								<Badge variant="secondary" className="capitalize">
-									{inv.role}
+									{inv.roleName}
 								</Badge>
 							</TableCell>
 							<TableCell className="text-muted-foreground text-xs">

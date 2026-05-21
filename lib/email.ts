@@ -110,7 +110,7 @@ function escapeHtml(s: string): string {
  */
 export function renderInvitationEmail(args: {
 	orgName: string;
-	role: "admin" | "member" | "viewer";
+	role: string;
 	inviterName?: string | null;
 	inviterEmail?: string | null;
 	acceptUrl: string;

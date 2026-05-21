@@ -11,6 +11,8 @@
  *     - create: owner/admin can create; member/viewer cannot
  *     - create: duplicate pending invitation rejected
  *     - create: existing member cannot be re-invited
+ *     - create: rejects when role belongs to a different org
+ *     - create: rejects when role is the Owner role
  *     - accept: token lookup, email match, member creation, expired handling
  *     - accept: soft-deleted member reactivated
  *     - decline: marks invitation as declined
@@ -20,6 +22,14 @@
  *   Integration:
  *     - logActivity records are created on mutations
  *     - sendNotification records are created on accept
+ *
+ * NOTE on role lookup:
+ *   Each test re-fetches the role doc by name inline (matches the pattern
+ *   used in `orgs.test.ts`). A shared helper would be cleaner, but typing
+ *   `t: ReturnType<typeof convexTest>` drops the schema generic and
+ *   downgrades `withIndex` to `SystemIndexes` only — TS rejects the call
+ *   in the convex/tsconfig.json strict pass. Inlining keeps the schema
+ *   inferred from the local `convexTest(schema, modules)` value.
  */
 
 import { convexTest } from "convex-test";
@@ -66,11 +76,20 @@ describe("invitations.mutations.create", () => {
 	it("owner can create an invitation", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const result = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		expect(result.invitationId).toBeDefined();
@@ -80,20 +99,29 @@ describe("invitations.mutations.create", () => {
 		const invitation = await t.run(async (ctx) => ctx.db.get(result.invitationId));
 		expect(invitation).not.toBeNull();
 		expect(invitation!.email).toBe("bob@example.com");
-		expect(invitation!.role).toBe("member");
+		expect(invitation!.roleId).toBe(memberRoleId);
 		expect(invitation!.status).toBe("pending");
 	});
 
 	it("non-member cannot create an invitation", async () => {
 		const t = convexTest(schema, modules);
 		const { orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 		const outsider = await seedUser(t, { email: "outsider@example.com", name: "Outsider" });
 
 		await expect(
 			outsider.asUser.mutation(api.invitations.mutations.create, {
 				orgId,
 				email: "bob@example.com",
-				role: "member",
+				roleId: memberRoleId,
 			}),
 		).rejects.toThrow();
 	});
@@ -101,30 +129,105 @@ describe("invitations.mutations.create", () => {
 	it("rejects duplicate pending invitation to same email", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const { memberRoleId, adminRoleId } = await t.run(async (ctx) => {
+			const member = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			const admin = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Admin"),
+				)
+				.first();
+			return { memberRoleId: member!._id, adminRoleId: admin!._id };
+		});
 
 		await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		await expect(
 			owner.asUser.mutation(api.invitations.mutations.create, {
 				orgId,
 				email: "bob@example.com",
-				role: "admin",
+				roleId: adminRoleId,
 			}),
 		).rejects.toThrow(/active invitation/i);
+	});
+
+	it("rejects role from a different org", async () => {
+		const t = convexTest(schema, modules);
+		const { owner, orgId } = await seedOrgWithOwner(t);
+
+		// Seed a second org owned by a different user. Its Member roleId
+		// must not be assignable inside the first org's invitation.
+		const otherOwner = await seedUser(t, { email: "other@example.com", name: "Other" });
+		const otherOrgId = await otherOwner.asUser.mutation(api.orgs.mutations.create, {
+			name: "Other Org",
+		});
+		const otherMemberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", otherOrgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
+
+		await expect(
+			owner.asUser.mutation(api.invitations.mutations.create, {
+				orgId,
+				email: "bob@example.com",
+				roleId: otherMemberRoleId,
+			}),
+		).rejects.toThrow(/role/i);
+	});
+
+	it("rejects the Owner role", async () => {
+		const t = convexTest(schema, modules);
+		const { owner, orgId } = await seedOrgWithOwner(t);
+		const ownerRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Owner"),
+				)
+				.first();
+			return r!._id;
+		});
+
+		await expect(
+			owner.asUser.mutation(api.invitations.mutations.create, {
+				orgId,
+				email: "bob@example.com",
+				roleId: ownerRoleId,
+			}),
+		).rejects.toThrow(/owner/i);
 	});
 
 	it("creates logActivity record", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const logs = await t.run(async (ctx) => ctx.db.query("activityLogs").collect());
@@ -141,11 +244,20 @@ describe("invitations.mutations.accept", () => {
 	it("invited user can accept and becomes a member", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
@@ -164,17 +276,26 @@ describe("invitations.mutations.accept", () => {
 				.first(),
 		);
 		expect(member).not.toBeNull();
-		expect(member!.roleId).toBeTruthy();
+		expect(member!.roleId).toBe(memberRoleId);
 	});
 
 	it("sets defaultOrgId on accepting user if none set", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
@@ -188,11 +309,20 @@ describe("invitations.mutations.accept", () => {
 	it("rejects when email does not match", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		// Eve tries to accept Bob's invitation
@@ -205,13 +335,22 @@ describe("invitations.mutations.accept", () => {
 	it("rejects expired invitation", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { invitationId, token } = await owner.asUser.mutation(
 			api.invitations.mutations.create,
 			{
 				orgId,
 				email: "bob@example.com",
-				role: "member",
+				roleId: memberRoleId,
 			},
 		);
 
@@ -226,14 +365,23 @@ describe("invitations.mutations.accept", () => {
 		).rejects.toThrow();
 	});
 
-	it("rejects already-used invitation", async () => {
+	it("rejects already-used invitation (one-shot link guarantee)", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
@@ -241,7 +389,8 @@ describe("invitations.mutations.accept", () => {
 		// Accept once
 		await bob.asUser.mutation(api.invitations.mutations.accept, { token });
 
-		// Try to accept again
+		// Try to accept again — must throw, even though Bob is the
+		// originally-invited user. Once accepted the link is dead forever.
 		await expect(
 			bob.asUser.mutation(api.invitations.mutations.accept, { token }),
 		).rejects.toThrow();
@@ -250,11 +399,20 @@ describe("invitations.mutations.accept", () => {
 	it("sends notification to inviter on accept", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
@@ -270,6 +428,15 @@ describe("invitations.mutations.accept", () => {
 	it("reactivates soft-deleted member on accept", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const adminRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Admin"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		// Create a soft-deleted member for Bob
 		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
@@ -280,11 +447,11 @@ describe("invitations.mutations.accept", () => {
 			return mId;
 		});
 
-		// Invite and accept
+		// Invite at admin role and accept
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "admin",
+			roleId: adminRoleId,
 		});
 		await bob.asUser.mutation(api.invitations.mutations.accept, { token });
 
@@ -294,7 +461,7 @@ describe("invitations.mutations.accept", () => {
 			return m as { deletedAt?: number; roleId: unknown } | null;
 		});
 		expect(member!.deletedAt).toBeUndefined();
-		expect(member!.roleId).toBeTruthy();
+		expect(member!.roleId).toBe(adminRoleId);
 	});
 });
 
@@ -304,13 +471,22 @@ describe("invitations.mutations.decline", () => {
 	it("invited user can decline", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { invitationId, token } = await owner.asUser.mutation(
 			api.invitations.mutations.create,
 			{
 				orgId,
 				email: "bob@example.com",
-				role: "member",
+				roleId: memberRoleId,
 			},
 		);
 
@@ -324,11 +500,20 @@ describe("invitations.mutations.decline", () => {
 	it("wrong email cannot decline", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const eve = await seedUser(t, { email: "eve@example.com", name: "Eve" });
@@ -344,11 +529,20 @@ describe("invitations.mutations.cancel", () => {
 	it("owner can cancel a pending invitation", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { invitationId } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		await owner.asUser.mutation(api.invitations.mutations.cancel, {
@@ -363,11 +557,20 @@ describe("invitations.mutations.cancel", () => {
 	it("non-member cannot cancel", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
 
 		const { invitationId } = await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		const outsider = await seedUser(t, { email: "outsider@example.com", name: "Outsider" });
@@ -386,17 +589,32 @@ describe("invitations.queries.listPending", () => {
 	it("returns only pending invitations", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);
+		const { memberRoleId, adminRoleId } = await t.run(async (ctx) => {
+			const member = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			const admin = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Admin"),
+				)
+				.first();
+			return { memberRoleId: member!._id, adminRoleId: admin!._id };
+		});
 
 		await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "bob@example.com",
-			role: "member",
+			roleId: memberRoleId,
 		});
 
 		await owner.asUser.mutation(api.invitations.mutations.create, {
 			orgId,
 			email: "carol@example.com",
-			role: "admin",
+			roleId: adminRoleId,
 		});
 
 		// Decline one
@@ -410,5 +628,6 @@ describe("invitations.queries.listPending", () => {
 		const pending = await owner.asUser.query(api.invitations.queries.listPending, { orgId });
 		expect(pending.length).toBe(1);
 		expect(pending[0].email).toBe("bob@example.com");
+		expect(pending[0].roleName).toBe("Member");
 	});
 });

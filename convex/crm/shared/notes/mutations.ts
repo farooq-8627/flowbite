@@ -24,6 +24,7 @@ import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { logActivity } from "../../../activityLogs/helpers";
+import { sendNotification } from "../../../notifications/helpers";
 import { getDefaultCategoryForOrg, seedNoteCategoriesForOrg } from "../noteCategories/internal";
 
 const TITLE_MAX_LEN = 80;
@@ -114,6 +115,28 @@ export const create = orgMutation({
 			description: `Note added${args.isInternal ? " (internal)" : ""}`,
 			metadata: { noteId, categoryId },
 		});
+
+		// Notify the entity assignee (if any) so they see notes on their records.
+		const assigneeId = await resolveNoteEntityAssignee(ctx, {
+			orgId: args.orgId,
+			entityType: args.entityType,
+			entityId: args.entityId,
+		});
+		if (assigneeId && assigneeId !== userId) {
+			await sendNotification(ctx, {
+				orgId: args.orgId,
+				userId: assigneeId,
+				type: "note.added",
+				title: "New note on your record",
+				body:
+					trimmedContent.length > 120
+						? `${trimmedContent.slice(0, 117)}…`
+						: trimmedContent,
+				entityType: args.entityType,
+				entityId: args.entityId,
+				metadata: { noteId, personCode: args.personCode ?? "" },
+			});
+		}
 
 		return noteId;
 	},
@@ -537,3 +560,52 @@ export const remove = orgMutation({
 		});
 	},
 });
+
+// ─── Helpers (file-local) ────────────────────────────────────────────────────
+
+/**
+ * Resolve the assignee of the entity a note is attached to. Used for
+ * notification fan-out on note creation — the entity owner gets notified.
+ */
+async function resolveNoteEntityAssignee(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; entityType: string; entityId: string },
+): Promise<Id<"users"> | undefined> {
+	if (args.entityType === "lead" || args.entityType === "person") {
+		const lead = await ctx.db
+			.query("leads")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.entityId),
+			)
+			.first();
+		if (lead?.assignedTo) return lead.assignedTo;
+	}
+	if (args.entityType === "contact" || args.entityType === "person") {
+		const contact = await ctx.db
+			.query("contacts")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.entityId),
+			)
+			.first();
+		if (contact?.assignedTo) return contact.assignedTo;
+	}
+	if (args.entityType === "deal") {
+		const deal = await ctx.db
+			.query("deals")
+			.withIndex("by_org_and_dealCode", (q) =>
+				q.eq("orgId", args.orgId).eq("dealCode", args.entityId),
+			)
+			.first();
+		if (deal?.assignedTo) return deal.assignedTo;
+	}
+	if (args.entityType === "company") {
+		const company = await ctx.db
+			.query("companies")
+			.withIndex("by_org_and_companyCode", (q) =>
+				q.eq("orgId", args.orgId).eq("companyCode", args.entityId),
+			)
+			.first();
+		if (company?.assignedTo) return company.assignedTo;
+	}
+	return undefined;
+}

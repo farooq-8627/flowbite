@@ -26,7 +26,7 @@
  * returns the existing id — feels like "open existing" to the user.
  */
 import { useMutation, useQuery } from "convex/react";
-import { Building2, MessageSquare, MessageSquarePlus, Tag, User } from "lucide-react";
+import { Building2, MessageSquare, MessageSquarePlus, Tag, User, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	Command,
@@ -47,6 +47,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ChatEntityType } from "@/core/comms/messages/hooks";
+import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "./ChatAvatar";
 
@@ -81,10 +82,7 @@ type RecentRef = { entityType: ChatEntityType; entityId: string };
  * already created under the canonical key (post 2026-05-19 normalisation).
  */
 function pickerKeyFor(row: PickerRow): string {
-	const t =
-		row.entityType === "lead" || row.entityType === "contact"
-			? "person"
-			: row.entityType;
+	const t = row.entityType === "lead" || row.entityType === "contact" ? "person" : row.entityType;
 	return `${t}:${row.entityId}`;
 }
 
@@ -124,6 +122,11 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 	const [creating, setCreating] = useState(false);
 	const [recents, setRecents] = useState<RecentRef[]>(() => loadRecents());
 	const ensureForEntity = useMutation(api.crm.shared.conversations.mutations.ensureForEntity);
+	const ensureDirectMessage = useMutation(
+		api.crm.shared.conversations.mutations.ensureDirectMessage,
+	);
+	const { me } = useCurrentOrg();
+	const allMembers = useOrgMembers();
 
 	// Refresh recents list every time the dialog opens.
 	useEffect(() => {
@@ -131,10 +134,6 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 	}, [open]);
 
 	// All sources fetched in parallel (only when open). Each is bounded server-side.
-	// 2026-05-18: collapsed three subscriptions (`people.listAll`, `deals.list`,
-	// `companies.list`) into a single `listForConversationPicker` server query
-	// — see AGENTS.md "Per-row data on a list view comes from one batched
-	// query". Also drops the messages page from 4 list subscriptions to 2.
 	const picker = useQuery(
 		api.crm.people.queries.listForConversationPicker,
 		open ? { orgId } : "skip",
@@ -146,6 +145,29 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 		api.crm.shared.conversations.queries.listForUser,
 		open ? { orgId, filter: "all" } : "skip",
 	);
+
+	// Team members (excluding self) — fed from context, zero extra subscription.
+	const teamMembers = useMemo<PickerRow[]>(() => {
+		if (!allMembers || !me) return [];
+		return allMembers
+			.filter((m) => String(m.userId) !== String(me._id))
+			.map((m) => ({
+				entityType: "user" as ChatEntityType,
+				entityId: String(m.userId),
+				primary: m.user?.name ?? m.user?.email ?? "Member",
+				secondary: m.user?.email,
+				kindLabel: "Team",
+				icon: Users,
+				avatarUrl: m.user?.avatarUrl,
+				searchKeywords: [
+					m.user?.name ?? "",
+					m.user?.email ?? "",
+					"Team",
+					"Member",
+					"DM",
+				].filter(Boolean),
+			}));
+	}, [allMembers, me]);
 
 	const allRows = useMemo<PickerRow[]>(() => {
 		const out: PickerRow[] = [];
@@ -256,28 +278,34 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 			if (creating) return;
 			setCreating(true);
 			try {
-				// Normalise lead/contact → person at the boundary. The server
-				// also normalises (defence in depth), but doing it here means
-				// the recents list keys on the canonical type — picking the
-				// same person from the lead row or the contact row resolves
-				// to the same recent entry.
-				const normalisedType =
-					row.entityType === "lead" || row.entityType === "contact"
-						? "person"
-						: row.entityType;
-				const conversationId = await ensureForEntity({
-					orgId,
-					entityType: normalisedType,
-					entityId: row.entityId,
-				});
-				saveRecent({ entityType: normalisedType, entityId: row.entityId });
+				let conversationId: Id<"conversations">;
+				if (row.entityType === "user") {
+					// Direct message — use the dedicated DM mutation.
+					conversationId = await ensureDirectMessage({
+						orgId,
+						targetUserId: row.entityId as Id<"users">,
+					});
+					saveRecent({ entityType: "user", entityId: row.entityId });
+				} else {
+					// Entity-based conversation (person/deal/company).
+					const normalisedType =
+						row.entityType === "lead" || row.entityType === "contact"
+							? "person"
+							: row.entityType;
+					conversationId = await ensureForEntity({
+						orgId,
+						entityType: normalisedType,
+						entityId: row.entityId,
+					});
+					saveRecent({ entityType: normalisedType, entityId: row.entityId });
+				}
 				onCreated(conversationId);
 				onOpenChange(false);
 			} finally {
 				setCreating(false);
 			}
 		},
-		[creating, ensureForEntity, onCreated, onOpenChange, orgId],
+		[creating, ensureForEntity, ensureDirectMessage, onCreated, onOpenChange, orgId],
 	);
 
 	return (
@@ -312,6 +340,22 @@ export function NewConversationDialog({ orgId, open, onOpenChange, onCreated }: 
 								<CommandEmpty>
 									Nothing matches. Try a different name, code, or email.
 								</CommandEmpty>
+
+								{teamMembers.length > 0 && (
+									<>
+										<CommandGroup heading="Team members">
+											{teamMembers.map((r) => (
+												<EntityRow
+													key={`team:${r.entityId}`}
+													row={r}
+													onSelect={handleSelect}
+													disabled={creating}
+												/>
+											))}
+										</CommandGroup>
+										<CommandSeparator />
+									</>
+								)}
 
 								{recentRows.length > 0 && (
 									<>
@@ -397,9 +441,11 @@ function EntityRow({
 				)}
 			</div>
 			<div className="flex shrink-0 flex-col items-end gap-0.5">
-				<span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-					{row.entityId}
-				</span>
+				{row.entityType !== "user" && (
+					<span className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+						{row.entityId}
+					</span>
+				)}
 				<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
 					{row.kindLabel}
 				</span>

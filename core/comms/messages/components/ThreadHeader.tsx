@@ -200,12 +200,14 @@ export function ThreadHeader({
 				<div className="flex min-w-0 flex-col">
 					<div className="flex min-w-0 items-center gap-1.5">
 						{TitleNode}
-						<span
-							className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
-							title={`${display.kindLabel} code`}
-						>
-							{conversation.entityId}
-						</span>
+						{conversation.entityType !== "user" && (
+							<span
+								className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground"
+								title={`${display.kindLabel} code`}
+							>
+								{conversation.entityId}
+							</span>
+						)}
 					</div>
 					<p className="truncate text-xs text-muted-foreground">
 						{display.secondary

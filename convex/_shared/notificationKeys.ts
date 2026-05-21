@@ -76,6 +76,13 @@ export const NOTIFICATION_PREFERENCE_CATALOG: readonly NotificationPreferenceEnt
 		description: "Someone added you to a chat thread.",
 		defaultValue: true,
 	},
+	{
+		key: "note_added",
+		category: "crm",
+		label: "Note added to your record",
+		description: "Someone added a note to a lead, contact, deal, or company assigned to you.",
+		defaultValue: true,
+	},
 
 	// Reminders
 	{ key: "reminder_due", category: "reminders", label: "Reminder due", defaultValue: true },

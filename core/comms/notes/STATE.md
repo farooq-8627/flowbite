@@ -1,3 +1,19 @@
+# Notes — State (2026-05-21 update)
+
+## ✅ 2026-05-21 — Note creation notifies entity assignee
+
+| Component | File | Notes |
+|---|---|---|
+| notes.create fan-out | `convex/crm/shared/notes/mutations.ts` | After creating a note, resolves the entity's assignee (lead/contact/deal/company) and sends a "note.added" notification if the assignee is not the author. |
+| resolveNoteEntityAssignee | `convex/crm/shared/notes/mutations.ts` | New helper — mirrors `resolveEntityAssignee` from messages. |
+| note_added pref key | `convex/_shared/notificationKeys.ts` | New notification preference key so users can opt out. |
+
+### Architecture Notes
+- No schema change to notes table — no `assignedTo` field added. The notification targets the entity's existing `assignedTo` field (on leads/contacts/deals/companies).
+- This means: if admin is assigned to a lead, and owner adds a note to that lead, admin gets notified.
+
+---
+
 # Notes — State
 
 > Updated: 2026-05-18 (afternoon — perf cleanup #3)

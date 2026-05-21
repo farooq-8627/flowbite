@@ -26,6 +26,7 @@ export type ChatEntityType =
 	| "deal"
 	| "company"
 	| "person"
+	| "user"
 	| "project"
 	| "task";
 
@@ -234,4 +235,9 @@ export function useArchiveConversation() {
 
 export function useUnarchiveConversation() {
 	return useMutation(api.crm.shared.conversations.mutations.unarchive);
+}
+
+/** Rename a conversation title. */
+export function useRenameConversation() {
+	return useMutation(api.crm.shared.conversations.mutations.rename);
 }

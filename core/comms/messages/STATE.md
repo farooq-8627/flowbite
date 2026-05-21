@@ -1,5 +1,33 @@
 # Messages — State
 
+> Updated: 2026-05-21
+> Status: 100% Complete — member-to-member DMs added
+
+## ✅ 2026-05-21 — Member-to-member direct messages
+
+Added org member DM support so team members can chat with each other directly
+from the Messages "New Chat" picker.
+
+| Component | File | Notes |
+|---|---|---|
+| entityCodes | `convex/_shared/entityCodes.ts` | Added "user" to ENTITY_TYPES_FOR_CHAT, validator, prefixes. Added `buildDmPairKey()` + `getOtherUserFromPairKey()` helpers. |
+| ensureDirectMessage | `convex/crm/shared/conversations/mutations.ts` | New mutation: verifies target is org member, builds deterministic pair key, creates/finds conversation, auto-adds both users as participants. |
+| listEntityDisplays | `convex/crm/shared/conversations/queries.ts` | Handles "user" entityType — resolves the "other" user from the pair key for sidebar display. |
+| resolveEntityAssignee | `convex/crm/shared/messages/mutations.ts` | Returns undefined for "user" type (both already added by ensureDirectMessage). |
+| actionUrlFor | `convex/crm/shared/messages/mutations.ts` | Maps "user" → `/messages`. |
+| ChatEntityType | `core/comms/messages/hooks/index.ts` | Added "user" to the union. |
+| KIND_LABEL | `core/comms/messages/hooks/useEntityDisplay.ts` | Added "user": "DM". |
+| NewConversationDialog | `core/comms/messages/components/NewConversationDialog.tsx` | Added "Team members" group at top of picker fed from `useOrgMembers()`. Calls `ensureDirectMessage` for user-type selections. |
+
+### Architecture Notes
+- DM pair key format: `sorted(userIdA, userIdB)` joined by `:` — deterministic, both directions resolve to same conversation.
+- No schema migration needed — "user" is a purely additive literal to the existing union validator.
+- Team members group uses `useOrgMembers()` from context (zero extra subscription).
+
+---
+
+# Messages — State
+
 > Updated: 2026-05-18
 > Status: 100% Complete for Phase 2 — production-grade backend + full Tier-A/B/C UI shipped + UX overhaul batches 1, 2, 3, 4, and 5. Voice notes / lightbox / mobile sheet / consecutive grouping / forward / RTL Sheet / SWR conversation switch / audio MIME backfill / WhatsApp-style inline timestamp / touch-friendly action row / **bottom-anchored scroll resilient to media loads** / **cursor-based pagination** / **strict sender-only avatar grouping (no time window)** all delivered.
 >

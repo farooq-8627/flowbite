@@ -1017,7 +1017,7 @@ function buildDetailHref(
 			// /deals/<code> shape; the dynamic route handles the redirect
 			// server-side via getByDealCode → personCode.
 			if (personCode) {
-				return `${prefix}/profile/${personCode}?tab=deals`;
+				return `${prefix}/profile/${personCode}?group=deals`;
 			}
 			return `${prefix}/deals/${code}`;
 		default:

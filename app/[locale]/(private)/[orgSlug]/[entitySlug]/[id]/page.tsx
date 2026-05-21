@@ -11,7 +11,7 @@
 // person's profile under the "Deals" tab. The client-side
 // `EntityDetailRedirect` resolves the slug, looks up the deal's personCode
 // when it lands here, and `router.replace`s to
-// `/<orgSlug>/profile/<personCode>?tab=deals`. For other slots (`company`,
+// `/<orgSlug>/profile/<personCode>?group=deals`. For other slots (`company`,
 // stale lead/contact bookmarks) it does the appropriate redirect or shows
 // a placeholder.
 

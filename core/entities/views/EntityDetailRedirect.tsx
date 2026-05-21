@@ -8,7 +8,7 @@
  * standalone detail page. Every deal lives on the owning person's
  * profile under the "Deals" tab, so when a link lands at
  * `/<orgSlug>/deals/<dealCode>` we redirect straight to
- * `/<orgSlug>/profile/<personCode>?tab=deals`.
+ * `/<orgSlug>/profile/<personCode>?group=deals`.
  *
  * The component subscribes to `useEntityLabels` first to resolve the
  * URL slug (`entitySlug`) into a canonical slot ("deal" / "company" /
@@ -79,13 +79,13 @@ export function EntityDetailRedirect({
 		}
 
 		// Deals — wait for the deal doc to arrive, then redirect to the
-		// owning person's profile (deals tab). When the deal can't be
+		// owning person's profile (deals group). When the deal can't be
 		// found we leave the user on a "not found" placeholder below.
 		if (slot === "deal") {
 			if (deal === undefined) return; // still loading
 			if (deal === null) return; // not found — placeholder below
 			if (deal.personCode) {
-				router.replace(`${prefix}/profile/${deal.personCode}?tab=deals`);
+				router.replace(`${prefix}/profile/${deal.personCode}?group=deals`);
 				return;
 			}
 			// Orphaned deal — no personCode. Stay put with the placeholder.

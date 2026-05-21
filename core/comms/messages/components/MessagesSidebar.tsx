@@ -92,7 +92,6 @@ function ConversationItem({
 
 	const title = conversation.title ?? display?.name ?? conversation.entityId ?? "Thread";
 
-
 	return (
 		<li>
 			<button
@@ -140,12 +139,14 @@ function ConversationItem({
 								·
 							</Badge>
 						)}
-						<span
-							className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] uppercase text-muted-foreground"
-							title={display?.kindLabel}
-						>
-							{conversation.entityId}
-						</span>
+						{conversation.entityType !== "user" && (
+							<span
+								className="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[9px] uppercase text-muted-foreground"
+								title={display?.kindLabel}
+							>
+								{conversation.entityId}
+							</span>
+						)}
 					</span>
 				</div>
 			</button>
@@ -282,7 +283,11 @@ export function MessagesSidebar({
 								row={row}
 								isSelected={selectedConversationId === row.conversation._id}
 								onSelect={onSelect}
-								display={displaysMap?.[`${row.conversation.entityType}:${row.conversation.entityId}`]}
+								display={
+									displaysMap?.[
+										`${row.conversation.entityType}:${row.conversation.entityId}`
+									]
+								}
 							/>
 						))}
 					</ul>

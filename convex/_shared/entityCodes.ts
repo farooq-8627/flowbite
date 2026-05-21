@@ -31,6 +31,7 @@ export const ENTITY_TYPES_FOR_CHAT = [
 	"deal",
 	"company",
 	"person", // a unified "person" thread (lead OR contact, addressed by personCode)
+	"user", // 1:1 direct message between org members
 	"project", // Phase 4
 	"task", // Phase 4
 ] as const;
@@ -43,6 +44,7 @@ export const entityTypeForChatValidator = v.union(
 	v.literal("deal"),
 	v.literal("company"),
 	v.literal("person"),
+	v.literal("user"),
 	v.literal("project"),
 	v.literal("task"),
 );
@@ -56,6 +58,7 @@ export const ENTITY_CODE_PREFIXES: Record<EntityTypeForChat, string> = {
 	lead: "P", // person
 	contact: "P", // person (same as lead — converted lead keeps personCode)
 	person: "P", // unified
+	user: "U", // org member DM
 	deal: "D",
 	company: "CO",
 	project: "PJ",
@@ -73,4 +76,27 @@ const CODE_PATTERN = /^[A-Z]{1,4}-[0-9]{1,9}$/;
  */
 export function looksLikeEntityCode(value: string): boolean {
 	return CODE_PATTERN.test(value);
+}
+
+// ─── DM pair key helpers ─────────────────────────────────────────────────────
+
+/**
+ * Build a deterministic entityId for a 1:1 DM between two users.
+ * Both directions (A→B, B→A) produce the same key so the conversation
+ * is shared. Format: `<smallerId>:<largerId>` (lexicographic sort).
+ */
+export function buildDmPairKey(userIdA: string, userIdB: string): string {
+	return userIdA < userIdB ? `${userIdA}:${userIdB}` : `${userIdB}:${userIdA}`;
+}
+
+/**
+ * Extract the "other" userId from a DM pair key given the viewer's id.
+ * Returns `undefined` if the key doesn't contain the viewer.
+ */
+export function getOtherUserFromPairKey(pairKey: string, viewerUserId: string): string | undefined {
+	const parts = pairKey.split(":");
+	if (parts.length !== 2) return undefined;
+	if (parts[0] === viewerUserId) return parts[1];
+	if (parts[1] === viewerUserId) return parts[0];
+	return undefined;
 }

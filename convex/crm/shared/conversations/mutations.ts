@@ -9,7 +9,7 @@
 
 import { ConvexError, v } from "convex/values";
 import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
-import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
+import { buildDmPairKey, entityTypeForChatValidator } from "../../../_shared/entityCodes";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { logActivity } from "../../../activityLogs/helpers";
@@ -104,10 +104,12 @@ export const addParticipants = orgMutation({
 					entityId: conversation.entityId,
 					actionUrl:
 						conversation.entityType === "deal"
-							? `/deals/${conversation.entityId}`
+							? `/profile/${conversation.entityId}?group=deals`
 							: conversation.entityType === "company"
 								? `/companies/${conversation.entityId}`
-								: `/profile/${conversation.entityId}`,
+								: conversation.entityType === "user"
+									? `/messages`
+									: `/profile/${conversation.entityId}?group=messages`,
 					metadata: { conversationId: String(args.conversationId) },
 				});
 			}
@@ -297,3 +299,97 @@ export const unarchive = orgMutation({
 
 // re-exported for tests
 export const __internal = { listActiveMembers };
+
+// ─── Direct message (member-to-member 1:1 DM) ───────────────────────────────
+
+/**
+ * Get-or-create a 1:1 DM conversation between the caller and a target org
+ * member. Uses a deterministic pair key so both sides share one conversation.
+ * Both users are auto-added as participants.
+ */
+export const ensureDirectMessage = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		targetUserId: v.id("users"),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.view");
+
+		if (args.targetUserId === userId) {
+			throw new ConvexError({ code: "INVALID_ARGS", message: "Cannot DM yourself." });
+		}
+
+		// Verify target is an org member.
+		const targetMember = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", args.targetUserId),
+			)
+			.first();
+		if (!targetMember) throw new ConvexError(ERRORS.NOT_FOUND);
+
+		const pairKey = buildDmPairKey(String(userId), String(args.targetUserId));
+
+		const conversationId = await getOrCreateConversation(ctx, {
+			orgId: args.orgId,
+			entityType: "user",
+			entityId: pairKey,
+			creatorId: userId,
+		});
+
+		// Set a default title "You and {Name}" if the conversation has no title yet.
+		const convo = await ctx.db.get(conversationId);
+		if (convo && !convo.title) {
+			const callerUser = await ctx.db.get(userId);
+			const targetUser = await ctx.db.get(args.targetUserId);
+			const callerName = callerUser?.name ?? callerUser?.email?.split("@")[0] ?? "You";
+			const targetName = targetUser?.name ?? targetUser?.email?.split("@")[0] ?? "Member";
+			await ctx.db.patch(conversationId, {
+				title: `${callerName} and ${targetName}`,
+			});
+		}
+
+		// Ensure both users are participants.
+		await ensureMember(ctx, {
+			orgId: args.orgId,
+			conversationId,
+			userId: args.targetUserId,
+			role: "participant",
+			joinReason: "auto",
+		});
+
+		return conversationId;
+	},
+});
+
+// ─── Rename conversation ─────────────────────────────────────────────────────
+
+export const rename = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		conversationId: v.id("conversations"),
+		title: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "messages.view");
+
+		await getConversationOrThrow(ctx, args.conversationId, args.orgId);
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: args.conversationId,
+			userId,
+		});
+		if (!myMembership) throw new ConvexError(ERRORS.FORBIDDEN);
+
+		const trimmed = args.title.trim();
+		if (trimmed.length === 0 || trimmed.length > 100) {
+			throw new ConvexError(ERRORS.INVALID_ARGS);
+		}
+
+		await ctx.db.patch(args.conversationId, {
+			title: trimmed,
+			updatedAt: Date.now(),
+		});
+	},
+});

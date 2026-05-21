@@ -48,6 +48,7 @@ const KIND_LABEL: Record<ChatEntityType, string> = {
 	person: "Person",
 	deal: "Deal",
 	company: "Company",
+	user: "DM",
 	project: "Project",
 	task: "Task",
 };

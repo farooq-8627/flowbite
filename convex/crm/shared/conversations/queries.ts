@@ -11,8 +11,8 @@
 
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
-import type { Doc } from "../../../_generated/dataModel";
-import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
+import type { Doc, Id } from "../../../_generated/dataModel";
+import { entityTypeForChatValidator, getOtherUserFromPairKey } from "../../../_shared/entityCodes";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { findConversation, getMyMembership, listActiveMembers } from "./internal";
 
@@ -221,7 +221,7 @@ export const listEntityDisplays = orgQuery({
 		),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "messages.view");
 
 		const uniq = new Map<string, { entityType: string; entityId: string }>();
@@ -245,6 +245,28 @@ export const listEntityDisplays = orgQuery({
 			const key = `${t.entityType}:${t.entityId}`;
 			const isPerson =
 				t.entityType === "lead" || t.entityType === "contact" || t.entityType === "person";
+
+			if (t.entityType === "user") {
+				// DM pair key — resolve the "other" user's name for display.
+				const otherUserId = getOtherUserFromPairKey(t.entityId, String(userId));
+				if (otherUserId) {
+					const otherUser = await ctx.db.get(otherUserId as Id<"users">);
+					if (otherUser) {
+						const u = otherUser as Doc<"users">;
+						let avatarUrl: string | undefined = u.avatarUrl;
+						if (!avatarUrl && u.avatarStorageId) {
+							avatarUrl = (await ctx.storage.getUrl(u.avatarStorageId)) ?? undefined;
+						}
+						result[key] = {
+							name: u.name ?? u.email ?? "Member",
+							secondary: u.email ?? undefined,
+							kindLabel: "DM",
+							avatarUrl,
+						};
+					}
+				}
+				continue;
+			}
 
 			if (isPerson) {
 				const contact = await ctx.db

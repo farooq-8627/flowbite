@@ -1,6 +1,14 @@
 "use client";
 
-import { LogOut, MessageSquare, Search, UserMinus, UserPlus, UsersRound } from "lucide-react";
+import {
+	LogOut,
+	MessageSquare,
+	Pencil,
+	Search,
+	UserMinus,
+	UserPlus,
+	UsersRound,
+} from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -13,12 +21,14 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import {
 	useAddParticipants,
 	useConversationParticipants,
 	useLeaveConversation,
 	useRemoveParticipant,
+	useRenameConversation,
 } from "@/core/comms/messages/hooks";
 import { useMe, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { normalizeError } from "@/lib/normalizeError";
@@ -54,10 +64,13 @@ export function ParticipantsDialog({
 	const addParticipants = useAddParticipants();
 	const removeParticipant = useRemoveParticipant();
 	const leave = useLeaveConversation();
+	const renameConversation = useRenameConversation();
 
 	const [search, setSearch] = useState("");
 	const [pending, setPending] = useState(false);
 	const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+	const [editingTitle, setEditingTitle] = useState(false);
+	const [titleDraft, setTitleDraft] = useState(conversation.title ?? "");
 
 	// IDs of users already in the conversation — hidden from the "Add" list.
 	const participantIdSet = useMemo(() => {
@@ -156,6 +169,69 @@ export function ParticipantsDialog({
 						but keeps history visible to everyone else.
 					</DialogDescription>
 				</DialogHeader>
+
+				{/* Rename conversation */}
+				<section className="flex items-center gap-2">
+					{editingTitle ? (
+						<form
+							className="flex flex-1 items-center gap-2"
+							onSubmit={async (e) => {
+								e.preventDefault();
+								if (titleDraft.trim().length === 0) return;
+								try {
+									await renameConversation({
+										orgId,
+										conversationId: conversation._id,
+										title: titleDraft.trim(),
+									});
+									toast.success("Conversation renamed.");
+									setEditingTitle(false);
+								} catch (err) {
+									toast.error(normalizeError(err, "Couldn't rename."));
+								}
+							}}
+						>
+							<Input
+								value={titleDraft}
+								onChange={(e) => setTitleDraft(e.target.value)}
+								maxLength={100}
+								className="h-8 flex-1 text-sm"
+								autoFocus
+							/>
+							<Button type="submit" size="sm" className="h-8 text-xs">
+								Save
+							</Button>
+							<Button
+								type="button"
+								size="sm"
+								variant="ghost"
+								className="h-8 text-xs"
+								onClick={() => setEditingTitle(false)}
+							>
+								Cancel
+							</Button>
+						</form>
+					) : (
+						<>
+							<span className="flex-1 truncate text-sm font-medium text-foreground">
+								{conversation.title || "Untitled conversation"}
+							</span>
+							<Button
+								type="button"
+								size="sm"
+								variant="ghost"
+								className="h-7 gap-1 text-xs text-muted-foreground"
+								onClick={() => {
+									setTitleDraft(conversation.title ?? "");
+									setEditingTitle(true);
+								}}
+							>
+								<Pencil className="size-3" />
+								Rename
+							</Button>
+						</>
+					)}
+				</section>
 
 				{/* Active participants */}
 				<section className="flex flex-col gap-2">

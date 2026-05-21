@@ -374,9 +374,7 @@ export const remove = orgMutation({
 		if (mode === "self") {
 			// Per-user hide. No moderation gate — every conversation member can
 			// hide a message from their own view. Idempotent.
-			const already = (message.deletedFor ?? []).some(
-				(u) => String(u) === String(userId),
-			);
+			const already = (message.deletedFor ?? []).some((u) => String(u) === String(userId));
 			if (already) return;
 			await ctx.db.patch(args.messageId, {
 				deletedFor: [...(message.deletedFor ?? []), userId],
@@ -410,9 +408,7 @@ export const remove = orgMutation({
 		// no messages, clear the fields entirely.
 		const nextNewest = await ctx.db
 			.query("messages")
-			.withIndex("by_conversation_and_created", (q) =>
-				q.eq("conversationId", conversationId),
-			)
+			.withIndex("by_conversation_and_created", (q) => q.eq("conversationId", conversationId))
 			.order("desc")
 			.first();
 
@@ -479,6 +475,12 @@ async function resolveEntityAssignee(
 	ctx: MutationCtx,
 	args: { orgId: Id<"orgs">; entityType: string; entityId: string },
 ): Promise<Id<"users"> | undefined> {
+	if (args.entityType === "user") {
+		// DM pair key: "userIdA:userIdB". Both users are participants; the
+		// "assignee" concept doesn't apply. Return undefined — both are
+		// auto-added by ensureDirectMessage already.
+		return undefined;
+	}
 	if (args.entityType === "lead" || args.entityType === "person") {
 		const lead = await ctx.db
 			.query("leads")
@@ -520,10 +522,11 @@ async function resolveEntityAssignee(
 }
 
 function actionUrlFor(entityType: string | undefined, entityId: string): string | undefined {
-	if (entityType === "deal") return `/deals/${entityId}`;
+	if (entityType === "deal") return `/profile/${entityId}?group=deals`;
 	if (entityType === "company") return `/companies/${entityId}`;
 	if (entityType === "lead" || entityType === "contact" || entityType === "person")
-		return `/profile/${entityId}`;
+		return `/profile/${entityId}?group=messages`;
+	if (entityType === "user") return `/messages`;
 	return undefined;
 }
 

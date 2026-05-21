@@ -1,12 +1,16 @@
 "use client";
 
+import { useMutation, useQuery } from "convex/react";
 import { Bell, Bot, CheckCheck, Search } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { api } from "@/convex/_generated/api";
 import { useNavSlotNode } from "@/core/shell/shell/context/nav-slot-context";
+import { formatChatSidebarTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { matchesShortcut, useShortcut } from "@/stores/shortcuts/shortcuts-store";
 import { AutoBreadcrumb } from "./AutoBreadcrumb";
@@ -136,30 +140,6 @@ function SidebarTriggerWithTooltip() {
 
 // ─── Notification Bell ────────────────────────────────────────────────────────
 
-const MOCK_NOTIFICATIONS = [
-	{
-		id: "1",
-		title: "New lead assigned",
-		body: "Ahmad Al-Rashid was assigned to you",
-		time: "2m ago",
-		read: false,
-	},
-	{
-		id: "2",
-		title: "Deal moved to Proposal",
-		body: "Dubai Marina deal advanced",
-		time: "1h ago",
-		read: false,
-	},
-	{
-		id: "3",
-		title: "Reminder due",
-		body: "Follow up with Fatima Hassan",
-		time: "3h ago",
-		read: true,
-	},
-];
-
 function NotificationBell({
 	onToggleNotifications: _onToggleNotifications,
 }: {
@@ -167,9 +147,17 @@ function NotificationBell({
 }) {
 	const [open, setOpen] = useState(false);
 	const sc = useShortcut("notifications");
-	const unread = MOCK_NOTIFICATIONS.filter((n) => !n.read).length;
+	const params = useParams<{ orgSlug?: string }>();
+	const orgSlug = params?.orgSlug;
+	const router = useRouter();
 
-	// Wire keyboard shortcut directly to toggle this popover
+	const summary = useQuery(api.notifications.queries.getSummary);
+	const markRead = useMutation(api.notifications.mutations.markRead);
+	const markAllRead = useMutation(api.notifications.mutations.markAllRead);
+
+	const unread = summary?.unreadCount ?? 0;
+	const preview = summary?.preview ?? [];
+
 	useEffect(() => {
 		function handleKeyDown(e: KeyboardEvent) {
 			if (matchesShortcut(e, sc)) {
@@ -194,7 +182,7 @@ function NotificationBell({
 						>
 							<Bell className="size-4" />
 							{unread > 0 && (
-								<span className="absolute top-1.5 end-1.5 size-2 rounded-full bg-destructive" />
+								<span className="absolute end-1.5 top-1.5 size-2 rounded-full bg-destructive" />
 							)}
 						</Button>
 					</PopoverTrigger>
@@ -210,7 +198,8 @@ function NotificationBell({
 					{unread > 0 && (
 						<button
 							type="button"
-							className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+							onClick={() => markAllRead({})}
+							className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 						>
 							<CheckCheck className="size-3.5" />
 							Mark all read
@@ -219,35 +208,64 @@ function NotificationBell({
 				</div>
 
 				<div className="max-h-80 overflow-y-auto">
-					{MOCK_NOTIFICATIONS.map((n) => (
-						<div
-							key={n.id}
-							className={cn(
-								"flex gap-3 px-4 py-3 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors",
-								!n.read && "bg-muted/30",
-							)}
-						>
-							<span
-								className={cn(
-									"mt-1.5 size-2 shrink-0 rounded-full",
-									!n.read ? "bg-primary" : "bg-transparent",
-								)}
-							/>
-							<div className="flex-1 min-w-0">
-								<p className="text-sm font-medium leading-tight">{n.title}</p>
-								<p className="text-xs text-muted-foreground mt-0.5 truncate">
-									{n.body}
-								</p>
-								<p className="text-xs text-muted-foreground/60 mt-1">{n.time}</p>
-							</div>
+					{preview.length === 0 ? (
+						<div className="px-4 py-8 text-center text-xs text-muted-foreground">
+							No notifications yet
 						</div>
-					))}
+					) : (
+						preview.map((n) => {
+							const actionUrl =
+								n.actionUrl && orgSlug ? `/${orgSlug}${n.actionUrl}` : null;
+							return (
+								<button
+									type="button"
+									key={n._id}
+									className={cn(
+										"flex w-full gap-3 border-b px-4 py-3 text-start last:border-0 transition-colors",
+										!n.read && "bg-muted/30",
+										"hover:bg-muted/50",
+									)}
+									onClick={() => {
+										if (!n.read) markRead({ notificationId: n._id });
+										if (actionUrl) {
+											setOpen(false);
+											router.push(actionUrl);
+										}
+									}}
+								>
+									<span
+										className={cn(
+											"mt-1.5 size-2 shrink-0 rounded-full",
+											!n.read ? "bg-primary" : "bg-transparent",
+										)}
+									/>
+									<div className="min-w-0 flex-1">
+										<p className="text-sm font-medium leading-tight">
+											{n.title}
+										</p>
+										{n.body && (
+											<p className="mt-0.5 truncate text-xs text-muted-foreground">
+												{n.body}
+											</p>
+										)}
+										<span className="mt-1 text-[11px] text-muted-foreground/60">
+											{formatChatSidebarTime(n.createdAt)}
+										</span>
+									</div>
+								</button>
+							);
+						})
+					)}
 				</div>
 
 				<div className="border-t px-4 py-2.5">
 					<button
 						type="button"
-						className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+						onClick={() => {
+							setOpen(false);
+							if (orgSlug) router.push(`/${orgSlug}/notifications`);
+						}}
+						className="block w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
 					>
 						View all notifications
 					</button>

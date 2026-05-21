@@ -306,6 +306,46 @@ describe("invitations.mutations.accept", () => {
 		expect(user!.defaultOrgId).toBe(orgId);
 	});
 
+	it("flips onboardingCompleted=true on accept (skips workspace wizard)", async () => {
+		// Regression: before 2026-05-21, an invited brand-new user
+		// (`onboardingCompleted: false` from auth.ts) would accept and land
+		// at `/<orgSlug>`. The dashboard's `<OnboardingGuard>` then fired
+		// `redirect("/onboarding")` because the flag was still false. The
+		// ErrorBoundary above the guard caught the `NEXT_REDIRECT` and
+		// rendered "Something went wrong" — every dashboard load after the
+		// invite was broken. Accept must therefore mark the user onboarded:
+		// they joined an existing workspace, so the workspace-creation
+		// wizard isn't relevant.
+		const t = convexTest(schema, modules);
+		const { owner, orgId } = await seedOrgWithOwner(t);
+		const memberRoleId = await t.run(async (ctx) => {
+			const r = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", orgId).eq("name", "Member"),
+				)
+				.first();
+			return r!._id;
+		});
+
+		const { token } = await owner.asUser.mutation(api.invitations.mutations.create, {
+			orgId,
+			email: "bob@example.com",
+			roleId: memberRoleId,
+		});
+
+		const bob = await seedUser(t, { email: "bob@example.com", name: "Bob" });
+
+		// Sanity: seed leaves onboardingCompleted=false (matches auth.ts).
+		const before = await t.run(async (ctx) => ctx.db.get(bob.userId));
+		expect(before!.onboardingCompleted).toBe(false);
+
+		await bob.asUser.mutation(api.invitations.mutations.accept, { token });
+
+		const after = await t.run(async (ctx) => ctx.db.get(bob.userId));
+		expect(after!.onboardingCompleted).toBe(true);
+	});
+
 	it("rejects when email does not match", async () => {
 		const t = convexTest(schema, modules);
 		const { owner, orgId } = await seedOrgWithOwner(t);

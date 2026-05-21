@@ -187,11 +187,22 @@ export const accept = authenticatedMutation({
 		// Check if already a member (e.g. race condition or re-join attempt)
 		const existingMember = await getOrgMember(ctx, invitation.orgId, ctx.userId);
 		if (existingMember && existingMember.deletedAt === undefined) {
-			// Already a member — just mark invitation as accepted
+			// Already a member — just mark invitation as accepted. Also flip
+			// `onboardingCompleted` if it's still false: the user belongs to
+			// an active org, so the workspace-creation wizard isn't relevant
+			// to them. Without this, an already-member who hasn't completed
+			// onboarding would hit `OnboardingGuard`'s redirect on every
+			// dashboard load.
 			await ctx.db.patch(invitation._id, {
 				status: "accepted",
 				updatedAt: now,
 			});
+			if (!ctx.user.onboardingCompleted) {
+				await ctx.db.patch(ctx.userId, {
+					onboardingCompleted: true,
+					updatedAt: now,
+				});
+			}
 			return { orgId: invitation.orgId, alreadyMember: true };
 		}
 
@@ -226,6 +237,23 @@ export const accept = authenticatedMutation({
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, {
 				defaultOrgId: invitation.orgId,
+				updatedAt: now,
+			});
+		}
+
+		// Mark the user as onboarded. They've joined an existing workspace
+		// via invite — sending them through the workspace-creation wizard
+		// would prompt them to create a SECOND org, which is wrong UX.
+		// Without this patch, `<OnboardingGuard>` fires `redirect("/onboarding")`
+		// the moment the post-accept push lands on `/<orgSlug>`, and the
+		// dashboard layout's React error boundary used to swallow that
+		// `NEXT_REDIRECT` and render "Something went wrong". The boundary
+		// is now resilient (see `components/ErrorBoundary.tsx`), but the
+		// invited user STILL doesn't need the wizard, so flip the flag here
+		// and skip onboarding entirely. Idempotent: skip if already true.
+		if (!ctx.user.onboardingCompleted) {
+			await ctx.db.patch(ctx.userId, {
+				onboardingCompleted: true,
 				updatedAt: now,
 			});
 		}

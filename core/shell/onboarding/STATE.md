@@ -1,6 +1,6 @@
 # Onboarding Module — State
 
-> Updated: 2026-05-07
+> Updated: 2026-05-21
 > Status: **80% Complete** — 3-step wizard working. Errors via toasts. Product tour plan documented. Missing: pipeline seeding, resume from step.
 
 ---
@@ -48,3 +48,42 @@
 - Triggers after first dashboard visit (checks `users.dismissedCards`)
 - Key: `"product_tour_v1"` in `users.dismissedCards[]`
 - Full plan in `core/onboarding/MODULE.md`
+
+
+## 2026-05-21 — Invite-flow fix: invited users no longer hit "Something went wrong"
+
+A user reported that accepting an invitation succeeded server-side (the
+admin saw the invitee in their org) but the redirected dashboard showed the
+generic error fallback. Two atomic fixes shipped together:
+
+### Root cause
+
+After accept, `JoinOrgPage` does `router.push("/${invitation.orgSlug}")`.
+Brand-new invited users still have `users.onboardingCompleted: false`
+(seeded by `convex/auth.ts`). The dashboard layout chain mounts
+`<OnboardingGuard>` *inside* a user-defined `<ErrorBoundary>` and the
+guard's `redirect("/onboarding")` throws Next.js's internal `NEXT_REDIRECT`
+error. The boundary's `getDerivedStateFromError` had no filter and treated
+that internal signal as a real crash, so the user saw `<DashboardError>`
+("Something went wrong") instead of the navigation to `/onboarding` (and
+even that destination would have been wrong UX — the wizard prompts you to
+create a new workspace, but invited users are joining an existing one).
+
+### Fix
+
+| File | Change |
+|---|---|
+| `components/ErrorBoundary.tsx` | Imports `unstable_rethrow` from `next/navigation`; calls it in BOTH `getDerivedStateFromError` (matches Next.js's own `error-boundary.js` pattern — re-throws router errors before updating state) and `componentDidCatch` (belt-and-suspenders for wrapped errors with `cause` chains). Now the boundary is a no-op for `redirect()`, `notFound()`, `permanentRedirect()`, and bailout-to-CSR signals. |
+| `convex/invitations/mutations.ts` | `accept` patches `users.onboardingCompleted = true` in BOTH the new-member branch AND the alreadyMember-early-return branch. Idempotent. The invited user joins an existing org; the workspace-creation wizard is irrelevant to them. |
+| `convex/_migrations/markOnboardedFromMembership.ts` | NEW. One-shot internal mutation that flips `onboardingCompleted: true` for any user with at least one active `orgMembers` row. Returns `{ scanned, patched, skippedNoMembership, skippedAlreadyComplete }`. Idempotent. Ran on dev: 1 user (webstor.official@gmail.com) repaired. |
+| `convex/invitations.test.ts` | Added regression test "flips onboardingCompleted=true on accept". |
+
+**Locked rule (added to project mental model):**
+Any user-defined React `<ErrorBoundary>` mounted inside the App Router tree
+MUST pass `unstable_rethrow(error)` through `getDerivedStateFromError` (and
+ideally `componentDidCatch` too) so Next.js's `redirect()`/`notFound()`
+control-flow throws aren't caught as crashes.
+
+**Verified:** `pnpm typecheck` 0 errors · `pnpm exec biome check` on the
+3 modified/created files 0 issues · `pnpm test invitations` 19/19 ·
+`pnpm build` 18/18 routes · migration ran on dev (idempotency confirmed).

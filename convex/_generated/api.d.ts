@@ -16,6 +16,7 @@ import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesC
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
 import type * as _migrations_consolidatePersonConversations from "../_migrations/consolidatePersonConversations.js";
 import type * as _migrations_fixCompanyAssignedToColumnKey from "../_migrations/fixCompanyAssignedToColumnKey.js";
+import type * as _migrations_markOnboardedFromMembership from "../_migrations/markOnboardedFromMembership.js";
 import type * as _migrations_pinDealFieldsToDefaultStage from "../_migrations/pinDealFieldsToDefaultStage.js";
 import type * as _migrations_recomputeOrgStats from "../_migrations/recomputeOrgStats.js";
 import type * as _migrations_renameRealEstateToDubai from "../_migrations/renameRealEstateToDubai.js";
@@ -140,6 +141,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
   "_migrations/consolidatePersonConversations": typeof _migrations_consolidatePersonConversations;
   "_migrations/fixCompanyAssignedToColumnKey": typeof _migrations_fixCompanyAssignedToColumnKey;
+  "_migrations/markOnboardedFromMembership": typeof _migrations_markOnboardedFromMembership;
   "_migrations/pinDealFieldsToDefaultStage": typeof _migrations_pinDealFieldsToDefaultStage;
   "_migrations/recomputeOrgStats": typeof _migrations_recomputeOrgStats;
   "_migrations/renameRealEstateToDubai": typeof _migrations_renameRealEstateToDubai;

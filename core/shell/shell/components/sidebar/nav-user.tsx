@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { CircleUser, CreditCard, LogOut, Settings } from "lucide-react";
+import { Bell, CircleUser, CreditCard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -20,13 +20,29 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { useMe, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { getInitials } from "@/lib/utils";
 
+/**
+ * NavUser — bottom-of-sidebar user menu.
+ *
+ * Items
+ * ─────
+ *   - Account       → /{orgSlug}/settings?group=workspace§ion=workspace.profile
+ *   - Notifications → /{orgSlug}/notifications  (full notifications page)
+ *   - Billing       → /{orgSlug}/settings?group=billing
+ *                     RBAC-gated on `org.viewBilling` (default Owner only).
+ *                     Hidden for Admins / Members / Viewers without the
+ *                     permission, matching the settings sidebar gating in
+ *                     ShellLayout.
+ *   - Settings      → /{orgSlug}/settings
+ *   - Log out       → signOut()
+ */
 export function NavUser({ orgSlug }: { orgSlug?: string }) {
 	const { isMobile } = useSidebar();
 	const { signOut } = useAuthActions();
 	const user = useMe();
+	const permissions = useOrgPermissions();
 
 	if (user === undefined) {
 		return (
@@ -48,6 +64,14 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 
 	const name = user.name ?? "User";
 	const email = (user.email ?? "").toLowerCase();
+	const canViewBilling = permissions.includes("org.viewBilling");
+
+	const accountHref = orgSlug
+		? `/${orgSlug}/settings?group=workspace&section=workspace.profile`
+		: undefined;
+	const notificationsHref = orgSlug ? `/${orgSlug}/notifications` : undefined;
+	const billingHref = orgSlug ? `/${orgSlug}/settings?group=billing` : undefined;
+	const settingsHref = orgSlug ? `/${orgSlug}/settings` : undefined;
 
 	return (
 		<SidebarMenu>
@@ -93,17 +117,38 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 						</DropdownMenuLabel>
 						<DropdownMenuSeparator />
 						<DropdownMenuGroup>
-							<DropdownMenuItem>
-								<CircleUser className="size-4 shrink-0" />
-								Account
-							</DropdownMenuItem>
-							<DropdownMenuItem>
-								<CreditCard className="size-4 shrink-0" />
-								Billing
-							</DropdownMenuItem>
-							{orgSlug && (
+							{accountHref ? (
 								<DropdownMenuItem asChild>
-									<Link href={`/${orgSlug}/settings`}>
+									<Link href={accountHref}>
+										<CircleUser className="size-4 shrink-0" />
+										Account
+									</Link>
+								</DropdownMenuItem>
+							) : (
+								<DropdownMenuItem disabled>
+									<CircleUser className="size-4 shrink-0" />
+									Account
+								</DropdownMenuItem>
+							)}
+							{notificationsHref && (
+								<DropdownMenuItem asChild>
+									<Link href={notificationsHref}>
+										<Bell className="size-4 shrink-0" />
+										Notifications
+									</Link>
+								</DropdownMenuItem>
+							)}
+							{canViewBilling && billingHref && (
+								<DropdownMenuItem asChild>
+									<Link href={billingHref}>
+										<CreditCard className="size-4 shrink-0" />
+										Billing
+									</Link>
+								</DropdownMenuItem>
+							)}
+							{settingsHref && (
+								<DropdownMenuItem asChild>
+									<Link href={settingsHref}>
 										<Settings className="size-4 shrink-0" />
 										Settings
 									</Link>

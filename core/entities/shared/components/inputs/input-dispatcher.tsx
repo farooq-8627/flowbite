@@ -336,6 +336,18 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 	),
 	file: ({ field, slot, orgId, entityId, fileScopeId, filePersonCode }) => {
 		if (!orgId) return <FileFieldPlaceholder label={field.label} multiple={false} />;
+		const allowedFileTypes = field.allowedFileTypes as
+			| Array<
+					| "image"
+					| "pdf"
+					| "document"
+					| "spreadsheet"
+					| "video"
+					| "audio"
+					| "archive"
+					| "other"
+			  >
+			| undefined;
 		if (!entityId || !fileScopeId) {
 			return (
 				<CreateModeFileField
@@ -343,6 +355,7 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 					fieldKey={field.name}
 					label={field.label}
 					multiple={false}
+					allowedFileTypes={allowedFileTypes}
 				/>
 			);
 		}
@@ -356,11 +369,24 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 				multiple={false}
 				label={`Drop ${field.label.toLowerCase()} here or click to browse`}
 				tags={tags}
+				allowedFileTypes={allowedFileTypes}
 			/>
 		);
 	},
 	files: ({ field, slot, orgId, entityId, fileScopeId, filePersonCode }) => {
 		if (!orgId) return <FileFieldPlaceholder label={field.label} multiple={true} />;
+		const allowedFileTypes = field.allowedFileTypes as
+			| Array<
+					| "image"
+					| "pdf"
+					| "document"
+					| "spreadsheet"
+					| "video"
+					| "audio"
+					| "archive"
+					| "other"
+			  >
+			| undefined;
 		if (!entityId || !fileScopeId) {
 			return (
 				<CreateModeFileField
@@ -368,6 +394,7 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 					fieldKey={field.name}
 					label={field.label}
 					multiple={true}
+					allowedFileTypes={allowedFileTypes}
 				/>
 			);
 		}
@@ -381,6 +408,7 @@ const TYPE_INPUTS: Record<string, (ctx: InputContext) => ReactNode> = {
 				multiple={true}
 				label={`Drop ${field.label.toLowerCase()} here or click to browse`}
 				tags={tags}
+				allowedFileTypes={allowedFileTypes}
 			/>
 		);
 	},

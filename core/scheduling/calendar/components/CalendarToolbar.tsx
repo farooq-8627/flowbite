@@ -107,7 +107,7 @@ export function CalendarToolbar({
 				</Button>
 			</div>
 
-			<h2 className="ms-1 text-base font-semibold tracking-tight">{title}</h2>
+			<h2 className="ms-1 truncate text-base font-semibold tracking-tight">{title}</h2>
 
 			{/* Search (optional) */}
 			{search && (
@@ -133,14 +133,19 @@ export function CalendarToolbar({
 				</div>
 			)}
 
-			{/* Right side */}
-			<div className="ms-auto flex items-center gap-2">
+			{/* Right-side cluster — on narrow viewports it wraps to its own
+			    line under the title (`basis-full` claims the full row on
+			    mobile, falls back to `basis-auto` from sm+). The inner row
+			    is horizontally scrollable as a final fallback so the
+			    Month/Week/Day toggle is always reachable even on the
+			    smallest phones. */}
+			<div className="order-last flex w-full min-w-0 basis-full items-center gap-2 overflow-x-auto scrollbar-none sm:order-none sm:ms-auto sm:w-auto sm:basis-auto sm:overflow-visible">
 				{filtersTrigger}
 				<ToggleGroup
 					type="single"
 					value={viewMode}
 					onValueChange={(v) => v && onViewModeChange(v as CalendarViewMode)}
-					className="rounded-[var(--radius)] border bg-background p-0.5"
+					className="shrink-0 rounded-[var(--radius)] border bg-background p-0.5"
 				>
 					{VIEW_OPTIONS.map((opt) => (
 						<ToggleGroupItem
@@ -153,7 +158,7 @@ export function CalendarToolbar({
 						</ToggleGroupItem>
 					))}
 				</ToggleGroup>
-				{primaryAction}
+				{primaryAction && <div className="shrink-0">{primaryAction}</div>}
 			</div>
 		</div>
 	);

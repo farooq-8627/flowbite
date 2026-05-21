@@ -57,3 +57,21 @@
 - **`SettingsGroupId` lost `"notes"`.** Anyone navigating to `?group=notes` now falls through to `DEFAULT_GROUP` ("workspace"). The settings-search and topnav hide the group entry entirely. No backend implications — this is pure UI taxonomy.
 - **`NotesGroup.tsx` deleted; `TagsSection` extracted.** The CRMGroup file was getting too dense (Tags inline + Note tabs + Reminders + …), so Tags now lives at `groups/crm/TagsSection.tsx` and CRMGroup is purely a tab-dispatcher. Each `notes.*` sub-section file under `groups/notes/` was untouched — they import their `id`s from the section registry, not from the group, so moving them under CRM was a one-line `groupId` change.
 - **Notes view: icon-toggle, not text tabs.** `NotesView.tsx`'s "Category | Board" text-pill (`NotesViewTabs`) was replaced with a two-icon pill (`NotesViewToggle`: `Columns3Icon` for Category, `LayoutGridIcon` for Board), styled identically to the shared `ViewToggleIcons` widget. The shared `ViewToggleIcons` is hidden on this page by passing `views={[]}` to `EntityPageLayout` — `EntityPageLayout` was updated to skip rendering the view-toggle when `views.length === 0`, so other consumers are unaffected.
+
+
+## Update — 2026-05-22 — File restrictions move from workspace to per-field
+
+The "Workspace → File Policy" section was removed. File restrictions are now declared per field at field-creation time:
+
+- `fieldDefinitions.allowedFileTypes` (new, optional) — array of FILE_CATEGORIES ids (`image`, `pdf`, `document`, `spreadsheet`, `video`, `audio`, `archive`).
+- The selector appears in CreateFieldDialog, EditFieldDialog, and StageScopedEditFieldDialog only when the field type is `file` / `files`.
+- `convex/files/mutations.ts::record` looks up the field def by `fieldKey` and validates against its `allowedFileTypes`. Free-form drop-zones (no fieldKey) skip mime validation by design.
+- `org.settings.fileUpload.maxSizeMb` is still enforced server-side as a hard cap (default 25 MB) but no longer has a UI knob — set once per template.
+- `org.settings.fileUpload.allowedMimeCategories` remains in the schema for backwards compat but is **no longer enforced**. Templates still seed it for new orgs; the field is harmless but ignored.
+
+Card / shell sizing pass:
+
+- `SettingsSection` now applies `min-w-0 max-w-full` on Card, CardHeader, CardContent + `break-words text-balance` on description so long sentences wrap instead of pushing the card past viewport.
+- `RolesSection` table wrapper has `-mx-2 ... overflow-x-auto px-2` on phones so the table scrolls horizontally _within its card_ instead of inflating the card. Description column truncates to `line-clamp-2 max-w-[20rem]`.
+- `ShellLayout`'s `<main>` keeps `overflow-x-hidden` to prevent horizontal page-level scroll, but the inner `<div>` now adds mobile padding (`px-3 pb-6 pt-1`) so cards don't kiss the viewport edges and the spacing between sections is tighter on small screens (`space-y-4 sm:space-y-6`).
+

@@ -276,15 +276,15 @@ export function ShellLayout({
 					isSearching={isSearching}
 					searchPlaceholder={searchPlaceholder}
 					searchAriaLabel={searchAriaLabel}
-					className="xl:hidden px-3 py-2 flex-wrap"
+					className="xl:hidden px-3 py-2"
 				/>
 
 				<main
 					data-shell-scroll="true"
 					data-settings-scroll="true"
-					className="flex-1 overflow-y-auto rounded-[var(--radius)]"
+					className="flex-1 overflow-y-auto overflow-x-hidden rounded-[var(--radius)]"
 				>
-					<div className="max-w-full space-y-6">
+					<div className="min-w-0 max-w-full space-y-4  pb-6 pt-1 sm:space-y-6 sm:px-0 sm:pt-0">
 						{isSearching ? (
 							hits.length === 0 ? (
 								<div className="flex flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed py-16 text-center">
@@ -302,7 +302,7 @@ export function ShellLayout({
 										“{query}”
 									</div>
 									<SearchFilterProvider matchingIds={matchingIds}>
-										<div className="space-y-6">
+										<div className="space-y-4 sm:space-y-6">
 											{groupOrder.map((gid) => (
 												<div key={gid}>{renderGroup(gid)}</div>
 											))}

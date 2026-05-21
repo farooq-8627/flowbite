@@ -102,14 +102,11 @@ export const addParticipants = orgMutation({
 					title: "You were added to a conversation",
 					entityType: conversation.entityType,
 					entityId: conversation.entityId,
-					actionUrl:
-						conversation.entityType === "deal"
-							? `/profile/${conversation.entityId}?group=deals`
-							: conversation.entityType === "company"
-								? `/companies/${conversation.entityId}`
-								: conversation.entityType === "user"
-									? `/messages`
-									: `/profile/${conversation.entityId}?group=messages`,
+					// `actionUrl` intentionally not stored — the client
+					// resolves the path from `entityType + entityId +
+					// useEntityLabels()` at render time so renamed entity
+					// slugs route correctly without a server backfill.
+					// See `core/inbox/notifications/utils/resolveNotificationHref.ts`.
 					metadata: { conversationId: String(args.conversationId) },
 				});
 			}

@@ -22,6 +22,10 @@
  * because every person — lead or contact — already has a unified
  * profile page; there's no separate route.
  *
+ * 2026-05-22 — `slot === "company"` now renders the real
+ * `CompanyDetailView` (overview / users / files / timeline /
+ * follow-ups / calendar tabs). The placeholder branch is gone.
+ *
  * No detail page is built for deals on purpose — the user explicitly
  * asked for the redirect path so the deals tab on the profile is the
  * single place a deal is viewed in detail.
@@ -31,6 +35,7 @@ import { useQuery } from "convex/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
+import { CompanyDetailView } from "@/core/entities/_entities/companies/views/CompanyDetailView";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
 	ENTITY_LABEL_DEFAULTS,
@@ -143,8 +148,15 @@ export function EntityDetailRedirect({
 		);
 	}
 
-	// Companies: detail page not yet implemented; keep a friendly placeholder
-	// instead of 404 so existing bookmarks don't break.
+	// Companies: render the full tabbed detail view (overview, users,
+	// files, timeline, follow-ups, calendar). Driven entirely by the
+	// dynamic slug — bookmarks under the renamed slug (e.g. `/agencies/CO-001`)
+	// land here too thanks to the shared slug→slot resolver.
+	if (slot === "company") {
+		return <CompanyDetailView orgSlug={orgSlug} companyCode={id} />;
+	}
+
+	// Anything else that fell through the resolver — defensive fallback.
 	return (
 		<div
 			data-org={orgSlug}

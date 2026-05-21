@@ -40,10 +40,24 @@ export const create = orgMutation({
 		options: v.optional(v.array(v.string())),
 		defaultValue: v.optional(v.any()),
 		sensitive: v.optional(v.boolean()),
+		/**
+		 * Whitelist of file-category ids for `file` / `files` types.
+		 * Empty array = any file allowed. See `crmFields.ts` schema.
+		 */
+		allowedFileTypes: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "fieldDefinitions.manage");
+
+		// Ignore allowedFileTypes for non-file types — keeps the column
+		// clean so other readers don't get confused by a stray array
+		// on, say, a number field.
+		const isFileType = args.type === "file" || args.type === "files";
+		const allowedFileTypes =
+			isFileType && args.allowedFileTypes && args.allowedFileTypes.length > 0
+				? args.allowedFileTypes
+				: undefined;
 
 		const existing = await ctx.db
 			.query("fieldDefinitions")
@@ -65,6 +79,7 @@ export const create = orgMutation({
 			options: args.options,
 			defaultValue: args.defaultValue,
 			sensitive: args.sensitive,
+			allowedFileTypes,
 			order: maxOrder + 1,
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
@@ -90,6 +105,11 @@ export const update = orgMutation({
 		 * === "deal"` so admins can't ship references to deleted stages.
 		 */
 		showInStages: v.optional(v.array(v.string())),
+		/**
+		 * Whitelist of file-category ids for `file` / `files` types.
+		 * Pass `[]` explicitly to clear (= any file allowed).
+		 */
+		allowedFileTypes: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
@@ -129,10 +149,17 @@ export const update = orgMutation({
 			}
 		}
 
-		const { orgId: _o, fieldId: _f, ...updates } = args;
-		const patch = Object.fromEntries(
-			Object.entries(updates).filter(([, v]) => v !== undefined),
+		// Only persist allowedFileTypes for file-typed fields. For all
+		// other types we ignore the prop entirely so a stray array
+		// can't survive a type change.
+		const isFileType = field.type === "file" || field.type === "files";
+		const { orgId: _o, fieldId: _f, allowedFileTypes, ...rest } = args;
+		const patch: Record<string, unknown> = Object.fromEntries(
+			Object.entries(rest).filter(([, v]) => v !== undefined),
 		);
+		if (isFileType && allowedFileTypes !== undefined) {
+			patch.allowedFileTypes = allowedFileTypes.length > 0 ? allowedFileTypes : undefined;
+		}
 		await ctx.db.patch(args.fieldId, { ...patch, updatedAt: Date.now() });
 	},
 });

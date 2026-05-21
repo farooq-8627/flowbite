@@ -272,7 +272,7 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 			id: "billing",
 			label: "Billing",
 			icon: CreditCard,
-			ownerOnly: true,
+			permission: "org.viewBilling",
 			subGroups: [
 				{
 					id: "billing.plan",

@@ -65,7 +65,7 @@ export function ShellToolbar({
 				/>
 			</div>
 			{!isSearching && sections.length > 0 && (
-				<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
+				<div className="flex w-full hidden sm:flex sm:w-auto min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
 					{sections.map((sub) => (
 						<button
 							key={sub.id}

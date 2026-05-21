@@ -340,6 +340,7 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 			<Dialog open={open} onOpenChange={onOpenChange}>
 				<DialogContent
 					showCloseButton={false}
+					aria-describedby={undefined}
 					className="fixed inset-0 left-0 top-0 max-h-none w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-black p-0 text-white"
 					style={{ height: "100dvh" }}
 				>
@@ -384,6 +385,7 @@ export function MediaViewerModal({ files, startIndex = 0, open, onOpenChange }: 
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				showCloseButton={false}
+				aria-describedby={undefined}
 				className="flex h-fit max-h-[95vh] w-fit max-w-[95vw] flex-col gap-0 overflow-hidden border-0 bg-black p-0 text-white sm:max-w-[95vw]"
 			>
 				<DialogTitle className="sr-only">{file.name}</DialogTitle>

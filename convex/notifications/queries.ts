@@ -17,7 +17,7 @@ export const listMine = authenticatedQuery({
 	},
 });
 
-/** Unread count + first 5 notifications for the bell dropdown. */
+/** Unread count + first 3 notifications for the bell dropdown. */
 export const getSummary = authenticatedQuery({
 	args: {},
 	handler: async (ctx) => {
@@ -33,7 +33,7 @@ export const getSummary = authenticatedQuery({
 			.withIndex("by_userId_and_createdAt", (q) => q.eq("userId", ctx.userId))
 			.order("desc")
 			.filter((q) => q.eq(q.field("archivedAt"), undefined))
-			.take(5);
+			.take(3);
 
 		return {
 			unreadCount: unread.length,

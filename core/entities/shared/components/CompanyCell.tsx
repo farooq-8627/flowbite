@@ -3,10 +3,10 @@
 /**
  * CompanyCell — inline company display + connector for a person (lead/contact).
  *
- * ╭──── STATE ────┬──── UI ───────────────────────────────────────────────╮
- * │ No company    │ (+) button → popover with Existing / New tabs       │
- * │ Has company   │ Company name pill (click → /company/[companyCode])    │
- * ╰───────────────┴───────────────────────────────────────────────────────╯
+ * ╭──── STATE ────┬──── UI ─────────────────────────────────────────────────╮
+ * │ No company    │ (+) button → popover with Existing / New tabs           │
+ * │ Has company   │ Company name pill (click → /{labels.company.slug}/CODE) │
+ * ╰───────────────┴─────────────────────────────────────────────────────────╯
  *
  * Uses `companies.personCodes[]` as the canonical source — when the user
  * picks an existing company we call `companies.mutations.addPerson`; when
@@ -17,7 +17,6 @@
 import { useMutation, useQuery } from "convex/react";
 import { Building2Icon, PlusIcon } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useEntityHref } from "@/core/shell/shared/hooks/useEntityHref";
 import { normalizeError } from "@/lib/normalizeError";
 import { cn } from "@/lib/utils";
 
@@ -67,9 +67,7 @@ export function CompanyCell({
 	const [newIndustry, setNewIndustry] = useState("");
 	const [newWebsite, setNewWebsite] = useState("");
 
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const locale = params?.locale as string | undefined;
+	const buildHref = useEntityHref();
 
 	const company = useQuery(
 		api.crm.entities.companies.queries.getByPersonCode,
@@ -127,11 +125,7 @@ export function CompanyCell({
 
 	// ── Has a company → show linked pill ────────────────────────────────────
 	if (resolvedCompany) {
-		const href = orgSlug
-			? locale
-				? `/${locale}/${orgSlug}/company/${resolvedCompany.companyCode}`
-				: `/${orgSlug}/company/${resolvedCompany.companyCode}`
-			: null;
+		const href = buildHref("company", resolvedCompany.companyCode);
 		const pill = (
 			<Badge
 				variant="outline"

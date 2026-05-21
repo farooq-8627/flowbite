@@ -43,6 +43,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { type TimelineScope, usePaginatedTimeline } from "../hooks";
+import { isActivityActionVisible, useTimelinePreferences } from "../hooks/useTimelinePreferences";
 import { TimelineComposer } from "./TimelineComposer";
 import { TimelineEntry } from "./TimelineEntry";
 import { TimelineFilters } from "./TimelineFilters";
@@ -91,15 +92,29 @@ export function TimelineFeed({
 	const [internalFilter, setFilter] = useState<TimelineFilter>("all");
 	const filter = externalFilter ?? internalFilter;
 
+	// Per-user display preferences — drive the "hide redundant note/reminder
+	// activity rows" rule and any other event types the user has muted via
+	// Settings → CRM → Timeline.
+	const { hiddenGroups } = useTimelinePreferences();
+	const hiddenGroupSet = useMemo(() => new Set(hiddenGroups), [hiddenGroups]);
+
 	// Reverse desc → asc for natural top-to-bottom reading order, then
 	// optionally cap to `visibleCap` from the BOTTOM (we keep the newest).
 	const ordered = useMemo<TimelineEntryUnion[]>(() => {
 		const arr = (results ?? []).slice().reverse() as TimelineEntryUnion[];
-		if (visibleCap && arr.length > visibleCap) {
-			return arr.slice(arr.length - visibleCap);
+		// Apply the per-user hidden-groups filter to activity entries only —
+		// notes and reminders are content-bearing and never hidden by this
+		// rule. (Notes/reminders have their own "Notes" / "Reminders" chips
+		// in the filter row already.)
+		const filteredByPrefs = arr.filter((e) => {
+			if (e._entryType !== "activity") return true;
+			return isActivityActionVisible(e.action, hiddenGroupSet);
+		});
+		if (visibleCap && filteredByPrefs.length > visibleCap) {
+			return filteredByPrefs.slice(filteredByPrefs.length - visibleCap);
 		}
-		return arr;
-	}, [results, visibleCap]);
+		return filteredByPrefs;
+	}, [results, visibleCap, hiddenGroupSet]);
 
 	const filtered = useMemo<TimelineEntryUnion[]>(() => {
 		if (filter === "all") return ordered;

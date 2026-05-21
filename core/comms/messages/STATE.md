@@ -1,5 +1,38 @@
 # Messages — State
 
+> Updated: 2026-05-22 (Dynamic-slug routing + notification href client-resolution)
+> Status: 100% Complete
+
+## 2026-05-22 — Notifications no longer hardcode entity paths
+
+The two server-side mutations that emit notifications about messages /
+conversation invites — `convex/crm/shared/messages/mutations.ts` and
+`convex/crm/shared/conversations/mutations.ts` — used to call
+`sendNotification({..., actionUrl: "/companies/<code>"})`. That broke the
+moment a workspace renamed `Company` → `Agency`: the stored URL no longer
+matched any route.
+
+**What changed:**
+- Both mutations stopped passing `actionUrl`. Notifications now travel with
+  `entityType + entityId` only.
+- The client (`TopNav` notification dropdown + `NotificationsView` page)
+  uses the new `core/inbox/notifications/utils/resolveNotificationHref.ts`
+  helper to build the href on render via `useEntityLabels()`.
+- `core/comms/messages/hooks/useEntityDisplay.ts` `profileHref` for deals
+  and companies was also switched to dynamic slugs (`labels.deal.slug`,
+  `labels.company.slug`).
+- `core/comms/messages/components/MessagesPreviewWidget.tsx` — same.
+
+Legacy notifications inserted before this change still render correctly: the
+resolver falls back to the stored `actionUrl` (with `/${orgSlug}` prefixed)
+when `entityType + entityId` aren't enough to derive the path.
+
+Cross-reference: `core/entities/STATE.md` 2026-05-22 — full audit.
+
+---
+
+> **Earlier history:**
+
 > Updated: 2026-05-21
 > Status: 100% Complete — member-to-member DMs added
 

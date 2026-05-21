@@ -9,9 +9,12 @@
  *                      company name).
  *   - `secondary`    — phone or email for people, dealCode/companyCode otherwise.
  *   - `profileHref`  — `/{orgSlug}/profile/{personCode}` for people,
- *                      `/{orgSlug}/deals/{dealCode}` for deals,
- *                      `/{orgSlug}/companies/{companyCode}` for companies.
- *                      `null` when navigation isn't supported (project/task/org).
+ *                      `/{orgSlug}/{labels.deal.slug}/{dealCode}` for deals,
+ *                      `/{orgSlug}/{labels.company.slug}/{companyCode}` for
+ *                      companies. `null` when navigation isn't supported
+ *                      (project/task/org). Slug segments come from
+ *                      `useEntityLabels()` so renamed entities (e.g.
+ *                      "Company" → "Agency") resolve correctly.
  *   - `kindLabel`    — "Lead" / "Contact" / "Deal" / "Company" — small badge
  *                      text. Used as the secondary line when there's no
  *                      email/phone.
@@ -32,6 +35,7 @@ import { useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { ChatEntityType } from "@/core/comms/messages/hooks";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 
 export type EntityDisplay = {
 	name: string;
@@ -60,6 +64,7 @@ export function useEntityDisplay(args: {
 }): EntityDisplay {
 	const params = useParams<{ orgSlug?: string }>();
 	const orgSlug = params?.orgSlug;
+	const labels = useEntityLabels();
 	const { orgId, entityType, entityId } = args;
 
 	const isPerson = entityType === "lead" || entityType === "contact" || entityType === "person";
@@ -128,7 +133,7 @@ export function useEntityDisplay(args: {
 			return {
 				name: d.title ?? (entityId as string),
 				secondary: d.dealCode,
-				profileHref: orgSlug ? `/${orgSlug}/deals/${entityId}` : null,
+				profileHref: orgSlug ? `/${orgSlug}/${labels.deal.slug}/${entityId}` : null,
 				kindLabel: KIND_LABEL.deal,
 				isLoading: false,
 			};
@@ -141,7 +146,7 @@ export function useEntityDisplay(args: {
 			return {
 				name: c.name ?? (entityId as string),
 				secondary: c.companyCode,
-				profileHref: orgSlug ? `/${orgSlug}/companies/${entityId}` : null,
+				profileHref: orgSlug ? `/${orgSlug}/${labels.company.slug}/${entityId}` : null,
 				kindLabel: KIND_LABEL.company,
 				isLoading: false,
 			};
@@ -160,5 +165,7 @@ export function useEntityDisplay(args: {
 		dealDoc,
 		companyDoc,
 		orgSlug,
+		labels.deal.slug,
+		labels.company.slug,
 	]);
 }

@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
 	DialogFooter,
 	DialogHeader,
 	DialogTitle,
@@ -103,6 +104,10 @@ export function ChangePipelineDialog({ deal, open, onOpenChange }: Props) {
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Move {deal.dealCode} to another pipeline</DialogTitle>
+					<DialogDescription>
+						Pick a different pipeline + starting stage for this deal. Stage-aware fields
+						will reset to the new pipeline's structure.
+					</DialogDescription>
 				</DialogHeader>
 
 				<div className="flex flex-col gap-3 text-sm">

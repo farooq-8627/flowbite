@@ -62,6 +62,8 @@ import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import { getStatusColor } from "@/core/entities/shared/config/defaults";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { getRevealedCardFieldForGrouping } from "@/core/entities/shared/utils/board-grouping";
+import { buildEntityHref } from "@/core/shell/shared/hooks/useEntityHref";
+import { type EntityLabels, useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import {
 	formatCurrency,
 	useOrgDefaultCurrency,
@@ -242,6 +244,7 @@ export function EntityCard({
 	const params = useParams();
 	const orgSlug = params?.orgSlug as string | undefined;
 	const locale = params?.locale as string | undefined;
+	const labels = useEntityLabels();
 	const currencyCode = useOrgDefaultCurrency(item.orgId);
 
 	// Effective card fields = caller's cardFields ∩ admin's visible fields.
@@ -346,13 +349,14 @@ export function EntityCard({
 	// when the deal somehow lacks a personCode (legacy / orphaned rows).
 	const detailHref =
 		codeValue && orgSlug
-			? buildDetailHref(
+			? buildDetailHref({
 					slot,
-					codeValue,
+					code: codeValue,
 					orgSlug,
 					locale,
-					item.personCode as string | undefined,
-				)
+					labels,
+					personCode: item.personCode as string | undefined,
+				})
 			: null;
 
 	const initials = getInitials(title);
@@ -998,31 +1002,37 @@ function formatDealSubtitle(item: EntityCardItem, currencyCode: string): string 
 	return undefined;
 }
 
-function buildDetailHref(
-	slot: EntitySlot,
-	code: string,
-	orgSlug: string,
-	locale: string | undefined,
-	personCode?: string,
-): string {
+function buildDetailHref({
+	slot,
+	code,
+	orgSlug,
+	locale,
+	labels,
+	personCode,
+}: {
+	slot: EntitySlot;
+	code: string;
+	orgSlug: string;
+	locale: string | undefined;
+	labels: EntityLabels;
+	personCode?: string;
+}): string {
 	const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
-	switch (slot) {
-		case "company":
-			return `${prefix}/companies/${code}`;
-		case "deal":
-			// Deals don't own a separate detail route. They live as a tab
-			// on the owning person's profile — follow that link directly
-			// so we land on the right view in one click. Fallback for the
-			// edge case of an orphaned deal (no personCode): keep the old
-			// /deals/<code> shape; the dynamic route handles the redirect
-			// server-side via getByDealCode → personCode.
-			if (personCode) {
-				return `${prefix}/profile/${personCode}?group=deals`;
-			}
-			return `${prefix}/deals/${code}`;
-		default:
-			return `${prefix}/profile/${code}`;
+	if (slot === "deal") {
+		// Deals don't own a separate detail route. They live as a tab on
+		// the owning person's profile — follow that link directly so we
+		// land on the right view in one click. Fallback for the rare
+		// orphan-deal case (no personCode): use the dynamic
+		// `{labels.deal.slug}/<code>` route which `EntityDetailRedirect`
+		// resolves server/client-side via getByDealCode → personCode.
+		if (personCode) {
+			return `${prefix}/profile/${personCode}?group=deals`;
+		}
+		return buildEntityHref({ orgSlug, locale, labels, slot: "deal", code });
 	}
+	// Lead/Contact/Company → unified builder (which itself routes
+	// people to /profile/<code> and companies to /{labels.company.slug}/<code>).
+	return buildEntityHref({ orgSlug, locale, labels, slot, code });
 }
 
 // ─── GroupReplacementStrip — "fill the gap" badge for active groupBy ─────────

@@ -24,6 +24,7 @@ import {
 	FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import {
 	Select,
 	SelectContent,
@@ -34,6 +35,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { FILE_CATEGORIES } from "@/core/data-io/files/file-categories";
 import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 
@@ -91,8 +93,23 @@ const createFieldSchema = z.object({
 	groupName: z.string().optional(),
 	required: z.boolean(),
 	optionsText: z.string().optional(),
+	allowedFileTypes: z.array(z.string()).optional(),
 });
 type CreateFieldInput = z.infer<typeof createFieldSchema>;
+
+/**
+ * Multi-select options for the per-field "allowed file types" picker.
+ * Mirrors `core/data-io/files/file-categories.ts` minus the "other"
+ * fallback (selecting it would be equivalent to leaving the picker
+ * empty — confusing). Picker empty = any file allowed.
+ */
+const FILE_TYPE_OPTIONS: MultiSelectOption[] = FILE_CATEGORIES.filter((c) => c.id !== "other").map(
+	(c) => ({
+		value: c.id,
+		label: c.label,
+		subtitle: c.description,
+	}),
+);
 
 export function CreateFieldDialog({
 	orgId,
@@ -113,9 +130,11 @@ export function CreateFieldDialog({
 			groupName: "",
 			required: false,
 			optionsText: "",
+			allowedFileTypes: [],
 		},
 		onSubmit: async (data: CreateFieldInput) => {
 			const needsOptions = data.type === "select" || data.type === "multiselect";
+			const isFileType = data.type === "file" || data.type === "files";
 			const options = parseOptions(data.optionsText);
 			if (needsOptions && !options?.length) {
 				toast.error("Enter at least one option (comma- or newline-separated).");
@@ -131,6 +150,10 @@ export function CreateFieldDialog({
 					groupName: data.groupName || undefined,
 					required: data.required,
 					options: needsOptions ? options : undefined,
+					allowedFileTypes:
+						isFileType && data.allowedFileTypes && data.allowedFileTypes.length > 0
+							? data.allowedFileTypes
+							: undefined,
 				});
 				toast.success(`Added field "${data.label}"`);
 				form.reset({
@@ -140,6 +163,7 @@ export function CreateFieldDialog({
 					groupName: "",
 					required: false,
 					optionsText: "",
+					allowedFileTypes: [],
 				});
 				setOpen(false);
 			} catch (err) {
@@ -246,6 +270,32 @@ export function CreateFieldDialog({
 										</FormControl>
 										<p className="text-xs text-muted-foreground">
 											Comma- or newline-separated.
+										</p>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						)}
+						{(type === "file" || type === "files") && (
+							<FormField
+								control={form.control}
+								name="allowedFileTypes"
+								render={({ field }) => (
+									<FormItem>
+										<FormLabel>Allowed file types</FormLabel>
+										<FormControl>
+											<MultiSelect
+												value={field.value ?? []}
+												onChange={field.onChange}
+												options={FILE_TYPE_OPTIONS}
+												placeholder="Any file type"
+												searchPlaceholder="Search categories…"
+												emptyText="No categories found."
+											/>
+										</FormControl>
+										<p className="text-xs text-muted-foreground">
+											Leave empty to accept any file. Pick one or more
+											categories to restrict (e.g. only PDFs + images).
 										</p>
 										<FormMessage />
 									</FormItem>

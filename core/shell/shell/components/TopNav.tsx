@@ -9,6 +9,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
+import { resolveNotificationHref } from "@/core/inbox/notifications/utils/resolveNotificationHref";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useNavSlotNode } from "@/core/shell/shell/context/nav-slot-context";
 import { formatChatSidebarTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
@@ -60,11 +62,13 @@ export function TopNav({
 				"[html[data-navbar-style=sticky]_&]:sticky [html[data-navbar-style=sticky]_&]:top-0 [html[data-navbar-style=sticky]_&]:z-50 [html[data-navbar-style=sticky]_&]:bg-background/80 [html[data-navbar-style=sticky]_&]:backdrop-blur-md",
 			)}
 		>
-			<div className="relative flex w-full items-center px-4 lg:px-6">
+			<div className="relative flex w-full items-center gap-2 px-2 sm:px-4 lg:px-6">
 				{/* Left: trigger + breadcrumb */}
-				<div className="flex shrink-0 items-center gap-2">
+				<div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2 sm:flex-initial sm:shrink-0">
 					<SidebarTriggerWithTooltip />
-					<AutoBreadcrumb />
+					<div className="min-w-0 flex-1 overflow-hidden sm:flex-initial">
+						<AutoBreadcrumb />
+					</div>
 				</div>
 
 				{/* Center: route-specific slot — absolutely centered so it never shifts left/right */}
@@ -77,7 +81,7 @@ export function TopNav({
 				)}
 
 				{/* Spacer */}
-				<div className="flex-1" />
+				<div className="hidden flex-1 sm:block" />
 
 				{/* Right */}
 				<div className="flex shrink-0 items-center sm:gap-1">
@@ -149,6 +153,7 @@ function NotificationBell({
 	const sc = useShortcut("notifications");
 	const params = useParams<{ orgSlug?: string }>();
 	const orgSlug = params?.orgSlug;
+	const labels = useEntityLabels();
 	const router = useRouter();
 
 	const summary = useQuery(api.notifications.queries.getSummary);
@@ -194,7 +199,12 @@ function NotificationBell({
 
 			<PopoverContent align="end" className="w-80 p-0" sideOffset={8}>
 				<div className="flex items-center justify-between border-b px-4 py-3">
-					<span className="text-sm font-semibold">Notifications</span>
+					<div>
+						<span className="block text-sm font-semibold">Notifications</span>
+						<span className="text-[10px] text-muted-foreground">
+							Latest 3 — see all on the notifications page
+						</span>
+					</div>
 					{unread > 0 && (
 						<button
 							type="button"
@@ -214,8 +224,16 @@ function NotificationBell({
 						</div>
 					) : (
 						preview.map((n) => {
-							const actionUrl =
-								n.actionUrl && orgSlug ? `/${orgSlug}${n.actionUrl}` : null;
+							const actionUrl = orgSlug
+								? resolveNotificationHref({
+										orgSlug,
+										labels,
+										entityType: n.entityType,
+										entityId: n.entityId,
+										notificationType: n.type,
+										legacyActionUrl: n.actionUrl,
+									})
+								: null;
 							return (
 								<button
 									type="button"

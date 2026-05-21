@@ -83,71 +83,75 @@ export function InvitationsSection({
 			title="Pending invitations"
 			description="Invitations that haven't been accepted yet."
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>Email</TableHead>
-						<TableHead>Role</TableHead>
-						<TableHead>Expires</TableHead>
-						<TableHead>Invitation link</TableHead>
-						<TableHead className="w-10" />
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{pending.map((inv) => (
-						<TableRow key={inv._id}>
-							<TableCell>
-								<div className="flex items-center gap-2">
-									<Mail className="size-4 text-muted-foreground" />
-									<span className="text-sm">{inv.email}</span>
-								</div>
-							</TableCell>
-							<TableCell>
-								<Badge variant="secondary" className="capitalize">
-									{inv.roleName}
-								</Badge>
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs">
-								{new Date(inv.expiresAt).toLocaleDateString()}
-							</TableCell>
-							<TableCell>
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											type="button"
-											variant="ghost"
-											size="sm"
-											className="gap-1.5"
-											onClick={() => handleCopyLink(inv.token)}
-											aria-label={`Copy invitation link for ${inv.email}`}
-										>
-											<CopyIcon className="size-3.5" aria-hidden />
-											<span className="text-xs">Copy link</span>
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent>Copy invitation link</TooltipContent>
-								</Tooltip>
-							</TableCell>
-							<TableCell>
-								<Button
-									variant="ghost"
-									size="sm"
-									onClick={async () => {
-										try {
-											await cancel({ orgId, invitationId: inv._id });
-											toast.success("Invitation cancelled");
-										} catch (err) {
-											toast.error(normalizeError(err, "Failed to cancel"));
-										}
-									}}
-								>
-									Cancel
-								</Button>
-							</TableCell>
+			<div className="w-full overflow-x-auto">
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead>Email</TableHead>
+							<TableHead>Role</TableHead>
+							<TableHead>Expires</TableHead>
+							<TableHead>Invitation link</TableHead>
+							<TableHead className="w-10" />
 						</TableRow>
-					))}
-				</TableBody>
-			</Table>
+					</TableHeader>
+					<TableBody>
+						{pending.map((inv) => (
+							<TableRow key={inv._id}>
+								<TableCell>
+									<div className="flex items-center gap-2">
+										<Mail className="size-4 text-muted-foreground" />
+										<span className="text-sm">{inv.email}</span>
+									</div>
+								</TableCell>
+								<TableCell>
+									<Badge variant="secondary" className="capitalize">
+										{inv.roleName}
+									</Badge>
+								</TableCell>
+								<TableCell className="text-muted-foreground text-xs">
+									{new Date(inv.expiresAt).toLocaleDateString()}
+								</TableCell>
+								<TableCell>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												variant="ghost"
+												size="sm"
+												className="gap-1.5"
+												onClick={() => handleCopyLink(inv.token)}
+												aria-label={`Copy invitation link for ${inv.email}`}
+											>
+												<CopyIcon className="size-3.5" aria-hidden />
+												<span className="text-xs">Copy link</span>
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent>Copy invitation link</TooltipContent>
+									</Tooltip>
+								</TableCell>
+								<TableCell>
+									<Button
+										variant="ghost"
+										size="sm"
+										onClick={async () => {
+											try {
+												await cancel({ orgId, invitationId: inv._id });
+												toast.success("Invitation cancelled");
+											} catch (err) {
+												toast.error(
+													normalizeError(err, "Failed to cancel"),
+												);
+											}
+										}}
+									>
+										Cancel
+									</Button>
+								</TableCell>
+							</TableRow>
+						))}
+					</TableBody>
+				</Table>
+			</div>
 		</SettingsSection>
 	);
 }

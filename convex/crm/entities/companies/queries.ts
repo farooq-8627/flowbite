@@ -198,10 +198,7 @@ export const listCompaniesByPersonCodes = orgQuery({
 		requireRole(member.permissions, "companies.view");
 
 		const codes = [...new Set(args.personCodes)].slice(0, 200);
-		const result: Record<
-			string,
-			{ companyId: string; name: string; companyCode: string }
-		> = {};
+		const result: Record<string, { companyId: string; name: string; companyCode: string }> = {};
 
 		for (const personCode of codes) {
 			const link = await ctx.db
@@ -221,5 +218,92 @@ export const listCompaniesByPersonCodes = orgQuery({
 		}
 
 		return result;
+	},
+});
+
+/**
+ * Persons (lead/contact) attached to a single company — the rows that
+ * power the "Users" / "People" table on the company detail page.
+ *
+ * Resolves the personCode → person doc lookup once, returning a flat
+ * array sorted by displayName. Falls back to the personCode when a
+ * person row can't be loaded (orphan join) so the UI can still show
+ * the row instead of silently dropping it.
+ */
+export const listPersonsForCompany = orgQuery({
+	args: { orgId: v.id("orgs"), companyId: v.id("companies") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.view");
+
+		const company = await ctx.db.get(args.companyId);
+		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+			return [];
+		}
+
+		const links = await ctx.db
+			.query("companyMembers")
+			.withIndex("by_org_and_company", (q) =>
+				q.eq("orgId", args.orgId).eq("companyId", args.companyId),
+			)
+			.collect();
+
+		type PersonRow = {
+			personCode: string;
+			displayName: string;
+			email?: string;
+			phone?: string;
+			kind: "lead" | "contact" | "unknown";
+			assignedTo?: string;
+		};
+
+		const rows: PersonRow[] = [];
+		for (const link of links) {
+			// Try contacts first (most company-affiliated people are contacts).
+			const contact = await ctx.db
+				.query("contacts")
+				.withIndex("by_org_and_personCode", (q) =>
+					q.eq("orgId", args.orgId).eq("personCode", link.personCode),
+				)
+				.first();
+			if (contact && contact.deletedAt === undefined) {
+				rows.push({
+					personCode: contact.personCode,
+					displayName: contact.displayName,
+					email: contact.email,
+					phone: contact.phone,
+					kind: "contact",
+					assignedTo: contact.assignedTo ? String(contact.assignedTo) : undefined,
+				});
+				continue;
+			}
+
+			const lead = await ctx.db
+				.query("leads")
+				.withIndex("by_org_and_personCode", (q) =>
+					q.eq("orgId", args.orgId).eq("personCode", link.personCode),
+				)
+				.first();
+			if (lead && lead.deletedAt === undefined) {
+				rows.push({
+					personCode: lead.personCode,
+					displayName: lead.displayName,
+					email: lead.email,
+					phone: lead.phone,
+					kind: "lead",
+					assignedTo: lead.assignedTo ? String(lead.assignedTo) : undefined,
+				});
+				continue;
+			}
+
+			// Orphan join — keep the row visible so the user can detach it.
+			rows.push({
+				personCode: link.personCode,
+				displayName: link.personCode,
+				kind: "unknown",
+			});
+		}
+
+		return rows.sort((a, b) => a.displayName.localeCompare(b.displayName));
 	},
 });

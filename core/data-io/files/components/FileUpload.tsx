@@ -60,18 +60,26 @@ export interface UseFileAttachmentsArgs {
 	scope: string;
 	scopeId: string;
 	fieldKey?: string;
+	/**
+	 * Per-field whitelist override. When provided (typically from the
+	 * field's `fieldDefinitions.allowedFileTypes`), it takes precedence
+	 * over the org-wide setting — files outside this list are rejected
+	 * client-side before upload. Empty array / undefined = any file.
+	 */
+	allowedFileTypes?: FileCategory[];
 }
 
 // ─── Hook: read the org's allowed-file-types setting ─────────────────────────
 //
-// Both `useAllowedCategories` and `useMaxSizeMb` read the same
-// `org.settings.fileUpload` block. We resolve the org once via the shared
-// `OrgProvider` context (`useCurrentOrg().fullOrgEntry`) — no extra
+// LEGACY: the hook is retained for the FileDropzone fallback path (free-form
+// drop-zones on detail pages — no `fieldKey`), but the canonical source of
+// truth is now per-field `fieldDefinitions.allowedFileTypes`. Field-scoped
+// uploads (the input-dispatcher) pass `allowedFileTypes` directly via prop.
+//
+// `useMaxSizeMb` reads the org-wide cap. We resolve the org once via the
+// shared `OrgProvider` context (`useCurrentOrg().fullOrgEntry`) — no extra
 // `listMyOrgs` subscription per AGENTS.md "Identity/auth/labels via context,
-// not subscriptions". With multiple `<FileUpload>` instances on a single
-// entity drawer, this previously fired one `listMyOrgs` registration per
-// instance. Now: zero new subscriptions, fully reactive (settings changes
-// stream live through OrgProvider).
+// not subscriptions".
 
 function useAllowedCategories(): FileCategory[] | undefined {
 	const { fullOrgEntry } = useCurrentOrg();
@@ -87,7 +95,13 @@ function useMaxSizeMb(): number | undefined {
 
 // ─── Hook: one-stop upload/list/remove ────────────────────────────────────────
 
-export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileAttachmentsArgs) {
+export function useFileAttachments({
+	orgId,
+	scope,
+	scopeId,
+	fieldKey,
+	allowedFileTypes,
+}: UseFileAttachmentsArgs) {
 	const byScope = useQuery(
 		api.files.queries.listByScope,
 		orgId && scopeId && !fieldKey ? { orgId, scope, scopeId } : "skip",
@@ -103,7 +117,11 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 	const removeMutation = useMutation(api.files.mutations.remove);
 
 	const [uploading, setUploading] = useState<string[]>([]);
-	const allowedCategories = useAllowedCategories();
+	const orgCategories = useAllowedCategories();
+	// Per-field override takes precedence — when an admin sets the field's
+	// `allowedFileTypes`, that's the canonical answer regardless of any
+	// legacy org-wide setting.
+	const effectiveCategories = allowedFileTypes ?? orgCategories;
 	const maxSizeMb = useMaxSizeMb();
 
 	const upload = useCallback(
@@ -112,10 +130,10 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 			// Pre-validate against allowed categories + max size.
 			const accepted: File[] = [];
 			for (const file of list) {
-				if (!isFileAllowed(file, allowedCategories)) {
+				if (!isFileAllowed(file, effectiveCategories)) {
 					toast.error(`${file.name} — file type not allowed`, {
 						description:
-							"Ask an admin to enable this file type in Settings → Workspace → File policy.",
+							"This field only accepts certain file categories. Pick a different file or ask an admin to update the field's settings.",
 					});
 					continue;
 				}
@@ -162,7 +180,16 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 				setUploading((prev) => prev.filter((n) => !accepted.some((f) => f.name === n)));
 			}
 		},
-		[orgId, generateUploadUrl, record, scope, scopeId, fieldKey, allowedCategories, maxSizeMb],
+		[
+			orgId,
+			generateUploadUrl,
+			record,
+			scope,
+			scopeId,
+			fieldKey,
+			effectiveCategories,
+			maxSizeMb,
+		],
 	);
 
 	const remove = useCallback(
@@ -184,7 +211,7 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
 		upload,
 		remove,
 		uploading,
-		allowedCategories,
+		allowedCategories: effectiveCategories,
 		maxSizeMb,
 	};
 }
@@ -196,11 +223,18 @@ export function useFileAttachments({ orgId, scope, scopeId, fieldKey }: UseFileA
  * `{storageId, name, size, mimeType}` tuples in local state. Call `commit()`
  * after the parent entity is created to flush the buffer into the `files`
  * table under the right scope.
+ *
+ * Pass `allowedFileTypes` to apply per-field client-side validation in
+ * create-mode (mirrors `useFileAttachments`'s behaviour).
  */
-export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
+export function useBufferedFileUpload(
+	orgId: Id<"orgs"> | undefined,
+	allowedFileTypes?: FileCategory[],
+) {
 	const generateUploadUrl = useMutation(api.files.mutations.generateUploadUrl);
 	const record = useMutation(api.files.mutations.record);
-	const allowedCategories = useAllowedCategories();
+	const orgCategories = useAllowedCategories();
+	const effectiveCategories = allowedFileTypes ?? orgCategories;
 	const maxSizeMb = useMaxSizeMb();
 
 	const [files, setFiles] = useState<BufferedFile[]>([]);
@@ -211,7 +245,7 @@ export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
 			if (!orgId) return;
 			const accepted: File[] = [];
 			for (const file of list) {
-				if (!isFileAllowed(file, allowedCategories)) {
+				if (!isFileAllowed(file, effectiveCategories)) {
 					toast.error(`${file.name} — file type not allowed`);
 					continue;
 				}
@@ -255,7 +289,7 @@ export function useBufferedFileUpload(orgId: Id<"orgs"> | undefined) {
 				setUploading((prev) => prev.filter((n) => !accepted.some((f) => f.name === n)));
 			}
 		},
-		[orgId, generateUploadUrl, allowedCategories, maxSizeMb],
+		[orgId, generateUploadUrl, effectiveCategories, maxSizeMb],
 	);
 
 	const removeBuffered = useCallback((storageId: Id<"_storage">) => {
@@ -575,7 +609,7 @@ interface FileUploadProps extends UseFileAttachmentsArgs {
 export function FileUpload(props: FileUploadProps) {
 	const { files, upload, remove, uploading, allowedCategories } = useFileAttachments(props);
 	const accept = useMemo(
-		() => props.accept ?? buildAcceptString(allowedCategories),
+		() => props.accept ?? buildAcceptString(allowedCategories as FileCategory[] | undefined),
 		[props.accept, allowedCategories],
 	);
 	return (
@@ -608,6 +642,8 @@ interface BufferedFileUploadProps {
 	multiple?: boolean;
 	label?: string;
 	className?: string;
+	/** Per-field whitelist override — drives the dropzone's `accept` attribute. */
+	allowedFileTypes?: FileCategory[];
 }
 
 export function BufferedFileUpload({
@@ -618,9 +654,11 @@ export function BufferedFileUpload({
 	multiple = true,
 	label = "Drop files here or click to browse",
 	className,
+	allowedFileTypes,
 }: BufferedFileUploadProps) {
-	const allowedCategories = useAllowedCategories();
-	const accept = useMemo(() => buildAcceptString(allowedCategories), [allowedCategories]);
+	const orgCategories = useAllowedCategories();
+	const effectiveCategories = allowedFileTypes ?? orgCategories;
+	const accept = useMemo(() => buildAcceptString(effectiveCategories), [effectiveCategories]);
 	return (
 		<div className={cn("flex flex-col gap-2", className)}>
 			<FileDropzone

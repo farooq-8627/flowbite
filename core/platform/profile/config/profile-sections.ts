@@ -135,6 +135,14 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 		description: "Files associated with this person — contracts, IDs, notes.",
 		keywords: ["files", "attachments", "documents", "uploads"],
 	},
+	{
+		id: "files.by-deal-stage",
+		groupId: "files",
+		label: "By deal & stage",
+		description:
+			"The same files, grouped per deal and per stage they were uploaded against.",
+		keywords: ["files", "deal", "stage", "pipeline", "per-stage", "grouped"],
+	},
 
 	// Reminders
 	{

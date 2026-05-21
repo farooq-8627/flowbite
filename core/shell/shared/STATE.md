@@ -1,5 +1,31 @@
 # Shared — State
 
+> Updated: 2026-05-22 (Dynamic entity-href helper landed)
+> Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome + new `useEntityHref` builder live here.
+
+## 2026-05-22 — `useEntityHref` / `buildEntityHref` helper added
+
+NEW file: `core/shell/shared/hooks/useEntityHref.ts`. Single source of truth for
+building entity URLs that respect the org's renamed slugs. Replaces ad-hoc
+`/${orgSlug}/${slot}/<code>` strings throughout the app.
+
+| API | Use when |
+|---|---|
+| `useEntityHref()` | A React component needs a builder that pulls `orgSlug + locale + labels` from context. Returns `(slot, code) => string \| null`. |
+| `buildEntityHref({orgSlug, locale, labels, slot, code})` | A pure function caller (helper, server-rendered code path) already has `orgSlug + locale + labels` in scope. |
+
+People (`lead` / `contact`) → `/profile/<personCode>` (single shared profile).
+Companies / Deals → `/{labels[slot].slug}/<code>`. **Never hardcode** any of those slugs again.
+
+Cross-reference: `core/entities/STATE.md` 2026-05-22 entry for the full audit
+of files that switched to this helper (CompanyCell, IdentityBadge, EntityCard,
+useEntityDisplay, MessagesPreviewWidget, EventDetailPopover, server-side
+notification mutations).
+
+---
+
+> **Earlier history (kept for reference):**
+
 > Updated: 2026-05-19 (round 3 — ShellLayout fillHeight chain fix)
 > Status: Shell-layout primitives + canonical `useEntityLabels` + entity-layout chrome live here.
 >

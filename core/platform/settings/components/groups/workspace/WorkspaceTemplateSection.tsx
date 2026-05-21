@@ -83,13 +83,13 @@ export function WorkspaceTemplateSection({ org, orgId }: { org: OrgSettings; org
 							<li
 								key={t.id}
 								className={cn(
-									"flex flex-col gap-3 rounded-[var(--radius)] border p-4 transition-colors",
+									"flex flex-col gap-3 rounded-[var(--radius)] border p-3 transition-colors sm:p-4",
 									isCurrent
 										? "border-primary/50 bg-primary/5"
 										: "border-border bg-background hover:bg-muted/40",
 								)}
 							>
-								<header className="flex items-start gap-3">
+								<header className="flex items-start gap-2 sm:gap-3">
 									<span
 										className="flex size-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-muted text-lg"
 										aria-hidden="true"
@@ -97,7 +97,7 @@ export function WorkspaceTemplateSection({ org, orgId }: { org: OrgSettings; org
 										{t.icon ?? "📋"}
 									</span>
 									<div className="min-w-0 flex-1">
-										<div className="flex items-center gap-2">
+										<div className="flex flex-wrap items-center gap-1.5">
 											<h3 className="truncate font-medium text-sm">
 												{t.label}
 											</h3>
@@ -119,7 +119,7 @@ export function WorkspaceTemplateSection({ org, orgId }: { org: OrgSettings; org
 									</div>
 								</header>
 
-								<dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+								<dl className="grid grid-cols-1 gap-x-3 gap-y-1 text-xs sm:grid-cols-2">
 									<TemplateStat label="Pipeline" value={t.pipelineName} />
 									<TemplateStat
 										label="Stages"
@@ -244,9 +244,9 @@ export function WorkspaceTemplateSection({ org, orgId }: { org: OrgSettings; org
 
 function TemplateStat({ label, value }: { label: string; value: string }) {
 	return (
-		<>
+		<div className="flex items-baseline justify-between gap-2 sm:contents">
 			<dt className="text-muted-foreground">{label}</dt>
-			<dd className="truncate font-medium text-foreground">{value}</dd>
-		</>
+			<dd className="truncate font-medium text-foreground text-end sm:text-start">{value}</dd>
+		</div>
 	);
 }

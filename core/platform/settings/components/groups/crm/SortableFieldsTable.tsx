@@ -71,36 +71,38 @@ export function SortableFieldsTable({
 
 	return (
 		<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead className="w-8" />
-						<TableHead>Label</TableHead>
-						<TableHead>Key</TableHead>
-						<TableHead>Type</TableHead>
-						<TableHead>Group</TableHead>
-						<TableHead className="text-end">Required</TableHead>
-						<TableHead className="w-24" />
-					</TableRow>
-				</TableHeader>
-				<SortableContext
-					items={fields.map((f) => f._id)}
-					strategy={verticalListSortingStrategy}
-				>
-					<TableBody>
-						{fields.map((f) => (
-							<SortableFieldRow
-								key={f._id}
-								orgId={orgId}
-								field={f}
-								setEditing={setEditing}
-								update={update}
-								remove={remove}
-							/>
-						))}
-					</TableBody>
-				</SortableContext>
-			</Table>
+			<div className="w-full overflow-x-auto">
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead className="w-8" />
+							<TableHead>Label</TableHead>
+							<TableHead>Key</TableHead>
+							<TableHead>Type</TableHead>
+							<TableHead>Group</TableHead>
+							<TableHead className="text-end">Required</TableHead>
+							<TableHead className="w-24" />
+						</TableRow>
+					</TableHeader>
+					<SortableContext
+						items={fields.map((f) => f._id)}
+						strategy={verticalListSortingStrategy}
+					>
+						<TableBody>
+							{fields.map((f) => (
+								<SortableFieldRow
+									key={f._id}
+									orgId={orgId}
+									field={f}
+									setEditing={setEditing}
+									update={update}
+									remove={remove}
+								/>
+							))}
+						</TableBody>
+					</SortableContext>
+				</Table>
+			</div>
 		</DndContext>
 	);
 }

@@ -595,11 +595,16 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 				    pipeline tabs above the deals kanban). The Default stage
 				    is just the first pill with a "Default" badge — same UI
 				    as any other stage. Each tab shows ONLY the fields
-				    pinned to that stage. */}
+				    pinned to that stage.
+				    
+				    Mobile: the row scrolls horizontally inside its bounds
+				    (no wrap to a second line) so a long pipeline (Default →
+				    Discovery → Qualification → Proposal → Negotiation →
+				    Won) stays readable on a phone. */}
 				<div
 					role="tablist"
 					aria-label={`${pipeline.name} field tabs`}
-					className="flex flex-wrap items-center gap-1 border-b ps-1 pe-1 pb-2"
+					className="flex items-center gap-1 overflow-x-auto scrollbar-none border-b ps-1 pe-1 pb-2"
 				>
 					{stages.map((s) => {
 						const active = activeStage?.id === s.id;
@@ -612,7 +617,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 								aria-selected={active}
 								onClick={() => setActiveStageKey(s.id)}
 								className={cn(
-									"flex h-7 items-center gap-1.5 rounded-[var(--radius)] border ps-2.5 pe-2.5 text-xs transition-colors",
+									"flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[var(--radius)] border ps-2.5 pe-2.5 text-xs transition-colors",
 									active
 										? "border-primary/30 bg-primary/10 text-primary"
 										: "border-transparent text-muted-foreground hover:bg-muted/60",
@@ -679,7 +684,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 				    pops downward on click; that's a Radix default — but
 				    by sitting on the end of its row, on most viewports it
 				    has room to expand without overlapping the next setting. */}
-				<div className="flex items-start justify-between gap-3 rounded-[var(--radius)] border bg-background px-3 py-2">
+				<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-background px-3 py-2 sm:flex-row sm:items-start sm:justify-between">
 					<div className="flex min-w-0 flex-1 flex-col gap-0.5">
 						<span className="text-xs font-medium">
 							When required fields are missing
@@ -691,7 +696,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 						</span>
 					</div>
 					<Select value={policy} onValueChange={handlePolicyChange}>
-						<SelectTrigger className="h-8 w-44 shrink-0 text-xs">
+						<SelectTrigger className="h-8 w-full text-xs sm:w-44 sm:shrink-0">
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent align="end">
@@ -723,7 +728,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 					</Select>
 				</div>
 
-				<div className="flex items-start justify-between gap-3 rounded-[var(--radius)] border bg-background px-3 py-2">
+				<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-background px-3 py-2 sm:flex-row sm:items-start sm:justify-between">
 					<div className="flex flex-col gap-0.5">
 						<span className="text-xs font-medium">Allow skipping stages</span>
 						<span className="text-[10px] leading-snug text-muted-foreground">
@@ -739,10 +744,11 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 						onCheckedChange={handleAllowSkipChange}
 						disabled={policy !== "block"}
 						aria-label="Allow skipping stages"
+						className="self-start sm:self-auto"
 					/>
 				</div>
 
-				<div className="flex items-start justify-between gap-3 rounded-[var(--radius)] border bg-background px-3 py-2">
+				<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-background px-3 py-2 sm:flex-row sm:items-start sm:justify-between">
 					<div className="flex flex-col gap-0.5">
 						<span className="text-xs font-medium">
 							Require all fields before mark as done
@@ -757,6 +763,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 						checked={markDoneRequiresAll}
 						onCheckedChange={handleMarkDoneChange}
 						aria-label="Require all fields before mark as done"
+						className="self-start sm:self-auto"
 					/>
 				</div>
 			</div>

@@ -26,8 +26,13 @@
  *   - `scope` must be one of the known values above (else INVALID_ARGS).
  *   - `scopeId` must resolve to an existing entity in the same org (else NOT_FOUND).
  *   - `args.size` must not exceed `org.settings.fileUpload.maxSizeMb` (default 25MB).
- *   - `args.mimeType` must be in `org.settings.fileUpload.allowedMimeCategories`
- *     (default: every category — see DEFAULT_MIME_CATEGORIES below).
+ *   - When `args.fieldKey` is set, `args.mimeType` must match one of the
+ *     `allowedFileTypes` categories declared on the field definition. Empty
+ *     / missing = any file allowed (per field).
+ *   - When `args.fieldKey` is unset (free-form attachments — drop-zone,
+ *     timeline drop, etc.), no mime restriction is applied. The org-wide
+ *     `allowedMimeCategories` knob has been removed (was confusing; admins
+ *     wanted per-field control instead).
  *
  * AUTHZ:
  *   - `record` / `updateTags`: `files.upload`
@@ -52,8 +57,12 @@ const DEFAULT_MAX_SIZE_MB = 25;
 
 /**
  * Default mime-type category map. Each category lists wildcard prefixes that
- * the validator matches against. Categories come from `org.settings.fileUpload
- * .allowedMimeCategories` — when empty, every category is allowed.
+ * the validator matches against. Categories come from
+ * `fieldDefinitions.allowedFileTypes` for field-scoped uploads; free-form
+ * uploads (no `fieldKey`) skip mime validation entirely.
+ *
+ * Mirror of `core/data-io/files/file-categories.ts` — kept here as the
+ * authoritative server-side check. Keep in sync.
  */
 const MIME_CATEGORIES: Record<string, readonly string[]> = {
 	image: ["image/"],
@@ -188,9 +197,40 @@ function validateMimeType(mimeType: string, allowedCategories: readonly string[]
 	if (!matches) {
 		throw new ConvexError({
 			code: "MIME_TYPE_NOT_ALLOWED",
-			message: `File type "${mimeType}" is not allowed by workspace policy.`,
+			message: `File type "${mimeType}" is not allowed for this field.`,
 			allowedCategories: [...allowedCategories],
 		});
+	}
+}
+
+/**
+ * Map a file scope ("lead" / "contact" / "deal" / …) to the
+ * `fieldDefinitions.entityType` value used to look up field configs.
+ *
+ * Most scopes are 1:1 with entity types. The "person" alias bucket
+ * (lead/contact uploaded under the unified person view) returns null —
+ * person-scope is not where dynamic field-form uploads land in our codepath
+ * (those use `scope=lead` or `scope=contact` directly), so there's no field
+ * definition to look up. Drop-zone uploads on the person profile have no
+ * `fieldKey` and skip mime validation entirely.
+ */
+function mapScopeToEntityType(scope: string): string | null {
+	switch (scope) {
+		case "lead":
+			return "lead";
+		case "contact":
+			return "contact";
+		case "deal":
+			return "deal";
+		case "company":
+			return "company";
+		case "person":
+		case "user":
+		case "org":
+		case "field":
+			return null;
+		default:
+			return null;
 	}
 }
 
@@ -243,7 +283,6 @@ export const record = orgMutation({
 
 		// Per-org policy (DB-driven, no hardcoded limits).
 		const maxSizeMb = org.settings?.fileUpload?.maxSizeMb ?? DEFAULT_MAX_SIZE_MB;
-		const allowedCategories = org.settings?.fileUpload?.allowedMimeCategories ?? [];
 
 		if (args.size <= 0 || args.size > maxSizeMb * 1024 * 1024) {
 			throw new ConvexError({
@@ -253,7 +292,33 @@ export const record = orgMutation({
 			});
 		}
 
-		validateMimeType(args.mimeType, allowedCategories);
+		// Mime-type whitelist: when this is a field-scoped upload (the
+		// universal pattern for record forms), we look up the field
+		// definition and use its `allowedFileTypes` declaration.
+		// Free-form uploads (no `fieldKey`) — drop-zones on detail
+		// pages, message attachments, etc. — are unrestricted at the
+		// server level: the UX prevents wild uploads via the file
+		// chooser's `accept` attribute, and a stricter server gate
+		// would just frustrate users without a meaningful security
+		// gain (storage size is already capped).
+		if (args.fieldKey) {
+			// Look up the field definition by (orgId, entityType, name).
+			// We can't index by name directly, but the per-entity field
+			// list is small (typically 5-30 rows) so a filtered scan is
+			// fine.
+			const entityType = mapScopeToEntityType(args.scope);
+			if (entityType) {
+				const candidates = await ctx.db
+					.query("fieldDefinitions")
+					.withIndex("by_org_and_entity", (q) =>
+						q.eq("orgId", args.orgId).eq("entityType", entityType),
+					)
+					.collect();
+				const fieldDef = candidates.find((f) => f.name === args.fieldKey);
+				const allowed = fieldDef?.allowedFileTypes ?? [];
+				validateMimeType(args.mimeType, allowed);
+			}
+		}
 
 		// Resolve scope id — for "user" the only allowed value is the caller.
 		const effectiveScopeId = args.scope === "user" ? userId : args.scopeId;

@@ -1,7 +1,138 @@
 # Entities — State
 
-> Updated: 2026-05-21 (Website link bug fix + project-wide URL helper; pretty 404/error UIs restored).
-> Status: 100% complete (Phase 2).
+> Updated: 2026-05-22 (Users table moved to canonical DataTable; CompanyDetailView Recent-activity card simplified)
+> Status: 100% complete (Phase 2 — excluding AI / Phase 3).
+
+## 2026-05-22 (round 2) — Company Users tab uses canonical DataTable
+
+The `CompanyDetailView`'s Users tab was originally implemented with a
+hand-rolled `<table>` + a separate stacked-card list for `<sm`. User
+asked to use the project's canonical DataTable instead so it picks up
+the same sortable headers + responsive scroll + pagination as the
+entity list views.
+
+**What changed in `core/entities/_entities/companies/views/CompanyDetailView.tsx`:**
+
+| Concern | Fix |
+|---|---|
+| Hand-rolled `<table>` markup | Replaced with `<DataTable table={table} pageSizeOptions={[10,25,50,100]} onRowClick={...} />`. Headers are `<DataTableColumnHeader column={column} title="…"/>` — same component every entity list view uses. |
+| Mobile-only stacked-card duplicate | Removed. The DataTable's own `overflow-auto` shell handles narrow widths via horizontal scroll, identical to the leads/contacts/deals tables on mobile. |
+| Click-to-navigate | `<DataTable onRowClick={...}>` calls `router.push(buildHref('contact', personCode))`. The contact href is computed via the dynamic-slug helper introduced in round 1. |
+| Embedded table URL collisions | `useDataTable({ shallow: true, clearOnDefault: true })` so the inner table doesn't write `?page=` / `?sort=` to the URL — multiple tables on the same page would fight for the query string otherwise. |
+| `<Link>` for "View timeline tab" | Removed (was passive — `e.preventDefault()`). The tab strip is the navigation surface. |
+
+The Recent-activity card on the Overview tab also had the dangling
+"View timeline tab" link (the one I'd flagged in round 1's report). It
+was passive, so dropping it was a single-line cleanup.
+
+### Verification
+
+- `pnpm typecheck` → 0 errors.
+- `pnpm lint-check` → 647 files, 0 issues.
+- `pnpm test` → 118/118 convex tests pass (1 skipped).
+- `pnpm build` → all 18 routes compile.
+
+---
+
+## 2026-05-22 — Dynamic entity-slug routing + Company detail page + deals mobile fix
+
+**What was reported:**
+1. The deals card on `Profile → Deals` tab was overflowing on mobile — values
+   like `AED 300,000` got truncated to `A…`, the assignee field rendered the
+   raw `userId` (`jx724cx34hzhgcxn43ysy…`), the stage value rendered the raw
+   stageId (`stage_legacy_xyz…`), and the Stage 4 chip in the progress strip
+   was sliced off the right edge.
+2. Renaming `Company` → `Agency` in settings updated the sidebar but every
+   click on a company card still routed to `/companies/CO-001` instead of the
+   renamed `/agencies/CO-001`.
+3. Visiting `/companies/CO-001` rendered a placeholder ("coming soon") instead
+   of a real detail page.
+
+**Root causes:**
+1. `<DealFieldRow>` capped values at `max-w-[60%] truncate` and never resolved
+   `assignedTo` (userId) → name or `currentStageId` → stage name before the
+   field-value renderer ran. The field-value renderer treats those as plain
+   text and just dumps whatever string it receives.
+2. Multiple files hardcoded `/companies/`, `/company/`, and `/deals/` in URL
+   builders (`CompanyCell`, `IdentityBadge`, `EntityCard.buildDetailHref`,
+   `useEntityDisplay`, `MessagesPreviewWidget`, `EventDetailPopover`). Two
+   server-side mutations (`messages/mutations.ts`, `conversations/mutations.ts`)
+   also stored `actionUrl` on every notification using the default slug —
+   that string was then prepended with `/${orgSlug}` on the client and routed
+   to a path that no longer existed after a rename.
+3. `EntityDetailRedirect` had a TODO branch for the `company` slot that
+   rendered the placeholder. The detail view was actually written but living
+   inline at the bottom of `CompaniesView.tsx`, with no caller wired up.
+
+**What was done:**
+
+### New helpers / queries
+
+| File | Purpose |
+|---|---|
+| `core/shell/shared/hooks/useEntityHref.ts` | NEW. `useEntityHref()` hook + `buildEntityHref({orgSlug, locale, labels, slot, code})` pure builder. Single source of truth for entity URLs across the app. Honors `useEntityLabels()` so renamed slots get the right path automatically. People (`lead`/`contact`) always go to `/profile/<code>`; deals/companies use the labels.{slot}.slug segment. |
+| `core/inbox/notifications/utils/resolveNotificationHref.ts` | NEW. Client-side resolver: `(orgSlug, labels, entityType, entityId, type, legacyActionUrl) → string \| null`. Lets the notification system stop persisting paths server-side and instead derive the URL on render. Falls back to the stored `actionUrl` for legacy notifications. |
+| `core/entities/_entities/companies/views/CompanyDetailView.tsx` | NEW. Full tabbed detail page (Overview / Users / Files / Timeline / Follow-ups / Calendar). Mobile-first — tabs scroll horizontally, overview cards stack at <md / 2-col at md+, users panel switches between table (sm+) and stacked card list (<sm). |
+| `convex/crm/entities/companies/queries.ts::listPersonsForCompany` | NEW query. Resolves `companyMembers` join → contacts/leads in one server roundtrip; returns `{personCode, displayName, email, phone, kind, assignedTo}` rows, sorted by name. Uses `by_org_and_company` index. |
+
+### Files modified — dynamic-slug refactor
+
+| File | Change |
+|---|---|
+| `core/entities/shared/components/CompanyCell.tsx` | Replaced inline `/{locale}/{orgSlug}/company/<code>` builder with `useEntityHref()`. Pill now navigates to `labels.company.slug`. |
+| `core/entities/shared/components/IdentityBadge.tsx` | Local `buildHref()` now delegates to `buildEntityHref({...})` from the shared module. Adds support for `lead`/`contact` slots (which redirect to `/profile/<code>`). |
+| `core/entities/shared/components/EntityCard.tsx` | `buildDetailHref` accepts `labels` and routes companies through `buildEntityHref`. Deals still short-circuit to `/profile/<personCode>?group=deals` when a personCode is in scope. |
+| `core/comms/messages/hooks/useEntityDisplay.ts` | `profileHref` for deals/companies now uses `labels.deal.slug` / `labels.company.slug`. |
+| `core/comms/messages/components/MessagesPreviewWidget.tsx` | `actionUrlFor` accepts `labels` and uses dynamic slugs. |
+| `core/scheduling/calendar/components/EventDetailPopover.tsx` | Deal source's detail URL now uses `labels.deal.slug`. |
+| `convex/crm/shared/messages/mutations.ts` | Stopped storing `actionUrl` on `message.received` / `message.mention` notifications. Server-side `actionUrlFor` is a no-op stub for back-compat. |
+| `convex/crm/shared/conversations/mutations.ts` | Same — `conversation_invite` notifications no longer carry a stored URL. |
+| `core/shell/shell/components/TopNav.tsx` | Notification dropdown rebuilds the click target via `resolveNotificationHref`. Legacy `actionUrl` still works as fallback. |
+| `core/inbox/notifications/views/NotificationsView.tsx` | Same. |
+
+### Files modified — deals mobile responsiveness
+
+| File | Change |
+|---|---|
+| `core/platform/profile/components/PersonDealCard.tsx` | `<DealFieldRow>` now stacks label-above-value on `<sm` and goes side-by-side on `≥sm`. Drops the previous `max-w-[60%] truncate` cap on the value column — values wrap instead of getting clipped. The row resolves `assignedTo` (userId → member.name) and `currentStageId` (stageId → stage.name) BEFORE the renderer runs. The parent component derives `memberNameMap` (from `useOrgMemberMap`) and `stageNameMap` (from `sortedStages`) once and forwards them through `<StageFieldBlock>` to every row — no per-card subscription overhead. |
+| same | Header right cluster (`stage chip + assignee avatar`) wraps to its own row on mobile (`basis-full sm:basis-auto`) so it doesn't push off-screen. |
+| same | Stage progress strip got `pe-4` + a right-edge `mask-image` fade so users see when there's more to scroll into. |
+
+### Files modified — Company detail page wiring
+
+| File | Change |
+|---|---|
+| `core/entities/views/EntityDetailRedirect.tsx` | The `slot === "company"` branch renders `<CompanyDetailView orgSlug={orgSlug} companyCode={id} />` instead of the placeholder. |
+| `core/entities/_entities/companies/views/CompaniesView.tsx` | Removed the legacy inline `CompanyDetailView` (lines 459-651) plus the now-orphaned imports (`EntityCalendarPanel`, `EntityFollowups`, `EntityTimeline`, `displayUrlLabel`, `normalizeExternalUrl`). File shrank from 651 → 458 lines. |
+
+### Verification
+
+- `pnpm typecheck` → 0 errors.
+- `pnpm lint-check` → 647 files, 0 issues.
+- `pnpm build` → all 18 routes compile, no warnings beyond the pre-existing Sentry deprecation.
+- `pnpm test` → 118/118 convex tests pass (1 skipped).
+
+### Rule of thumb (lock for future code)
+
+| Rule | Where it lives |
+|---|---|
+| Never hardcode `/companies/`, `/deals/`, `/leads/`, `/contacts/` in any client-side URL string. Use `useEntityHref()` or `buildEntityHref({...})`. | `core/shell/shared/hooks/useEntityHref.ts` |
+| Notification mutations on the server MUST NOT pass `actionUrl` for entity-targeted notifications. Pass `entityType + entityId` only — the client resolves the path via `resolveNotificationHref`. | `core/inbox/notifications/utils/resolveNotificationHref.ts` |
+| Stage-aware/assignee-aware fields rendered on the profile/deal card MUST resolve raw IDs to display labels at the parent (one batched lookup) and forward maps through props. NEVER let `<FieldValueRenderer>` see a raw `userId` or `stageId`. | `core/platform/profile/components/PersonDealCard.tsx::DealFieldRow` |
+| Company detail = tabs (Overview / Users / Files / Timeline / Follow-ups / Calendar). Users tab uses the new `listPersonsForCompany` query, never `companyMembers` directly. | `core/entities/_entities/companies/views/CompanyDetailView.tsx` |
+
+### Notes on what was NOT changed
+
+- The `[entitySlug]/[id]` dynamic route is still kept — companies need it,
+  and removing the deal redirect path would break old `/deals/D-001` bookmarks
+  and any notification still carrying the legacy `actionUrl`. The redirect
+  path forwards deal links to `/profile/<personCode>?group=deals` exactly as
+  before.
+- Phase-2 items still deferred per `checklist.md`: Stripe billing (production
+  hardening) and CSV import (Phase 4+). Phase 3 (AI assistant + WhatsApp) is
+  not in scope here.
+
+---
 
 ## 2026-05-21 — External-URL renderers normalize protocol; segment-scoped 404 added
 

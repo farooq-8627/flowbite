@@ -65,14 +65,21 @@ export function AutoBreadcrumb() {
 					)}
 				</BreadcrumbItem>
 				{pageCrumbs.map((crumb) => (
-					<span key={crumb.href} className="flex items-center gap-1.5 sm:gap-2.5">
+					<span key={crumb.href} className="flex items-center gap-0.5 sm:gap-2.5">
 						<BreadcrumbSeparator />
 						<BreadcrumbItem>
 							{crumb.isLast ? (
-								<BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+								<BreadcrumbPage className="truncate max-w-[8rem] sm:max-w-none">
+									{crumb.label}
+								</BreadcrumbPage>
 							) : (
 								<BreadcrumbLink asChild>
-									<Link href={crumb.href}>{crumb.label}</Link>
+									<Link
+										href={crumb.href}
+										className="truncate max-w-[6rem] sm:max-w-none"
+									>
+										{crumb.label}
+									</Link>
 								</BreadcrumbLink>
 							)}
 						</BreadcrumbItem>

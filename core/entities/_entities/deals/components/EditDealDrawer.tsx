@@ -22,10 +22,28 @@ interface EditDealDrawerProps {
 	orgId: Id<"orgs"> | undefined;
 	deal: Doc<"deals"> | null;
 	/**
-	 * `"edit"` — renders defaults + all stage fields at order ≤ currentStage.
-	 * `"fillStage"` — renders ONLY empty fields pinned to the deal's current stage.
+	 * `"edit"`      — renders defaults + all stage fields at order ≤ currentStage
+	 *                 (the full editable form: title, value, assignee, every
+	 *                 stage's pinned fields up to where the deal is now).
+	 * `"fillStage"` — renders ONLY *empty* fields pinned to the deal's
+	 *                 current stage (the kanban "+ Fill stage X fields" path).
+	 * `"editStage"` — renders ONLY the field names passed in
+	 *                 `stageFieldNames`, regardless of whether they're filled
+	 *                 or empty. Used by the per-stage card "Edit fields" button
+	 *                 on the deal detail Overview, so the user can edit
+	 *                 just one stage's fields in isolation. The form
+	 *                 dialog title uses `stageDisplayName` when provided.
 	 */
-	mode?: "edit" | "fillStage";
+	mode?: "edit" | "fillStage" | "editStage";
+	/**
+	 * Required when `mode === "editStage"`. The set of field names to show
+	 * in the form. Caller is responsible for picking the right names
+	 * (typically `useEntityFields("deal").allFields` filtered by
+	 * `showInStages.includes(stageId)`).
+	 */
+	stageFieldNames?: string[];
+	/** Optional pretty stage name for the editStage drawer title. */
+	stageDisplayName?: string;
 }
 
 const EMPTY: EntityFormValues = {
@@ -41,6 +59,8 @@ export function EditDealDrawer({
 	orgId,
 	deal,
 	mode = "edit",
+	stageFieldNames,
+	stageDisplayName,
 }: EditDealDrawerProps) {
 	const labels = useEntityLabels();
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -76,9 +96,7 @@ export function EditDealDrawer({
 
 	const editableFieldsResult = useQuery(
 		api.crm.entities.deals.queries.getEditableFieldsUpToStage,
-		orgId && deal?._id && mode === "edit"
-			? { orgId, dealId: deal._id as Id<"deals"> }
-			: "skip",
+		orgId && deal?._id && mode === "edit" ? { orgId, dealId: deal._id as Id<"deals"> } : "skip",
 	);
 
 	const includeOnly = useMemo<Set<string> | undefined>(() => {
@@ -86,9 +104,16 @@ export function EditDealDrawer({
 			if (!stageFieldsResult) return new Set<string>();
 			return new Set(stageFieldsResult.missing.map((f) => f.name));
 		}
+		if (mode === "editStage") {
+			// Caller-supplied: every field pinned to the stage being edited
+			// (whether filled or empty). When `stageFieldNames` is missing or
+			// empty, render an empty form rather than fall through to "edit"
+			// (otherwise the user would suddenly see every field — wrong scope).
+			return new Set(stageFieldNames ?? []);
+		}
 		if (!editableFieldsResult) return new Set<string>();
 		return new Set(editableFieldsResult.fieldNames);
-	}, [mode, stageFieldsResult, editableFieldsResult]);
+	}, [mode, stageFieldsResult, editableFieldsResult, stageFieldNames]);
 
 	const stageHeader = useMemo(() => {
 		if (mode !== "fillStage" || !stageFieldsResult) return null;
@@ -130,7 +155,9 @@ export function EditDealDrawer({
 	const drawerTitle =
 		mode === "fillStage"
 			? `Fill ${stageHeader?.stageName ?? "stage"} fields`
-			: `Edit ${labels.deal.singular}`;
+			: mode === "editStage"
+				? `Edit ${stageDisplayName ?? "stage"} fields`
+				: `Edit ${labels.deal.singular}`;
 
 	return (
 		<EntityFormDrawer

@@ -163,6 +163,28 @@ export const fieldDefinitions = defineTable({
 	sensitive: v.optional(v.boolean()),
 	defaultValue: v.optional(v.any()),
 	showInStages: v.optional(v.array(v.string())),
+	/**
+	 * For `type === "file"` / `type === "files"` fields ONLY.
+	 *
+	 * Whitelist of file-category ids (`image`, `pdf`, `document`,
+	 * `spreadsheet`, `video`, `audio`, `archive`, `other`) that this
+	 * field accepts. `undefined` / `[]` means "any file type allowed".
+	 *
+	 * Replaces the legacy org-wide `org.settings.fileUpload
+	 * .allowedMimeCategories` knob — file restrictions are now declared
+	 * **per field** at field-creation time so different fields on the
+	 * same record can demand different file types (e.g. an "ID photo"
+	 * field accepts only images while a "contract" field accepts only
+	 * PDFs + Word).
+	 *
+	 * Source of truth: `core/data-io/files/file-categories.ts` —
+	 * `FILE_CATEGORIES[].id` are the only legal entries here.
+	 *
+	 * Server enforcement: `convex/files/mutations.ts::record` looks up
+	 * the field definition by `fieldKey` and rejects uploads whose
+	 * mime type doesn't match one of the listed categories.
+	 */
+	allowedFileTypes: v.optional(v.array(v.string())),
 	...timestamps,
 }).index("by_org_and_entity", ["orgId", "entityType"]);
 

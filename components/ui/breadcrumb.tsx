@@ -13,7 +13,7 @@ function BreadcrumbList({ className, ...props }: React.ComponentProps<"ol">) {
 		<ol
 			data-slot="breadcrumb-list"
 			className={cn(
-				"flex flex-wrap items-center gap-1.5 text-sm break-words text-muted-foreground sm:gap-2.5",
+				"flex flex-nowrap items-center gap-0.5 overflow-hidden text-xs break-words text-muted-foreground sm:flex-wrap sm:gap-2.5 sm:text-sm",
 				className,
 			)}
 			{...props}
@@ -25,7 +25,7 @@ function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
 	return (
 		<li
 			data-slot="breadcrumb-item"
-			className={cn("inline-flex items-center gap-1.5", className)}
+			className={cn("inline-flex min-w-0 items-center gap-0.5 sm:gap-1.5", className)}
 			{...props}
 		/>
 	);
@@ -68,7 +68,7 @@ function BreadcrumbSeparator({ children, className, ...props }: React.ComponentP
 			data-slot="breadcrumb-separator"
 			role="presentation"
 			aria-hidden="true"
-			className={cn("[&>svg]:size-3.5", className)}
+			className={cn("flex shrink-0 items-center [&>svg]:size-3 sm:[&>svg]:size-3.5", className)}
 			{...props}
 		>
 			{children ?? <ChevronRight />}

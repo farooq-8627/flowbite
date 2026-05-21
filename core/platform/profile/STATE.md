@@ -1,5 +1,72 @@
 # Profile — State
 
+> Updated: 2026-05-22 (DealDetailShell — selector + tabbed shell replaces PersonDealCard; old card deleted)
+> Status: 100% Complete
+
+## 2026-05-22 — Deals tab: selector + tabbed shell (mirrors Company detail layout)
+
+The previous `Profile → Deals` tab rendered a list of `<PersonDealCard>`
+instances (one expanded card per deal). The new design — explicitly
+requested — mirrors the `<CompanyDetailView>` shell: one selector at the
+top, one tabbed view below, switch deals by clicking the selector chip.
+
+**What changed:**
+
+| File | Change |
+|---|---|
+| `core/platform/profile/components/DealDetailShell.tsx` | NEW. 757-line component containing: <ul><li>`DealSelectorStrip` — chip-strip selector (visible only when ≥2 deals; same visual pattern as `DealPipelineTabs` — `bg-primary/10 text-primary` for active, `text-muted-foreground hover:bg-muted/60` for idle). Title is truncated to 16 chars, dealCode shown alongside as a font-mono pill.</li><li>`DealDetailCard` — sticky header (avatar + title + code pill + value + updated-rel + stage badge + assignee tooltip avatar) plus a horizontally-scrollable tab strip with 5 tabs.</li><li>`DealOverviewTab` — Vitals card (code, stage, value, owner, expected close, won/lost dates) + tags, Stage-aware fields card (every visible field pinned to the deal's CURRENT stage OR the pipeline's Default stage; raw `userId` / `stageId` resolved to display names BEFORE the renderer runs via `memberNameMap` + `stageNameMap`), and a recent-activity preview at the bottom.</li><li>Files tab uses `<EntityFilesPanel entityType="deal" entityId={deal.dealCode}>` — already renders previewable image/video tiles → click → `MediaViewerModal` lightbox; documents render as download rows. Zero per-page custom code.</li><li>Timeline / Follow-ups / Calendar tabs reuse `EntityTimeline` / `EntityFollowups` / `EntityCalendarPanel` with `entityType="deal"`.</li></ul> |
+| `core/platform/profile/components/PersonDealCard.tsx` | **DELETED.** Replaced by `DealDetailShell`. |
+| `core/platform/profile/views/ProfileContent.tsx` | `<PersonDealsList>` deleted. `DealsGroup` renders `<DealDetailShell personCode={personCode} />`. Dropped now-unused imports (`useDealPipelines`, `useEntityFields`, `useEntityFieldValuesMap`, `PersonDealCard`). |
+
+### Behaviour notes
+
+- **Active deal selection** is local state on the shell — defaults to the
+  first deal when the list arrives, kept in sync if the previous selection
+  gets soft-deleted (resets to first), otherwise sticks across re-renders.
+- **Switching deals resets the active tab to "Overview"** — Files of one
+  deal don't apply to the next.
+- **No per-deal `useQuery` fanout** — Pipeline + field defs + custom
+  values are still fetched ONCE at the page level (via the same hooks
+  the kanban uses). Each tab consumes the slice it needs.
+- **Mobile-first** — selector + tab strip both have `overflow-x-auto
+  scrollbar-none` so they scroll horizontally on phone widths. Header
+  right cluster wraps to its own row on `<sm` (`basis-full sm:basis-auto`).
+
+Cross-reference: `core/entities/STATE.md` 2026-05-22 — paired with the
+Company detail tabs for consistent mental model.
+
+---
+
+> **Earlier history:**
+
+> Updated: 2026-05-22 (Deals tab — mobile responsiveness fix; raw IDs resolved before render)
+> Status: 100% Complete
+
+## 2026-05-22 — Deals tab mobile responsiveness fix
+
+The `Profile → Deals` tab on a phone (≤sm width) was clipping values:
+`AED 300,000` → `A…`, `assignedTo` displayed the raw `userId`,
+`currentStageId` displayed the raw `stageId`. Reported via screenshot.
+
+**What changed in `core/platform/profile/components/PersonDealCard.tsx`:**
+
+| Concern | Fix |
+|---|---|
+| Field-row clipping | `<DealFieldRow>` now stacks label-above-value on `<sm`, side-by-side on `≥sm`. Drops the previous `max-w-[60%] truncate` cap on the value column. Values use `break-words` so long strings wrap instead of overflowing. |
+| Raw `userId` in `assignedTo` | The parent (`PersonDealCard`) builds `memberNameMap = Map<userId, displayName>` from `useOrgMemberMap()` and forwards it through `<StageFieldBlock>` to every row. The row substitutes the name BEFORE `<FieldValueRenderer>` runs. |
+| Raw `stageId` in `currentStageId` | Same pattern — `stageNameMap = Map<stageId, stageName>` derived from the deal's pipeline `sortedStages`. |
+| Header overflow on mobile | The right cluster (stage chip + assignee avatar) now wraps to its own row at `<sm` via `basis-full sm:basis-auto`. |
+| Stage progress strip | Added `pe-4` and a right-edge `mask-image` linear-gradient fade so it's clear there's more content to scroll. |
+
+No new queries, no new subscriptions, no per-card fanout — both maps are
+derived once at the parent level and forwarded down via props.
+
+Cross-reference: `core/entities/STATE.md` 2026-05-22 — full audit.
+
+---
+
+> **Earlier history:**
+
 > Updated: 2026-05-19 (round 4 — card fields fix + height revert + header restructure)
 > Status: Profile shell, single-board people list (cards now render full content), structured OverviewCard with left/right header split, real deals tab, AI briefing stub. Messages/Timeline height uses the original `h-[calc(100vh-7rem)]` that keeps tabs+composer pinned.
 
@@ -93,3 +160,17 @@ popovers).
 - Permission rules live in `PROFILE_GROUPS` + `PROFILE_SECTIONS`. `deals.view` gates Deals; `reminders.view` gates Reminders + Followups.
 - Internal-notes-only visibility is NOT a shell-level gate — it belongs inside the individual tab.
 - Entity-labelled sections are dynamic — `OverviewGroup` "Company" + `DealsGroup` "Deals" titles read from `useEntityLabels()`.
+
+
+## Update — 2026-05-22 — PersonDealCard redesign + per-stage files
+
+PersonDealCard was reworked end-to-end:
+
+- **Header** now wraps cleanly on phones — avatar (deal initials in stage colour) + title + dealCode pill on the left, stage chip + assignee avatar on the right. No more stale "Stage code" pill — the chip says `Stage N · Name` (1-based index of the pipeline stage).
+- **Currency** uses `useOrgDefaultCurrency(orgId)` always; the legacy `deal.currency ?? "USD"` fallback was a bug — workspaces set to AED were briefly flashing USD.
+- **Assignee** is shown as an avatar with hover-tooltip "Assigned to ..." instead of an inline "Assigned to ..." text — more scannable, mobile-friendly.
+- **Updated time** is the dedicated last line of the header — "Updated 2d ago".
+- **Stage progress strip** now uses numbered chips (1, 2, 3, …).
+- **Per-stage files**: every stage section now lists files attached at that stage. We bucket `listForEntity` results by `fieldKey`, look up the field's `showInStages`, and render under each owning stage. Free-form (no fieldKey) attachments fall back to a "Free attachments" group at the bottom.
+- **Mobile**: the field grid stays single-column up through the lg breakpoint (`grid-cols-1 lg:grid-cols-2`) so phones AND small tablets get a clean stacked layout.
+

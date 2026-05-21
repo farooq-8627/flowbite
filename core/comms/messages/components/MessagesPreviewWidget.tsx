@@ -18,6 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useRecentMessages } from "@/core/comms/messages/hooks";
 import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { type EntityLabels, useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { ChatAvatar } from "./ChatAvatar";
 
 type Author = { name: string; avatarUrl?: string };
@@ -29,9 +30,14 @@ type Props = {
 	className?: string;
 };
 
-function actionUrlFor(orgSlug: string, entityType: string, entityId: string): string {
-	if (entityType === "deal") return `/${orgSlug}/deals/${entityId}`;
-	if (entityType === "company") return `/${orgSlug}/companies/${entityId}`;
+function actionUrlFor(
+	orgSlug: string,
+	entityType: string,
+	entityId: string,
+	labels: EntityLabels,
+): string {
+	if (entityType === "deal") return `/${orgSlug}/${labels.deal.slug}/${entityId}`;
+	if (entityType === "company") return `/${orgSlug}/${labels.company.slug}/${entityId}`;
 	if (entityType === "lead" || entityType === "contact" || entityType === "person")
 		return `/${orgSlug}/profile/${entityId}`;
 	return `/${orgSlug}/messages`;
@@ -40,6 +46,7 @@ function actionUrlFor(orgSlug: string, entityType: string, entityId: string): st
 export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: Props) {
 	const messages = useRecentMessages({ orgId, limit });
 	const members = useOrgMembers();
+	const labels = useEntityLabels();
 	const authorsById = useMemo(() => {
 		const map = new Map<string, Author>();
 		for (const m of members ?? []) {
@@ -90,7 +97,7 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 									: m.authorType === "contact"
 										? "Contact"
 										: "Unknown");
-							const href = actionUrlFor(orgSlug, m.entityType, m.entityId);
+							const href = actionUrlFor(orgSlug, m.entityType, m.entityId, labels);
 							return (
 								<li key={String(m._id)}>
 									<Link

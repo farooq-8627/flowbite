@@ -18,7 +18,6 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
@@ -45,15 +44,12 @@ import {
 	NO_GROUP_KEY,
 } from "@/core/entities/shared/utils/board-grouping";
 import { rankBySearch, type SearchableItem } from "@/core/entities/shared/utils/search";
-import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
-import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
 import type { PrimaryActionConfig } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useQuickAddListener } from "@/core/shell/shell/components/QuickAddMenu";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { normalizeError, normalizeErrorDescription } from "@/lib/normalizeError";
-import { displayUrlLabel, normalizeExternalUrl } from "@/lib/url";
 
 type CompanyRow = Record<string, unknown> & { id: string };
 
@@ -454,198 +450,5 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				/>
 			)}
 		</>
-	);
-}
-
-export function CompanyDetailView({ orgSlug, companyId }: { orgSlug: string; companyId: string }) {
-	const labels = useEntityLabels();
-	const { orgId } = useCurrentOrg();
-	// `companyId` from the URL is the companyCode (CO-001).
-	const company = useQuery(
-		api.crm.entities.companies.queries.getByCompanyCode,
-		orgId ? { orgId, companyCode: companyId } : "skip",
-	);
-
-	const tabs = [
-		{ id: "overview" as const, label: "Overview" },
-		{ id: "timeline" as const, label: "Timeline" },
-		{ id: "followups" as const, label: "Follow-ups" },
-		{ id: "calendar" as const, label: "Calendar" },
-	];
-	const [activeTab, setActiveTab] = useState<(typeof tabs)[number]["id"]>("overview");
-
-	if (company === undefined) {
-		return (
-			<div
-				data-org={orgSlug}
-				data-id={companyId}
-				className="flex h-full items-center justify-center text-sm text-muted-foreground"
-			>
-				Loading {labels.company.singular.toLowerCase()}…
-			</div>
-		);
-	}
-	if (company === null) {
-		return (
-			<div
-				data-org={orgSlug}
-				data-id={companyId}
-				className="flex h-full flex-col items-center justify-center gap-2 text-center"
-			>
-				<p className="text-sm font-medium">{labels.company.singular} not found</p>
-				<p className="text-xs text-muted-foreground">{companyId}</p>
-			</div>
-		);
-	}
-
-	return (
-		<div className="flex h-full min-h-0 flex-col" data-org={orgSlug} data-id={companyId}>
-			<div className="border-b bg-background px-4 py-3">
-				<div className="flex flex-col gap-0.5">
-					<h1 className="text-lg font-semibold tracking-tight">{company.name}</h1>
-					<p className="text-xs text-muted-foreground">
-						<span className="font-mono tabular-nums">{company.companyCode}</span>
-						{company.industry ? (
-							<>
-								<span aria-hidden> · </span>
-								<span>{company.industry}</span>
-							</>
-						) : null}
-					</p>
-				</div>
-				<div className="mt-3 flex items-center gap-1 border-b -mb-3">
-					{tabs.map((t) => {
-						const active = activeTab === t.id;
-						return (
-							<button
-								key={t.id}
-								type="button"
-								onClick={() => setActiveTab(t.id)}
-								aria-pressed={active}
-								className={`relative px-3 pb-2 pt-1 text-sm transition-colors ${
-									active
-										? "font-medium text-foreground"
-										: "text-muted-foreground hover:text-foreground"
-								}`}
-							>
-								{t.label}
-								{active && (
-									<span
-										aria-hidden
-										className="absolute inset-x-3 -bottom-px h-0.5 bg-primary"
-									/>
-								)}
-							</button>
-						);
-					})}
-				</div>
-			</div>
-
-			<div className="flex min-h-0 flex-1 flex-col overflow-auto p-4">
-				{activeTab === "overview" && (
-					<div className="grid gap-3 text-sm">
-						<div className="rounded-[var(--radius)] border bg-card p-4">
-							<h3 className="text-sm font-semibold">Details</h3>
-							<dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-								{company.website
-									? (() => {
-											const safeUrl = normalizeExternalUrl(company.website);
-											return (
-												<>
-													<dt className="text-muted-foreground">
-														Website
-													</dt>
-													<dd className="font-medium truncate">
-														{safeUrl ? (
-															<a
-																href={safeUrl}
-																target="_blank"
-																rel="noopener noreferrer external"
-																className="text-primary hover:underline"
-															>
-																{displayUrlLabel(safeUrl, 36)}
-															</a>
-														) : (
-															<span className="text-muted-foreground">
-																{company.website}
-															</span>
-														)}
-													</dd>
-												</>
-											);
-										})()
-									: null}
-								{company.industry ? (
-									<>
-										<dt className="text-muted-foreground">Industry</dt>
-										<dd className="font-medium">{company.industry}</dd>
-									</>
-								) : null}
-							</dl>
-						</div>
-
-						{/* Embedded summary cards: 2-column grid mirroring the
-						    profile + deal Overview layout. Timeline +
-						    Follow-ups surface the most important context
-						    without forcing a tab switch. */}
-						<div className="grid gap-3 lg:grid-cols-2">
-							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
-								<div className="flex items-center justify-between border-b px-3 py-2">
-									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-										Recent activity
-									</h3>
-									<button
-										type="button"
-										onClick={() => setActiveTab("timeline")}
-										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
-									>
-										View all
-									</button>
-								</div>
-								<div className="flex min-h-0 flex-1 flex-col">
-									<EntityTimeline
-										entityType="company"
-										entityId={company.companyCode}
-										pageSize={20}
-										visibleCap={20}
-										showFilters={false}
-										showComposer={false}
-									/>
-								</div>
-							</div>
-							<div className="flex min-h-[18rem] flex-col rounded-[var(--radius)] border bg-card">
-								<div className="flex items-center justify-between border-b px-3 py-2">
-									<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-										Open follow-ups
-									</h3>
-									<button
-										type="button"
-										onClick={() => setActiveTab("followups")}
-										className="text-[10px] text-muted-foreground hover:text-foreground hover:underline"
-									>
-										View all
-									</button>
-								</div>
-								<div className="flex min-h-0 flex-1 flex-col p-3">
-									<EntityFollowups
-										entityType="company"
-										entityId={company.companyCode}
-									/>
-								</div>
-							</div>
-						</div>
-					</div>
-				)}
-				{activeTab === "timeline" && (
-					<EntityTimeline entityType="company" entityId={company.companyCode} />
-				)}
-				{activeTab === "followups" && (
-					<EntityFollowups entityType="company" entityId={company.companyCode} />
-				)}
-				{activeTab === "calendar" && (
-					<EntityCalendarPanel entityType="company" entityId={company.companyCode} />
-				)}
-			</div>
-		</div>
 	);
 }

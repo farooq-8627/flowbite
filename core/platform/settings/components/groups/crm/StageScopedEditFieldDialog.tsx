@@ -34,9 +34,11 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MultiSelect, type MultiSelectOption } from "@/components/ui/multi-select";
 import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { FILE_CATEGORIES } from "@/core/data-io/files/file-categories";
 import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
 import { parseOptions } from "./CreateFieldDialog";
@@ -48,8 +50,13 @@ const editFieldSchema = z.object({
 	label: z.string().min(1, "Label is required"),
 	required: z.boolean(),
 	optionsText: z.string().optional(),
+	allowedFileTypes: z.array(z.string()).optional(),
 });
 type EditFieldInput = z.infer<typeof editFieldSchema>;
+
+const FILE_TYPE_OPTIONS: MultiSelectOption[] = FILE_CATEGORIES.filter((c) => c.id !== "other").map(
+	(c) => ({ value: c.id, label: c.label, subtitle: c.description }),
+);
 
 export function StageScopedEditFieldDialog({
 	orgId,
@@ -71,12 +78,15 @@ export function StageScopedEditFieldDialog({
 	const [showInStages, setShowInStages] = useState<string[]>(field.showInStages ?? []);
 	const stages = [...pipeline.stages].sort((a, b) => a.order - b.order);
 
+	const isFileField = field.type === "file" || field.type === "files";
+
 	const { form, isSubmitting, handleSubmit } = useSettingsForm({
 		schema: editFieldSchema,
 		values: {
 			label: field.label,
 			required: field.required ?? false,
 			optionsText: (field.options ?? []).join(", "),
+			allowedFileTypes: field.allowedFileTypes ?? [],
 		},
 		onSubmit: async (data: EditFieldInput) => {
 			const needsOptions = field.type === "select" || field.type === "multiselect";
@@ -94,6 +104,10 @@ export function StageScopedEditFieldDialog({
 					options: needsOptions ? options : undefined,
 					// Empty array clears the restriction (= show on every stage).
 					showInStages,
+					// For non-file types we don't pass this through at all
+					// — the server ignores it anyway, but skipping keeps
+					// the activity log clean.
+					allowedFileTypes: isFileField ? (data.allowedFileTypes ?? []) : undefined,
 				});
 				toast.success("Field updated");
 				onOpenChange(false);
@@ -169,6 +183,32 @@ export function StageScopedEditFieldDialog({
 										</FormControl>
 										<p className="text-xs text-muted-foreground">
 											Comma- or newline-separated.
+										</p>
+										<FormMessage />
+									</FormItem>
+								)}
+							/>
+						)}
+						{isFileField && (
+							<FormField
+								control={form.control}
+								name="allowedFileTypes"
+								render={({ field: f }) => (
+									<FormItem>
+										<FormLabel>Allowed file types</FormLabel>
+										<FormControl>
+											<MultiSelect
+												value={f.value ?? []}
+												onChange={f.onChange}
+												options={FILE_TYPE_OPTIONS}
+												placeholder="Any file type"
+												searchPlaceholder="Search categories…"
+												emptyText="No categories found."
+											/>
+										</FormControl>
+										<p className="text-xs text-muted-foreground">
+											Leave empty to accept any file. Pick categories to
+											restrict (e.g. PDFs + images only).
 										</p>
 										<FormMessage />
 									</FormItem>

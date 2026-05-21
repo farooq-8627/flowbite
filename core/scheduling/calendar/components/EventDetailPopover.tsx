@@ -27,7 +27,6 @@ import { format, formatDistanceToNow } from "date-fns";
 import {
 	BellIcon,
 	CalendarRangeIcon,
-	CheckCircle2Icon,
 	ExternalLinkIcon,
 	HandshakeIcon,
 	PencilIcon,
@@ -40,6 +39,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent } from "@/components/ui/popover";
 import type { CalendarEventDTO } from "@/convex/crm/shared/calendar/queries";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { cn } from "@/lib/utils";
 
 interface EventDetailPopoverProps {
@@ -74,12 +74,16 @@ export function EventDetailPopover({
 	canManageReminder,
 	onEditReminder,
 	onDeleteReminder,
-	onCompleteReminder,
+	// onCompleteReminder is intentionally unused — the "Complete" button
+	// was removed from the popover (user request 2026-05-22). Reminders
+	// are now completed only from the Reminders page / inline checkbox,
+	// keeping the calendar focused on viewing & editing events.
 }: EventDetailPopoverProps) {
 	const id = useId();
 	const params = useParams();
 	const orgSlug = params?.orgSlug as string | undefined;
 	const locale = params?.locale as string | undefined;
+	const labels = useEntityLabels();
 
 	if (!event) return null;
 
@@ -90,7 +94,7 @@ export function EventDetailPopover({
 		if (!orgSlug) return null;
 		const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
 		if (event.source === "deal" && event.entityId) {
-			return `${prefix}/deals/${event.entityId}`;
+			return `${prefix}/${labels.deal.slug}/${event.entityId}`;
 		}
 		if (event.personCode) {
 			return `${prefix}/profile/${event.personCode}`;
@@ -177,16 +181,6 @@ export function EventDetailPopover({
 				<div className="flex flex-wrap items-center gap-2 pt-1">
 					{event.source === "reminder" && canManageReminder && (
 						<>
-							<Button
-								type="button"
-								size="sm"
-								variant="outline"
-								className="h-7 text-xs"
-								onClick={() => onCompleteReminder?.(event)}
-							>
-								<CheckCircle2Icon className="me-1.5 size-3.5" />
-								Complete
-							</Button>
 							<Button
 								type="button"
 								size="sm"

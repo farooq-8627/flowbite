@@ -125,8 +125,11 @@ describe("messages.send", () => {
 		expect(msg?.conversationId).toBeTruthy();
 
 		// Conversation was auto-created and the sender was auto-added as owner.
+		// Per `consolidatePersonConversations.ts`, every person-scoped
+		// conversation collapses to `entityType: "person"` regardless of
+		// whether the underlying record is a lead or a contact.
 		const convo = await t.run(async (ctx) => ctx.db.get(msg!.conversationId));
-		expect(convo?.entityType).toBe("lead");
+		expect(convo?.entityType).toBe("person");
 		expect(convo?.entityId).toBe(personCode);
 
 		const memberships = await t.run(async (ctx) =>
@@ -141,7 +144,7 @@ describe("messages.send", () => {
 			ctx.db
 				.query("activityLogs")
 				.withIndex("by_entityType_and_entityId", (q) =>
-					q.eq("entityType", "lead").eq("entityId", personCode),
+					q.eq("entityType", "person").eq("entityId", personCode),
 				)
 				.collect(),
 		);
@@ -439,11 +442,27 @@ describe("files.record", () => {
 		).rejects.toThrow(/limit/i);
 	});
 
-	it("rejects mime type outside org-allowed categories", async () => {
+	it("rejects mime type outside the field's allowed categories", async () => {
+		// Per-field whitelists replaced the legacy org-wide knob (2026-05-22).
+		// To verify enforcement we create a lead, declare a `passport` file
+		// field that only accepts images, then try to attach a PDF — the
+		// server-side check should reject before the row is written.
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
-		const orgId = await seedOrg(t, userId, "owner", {
-			fileUpload: { allowedMimeCategories: ["image"] },
+		const orgId = await seedOrg(t, userId);
+		await asUser.mutation(api.crm.fields.fieldDefinitions.mutations.create, {
+			orgId,
+			entityType: "lead",
+			name: "passport",
+			label: "Passport",
+			type: "file",
+			required: false,
+			allowedFileTypes: ["image"],
+		});
+		const { personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
+			orgId,
+			displayName: "Lead with files",
+			source: "manual",
 		});
 		const storageId = await t.run(async (ctx) =>
 			ctx.storage.store(new Blob(["test"], { type: "application/pdf" })),
@@ -453,13 +472,44 @@ describe("files.record", () => {
 			asUser.mutation(api.files.mutations.record, {
 				orgId,
 				storageId,
-				scope: "org",
-				scopeId: orgId,
+				scope: "lead",
+				scopeId: personCode,
+				fieldKey: "passport",
 				name: "doc.pdf",
 				size: 1024,
 				mimeType: "application/pdf",
 			}),
 		).rejects.toThrow(/not allowed/i);
+	});
+
+	it("free-form attachments (no fieldKey) are unrestricted by per-field rules", async () => {
+		// The flip side of the previous test: when no fieldKey is provided
+		// (drop-zone uploads, message attachments, profile-level files),
+		// per-field rules don't apply. This is a regression guard so we
+		// don't accidentally re-introduce an org-wide gate that would
+		// frustrate users dropping files into the universal Files tab.
+		const t = convexTest(schema, modules);
+		const { userId, asUser } = await seedUser(t);
+		const orgId = await seedOrg(t, userId);
+		const { personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
+			orgId,
+			displayName: "Lead",
+			source: "manual",
+		});
+		const storageId = await t.run(async (ctx) =>
+			ctx.storage.store(new Blob(["test"], { type: "application/pdf" })),
+		);
+		await expect(
+			asUser.mutation(api.files.mutations.record, {
+				orgId,
+				storageId,
+				scope: "lead",
+				scopeId: personCode,
+				name: "doc.pdf",
+				size: 1024,
+				mimeType: "application/pdf",
+			}),
+		).resolves.toBeDefined();
 	});
 
 	it("rejects scope=lead with non-existent personCode", async () => {

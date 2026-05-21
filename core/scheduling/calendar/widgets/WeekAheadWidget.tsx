@@ -31,7 +31,7 @@ import { bucketByDay } from "@/core/scheduling/calendar/lib/calendar-buckets";
 import { ymdKey } from "@/core/scheduling/calendar/lib/calendar-grid";
 import { cn } from "@/lib/utils";
 
-const MAX_CHIPS = 3;
+const MAX_CHIPS = 4;
 
 interface WeekAheadWidgetProps {
 	orgId: Id<"orgs"> | undefined;
@@ -76,7 +76,7 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 				{events === undefined ? (
 					<p className="text-xs text-muted-foreground">Loading…</p>
 				) : (
-					<ul className="grid grid-cols-7 gap-1.5">
+					<ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 lg:gap-1.5">
 						{days.map((day) => {
 							const key = ymdKey(day);
 							const list = buckets.get(key) ?? [];
@@ -86,25 +86,35 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 									<Link
 										href={`/${orgSlug}/reminders?view=calendar&date=${key}`}
 										className={cn(
-											"flex min-h-[110px] flex-col gap-1 rounded-[var(--radius)] border p-1.5 transition-colors hover:border-ring/40 hover:bg-accent/30",
+											"flex h-full min-h-[120px] flex-col gap-1.5 rounded-[var(--radius)] border p-2 transition-colors hover:border-ring/40 hover:bg-accent/30 lg:min-h-[110px] lg:p-1.5",
 											isDayToday && "ring-1 ring-primary/40",
 										)}
 									>
-										<div className="flex items-baseline justify-between">
-											<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-												{format(day, "EEE")}
-											</span>
-											<span
-												className={cn(
-													"text-sm font-semibold tabular-nums",
-													isDayToday && "text-primary",
-												)}
-											>
-												{format(day, "d")}
-											</span>
-										</div>
+										{/* Day-of-week — top, small, uppercase (always at the top) */}
+										<span className="block text-center text-[10px] uppercase tracking-wide text-muted-foreground lg:text-start">
+											{format(day, "EEE")}
+										</span>
+										{/* Big centered date — middle of the cell on mobile, hidden on lg
+										    (lg has a tighter row showing the day inline beside the weekday). */}
+										<span
+											className={cn(
+												"block text-center text-2xl font-semibold leading-none tabular-nums lg:hidden",
+												isDayToday && "text-primary",
+											)}
+										>
+											{format(day, "d")}
+										</span>
+										{/* Compact lg-only date — on the same line as weekday, since each cell is narrower */}
+										<span
+											className={cn(
+												"hidden text-end text-sm font-semibold tabular-nums lg:block",
+												isDayToday && "text-primary",
+											)}
+										>
+											{format(day, "d")}
+										</span>
 										{list.length === 0 ? (
-											<span className="mt-auto text-[10px] text-muted-foreground/60">
+											<span className="mt-auto block text-center text-[10px] text-muted-foreground/60 lg:text-start">
 												—
 											</span>
 										) : (

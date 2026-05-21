@@ -22,9 +22,14 @@
  *   - "stack" : avatar + name on row 1, subtitle on row 2 (card-style).
  *
  * Click navigates to the detail page derived from `entityType` + `code`:
- *   - person  → /:locale/:org/profile/:code
- *   - company → /:locale/:org/companies/:code
- *   - deal    → /:locale/:org/deals/:code
+ *   - person/lead/contact → /:locale/:org/profile/:code
+ *   - company             → /:locale/:org/{labels.company.slug}/:code
+ *   - deal                → /:locale/:org/{labels.deal.slug}/:code
+ *
+ * The slug segment for `company` and `deal` ALWAYS comes from
+ * `useEntityLabels()` — never hardcoded — so workspaces that rename
+ * the slot (e.g. "Company" → "Agency") get correctly-prefixed URLs
+ * without code changes.
  *
  * For backwards compat the file also re-exports `PersonCodeBadge` as a thin
  * alias around `<IdentityBadge layout="code" />`.
@@ -34,6 +39,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { buildEntityHref } from "@/core/shell/shared/hooks/useEntityHref";
+import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { cn } from "@/lib/utils";
 
 export type IdentityEntityType = "lead" | "contact" | "person" | "company" | "deal" | "user";
@@ -108,9 +115,11 @@ export function IdentityBadge({
 	const params = useParams();
 	const orgSlug = params?.orgSlug as string | undefined;
 	const locale = params?.locale as string | undefined;
+	const labels = useEntityLabels();
 	const tokens = SIZE_TOKENS[size];
 
-	const href = code && orgSlug ? buildHref(entityType, code, orgSlug, locale) : null;
+	const href =
+		code && orgSlug ? buildIdentityHref(entityType, code, orgSlug, locale, labels) : null;
 
 	if (layout === "code") {
 		return (
@@ -200,22 +209,34 @@ function MaybeLink({
 	);
 }
 
-function buildHref(
+function buildIdentityHref(
 	entityType: IdentityEntityType,
 	code: string,
 	orgSlug: string,
 	locale: string | undefined,
+	labels: ReturnType<typeof useEntityLabels>,
 ): string {
-	const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
+	// `IdentityEntityType` has more values than the canonical `EntitySlot`
+	// (it adds "person" + "user"). Map down before delegating to the shared
+	// builder.
 	switch (entityType) {
 		case "company":
-			return `${prefix}/companies/${code}`;
+			return buildEntityHref({ orgSlug, locale, labels, slot: "company", code });
 		case "deal":
-			return `${prefix}/deals/${code}`;
-		default:
+			return buildEntityHref({ orgSlug, locale, labels, slot: "deal", code });
+		case "lead":
+			return buildEntityHref({ orgSlug, locale, labels, slot: "lead", code });
+		case "contact":
+			return buildEntityHref({ orgSlug, locale, labels, slot: "contact", code });
+		default: {
+			// Person / user → unified profile page.
+			const prefix = locale ? `/${locale}/${orgSlug}` : `/${orgSlug}`;
 			return `${prefix}/profile/${code}`;
+		}
 	}
 }
+
+// New code should use `useEntityHref()` directly.
 
 // ─── Backwards-compat alias ──────────────────────────────────────────────────
 

@@ -136,9 +136,7 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 	}
 
 	return (
-		<div
-			className={`flex h-[640px] min-h-0 min-w-0 flex-col overflow-hidden rounded-[var(--radius)] border bg-background ${className ?? ""}`}
-		>
+		<div className={`flex h-full min-h-[28rem] min-w-0 flex-col ${className ?? ""}`}>
 			<CalendarToolbar
 				viewMode={viewMode}
 				onViewModeChange={setViewMode}

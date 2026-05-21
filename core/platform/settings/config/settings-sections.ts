@@ -150,30 +150,6 @@ export function getSettingsSections(
 				"Prefix used when generating unique codes for new records, e.g. P-001, D-042.",
 			keywords: ["prefix", "code", "id", "numbering", "record id", "P-", "D-"],
 		},
-		{
-			id: "workspace.file-policy",
-			groupId: "workspace",
-			label: "File Policy",
-			description:
-				"Allowed file types + max upload size for every file attachment in the workspace.",
-			keywords: [
-				"file",
-				"upload",
-				"attachment",
-				"mime",
-				"category",
-				"allowed",
-				"size",
-				"limit",
-				"pdf",
-				"image",
-				"document",
-				"spreadsheet",
-				"video",
-				"audio",
-				"archive",
-			],
-		},
 
 		// ── Modules ───────────────────────────────────────────────────────────
 		{
@@ -519,7 +495,7 @@ export function getSettingsSections(
 				"pro",
 				"business",
 			],
-			ownerOnly: true,
+			permission: "org.viewBilling",
 		},
 		{
 			id: "billing.usage",
@@ -527,7 +503,7 @@ export function getSettingsSections(
 			label: "Usage",
 			description: "Real-time usage against your plan's limits.",
 			keywords: ["limit", "quota", "members used", "ai messages used", "consumption"],
-			ownerOnly: true,
+			permission: "org.viewBilling",
 		},
 		{
 			id: "billing.invoices",
@@ -535,7 +511,7 @@ export function getSettingsSections(
 			label: "Invoices",
 			description: "Past invoices and payment history.",
 			keywords: ["receipt", "payment", "history", "portal", "lemonsqueezy"],
-			ownerOnly: true,
+			permission: "org.viewBilling",
 		},
 
 		// ── Data & Security ───────────────────────────────────────────────────

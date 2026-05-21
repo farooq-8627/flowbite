@@ -2,18 +2,15 @@
 
 import { useQuery } from "convex/react";
 import { Sparkles } from "lucide-react";
-import Link from "next/link";
-import { useParams } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
 import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
-import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
-import { getStatusColor } from "@/core/entities/shared/config/defaults";
+import { DealDetailShell } from "@/core/platform/profile/components/DealDetailShell";
 import { OverviewCard } from "@/core/platform/profile/components/OverviewCard";
+import { PersonFilesByDealStage } from "@/core/platform/profile/components/PersonFilesByDealStage";
 import { PersonCalendarPanel } from "@/core/scheduling/calendar/panels/PersonCalendarPanel";
 import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
 import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
@@ -152,21 +149,22 @@ function NotesGroup({ personCode }: { personCode: string }) {
 function DealsGroup({ personCode }: { personCode: string }) {
 	const labels = useEntityLabels();
 	return (
-		<div className="grid gap-6">
-			<ProfileSection
-				id="deals.list"
-				title={labels.deal.plural}
-				description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode.`}
-			>
-				<PersonDealsList personCode={personCode} />
-			</ProfileSection>
-		</div>
+		<ProfileSection
+			id="deals.list"
+			title={labels.deal.plural}
+			description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode — full details, with stage-aware fields up to where the ${labels.deal.singular.toLowerCase()} is right now.`}
+			chromeless
+			fillHeight
+		>
+			<DealDetailShell personCode={personCode} />
+		</ProfileSection>
 	);
 }
 
-// ─── Files — KEEPS its card (explicit user request) ──────────────────────────
+// ─── Files — flat panel + per-deal/per-stage breakdown (explicit user request) ─
 
 function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs"> | undefined }) {
+	const labels = useEntityLabels();
 	return (
 		<div className="grid gap-6">
 			<ProfileSection
@@ -181,6 +179,18 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 						entityId={personCode}
 						personCode={personCode}
 					/>
+				) : (
+					<div className="text-xs text-muted-foreground">Loading…</div>
+				)}
+			</ProfileSection>
+
+			<ProfileSection
+				id="files.by-deal-stage"
+				title={`By ${labels.deal.singular} & stage`}
+				description={`The same files, grouped per ${labels.deal.singular.toLowerCase()} and per stage they were uploaded against. Mirrors the per-stage view on the ${labels.deal.singular.toLowerCase()} card.`}
+			>
+				{orgId ? (
+					<PersonFilesByDealStage orgId={orgId} personCode={personCode} />
 				) : (
 					<div className="text-xs text-muted-foreground">Loading…</div>
 				)}
@@ -310,112 +320,4 @@ function AiBriefingBlock({ personCode }: { personCode: string }) {
 			)}
 		</div>
 	);
-}
-
-// ─── Deals list keyed by personCode ─────────────────────────────────────────
-
-/**
- * PersonDealsList — replaces the previous "coming soon" placeholder on the
- * profile Deals tab. Reads via `deals.listByPersonCode` (already used by the
- * OverviewCard summary block) and renders ALL linked deals, not just the
- * first three. Each row is a clickable link to the deal detail page.
- *
- * Sort order matches the OverviewCard: newest `updatedAt` first.
- */
-function PersonDealsList({ personCode }: { personCode: string }) {
-	const params = useParams();
-	const orgSlug = params?.orgSlug as string | undefined;
-	const locale = params?.locale as string | undefined;
-	const { orgId } = useCurrentOrg();
-	const labels = useEntityLabels();
-
-	const deals = useQuery(
-		api.crm.entities.deals.queries.listByPersonCode,
-		orgId ? { orgId, personCode, limit: 50 } : "skip",
-	) as Array<Doc<"deals">> | undefined;
-
-	if (deals === undefined) {
-		return (
-			<p className="text-xs text-muted-foreground">
-				Loading {labels.deal.plural.toLowerCase()}…
-			</p>
-		);
-	}
-	if (deals.length === 0) {
-		return (
-			<p className="text-xs text-muted-foreground">
-				No {labels.deal.plural.toLowerCase()} linked to this person yet.
-			</p>
-		);
-	}
-
-	const baseHref = orgSlug ? `/${locale ?? "en"}/${orgSlug}/${labels.deal.slug}` : null;
-
-	return (
-		<ul className="flex flex-col divide-y rounded-[var(--radius)] border">
-			{deals.map((deal) => {
-				const stageColor = getStatusColor("deal", deal.currentStageId);
-				const stageLabel = deal.wonAt
-					? "Won"
-					: deal.lostAt
-						? "Lost"
-						: deal.currentStageId.replace(/^stage_/, "");
-				return (
-					<li
-						key={deal._id}
-						className="flex items-center gap-2 px-3 py-2 text-xs hover:bg-muted/30"
-					>
-						<IdentityBadge
-							entityType="deal"
-							code={deal.dealCode}
-							layout="code"
-							size="xs"
-						/>
-						{baseHref ? (
-							<Link
-								href={`${baseHref}/${deal.dealCode}`}
-								className="min-w-0 flex-1 truncate text-foreground hover:underline"
-							>
-								{deal.title}
-							</Link>
-						) : (
-							<span className="min-w-0 flex-1 truncate text-foreground">
-								{deal.title}
-							</span>
-						)}
-						<Badge
-							variant="outline"
-							className="h-5 px-1.5 text-[10px] capitalize"
-							style={{
-								backgroundColor: `${stageColor}1a`,
-								borderColor: `${stageColor}66`,
-								color: stageColor,
-							}}
-						>
-							{stageLabel}
-						</Badge>
-						<span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
-							{deal.value !== undefined && deal.value !== null
-								? formatCompactCurrency(deal.value, deal.currency)
-								: "—"}
-						</span>
-					</li>
-				);
-			})}
-		</ul>
-	);
-}
-
-function formatCompactCurrency(value: number, currency: string | undefined): string {
-	const code = currency ?? "USD";
-	try {
-		return new Intl.NumberFormat(undefined, {
-			style: "currency",
-			currency: code,
-			notation: "compact",
-			maximumFractionDigits: 1,
-		}).format(value);
-	} catch {
-		return `${code} ${value}`;
-	}
 }

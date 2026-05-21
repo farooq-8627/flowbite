@@ -265,7 +265,11 @@ export const send = orgMutation({
 				body: trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed,
 				entityType,
 				entityId,
-				actionUrl: actionUrlFor(entityType, entityId),
+				// `actionUrl` intentionally not stored — the client resolves
+				// the path from `entityType + entityId + useEntityLabels()`
+				// at render time, so renamed entity slugs (e.g. "Company"
+				// → "Agency") route correctly without a backfill. See
+				// `core/inbox/notifications/utils/resolveNotificationHref.ts`.
 				metadata: {
 					conversationId: String(conversationId),
 					messageId: String(messageId),
@@ -521,12 +525,13 @@ async function resolveEntityAssignee(
 	return undefined;
 }
 
-function actionUrlFor(entityType: string | undefined, entityId: string): string | undefined {
-	if (entityType === "deal") return `/profile/${entityId}?group=deals`;
-	if (entityType === "company") return `/companies/${entityId}`;
-	if (entityType === "lead" || entityType === "contact" || entityType === "person")
-		return `/profile/${entityId}?group=messages`;
-	if (entityType === "user") return `/messages`;
+function _actionUrlFor(_entityType: string | undefined, _entityId: string): string | undefined {
+	// DEPRECATED 2026-05-22 — server no longer stores `actionUrl` on
+	// notifications. The client resolves the path from `entityType +
+	// entityId + useEntityLabels()` at render time so renamed entity
+	// slugs route correctly without a server-side backfill.
+	// Kept as a no-op so any out-of-tree callers don't break compilation
+	// before we delete it in a follow-up.
 	return undefined;
 }
 

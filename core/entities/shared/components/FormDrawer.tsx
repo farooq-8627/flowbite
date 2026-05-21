@@ -93,10 +93,17 @@ export function FormDrawer({
 					<SheetTitle className="text-base font-semibold leading-tight">
 						{title}
 					</SheetTitle>
-					{description && (
+					{description ? (
 						<SheetDescription className="mt-0.5 text-xs leading-snug text-muted-foreground">
 							{description}
 						</SheetDescription>
+					) : (
+						// Radix logs an a11y warning if SheetContent has neither
+						// `aria-describedby` nor a `<SheetDescription>` child. Most
+						// drawer callers don't need a visible description, so we
+						// satisfy the screen-reader contract with an sr-only fallback
+						// that mirrors the title.
+						<SheetDescription className="sr-only">{title}</SheetDescription>
 					)}
 				</div>
 

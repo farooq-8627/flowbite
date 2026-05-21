@@ -45,7 +45,7 @@ interface FileBufferContextValue {
 	/** Buffered files keyed by field name (or "_default" for free-form). */
 	filesByField: Record<string, BufferedFile[]>;
 	uploadingByField: Record<string, string[]>;
-	addFiles: (fieldKey: string, files: File[]) => Promise<void>;
+	addFiles: (fieldKey: string, files: File[], allowedFileTypes?: FileCategory[]) => Promise<void>;
 	removeFile: (fieldKey: string, storageId: Id<"_storage">) => void;
 	commitAll: (args: { scope: string; scopeId: string; tags?: string[] }) => Promise<void>;
 	reset: () => void;
@@ -72,14 +72,20 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 	const [uploadingByField, setUploadingByField] = useState<Record<string, string[]>>({});
 
 	const addFiles = useCallback(
-		async (fieldKey: string, list: File[]) => {
+		async (fieldKey: string, list: File[], allowedFileTypes?: FileCategory[]) => {
 			if (!orgId) return;
-			// Note: we don't have access to org settings here — caller is the
-			// dropzone, which already filters via `accept`. Server-side
-			// validation can re-apply the same predicate from file-categories.
-			void isFileAllowed; // keep import alive
-			void ({} as { c?: FileCategory });
-			const accepted = list.slice();
+			// Per-field client-side filtering. The dropzone's `accept`
+			// attribute already nudges the OS picker, but a user can
+			// drag-drop anything — re-check here. Server-side enforcement
+			// runs on `record` via `fieldDefinitions.allowedFileTypes`.
+			const accepted: File[] = [];
+			for (const file of list) {
+				if (!isFileAllowed(file, allowedFileTypes)) {
+					toast.error(`${file.name} — file type not allowed for this field`);
+					continue;
+				}
+				accepted.push(file);
+			}
 			if (accepted.length === 0) return;
 			setUploadingByField((prev) => ({
 				...prev,
@@ -197,6 +203,11 @@ interface CreateModeFileFieldProps {
 	fieldKey: string;
 	label: string;
 	multiple: boolean;
+	/**
+	 * Per-field whitelist of file categories. Forwarded to the dropzone's
+	 * `accept` attribute and used as a client-side validator.
+	 */
+	allowedFileTypes?: FileCategory[];
 }
 
 /**
@@ -209,6 +220,7 @@ export function CreateModeFileField({
 	fieldKey,
 	label,
 	multiple,
+	allowedFileTypes,
 }: CreateModeFileFieldProps) {
 	const ctx = useFileBufferContext();
 	if (!ctx) {
@@ -230,10 +242,11 @@ export function CreateModeFileField({
 			onFilesChange={() => {
 				/* commit-all handles cleanup; per-row removal is via removeFile */
 			}}
-			upload={(list) => ctx.addFiles(fieldKey, list)}
+			upload={(list) => ctx.addFiles(fieldKey, list, allowedFileTypes)}
 			uploading={uploading}
 			multiple={multiple}
 			label={`Drop ${label.toLowerCase()} here or click to browse`}
+			allowedFileTypes={allowedFileTypes}
 		/>
 	);
 }

@@ -61,75 +61,82 @@ export function RolesSection({ orgId, roles }: { orgId: Id<"orgs">; roles: Role[
 				</Button>
 			}
 		>
-			<Table>
-				<TableHeader>
-					<TableRow>
-						<TableHead>Role</TableHead>
-						<TableHead>Description</TableHead>
-						<TableHead className="text-end">Type</TableHead>
-						<TableHead className="text-end">Permissions</TableHead>
-						<TableHead className="w-10" />
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{roles === undefined
-						? null
-						: roles.map((r) => (
-								<TableRow key={r._id}>
-									<TableCell>
-										<button
-											type="button"
-											onClick={() => setEditing(r)}
-											className="flex items-center gap-2 text-sm font-medium hover:underline"
-										>
-											{r.color && (
-												<span
-													className="inline-block size-2.5 rounded-full"
-													style={{ backgroundColor: r.color }}
-												/>
-											)}
-											{r.name}
-										</button>
-									</TableCell>
-									<TableCell className="text-xs text-muted-foreground">
-										{r.description ?? "—"}
-									</TableCell>
-									<TableCell className="text-end">
-										<Badge variant={r.isSystem ? "secondary" : "outline"}>
-											{r.isSystem ? "System" : "Custom"}
-										</Badge>
-									</TableCell>
-									<TableCell className="text-end text-xs text-muted-foreground tabular-nums">
-										{r.permissions.length}
-									</TableCell>
-									<TableCell>
-										<div className="flex justify-end gap-0.5">
-											<Button
-												variant="ghost"
-												size="icon"
-												className="size-7"
+			<div className="-mx-2 w-[calc(100%+1rem)] overflow-x-auto px-2 sm:-mx-0 sm:w-full">
+				<Table className="min-w-[36rem]">
+					<TableHeader>
+						<TableRow>
+							<TableHead>Role</TableHead>
+							<TableHead>Description</TableHead>
+							<TableHead className="text-end">Type</TableHead>
+							<TableHead className="text-end">Permissions</TableHead>
+							<TableHead className="w-10" />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{roles === undefined
+							? null
+							: roles.map((r) => (
+									<TableRow key={r._id}>
+										<TableCell>
+											<button
+												type="button"
 												onClick={() => setEditing(r)}
-												aria-label="Edit role"
+												className="flex items-center gap-2 text-sm font-medium hover:underline"
 											>
-												<Pencil className="size-3.5" />
-											</Button>
-											{!r.isSystem && (
+												{r.color && (
+													<span
+														className="inline-block size-2.5 rounded-full"
+														style={{ backgroundColor: r.color }}
+													/>
+												)}
+												{r.name}
+											</button>
+										</TableCell>
+										<TableCell className="max-w-[20rem] text-xs text-muted-foreground">
+											<span
+												className="line-clamp-2 break-words"
+												title={r.description ?? undefined}
+											>
+												{r.description ?? "—"}
+											</span>
+										</TableCell>
+										<TableCell className="text-end">
+											<Badge variant={r.isSystem ? "secondary" : "outline"}>
+												{r.isSystem ? "System" : "Custom"}
+											</Badge>
+										</TableCell>
+										<TableCell className="text-end text-xs text-muted-foreground tabular-nums">
+											{r.permissions.length}
+										</TableCell>
+										<TableCell>
+											<div className="flex justify-end gap-0.5">
 												<Button
 													variant="ghost"
 													size="icon"
-													className="size-7 text-muted-foreground hover:text-destructive"
-													onClick={() => handleDelete(r)}
-													aria-label="Delete role"
+													className="size-7"
+													onClick={() => setEditing(r)}
+													aria-label="Edit role"
 												>
-													<Trash2 className="size-3.5" />
+													<Pencil className="size-3.5" />
 												</Button>
-											)}
-										</div>
-									</TableCell>
-								</TableRow>
-							))}
-				</TableBody>
-			</Table>
+												{!r.isSystem && (
+													<Button
+														variant="ghost"
+														size="icon"
+														className="size-7 text-muted-foreground hover:text-destructive"
+														onClick={() => handleDelete(r)}
+														aria-label="Delete role"
+													>
+														<Trash2 className="size-3.5" />
+													</Button>
+												)}
+											</div>
+										</TableCell>
+									</TableRow>
+								))}
+					</TableBody>
+				</Table>
+			</div>
 
 			{editing && (
 				<RoleEditorDialog

@@ -181,3 +181,81 @@ export function renderInvitationEmail(args: {
 
 	return { subject, html, text };
 }
+
+/**
+ * Build the HTML body for a password-reset email.
+ *
+ * Same minimal styling as the invitation template — system fonts, no
+ * remote assets, generous fall-back text.
+ */
+export function renderPasswordResetEmail(args: {
+	userName?: string | null;
+	resetUrl: string;
+	expiresAt: number;
+	appName?: string;
+}): { subject: string; html: string; text: string } {
+	const appName = args.appName ?? "Orbitly";
+	const greetingName = args.userName?.trim() || "there";
+	const expiresOn = new Date(args.expiresAt).toUTCString();
+	const subject = `Reset your ${appName} password`;
+
+	const safeName = escapeHtml(greetingName);
+	const safeUrl = escapeHtml(args.resetUrl);
+	const safeApp = escapeHtml(appName);
+
+	const html = `<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;">
+            <tr>
+              <td style="padding:32px 40px 16px 40px;">
+                <p style="margin:0 0 8px 0;font-size:14px;color:#64748b;">${safeApp}</p>
+                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#0f172a;">Reset your password</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 8px 40px;font-size:15px;line-height:1.6;color:#334155;">
+                <p style="margin:0 0 16px 0;">Hi ${safeName},</p>
+                <p style="margin:0 0 16px 0;">We received a request to reset your ${safeApp} password. Click the button below to choose a new one.</p>
+                <p style="margin:0 0 24px 0;">If you didn't request this, you can ignore this email — your password won't change.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 24px 40px;">
+                <a href="${safeUrl}" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:8px;font-size:15px;">Reset password</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 32px 40px;">
+                <p style="margin:0 0 8px 0;font-size:13px;color:#64748b;">Or copy this link:</p>
+                <p style="margin:0;font-size:13px;color:#0f172a;word-break:break-all;"><a href="${safeUrl}" style="color:#0f172a;">${safeUrl}</a></p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 32px 40px;border-top:1px solid #e2e8f0;">
+                <p style="margin:24px 0 0 0;font-size:12px;color:#64748b;line-height:1.5;">This link expires on ${escapeHtml(expiresOn)}. For security, it can only be used once.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+	const text = [
+		`Hi ${greetingName},`,
+		"",
+		`We received a request to reset your ${appName} password.`,
+		"Click the link below to choose a new one — or ignore this email if you didn't request it.",
+		"",
+		args.resetUrl,
+		"",
+		`This link expires on ${expiresOn}.`,
+	].join("\n");
+
+	return { subject, html, text };
+}

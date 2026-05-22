@@ -3,28 +3,24 @@
 /**
  * DashboardHomeView — first paint after sign-in / org switch.
  *
- * STATUS: IMPLEMENTED.
+ * STATUS: IMPLEMENTED — Phase 3A registry-driven.
  *
- * This view is intentionally THIN. It owns:
- *   - One Convex subscription (`getDashboardStats`)
- *   - The 12-column page layout grid
- *   - The first-time tour mount
+ * Industry awareness comes from `org.settings.dashboardMetrics`, an
+ * ORDERED list of metric keys set by the template seeder. This view:
  *
- * Every visual block lives in its own file under `./cards/`. Adding a
- * new card = adding a new file in `./cards/` + a new grid cell here.
- * Editing a card never touches this file.
+ *   - Resolves the metric keys into widget specs via `resolveWidgets`.
+ *   - Renders the `<MetricStrip>` with those specs (replaces the old
+ *     hard-coded 4-tile StatStrip).
+ *   - Falls back to a sensible default (leads/contacts/deals/value)
+ *     when an org has no `dashboardMetrics` set.
  *
- * Layout (lg+ breakpoint, 12 cols)
- * ────────────────────────────────
- *   Row 1 — Stats strip (4 KPI cards)                    ┃ each = 3 cols
- *   Row 2 — Reminders (today + overdue) | Pipeline       ┃ 7 / 5
- *   Row 3 — Recent messages              | Recent activity ┃ 7 / 5
- *   Row 4 — Week ahead (7-day strip, full width)
- *   Row 5 — Mini calendar                | Today's focus   ┃ 7 / 5
+ * The `<MockDataBanner>` shows when the org still has the seeded
+ * sample records and hasn't dismissed the prompt.
  *
- * Below `lg` everything stacks. The "max 2 cards per row" rule is locked
- * in `core/shell/shell/MODULE.md` decision D1 — opening the AI panel
- * (~360px) only changes density inside cards, never their count.
+ * Below the strip, the layout-grid for cards (Reminders, Pipeline,
+ * Messages, Activity, Calendar, Today's focus) is unchanged but each
+ * cell is gated on `isEnabled(metricKey)` so industries can opt out of
+ * sections (productivity hides Pipeline; sales-only hides Calendar).
  */
 
 import { useQuery } from "convex/react";
@@ -36,7 +32,8 @@ import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineAc
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
-import { PipelineCard, RemindersCard, StatStrip, TodaySummaryCard } from "./cards";
+import { MetricStrip, MockDataBanner, PipelineCard, RemindersCard, TodaySummaryCard } from "./cards";
+import { resolveWidgets } from "./cards/WidgetRegistry";
 
 const DASHBOARD_TOUR_STEPS: TourStep[] = [
 	{
@@ -59,6 +56,20 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 		currentOrg ? { orgId: currentOrg.org._id } : "skip",
 	);
 
+	const settings = currentOrg?.org.settings;
+	const dashboardMetrics = settings?.dashboardMetrics as string[] | undefined;
+
+	const widgets = useMemo(() => resolveWidgets(dashboardMetrics), [dashboardMetrics]);
+
+	// Each widget key drives whether its companion card renders. The
+	// strip itself uses the widget specs; the larger cards opt-in via
+	// `isEnabled(key)`.
+	const enabledMetrics = useMemo<Set<string> | null>(() => {
+		if (!dashboardMetrics || dashboardMetrics.length === 0) return null;
+		return new Set(dashboardMetrics);
+	}, [dashboardMetrics]);
+	const isEnabled = (key: string) => enabledMetrics === null || enabledMetrics.has(key);
+
 	const pipelineStats = useMemo(
 		() =>
 			stats
@@ -73,27 +84,6 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 		[stats],
 	);
 
-	// Industry-template-driven widget gating.
-	//
-	// Templates seed `org.settings.dashboardMetrics` with the keys that
-	// matter for that vertical (e.g. "leads.open", "deals.pipelineValue",
-	// "reminders.dueToday"). When the array exists, we render ONLY widgets
-	// whose key is in the set; when it's absent or empty, we render all
-	// widgets (back-compat path for orgs that pre-date the template
-	// seeder). Each widget below uses `isEnabled(key)` to opt in.
-	//
-	// Schema note: `dashboardMetrics` is on the `platformTemplates`
-	// validator today; the Phase 3A template-seeder extension will
-	// propagate it onto `orgs.settings`. Until then, the cast below is a
-	// no-op for orgs that haven't been seeded with the new shape.
-	const enabledMetrics = useMemo<Set<string> | null>(() => {
-		const settings = currentOrg?.org.settings as { dashboardMetrics?: string[] } | undefined;
-		const list = settings?.dashboardMetrics;
-		if (!list || list.length === 0) return null;
-		return new Set(list);
-	}, [currentOrg?.org.settings]);
-	const isEnabled = (key: string) => enabledMetrics === null || enabledMetrics.has(key);
-
 	if (!currentOrg || !stats || user === undefined) {
 		return null;
 	}
@@ -103,12 +93,19 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 	return (
 		<div className="h-full overflow-y-auto p-4 md:p-6">
 			<div className="grid gap-4">
-				{/* Row 1 — KPI strip */}
-				<StatStrip stats={stats} orgSlug={orgSlug} />
+				{/* Mock-data banner — only renders when seeded + not dismissed. */}
+				<MockDataBanner
+					orgId={orgId}
+					mockDataSeededAt={settings?.mockDataSeededAt}
+					mockDataDismissedAt={settings?.mockDataDismissedAt}
+				/>
+
+				{/* Row 1 — Registry-driven metric strip */}
+				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />
 
 				{/* Row 2 — Reminders + Pipeline */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					{isEnabled("reminders.dueToday") && (
+					{(isEnabled("reminders.dueToday") || isEnabled("tasks.dueToday")) && (
 						<div className="lg:col-span-7">
 							<RemindersCard orgId={orgId} orgSlug={orgSlug} />
 						</div>
@@ -120,10 +117,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					)}
 				</div>
 
-				{/* Row 3 — Recent messages + Recent activity (equal-width, decoupled
-				    from Row 2's wider/narrower split). Each card sizes itself
-				    by its own content; their inner lists use the SAME `limit`
-				    so the visual density matches across the row. */}
+				{/* Row 3 — Recent messages + Recent activity */}
 				<div className="grid gap-4 lg:grid-cols-12">
 					{isEnabled("messages.recent") && (
 						<div className="lg:col-span-6">

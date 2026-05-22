@@ -209,13 +209,94 @@ export const orgs = defineTable({
 					}),
 				),
 			),
+			/**
+			 * Phase 3A — dashboard widget rank list.
+			 *
+			 * Ordered list of widget keys (top-to-bottom). The order IS the
+			 * dashboard layout order — the first 4 keys render as KPI tiles
+			 * in the top strip, subsequent half-size widgets render in pairs,
+			 * and full-width widgets stack at the bottom.
+			 *
+			 * Seeded by the industry-template seeder from `template.dashboardMetrics`.
+			 * Owners can drag-reorder via Settings → Workspace.
+			 *
+			 * Widget keys are validated against the WIDGET_REGISTRY at render
+			 * time — unknown keys are silently dropped. Adding a new widget =
+			 * adding a registry entry; templates can opt in by listing the key.
+			 */
+			dashboardMetrics: v.optional(v.array(v.string())),
+			/**
+			 * Phase 3A — soft-delete retention.
+			 *
+			 * Number of days a soft-deleted record sits in trash before the
+			 * daily purge cron hard-deletes it. Default 30 (applied at read
+			 * time, not stored). Range enforced server-side: 7–365.
+			 *
+			 * Resolution order at purge time:
+			 *   org.settings.softDeleteRetentionDays
+			 *   → platformDefaults.softDeleteRetentionDays
+			 *   → 30 (hardcoded fallback)
+			 */
+			softDeleteRetentionDays: v.optional(v.number()),
+			/**
+			 * Phase 3A — mock-data lifecycle.
+			 *
+			 * mockDataSeededAt: timestamp of when the template seeder inserted
+			 * sample records. Used by:
+			 *   - the dashboard banner (rendered while seeded && !dismissed)
+			 *   - the "Delete sample data" button (skip if undefined)
+			 *   - the seedMockEntities() idempotency guard (skip if set)
+			 * Cleared back to undefined on "Delete sample data".
+			 *
+			 * mockDataDismissedAt: timestamp of when the user dismissed the
+			 * banner WITHOUT deleting. Lets the banner stop nagging while
+			 * the data stays in place.
+			 */
+			mockDataSeededAt: v.optional(v.number()),
+			mockDataDismissedAt: v.optional(v.number()),
+			/**
+			 * Phase 3A — GDPR cascade-deletion grace timer.
+			 *
+			 * Set when an owner requests workspace deletion. The
+			 * `performOrgDeletion` action checks this against
+			 * `Date.now()` — if cleared (undefined) the deletion was
+			 * cancelled and the action no-ops.
+			 */
+			deletionScheduledAt: v.optional(v.number()),
 		}),
 	),
+	/**
+	 * Phase 3A — LemonSqueezy billing.
+	 *
+	 * Replaces the legacy stripe* fields. Stripe fields are kept on the
+	 * schema (above) for backwards-compat with any existing dev rows but
+	 * new code never reads or writes them.
+	 *
+	 * Subscription status mirrors LemonSqueezy's documented values:
+	 *   on_trial | active | paused | past_due | unpaid | cancelled | expired
+	 */
+	lemonSqueezyCustomerId: v.optional(v.string()),
+	lemonSqueezySubscriptionId: v.optional(v.string()),
+	lemonSqueezyVariantId: v.optional(v.string()),
+	lemonSqueezySubscriptionStatus: v.optional(
+		v.union(
+			v.literal("on_trial"),
+			v.literal("active"),
+			v.literal("paused"),
+			v.literal("past_due"),
+			v.literal("unpaid"),
+			v.literal("cancelled"),
+			v.literal("expired"),
+		),
+	),
+	lemonSqueezyCurrentPeriodEnd: v.optional(v.number()),
 	...timestamps,
 	...softDelete,
 })
 	.index("by_slug", ["slug"])
-	.index("by_stripeCustomerId", ["stripeCustomerId"]);
+	.index("by_stripeCustomerId", ["stripeCustomerId"])
+	.index("by_lemonSqueezyCustomerId", ["lemonSqueezyCustomerId"])
+	.index("by_lemonSqueezySubscriptionId", ["lemonSqueezySubscriptionId"]);
 
 export const orgRoles = defineTable({
 	...orgScoped,

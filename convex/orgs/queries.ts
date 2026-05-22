@@ -334,25 +334,47 @@ export const getDashboardStats = orgQuery({
 
 		const now = Date.now();
 		const oneDayMs = 86_400_000;
+		const sevenDaysAgo = now - 7 * oneDayMs;
+		const startOfDay = new Date();
+		startOfDay.setHours(0, 0, 0, 0);
+		const startOfDayMs = startOfDay.getTime();
 
-		const [stats, remindersDueToday, recentActivity] = await Promise.all([
-			readAllOrgStats(ctx, args.orgId),
-			ctx.db
-				.query("reminders")
-				.withIndex("by_org_and_status_and_due", (q) =>
-					q
-						.eq("orgId", args.orgId)
-						.eq("status", "pending")
-						.lte("dueAt", now + oneDayMs),
-				)
-				.take(100)
-				.then((rows) => rows.length),
-			ctx.db
-				.query("activityLogs")
-				.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
-				.order("desc")
-				.take(10),
-		]);
+		const [stats, remindersDueToday, remindersOverdue, remindersDoneThisWeek, recentActivity] =
+			await Promise.all([
+				readAllOrgStats(ctx, args.orgId),
+				ctx.db
+					.query("reminders")
+					.withIndex("by_org_and_status_and_due", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("status", "pending")
+							.lte("dueAt", now + oneDayMs),
+					)
+					.take(100)
+					.then((rows) => rows.length),
+				ctx.db
+					.query("reminders")
+					.withIndex("by_org_and_status_and_due", (q) =>
+						q.eq("orgId", args.orgId).eq("status", "pending").lt("dueAt", startOfDayMs),
+					)
+					.take(200)
+					.then((rows) => rows.length),
+				ctx.db
+					.query("reminders")
+					.withIndex("by_org_and_status_and_due", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("status", "completed")
+							.gte("dueAt", sevenDaysAgo),
+					)
+					.take(200)
+					.then((rows) => rows.length),
+				ctx.db
+					.query("activityLogs")
+					.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
+					.order("desc")
+					.take(10),
+			]);
 
 		return {
 			orgName: org.name,
@@ -368,6 +390,12 @@ export const getDashboardStats = orgQuery({
 			companiesCount: stats["companies.active"] ?? 0,
 			currency: org.settings?.defaultCurrency ?? "USD",
 			remindersDueToday,
+			// Productivity-shape metrics — read off reminders since the
+			// productivity template treats deals-as-tasks but uses
+			// reminders for due dates.
+			tasksDueToday: remindersDueToday,
+			tasksOverdue: remindersOverdue,
+			tasksDoneThisWeek: remindersDoneThisWeek,
 			recentActivity,
 		};
 	},

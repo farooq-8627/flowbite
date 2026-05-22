@@ -17,6 +17,25 @@ export const timestamps = { createdAt: v.number(), updatedAt: v.number() };
 export const softDelete = { deletedAt: v.optional(v.number()) };
 export const createdBy = { createdBy: v.id("users") };
 
+/**
+ * Phase 3A — AI exclusion flag.
+ *
+ * When `excludeFromAI === true`, the row is treated as private from the AI
+ * runtime's perspective:
+ *   - The Phase 3B AI tool registry filters it out of search/lookup tools.
+ *   - The system prompt's "context" section never mentions it.
+ *   - Embeddings are not generated for it (Phase 3B+ feature).
+ *
+ * Set automatically on every record inserted by the template seeder
+ * (`source: "template_seed"`). Owners can flip it on individual real
+ * records via Settings → Privacy (Phase 3B UI).
+ *
+ * Optional + non-narrowed so legacy rows just have `excludeFromAI ===
+ * undefined`, which the AI runtime treats as "include" (the safe default
+ * — AI sees it).
+ */
+export const aiExcluded = { excludeFromAI: v.optional(v.boolean()) };
+
 // AI-written context blob attached to leads, contacts, deals. Replaces v.any().
 // Persisted across lead → contact conversion (never recreated).
 export const aiContextValidator = v.optional(

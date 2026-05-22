@@ -445,11 +445,11 @@ export const recruitingTemplate: IndustryTemplate = {
 	],
 
 	noteCategories: [
-		{ name: "Interview Notes", bgColor: "#bae6fd", isDefault: true, position: 0 },
-		{ name: "Screening", bgColor: "#ddd6fe", position: 1 },
-		{ name: "Reference Check", bgColor: "#fde68a", position: 2 },
-		{ name: "Offer Discussion", bgColor: "#fed7aa", position: 3 },
-		{ name: "Internal", bgColor: "#e2e8f0", position: 4 },
+		{ name: "Urgent", bgColor: "#fecaca", isDefault: false, position: 0 },
+		{ name: "Today", bgColor: "#fde68a", isDefault: true, position: 1 },
+		{ name: "Interview Prep", bgColor: "#bae6fd", isDefault: false, position: 2 },
+		{ name: "Reference", bgColor: "#ddd6fe", isDefault: false, position: 3 },
+		{ name: "Done", bgColor: "#a7f3d0", isDefault: false, position: 4 },
 	],
 
 	tags: [
@@ -490,10 +490,12 @@ export const recruitingTemplate: IndustryTemplate = {
 	dashboardMetrics: [
 		"leads.open",
 		"deals.open",
-		"deals.pipelineValue",
 		"deals.won",
-		"deals.lost",
 		"reminders.dueToday",
+		"reminders.list",
+		"today.focus",
+		"messages.recent",
+		"activity.recent",
 	],
 
 	customRoles: [
@@ -632,4 +634,181 @@ export const recruitingTemplate: IndustryTemplate = {
 			sortOrder: "asc",
 		},
 	],
+
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
+	mockData: {
+		companies: [
+			{
+				key: "acme-corp",
+				name: "Acme Corp",
+				industry: "SaaS",
+				website: "https://acme.example.com",
+				fieldValues: { headcount: 340, open_roles_count: 8, fee_structure: "Contingency 20%" },
+			},
+			{
+				key: "buildplex",
+				name: "Buildplex",
+				industry: "Construction Tech",
+				website: "https://buildplex.example.com",
+				fieldValues: { headcount: 95, open_roles_count: 3, fee_structure: "Contingency 15%" },
+			},
+		],
+		leads: [
+			{
+				displayName: "Priya Iyer",
+				email: "priya.iyer@example.com",
+				phone: "+91 98765 43210",
+				status: "new",
+				fieldValues: {
+					skills: ["TypeScript", "React", "Node.js", "AWS"],
+					years_experience: 6,
+					current_title: "Senior Frontend Engineer",
+					current_company: "TechStart India",
+					location: "Bangalore, India (open to remote)",
+					linkedin_url: "https://linkedin.com/in/priya-iyer-example",
+					salary_expectation: 120000,
+					current_salary: 95000,
+					notice_period: "1 month",
+					work_authorization: "Needs Sponsorship",
+				},
+				tags: ["Active job seeker", "Top candidate"],
+			},
+			{
+				displayName: "Mateusz Nowak",
+				email: "mateusz@example.com",
+				phone: "+48 500 123 456",
+				status: "contacted",
+				fieldValues: {
+					skills: ["Python", "Go", "DevOps", "AWS"],
+					years_experience: 9,
+					current_title: "Staff Engineer",
+					current_company: "Allegro",
+					location: "Warsaw, Poland (remote only)",
+					linkedin_url: "https://linkedin.com/in/mateusz-nowak-example",
+					salary_expectation: 160000,
+					current_salary: 140000,
+					notice_period: "3 months",
+					work_authorization: "Work Visa",
+				},
+				tags: ["Passive candidate", "Staff-level"],
+			},
+			{
+				displayName: "Hannah O'Reilly",
+				email: "hannah.o@example.com",
+				phone: "+1 415 555 0410",
+				status: "new",
+				fieldValues: {
+					skills: ["Product", "Design", "JavaScript"],
+					years_experience: 5,
+					current_title: "Product Manager",
+					current_company: "Freelance",
+					location: "San Francisco, CA",
+					linkedin_url: "https://linkedin.com/in/hannah-oreilly-example",
+					salary_expectation: 145000,
+					notice_period: "Immediate",
+					work_authorization: "Citizen",
+				},
+				tags: ["Referral", "PM track"],
+			},
+		],
+		contacts: [
+			{
+				displayName: "Renee Park",
+				email: "renee.p@example.com",
+				phone: "+1 408 555 0220",
+				companyKey: "acme-corp",
+				fieldValues: {
+					department: "Engineering",
+					hiring_urgency: "Backfill (urgent)",
+				},
+				tags: ["Hiring manager"],
+			},
+			{
+				displayName: "Diego Sanchez",
+				email: "diego.s@example.com",
+				phone: "+1 312 555 0330",
+				companyKey: "buildplex",
+				fieldValues: {
+					department: "Product",
+					hiring_urgency: "Growth (normal)",
+				},
+				tags: ["Hiring manager"],
+			},
+		],
+		deals: [
+			{
+				title: "Senior FE Engineer — Acme Corp",
+				stageCode: "ONS",
+				value: 18000,
+				contactDisplayName: "Renee Park",
+				companyKey: "acme-corp",
+				fieldValues: {
+					role_title: "Senior Frontend Engineer",
+					comp_band_min: 130000,
+					comp_band_max: 160000,
+					interview_feedback: "Priya cleared phone screen with flying colors — schedule system design round.",
+				},
+				tags: ["Hot candidate", "Tech"],
+			},
+			{
+				title: "Product Manager — Buildplex",
+				stageCode: "OFR",
+				value: 22000,
+				contactDisplayName: "Diego Sanchez",
+				companyKey: "buildplex",
+				fieldValues: {
+					role_title: "Senior Product Manager",
+					comp_band_min: 130000,
+					comp_band_max: 150000,
+					placement_fee: 22000,
+					offer_amount: 138000,
+					interview_feedback: "Hannah outperformed all candidates in product sense. Verbal offer accepted.",
+				},
+				tags: ["Offer out"],
+			},
+		],
+		notes: [
+			{
+				content:
+					"Priya: cleared 45-min phone screen — strong React/TS, great system design instincts. Schedule onsite with Renee's team next week.",
+				categoryName: "Interview Prep",
+				anchorTo: { kind: "deal", title: "Senior FE Engineer — Acme Corp" },
+			},
+			{
+				content:
+					"Hannah — verbal offer extended at $138K. She's comparing with one other offer (startup). Decision by Friday.",
+				categoryName: "Today",
+				anchorTo: { kind: "deal", title: "Product Manager — Buildplex" },
+			},
+			{
+				content:
+					"Mateusz: passive candidate. 3-month notice + needs visa. Flag to Renee for Q3 pipeline — strong AWS/platform background.",
+				categoryName: "Reference",
+				anchorTo: { kind: "lead", displayName: "Mateusz Nowak" },
+			},
+		],
+		reminders: [
+			{
+				title: "Schedule Priya onsite — Acme Corp",
+				dueOffsetDays: 1,
+				priority: "high",
+				source: "manual",
+				anchorTo: { kind: "deal", title: "Senior FE Engineer — Acme Corp" },
+			},
+			{
+				title: "Hannah — confirm verbal offer by EOD",
+				dueOffsetDays: 0,
+				priority: "urgent",
+				source: "followup",
+				anchorTo: { kind: "deal", title: "Product Manager — Buildplex" },
+			},
+			{
+				title: "Nurture Mateusz — check in Q3",
+				dueOffsetDays: 30,
+				priority: "normal",
+				source: "manual",
+				anchorTo: { kind: "lead", displayName: "Mateusz Nowak" },
+			},
+		],
+	},
 };

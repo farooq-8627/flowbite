@@ -23,15 +23,90 @@ const STEPS = [
 	{ id: "complete", label: "Done" },
 ] as const;
 
-const INDUSTRIES = [
-	{ id: "dubai-real-estate", label: "Real Estate (Dubai / Gulf)" },
-	{ id: "real-estate", label: "Real Estate" },
-	{ id: "b2b-saas", label: "B2B SaaS" },
-	{ id: "agency-freelance", label: "Agency / Freelance" },
-	{ id: "recruiting", label: "Recruiting / Staffing" },
-	{ id: "freelancer", label: "Freelancer / Solo" },
-	{ id: "other", label: "Other" },
-] as const;
+/**
+ * Industry options. `subNiches` triggers the Step 2b picker.
+ *
+ * IMPORTANT: ids must match `INDUSTRY_ID_ALIASES` in
+ * `convex/crm/fields/templates/registry.ts`. Aliases get resolved to
+ * canonical template ids server-side (e.g. `solo` → `productivity`).
+ */
+const INDUSTRIES: Array<{
+	id: string;
+	label: string;
+	icon?: string;
+	subNiches?: Array<{ id: string; label: string; description: string }>;
+}> = [
+	{
+		id: "real-estate",
+		label: "Real Estate",
+		icon: "🏠",
+		subNiches: [
+			{
+				id: "real-estate-dubai",
+				label: "🇦🇪 Dubai / Gulf",
+				description: "RERA, Form F, Ejari, Emirates ID, AED",
+			},
+			{
+				id: "real-estate-saudi",
+				label: "🇸🇦 Saudi Arabia",
+				description: "Ejar, Sakani, Iqama, SAR — Riyadh / Jeddah",
+			},
+			{
+				id: "real-estate-global",
+				label: "🌍 Global",
+				description: "Property type, intent, budget, commission",
+			},
+		],
+	},
+	{
+		id: "b2b-saas",
+		label: "B2B SaaS",
+		icon: "🚀",
+		subNiches: [
+			{
+				id: "b2b-saas-early-stage",
+				label: "🌱 Early-stage",
+				description: "< $1M ARR — short pipeline, light fields",
+			},
+			{
+				id: "b2b-saas",
+				label: "📈 Growth (SMB)",
+				description: "Standard BANT, MRR/ACV tracking",
+			},
+			{
+				id: "b2b-saas-enterprise",
+				label: "🏢 Enterprise",
+				description: "MEDDIC, champion, contract terms",
+			},
+		],
+	},
+	{
+		id: "productivity",
+		label: "Productivity / Solo",
+		icon: "✅",
+		subNiches: [
+			{
+				id: "solo",
+				label: "👤 Solopreneur",
+				description: "Tasks, ideas, reminders — no leads",
+			},
+			{
+				id: "student",
+				label: "🎓 Student",
+				description: "Courses, assignments, projects",
+			},
+			{
+				id: "side-project",
+				label: "🛠️ Side project",
+				description: "Personal goals, kanban tasks",
+			},
+		],
+	},
+	{ id: "freelancer", label: "Freelancer / Solo", icon: "💼" },
+	{ id: "agency-freelance", label: "Agency", icon: "🎨" },
+	{ id: "recruiting", label: "Recruiting", icon: "🧑‍💼" },
+	{ id: "generic", label: "Other / Generic", icon: "📋" },
+];
 
 const TEAM_SIZES = ["1–5", "6–20", "21–50", "51–200", "200+"] as const;
 
@@ -174,7 +249,7 @@ function WorkspaceStep({ onNext }: { onNext: (orgId: Id<"orgs">, slug: string) =
 	);
 }
 
-// ─── Step 2: Industry + team size ─────────────────────────────────────────────
+// ─── Step 2: Industry + team size (with sub-niche fork) ───────────────────────
 
 function IndustryStep({
 	orgId,
@@ -185,7 +260,10 @@ function IndustryStep({
 	onNext: () => void;
 	onBack: () => void;
 }) {
-	const [industry, setIndustry] = useState<string | null>(null);
+	// Selected parent industry. May or may not have sub-niches.
+	const [parentId, setParentId] = useState<string | null>(null);
+	// When the parent has sub-niches, this holds the chosen sub-niche id.
+	const [subNicheId, setSubNicheId] = useState<string | null>(null);
 	const [teamSize, setTeamSize] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
@@ -193,12 +271,19 @@ function IndustryStep({
 	const templates = useQuery(api.crm.fields.templates.queries.list, {});
 	const templatesById = new Map((templates ?? []).map((t) => [t.id, t] as const));
 
+	const parent = INDUSTRIES.find((i) => i.id === parentId);
+	const showingSubNicheStep = parent?.subNiches?.length;
+
+	// Resolved industry id we send to the server. For parents without sub-niches
+	// we send the parent id; for parents with sub-niches we send the chosen sub.
+	const resolvedIndustryId = showingSubNicheStep ? subNicheId : parentId;
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!industry || !teamSize) return;
+		if (!resolvedIndustryId || !teamSize) return;
 		setLoading(true);
 		try {
-			await updateOrgIndustry({ orgId, industry, teamSize });
+			await updateOrgIndustry({ orgId, industry: resolvedIndustryId, teamSize });
 			onNext();
 		} catch (err) {
 			toast.mutationError(err, "Failed to save industry. Please try again.");
@@ -207,6 +292,98 @@ function IndustryStep({
 		}
 	};
 
+	// ── Sub-niche refinement screen ─────────────────────────────────────
+	if (showingSubNicheStep && parent) {
+		return (
+			<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[440px]">
+				<div className="space-y-2 text-center">
+					<h1 className="font-medium text-3xl">
+						<span className="me-2" aria-hidden>
+							{parent.icon}
+						</span>
+						{parent.label}
+					</h1>
+					<p className="text-muted-foreground text-sm">
+						Pick the variant that fits — we'll seed the right pipeline + fields.
+					</p>
+				</div>
+
+				<form className="flex flex-col gap-6" onSubmit={handleSubmit}>
+					<div className="grid grid-cols-1 gap-2">
+						{parent.subNiches!.map((sub) => (
+							<button
+								key={sub.id}
+								type="button"
+								onClick={() => setSubNicheId(sub.id)}
+								className={cn(
+									"flex flex-col gap-1 rounded-[var(--radius)] border p-3 text-start transition-colors",
+									subNicheId === sub.id
+										? "border-primary bg-primary/10"
+										: "border-border bg-background hover:bg-muted",
+								)}
+							>
+								<span
+									className={cn(
+										"text-sm font-medium",
+										subNicheId === sub.id && "text-primary",
+									)}
+								>
+									{sub.label}
+								</span>
+								<span className="text-xs text-muted-foreground">
+									{sub.description}
+								</span>
+							</button>
+						))}
+					</div>
+
+					<div className="space-y-2">
+						<p className="text-sm font-medium">Team size</p>
+						<div className="flex flex-wrap gap-2">
+							{TEAM_SIZES.map((size) => (
+								<button
+									key={size}
+									type="button"
+									onClick={() => setTeamSize(size)}
+									className={cn(
+										"rounded-full border px-4 py-1.5 text-sm transition-colors",
+										teamSize === size
+											? "border-primary bg-primary/10 font-medium text-primary"
+											: "border-border bg-background hover:bg-muted",
+									)}
+								>
+									{size}
+								</button>
+							))}
+						</div>
+					</div>
+
+					<div className="flex gap-3">
+						<Button
+							type="button"
+							variant="outline"
+							className="flex-1"
+							onClick={() => {
+								setParentId(null);
+								setSubNicheId(null);
+							}}
+						>
+							Back
+						</Button>
+						<Button
+							className="flex-1"
+							type="submit"
+							disabled={!subNicheId || !teamSize || loading}
+						>
+							{loading ? "Saving…" : "Continue"}
+						</Button>
+					</div>
+				</form>
+			</div>
+		);
+	}
+
+	// ── Top-level industry picker ───────────────────────────────────────
 	return (
 		<div className="mx-auto flex w-full flex-col justify-center space-y-8 sm:w-[440px]">
 			<div className="space-y-2 text-center">
@@ -222,26 +399,34 @@ function IndustryStep({
 					<div className="grid grid-cols-2 gap-2">
 						{INDUSTRIES.map((item) => {
 							const t = templatesById.get(item.id);
-							const isSelected = industry === item.id;
-							const isCurated = !!t;
+							const isSelected = parentId === item.id;
+							const hasSubNiches = !!item.subNiches?.length;
 							return (
 								<button
 									key={item.id}
 									type="button"
-									onClick={() => setIndustry(item.id)}
+									onClick={() => {
+										setParentId(item.id);
+										setSubNicheId(null);
+									}}
 									className={cn(
 										"flex flex-col gap-1 rounded-[var(--radius)] border px-3 py-2 text-start text-sm transition-colors",
 										isSelected
 											? "border-primary bg-primary/10 font-medium text-primary"
 											: "border-border bg-background hover:bg-muted",
-										isCurated && "min-h-[68px]",
+										"min-h-[68px]",
 									)}
 								>
 									<span className="flex items-center gap-1.5">
-										{t?.icon && <span aria-hidden="true">{t.icon}</span>}
+										{item.icon && <span aria-hidden="true">{item.icon}</span>}
 										<span className="truncate">{item.label}</span>
+										{hasSubNiches && (
+											<span className="ms-auto text-[10px] text-muted-foreground">
+												▸
+											</span>
+										)}
 									</span>
-									{isCurated && t.description && (
+									{t?.description && (
 										<span
 											className={cn(
 												"line-clamp-2 font-normal text-[11px] leading-snug",
@@ -253,32 +438,46 @@ function IndustryStep({
 											{t.description}
 										</span>
 									)}
+									{!t?.description && hasSubNiches && (
+										<span
+											className={cn(
+												"line-clamp-2 font-normal text-[11px] leading-snug",
+												isSelected
+													? "text-primary/80"
+													: "text-muted-foreground",
+											)}
+										>
+											Choose a regional variant on the next step
+										</span>
+									)}
 								</button>
 							);
 						})}
 					</div>
 				</div>
 
-				<div className="space-y-2">
-					<p className="text-sm font-medium">Team size</p>
-					<div className="flex flex-wrap gap-2">
-						{TEAM_SIZES.map((size) => (
-							<button
-								key={size}
-								type="button"
-								onClick={() => setTeamSize(size)}
-								className={cn(
-									"rounded-full border px-4 py-1.5 text-sm transition-colors",
-									teamSize === size
-										? "border-primary bg-primary/10 font-medium text-primary"
-										: "border-border bg-background hover:bg-muted",
-								)}
-							>
-								{size}
-							</button>
-						))}
+				{!showingSubNicheStep && (
+					<div className="space-y-2">
+						<p className="text-sm font-medium">Team size</p>
+						<div className="flex flex-wrap gap-2">
+							{TEAM_SIZES.map((size) => (
+								<button
+									key={size}
+									type="button"
+									onClick={() => setTeamSize(size)}
+									className={cn(
+										"rounded-full border px-4 py-1.5 text-sm transition-colors",
+										teamSize === size
+											? "border-primary bg-primary/10 font-medium text-primary"
+											: "border-border bg-background hover:bg-muted",
+									)}
+								>
+									{size}
+								</button>
+							))}
+						</div>
 					</div>
-				</div>
+				)}
 
 				<div className="flex gap-3">
 					<Button type="button" variant="outline" className="flex-1" onClick={onBack}>
@@ -287,9 +486,9 @@ function IndustryStep({
 					<Button
 						className="flex-1"
 						type="submit"
-						disabled={!industry || !teamSize || loading}
+						disabled={!parentId || (!parent?.subNiches?.length && !teamSize) || loading}
 					>
-						{loading ? "Saving…" : "Continue"}
+						{parent?.subNiches?.length ? "Choose variant →" : loading ? "Saving…" : "Continue"}
 					</Button>
 				</div>
 			</form>
@@ -331,17 +530,20 @@ function CompleteStep({ orgId, onBack }: { orgId: Id<"orgs">; onBack: () => void
 			</div>
 
 			<div className="w-full space-y-2">
-				{["Workspace created", "Industry configured", "Default pipeline ready"].map(
-					(label) => (
-						<div
-							key={label}
-							className="flex items-center gap-3 rounded-[var(--radius)] border border-border bg-muted/40 px-4 py-2.5"
-						>
-							<span className="font-bold text-primary">✓</span>
-							<span className="text-sm">{label}</span>
-						</div>
-					),
-				)}
+				{[
+					"Workspace created",
+					"Industry configured",
+					"Sample data ready",
+					"Default pipeline ready",
+				].map((label) => (
+					<div
+						key={label}
+						className="flex items-center gap-3 rounded-[var(--radius)] border border-border bg-muted/40 px-4 py-2.5"
+					>
+						<span className="font-bold text-primary">✓</span>
+						<span className="text-sm">{label}</span>
+					</div>
+				))}
 			</div>
 
 			<div className="flex w-full gap-3">

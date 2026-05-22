@@ -296,4 +296,97 @@ export interface IndustryTemplate {
 
 	// 18. Saved views
 	savedViews?: SavedViewSeed[];
+
+	// 19. Mock data — sample records seeded after structural setup (Phase 3A).
+	mockData?: MockDataSeed;
 }
+
+// ─── Mock data seeds (Phase 3A) ───────────────────────────────────────────────
+//
+// Templates may declare a small bundle of sample records to give brand-new
+// workspaces a "feels alive in 30 seconds" experience. Every record inserted
+// is tagged `source: "template_seed"` and `excludeFromAI: true` so the user
+// can clear them in one click and the Phase 3B AI runtime never trains on
+// fake names. Seeder lives in `mockSeeder.ts` (Phase 3A Phase C).
+
+export type MockLeadSeed = {
+	displayName: string;
+	email?: string;
+	phone?: string;
+	/** Optional initial status. Defaults to "new". */
+	status?: string;
+	/** Lead-level field values keyed by fieldDefinition.name. */
+	fieldValues?: Record<string, unknown>;
+	/** Tag NAMES to attach (must match a tag seed name in the same template). */
+	tags?: string[];
+};
+
+export type MockContactSeed = {
+	displayName: string;
+	email?: string;
+	phone?: string;
+	/** Reference one of the mock-company keys to link the contact to a company. */
+	companyKey?: string;
+	fieldValues?: Record<string, unknown>;
+	tags?: string[];
+};
+
+export type MockCompanySeed = {
+	/** Unique key within the template — referenced by mockContacts.companyKey + mockDeals.companyKey. */
+	key: string;
+	name: string;
+	industry?: string;
+	website?: string;
+	fieldValues?: Record<string, unknown>;
+};
+
+export type MockDealSeed = {
+	title: string;
+	/** Stage CODE (e.g. "DISC", "OFR"). Must match a stage in the template's pipeline. */
+	stageCode: string;
+	value?: number;
+	/** Reference one of the mock-contact entries by displayName. */
+	contactDisplayName?: string;
+	/** Reference one of the mock-company keys. */
+	companyKey?: string;
+	fieldValues?: Record<string, unknown>;
+	tags?: string[];
+};
+
+export type MockNoteSeed = {
+	/** Note content (markdown supported). */
+	content: string;
+	/** Note category NAME (must match a noteCategory entry in the template). */
+	categoryName?: string;
+	/**
+	 * Optional anchor — links the note to a person/deal/company.
+	 * The seeder resolves the entity by lookup at seed-time.
+	 */
+	anchorTo?:
+		| { kind: "lead"; displayName: string }
+		| { kind: "contact"; displayName: string }
+		| { kind: "deal"; title: string }
+		| { kind: "company"; companyKey: string };
+};
+
+export type MockReminderSeed = {
+	title: string;
+	/** Days from now (negative = past, 0 = today, positive = future). */
+	dueOffsetDays: number;
+	priority?: "low" | "normal" | "high" | "urgent";
+	source?: "manual" | "followup";
+	/** Same anchor shape as MockNoteSeed. */
+	anchorTo?:
+		| { kind: "lead"; displayName: string }
+		| { kind: "contact"; displayName: string }
+		| { kind: "deal"; title: string };
+};
+
+export type MockDataSeed = {
+	leads?: MockLeadSeed[];
+	contacts?: MockContactSeed[];
+	companies?: MockCompanySeed[];
+	deals?: MockDealSeed[];
+	notes?: MockNoteSeed[];
+	reminders?: MockReminderSeed[];
+};

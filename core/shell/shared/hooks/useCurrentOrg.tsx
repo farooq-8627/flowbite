@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
@@ -109,8 +109,20 @@ const OrgContext = createContext<OrgContextValue | null>(null);
 const EMPTY_PERMISSIONS: ReadonlyArray<string> = Object.freeze([]);
 
 export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: ReactNode }) {
+	// Phase 3A — gate every subscription on auth being settled.
+	//
+	// Even though `<PrivateLayout>` only renders this provider when
+	// `isAuthenticated === true`, there's a brief window during sign-out
+	// (and on sign-in token refresh) where the JWT is in transition. In
+	// that window unconditional `useQuery(api.orgs.queries.listMyOrgs)`
+	// fires WITHOUT auth, the server throws `Unauthorized`, and the
+	// resulting error pollutes the Convex logs. Gating on `isAuthenticated`
+	// keeps the noise floor at zero while the layout guard is the actual
+	// security boundary.
+	const { isAuthenticated } = useConvexAuth();
+
 	// Step 1 — resolve orgSlug → orgId via listMyOrgs (one subscription).
-	const orgs = useQuery(api.orgs.queries.listMyOrgs);
+	const orgs = useQuery(api.orgs.queries.listMyOrgs, isAuthenticated ? {} : "skip");
 	const resolvedOrgId = useMemo<Id<"orgs"> | undefined>(() => {
 		return orgs?.find((o) => o.org.slug === orgSlug)?.org._id;
 	}, [orgs, orgSlug]);
@@ -118,16 +130,16 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 	// Step 1b — current authenticated user (one subscription, not per-component).
 	// Was being called from 9 separate components (ThreadHeader, NoteCard,
 	// SavedViewsMenu, NotesView, …). All migrated to read `useMe()` instead.
-	const me = useQuery(api.users.queries.me);
+	const me = useQuery(api.users.queries.me, isAuthenticated ? {} : "skip");
 
 	// Step 2 — fan out the per-org subscriptions ONCE.
 	const membership = useQuery(
 		api.orgs.queries.getMyMembership,
-		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
+		isAuthenticated && resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
 	);
 	const members = useQuery(
 		api.orgs.queries.listMembers,
-		resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
+		isAuthenticated && resolvedOrgId ? { orgId: resolvedOrgId } : "skip",
 	);
 	// Entity labels are derived from `listMyOrgs` (which already includes the
 	// full org doc) — NOT fetched via a separate `getEntityLabels` query.
@@ -150,7 +162,10 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 	// before `resolvedOrgId` is known. We don't gate on `resolvedOrgId`
 	// because the flags don't depend on the current route's orgId — they
 	// depend on the authenticated user's default org.
-	const featureFlags = useQuery(api.featureFlags.queries.getForOrg);
+	const featureFlags = useQuery(
+		api.featureFlags.queries.getForOrg,
+		isAuthenticated ? {} : "skip",
+	);
 
 	const value = useMemo<OrgContextValue>(() => {
 		const entry = orgs?.find((o) => o.org.slug === orgSlug);

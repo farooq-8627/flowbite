@@ -32,6 +32,7 @@ import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { isKnownPermission } from "../../../_shared/permissions/derive";
+import { seedMockEntities } from "./mockSeeder";
 import { getTemplate } from "./registry";
 import type {
 	CodePrefixesSeed,
@@ -225,6 +226,7 @@ async function patchOrgSettings(
 		followupDefaults?: FollowupDefaultsSeed;
 		fileUpload?: FileUploadSeed;
 		aiPersona?: string;
+		dashboardMetrics?: string[];
 		industryId: string;
 	},
 	now: number,
@@ -271,10 +273,56 @@ async function patchOrgSettings(
 			...args.fileUpload,
 		};
 	}
-	if (args.modules && args.modules.length > 0 && !existingSettings.modules) {
+	// Phase 3A — entityVisibility lift.
+	//
+	// `entityVisibility: { lead: false }` is the high-level intent. The
+	// concrete shape is `org.settings.modules[].hidden`. When the template
+	// provides modules, we OR the visibility flag onto each one. When the
+	// template provides only entityVisibility without a modules array, we
+	// build a minimal modules[] so AppSidebar can read the hidden flag.
+	let modulesToWrite: ModuleSeed[] | undefined = args.modules;
+	if (args.entityVisibility) {
+		const vis = args.entityVisibility;
+		const flagFor = (slot: string): boolean | undefined => {
+			switch (slot) {
+				case "lead":
+					return vis.lead;
+				case "contact":
+					return vis.contact;
+				case "deal":
+					return vis.deal;
+				case "company":
+					return vis.company;
+				case "entity5":
+					return vis.entity5;
+				case "entity6":
+					return vis.entity6;
+				default:
+					return undefined;
+			}
+		};
+
+		if (modulesToWrite && modulesToWrite.length > 0) {
+			modulesToWrite = modulesToWrite.map((m) => {
+				const flag = flagFor(m.slot);
+				if (flag === false) return { ...m, hidden: true };
+				return m;
+			});
+		} else {
+			// Build minimal modules from entityVisibility alone.
+			modulesToWrite = (["lead", "contact", "deal", "company"] as const).map((slot, i) => ({
+				slot,
+				order: i,
+				hidden: flagFor(slot) === false,
+				defaultView: "list" as const,
+			}));
+		}
+	}
+
+	if (modulesToWrite && modulesToWrite.length > 0 && !existingSettings.modules) {
 		// Only seed modules when the org doesn't already have a slot map —
 		// otherwise we risk clobbering user customizations.
-		newSettings.modules = args.modules.map((m) => ({
+		newSettings.modules = modulesToWrite.map((m) => ({
 			slot: m.slot,
 			label: m.label,
 			hidden: m.hidden,
@@ -286,6 +334,16 @@ async function patchOrgSettings(
 			defaultFilters: m.defaultFilters,
 			meta: m.meta,
 		}));
+	}
+
+	// Phase 3A — dashboardMetrics propagation.
+	//
+	// Templates declare an ORDERED list of widget keys. The dashboard
+	// renders widgets in this order (top-to-bottom). Re-applying or
+	// switching template SHOULD reset the metric set — owners who want
+	// custom widgets re-order via Settings → Workspace.
+	if (args.dashboardMetrics && args.dashboardMetrics.length > 0) {
+		newSettings.dashboardMetrics = [...args.dashboardMetrics];
 	}
 
 	const patch: {
@@ -495,6 +553,7 @@ export const setupWorkspaceFromTemplate = internalMutation({
 				followupDefaults: t.followupDefaults,
 				fileUpload: t.fileUpload,
 				aiPersona: t.aiPersona,
+				dashboardMetrics: t.dashboardMetrics,
 				industryId: t.id,
 			},
 			now,
@@ -551,6 +610,15 @@ export const setupWorkspaceFromTemplate = internalMutation({
 		// 13 — custom roles
 		const customRolesInserted = await seedCustomRoles(ctx, args.orgId, t.customRoles, now);
 
+		// 16 — mock entities (Phase 3A) — gated on actorUserId because
+		// notes + reminders need an authoring user. Skips silently when
+		// the actor is unset (the seeder is also no-op without mockData).
+		let mockInserted = 0;
+		if (args.actorUserId) {
+			const r = await seedMockEntities(ctx, args.orgId, args.actorUserId, t, now);
+			mockInserted = r.inserted;
+		}
+
 		return {
 			ok: true,
 			templateId: t.id,
@@ -560,6 +628,7 @@ export const setupWorkspaceFromTemplate = internalMutation({
 			tagsInserted,
 			savedViewsInserted,
 			customRolesInserted,
+			mockInserted,
 		};
 	},
 });

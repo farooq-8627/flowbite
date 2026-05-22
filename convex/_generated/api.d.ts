@@ -8,9 +8,12 @@
  * @module
  */
 
+import type * as ResendOTPPasswordReset from "../ResendOTPPasswordReset.js";
 import type * as _functions_admin from "../_functions/admin.js";
 import type * as _functions_authenticated from "../_functions/authenticated.js";
 import type * as _migrations_2026_05_21_invitationRoleToRoleId from "../_migrations/2026_05_21_invitationRoleToRoleId.js";
+import type * as _migrations_2026_05_22_addOrgSettingsDashboardAndTrash from "../_migrations/2026_05_22_addOrgSettingsDashboardAndTrash.js";
+import type * as _migrations_2026_05_22_renameRealEstateTemplateIds from "../_migrations/2026_05_22_renameRealEstateTemplateIds.js";
 import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
@@ -28,6 +31,7 @@ import type * as _migrations_setOrgPlan from "../_migrations/setOrgPlan.js";
 import type * as _migrations_tightenReminderSourceAndAddPriority from "../_migrations/tightenReminderSourceAndAddPriority.js";
 import type * as _platform_limits from "../_platform/limits.js";
 import type * as _shared_constants from "../_shared/constants.js";
+import type * as _shared_enforcePlanLimit from "../_shared/enforcePlanLimit.js";
 import type * as _shared_entityCodes from "../_shared/entityCodes.js";
 import type * as _shared_errors from "../_shared/errors.js";
 import type * as _shared_fieldUpdateLog from "../_shared/fieldUpdateLog.js";
@@ -46,6 +50,9 @@ import type * as _test_helpers from "../_test/helpers.js";
 import type * as activityLogs_helpers from "../activityLogs/helpers.js";
 import type * as ai_internal from "../ai/internal.js";
 import type * as auth from "../auth.js";
+import type * as billing_actions from "../billing/actions.js";
+import type * as billing_internal from "../billing/internal.js";
+import type * as billing_queries from "../billing/queries.js";
 import type * as crm_entities_companies_mutations from "../crm/entities/companies/mutations.js";
 import type * as crm_entities_companies_queries from "../crm/entities/companies/queries.js";
 import type * as crm_entities_contacts_mutations from "../crm/entities/contacts/mutations.js";
@@ -69,8 +76,11 @@ import type * as crm_fields_templates_definitions_b2b_saas from "../crm/fields/t
 import type * as crm_fields_templates_definitions_dubai_real_estate from "../crm/fields/templates/definitions/dubai_real_estate.js";
 import type * as crm_fields_templates_definitions_freelancer from "../crm/fields/templates/definitions/freelancer.js";
 import type * as crm_fields_templates_definitions_generic from "../crm/fields/templates/definitions/generic.js";
+import type * as crm_fields_templates_definitions_productivity from "../crm/fields/templates/definitions/productivity.js";
 import type * as crm_fields_templates_definitions_real_estate from "../crm/fields/templates/definitions/real_estate.js";
+import type * as crm_fields_templates_definitions_real_estate_saudi from "../crm/fields/templates/definitions/real_estate_saudi.js";
 import type * as crm_fields_templates_definitions_recruiting from "../crm/fields/templates/definitions/recruiting.js";
+import type * as crm_fields_templates_mockSeeder from "../crm/fields/templates/mockSeeder.js";
 import type * as crm_fields_templates_mutations from "../crm/fields/templates/mutations.js";
 import type * as crm_fields_templates_queries from "../crm/fields/templates/queries.js";
 import type * as crm_fields_templates_registry from "../crm/fields/templates/registry.js";
@@ -99,6 +109,8 @@ import type * as crons from "../crons.js";
 import type * as featureFlags_queries from "../featureFlags/queries.js";
 import type * as files_mutations from "../files/mutations.js";
 import type * as files_queries from "../files/queries.js";
+import type * as gdpr_actions from "../gdpr/actions.js";
+import type * as gdpr_internal from "../gdpr/internal.js";
 import type * as http from "../http.js";
 import type * as invitations_actions from "../invitations/actions.js";
 import type * as invitations_index from "../invitations/index.js";
@@ -122,6 +134,8 @@ import type * as schema_crmShared from "../schema/crmShared.js";
 import type * as schema_identity from "../schema/identity.js";
 import type * as schema_platform from "../schema/platform.js";
 import type * as schema_system from "../schema/system.js";
+import type * as trash_mutations from "../trash/mutations.js";
+import type * as trash_queries from "../trash/queries.js";
 import type * as users_helpers from "../users/helpers.js";
 import type * as users_mutations from "../users/mutations.js";
 import type * as users_queries from "../users/queries.js";
@@ -133,9 +147,12 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  ResendOTPPasswordReset: typeof ResendOTPPasswordReset;
   "_functions/admin": typeof _functions_admin;
   "_functions/authenticated": typeof _functions_authenticated;
   "_migrations/2026_05_21_invitationRoleToRoleId": typeof _migrations_2026_05_21_invitationRoleToRoleId;
+  "_migrations/2026_05_22_addOrgSettingsDashboardAndTrash": typeof _migrations_2026_05_22_addOrgSettingsDashboardAndTrash;
+  "_migrations/2026_05_22_renameRealEstateTemplateIds": typeof _migrations_2026_05_22_renameRealEstateTemplateIds;
   "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
@@ -153,6 +170,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/tightenReminderSourceAndAddPriority": typeof _migrations_tightenReminderSourceAndAddPriority;
   "_platform/limits": typeof _platform_limits;
   "_shared/constants": typeof _shared_constants;
+  "_shared/enforcePlanLimit": typeof _shared_enforcePlanLimit;
   "_shared/entityCodes": typeof _shared_entityCodes;
   "_shared/errors": typeof _shared_errors;
   "_shared/fieldUpdateLog": typeof _shared_fieldUpdateLog;
@@ -171,6 +189,9 @@ declare const fullApi: ApiFromModules<{
   "activityLogs/helpers": typeof activityLogs_helpers;
   "ai/internal": typeof ai_internal;
   auth: typeof auth;
+  "billing/actions": typeof billing_actions;
+  "billing/internal": typeof billing_internal;
+  "billing/queries": typeof billing_queries;
   "crm/entities/companies/mutations": typeof crm_entities_companies_mutations;
   "crm/entities/companies/queries": typeof crm_entities_companies_queries;
   "crm/entities/contacts/mutations": typeof crm_entities_contacts_mutations;
@@ -194,8 +215,11 @@ declare const fullApi: ApiFromModules<{
   "crm/fields/templates/definitions/dubai_real_estate": typeof crm_fields_templates_definitions_dubai_real_estate;
   "crm/fields/templates/definitions/freelancer": typeof crm_fields_templates_definitions_freelancer;
   "crm/fields/templates/definitions/generic": typeof crm_fields_templates_definitions_generic;
+  "crm/fields/templates/definitions/productivity": typeof crm_fields_templates_definitions_productivity;
   "crm/fields/templates/definitions/real_estate": typeof crm_fields_templates_definitions_real_estate;
+  "crm/fields/templates/definitions/real_estate_saudi": typeof crm_fields_templates_definitions_real_estate_saudi;
   "crm/fields/templates/definitions/recruiting": typeof crm_fields_templates_definitions_recruiting;
+  "crm/fields/templates/mockSeeder": typeof crm_fields_templates_mockSeeder;
   "crm/fields/templates/mutations": typeof crm_fields_templates_mutations;
   "crm/fields/templates/queries": typeof crm_fields_templates_queries;
   "crm/fields/templates/registry": typeof crm_fields_templates_registry;
@@ -224,6 +248,8 @@ declare const fullApi: ApiFromModules<{
   "featureFlags/queries": typeof featureFlags_queries;
   "files/mutations": typeof files_mutations;
   "files/queries": typeof files_queries;
+  "gdpr/actions": typeof gdpr_actions;
+  "gdpr/internal": typeof gdpr_internal;
   http: typeof http;
   "invitations/actions": typeof invitations_actions;
   "invitations/index": typeof invitations_index;
@@ -247,6 +273,8 @@ declare const fullApi: ApiFromModules<{
   "schema/identity": typeof schema_identity;
   "schema/platform": typeof schema_platform;
   "schema/system": typeof schema_system;
+  "trash/mutations": typeof trash_mutations;
+  "trash/queries": typeof trash_queries;
   "users/helpers": typeof users_helpers;
   "users/mutations": typeof users_mutations;
   "users/queries": typeof users_queries;

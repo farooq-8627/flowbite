@@ -52,4 +52,16 @@ crons.interval(
 	{},
 );
 
+/**
+ * Daily purge of soft-deleted CRM records that have exceeded each org's
+ * retention window. Retention is configurable per-org via
+ * `org.settings.softDeleteRetentionDays` (defaults to 30 days).
+ *
+ * Runs every 24h. The `purgeOldTrash` internal mutation iterates each
+ * org and the 4 CRM tables (leads, contacts, companies, deals) and
+ * hard-deletes rows where `deletedAt + retentionMs < now`. Volumes are
+ * tiny — most orgs have a handful of trashed rows at any time.
+ */
+crons.interval("purge-old-trash", { hours: 24 }, internal.trash.mutations.purgeOldTrash, {});
+
 export default crons;

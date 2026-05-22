@@ -10,6 +10,7 @@ import GitHub from "@auth/core/providers/github";
 import Google from "@auth/core/providers/google";
 import { Password } from "@convex-dev/auth/providers/Password";
 import { convexAuth } from "@convex-dev/auth/server";
+import { ResendOTPPasswordReset } from "./ResendOTPPasswordReset";
 
 // ── Env validation at boot ───────────────────────────────────────────────────
 // Fail fast with a clear message instead of silently dropping OAuth providers.
@@ -28,7 +29,7 @@ for (const [key, value] of Object.entries(REQUIRED_ENV)) {
 
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 	providers: [
-		Password,
+		Password({ reset: ResendOTPPasswordReset }),
 		GitHub({
 			clientId: process.env.AUTH_GITHUB_ID,
 			clientSecret: process.env.AUTH_GITHUB_SECRET,

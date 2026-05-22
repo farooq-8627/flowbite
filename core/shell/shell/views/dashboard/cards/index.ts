@@ -6,10 +6,11 @@
  * with one tidy import block.
  */
 
+export { MetricStrip } from "./MetricStrip";
+export { MockDataBanner } from "./MockDataBanner";
 export { NextReminderFallback } from "./NextReminderFallback";
 export { PipelineCard } from "./PipelineCard";
 export { RecentActivityCard } from "./RecentActivityCard";
 export { RemindersCard } from "./RemindersCard";
-export { StatStrip } from "./StatStrip";
 export { StatTile } from "./StatTile";
 export { TodaySummaryCard } from "./TodaySummaryCard";

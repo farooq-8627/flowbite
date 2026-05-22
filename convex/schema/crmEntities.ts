@@ -9,7 +9,7 @@
 
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
-import { aiContextValidator, orgScoped, softDelete, timestamps } from "../_shared/validators";
+import { aiContextValidator, aiExcluded, orgScoped, softDelete, timestamps } from "../_shared/validators";
 
 export const leads = defineTable({
 	...orgScoped,
@@ -32,6 +32,7 @@ export const leads = defineTable({
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
+	...aiExcluded,
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_status", ["orgId", "status"])
@@ -60,6 +61,7 @@ export const contacts = defineTable({
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
+	...aiExcluded,
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_personCode", ["orgId", "personCode"])
@@ -95,6 +97,7 @@ export const companies = defineTable({
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
+	...aiExcluded,
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_companyCode", ["orgId", "companyCode"])
@@ -128,6 +131,7 @@ export const deals = defineTable({
 	aiContext: aiContextValidator,
 	...timestamps,
 	...softDelete,
+	...aiExcluded,
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_pipeline", ["orgId", "pipelineId"])

@@ -485,14 +485,13 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Sticky-note categories (sales workflow) ──────────────────────────
+	// ─── Sticky-note categories (sales workflow, standardized) ───────────
 	noteCategories: [
-		{ name: "Critical", bgColor: "#fecaca", isDefault: false, position: 0 },
+		{ name: "Urgent", bgColor: "#fecaca", isDefault: false, position: 0 },
 		{ name: "Today", bgColor: "#fde68a", isDefault: true, position: 1 },
-		{ name: "Discovery Notes", bgColor: "#bae6fd", isDefault: false, position: 2 },
+		{ name: "Discovery", bgColor: "#bae6fd", isDefault: false, position: 2 },
 		{ name: "Demo Prep", bgColor: "#ddd6fe", isDefault: false, position: 3 },
-		{ name: "Negotiation", bgColor: "#fbcfe8", isDefault: false, position: 4 },
-		{ name: "Closed", bgColor: "#a7f3d0", isDefault: false, position: 5 },
+		{ name: "Done", bgColor: "#a7f3d0", isDefault: false, position: 4 },
 	],
 
 	// ─── Tag presets ──────────────────────────────────────────────────────
@@ -538,14 +537,18 @@ export const b2bSaasTemplate: IndustryTemplate = {
 	aiPersona:
 		"You are a B2B SaaS sales coach embedded in the user's CRM. Speak the language of MEDDPICC / BANT / SPICED — Champion, Economic Buyer, Decision Criteria, Decision Process, Identify Pain, Competition, Budget, Authority, Need, Timeline. Pipeline stages: Discovery → Demo Scheduled → Proposal Sent → Negotiation → Closed Won / Closed Lost. Push the rep to qualify hard at Discovery (uncover pain + champion), confirm BANT before sending a proposal, and document the lost reason on every Closed Lost. When the rep asks for forecast advice, weight by stage probability and remind them about deals that have been stale longer than the stage's staleAfterDays. Use the org's default currency for all values. Always confirm before destructive actions (Closed Lost on a high-ACV deal, mass updates).",
 
-	// ─── Dashboard widgets ────────────────────────────────────────────────
+	// ─── Dashboard widgets (ranked) ────────────────────────────────────────
 	dashboardMetrics: [
 		"deals.open",
 		"deals.pipelineValue",
 		"deals.won",
 		"deals.lost",
-		"leads.open",
-		"reminders.dueToday",
+		"deals.pipeline",
+		"reminders.list",
+		"today.focus",
+		"messages.recent",
+		"activity.recent",
+		"calendar.weekAhead",
 	],
 
 	// ─── Custom orgRoles ──────────────────────────────────────────────────
@@ -758,4 +761,165 @@ export const b2bSaasTemplate: IndustryTemplate = {
 			sortOrder: "asc",
 		},
 	],
+
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
+	mockData: {
+		companies: [
+			{
+				key: "acme-corp",
+				name: "Acme Corp",
+				industry: "SaaS",
+				website: "https://acme.example.com",
+				fieldValues: {
+					domain: "acme.example.com",
+					headcount: 120,
+				},
+			},
+		],
+		leads: [
+			{
+				displayName: "Julia Rodriguez",
+				email: "julia.r@acme.example.com",
+				phone: "+1 415 555 0201",
+				status: "new",
+				fieldValues: {
+					company_size: "51-200",
+					industry_vertical: "SaaS",
+					lead_source_detail: "Inbound — website",
+				},
+				tags: ["ICP fit", "Inbound"],
+			},
+			{
+				displayName: "Marcus Lee",
+				email: "marcus@buildplex.example.com",
+				phone: "+1 213 555 0202",
+				status: "contacted",
+				fieldValues: {
+					company_size: "201-1000",
+					industry_vertical: "Logistics",
+					lead_source_detail: "Outbound — LinkedIn",
+				},
+				tags: ["Champion"],
+			},
+			{
+				displayName: "Fatima Al-Hassan",
+				email: "fatima.h@novatech.example.com",
+				phone: "+44 20 7946 0203",
+				status: "new",
+				fieldValues: {
+					company_size: "11-50",
+					industry_vertical: "Fintech",
+					lead_source_detail: "Event / conference",
+				},
+				tags: ["ICP fit", "Decision maker"],
+			},
+		],
+		contacts: [
+			{
+				displayName: "Daniel Kim",
+				email: "daniel.k@acme.example.com",
+				companyKey: "acme-corp",
+				fieldValues: {
+					job_title: "VP Engineering",
+					seniority: "VP",
+					is_decision_maker: true,
+					linkedin_url: "https://linkedin.com/in/daniel-kim-example",
+				},
+				tags: ["Champion", "Decision maker"],
+			},
+			{
+				displayName: "Sarah Chen",
+				email: "sarah.c@acme.example.com",
+				companyKey: "acme-corp",
+				fieldValues: {
+					job_title: "Senior Engineering Manager",
+					seniority: "Senior Manager / Director",
+					is_decision_maker: false,
+				},
+				tags: ["Influencer"],
+			},
+		],
+		deals: [
+			{
+				title: "Acme Corp — Pro plan, 50 seats",
+				stageCode: "DISC",
+				value: 60000,
+				contactDisplayName: "Daniel Kim",
+				companyKey: "acme-corp",
+				fieldValues: {
+					mrr_usd: 5000,
+					acv_usd: 60000,
+					product_line: "Pro",
+					primary_use_case: "Internal CRM consolidation across BD + AE teams",
+					evaluation_criteria: "Stage-aware fields + AI assistant + India compliance",
+				},
+				tags: ["ICP fit", "Inbound"],
+			},
+			{
+				title: "Buildplex — Enterprise rollout",
+				stageCode: "PROP",
+				value: 240000,
+				fieldValues: {
+					mrr_usd: 20000,
+					acv_usd: 240000,
+					product_line: "Enterprise",
+					budget_band: "$100K+",
+					decision_maker: "Marcus Lee (VP Operations)",
+					decision_timeline: "Next quarter",
+					champion: "Marcus Lee",
+					contract_term_months: 12,
+					billing_cycle: "Annual",
+				},
+				tags: ["Champion", "ICP fit"],
+			},
+		],
+		notes: [
+			{
+				content:
+					"Discovery call done — Daniel confirmed BANT. Acme uses HubSpot today, frustrated with stage-field mapping. Strong fit.",
+				categoryName: "Discovery",
+				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
+			},
+			{
+				content:
+					"Demo scheduled Thursday 2pm PT for Acme. Prep: industry-template flow + AI assistant teaser.",
+				categoryName: "Demo Prep",
+				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
+			},
+			{
+				content:
+					"Buildplex sent revised proposal — they want 12-month term + 15% discount. Need to confirm with sales leadership.",
+				categoryName: "Urgent",
+				anchorTo: { kind: "deal", title: "Buildplex — Enterprise rollout" },
+			},
+			{
+				content: "Fatima at NovaTech mentioned competitor X — research how we differentiate.",
+				categoryName: "Today",
+				anchorTo: { kind: "lead", displayName: "Fatima Al-Hassan" },
+			},
+		],
+		reminders: [
+			{
+				title: "Acme demo prep — finalize deck",
+				dueOffsetDays: 0,
+				priority: "high",
+				source: "manual",
+				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
+			},
+			{
+				title: "Send Buildplex revised proposal",
+				dueOffsetDays: 1,
+				priority: "urgent",
+				source: "followup",
+				anchorTo: { kind: "deal", title: "Buildplex — Enterprise rollout" },
+			},
+			{
+				title: "Discovery call — Fatima at NovaTech",
+				dueOffsetDays: 2,
+				priority: "high",
+				source: "manual",
+				anchorTo: { kind: "lead", displayName: "Fatima Al-Hassan" },
+			},
+		],
+	},
 };

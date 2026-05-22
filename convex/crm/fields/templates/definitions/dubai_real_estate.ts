@@ -32,7 +32,7 @@
 import type { IndustryTemplate } from "../types";
 
 export const dubaiRealEstateTemplate: IndustryTemplate = {
-	id: "dubai-real-estate",
+	id: "real-estate-dubai",
 	label: "Real Estate (Dubai / Gulf)",
 	description:
 		"UAE / Gulf property workflow — inquiry, viewing, MOU, Form F, Ejari, handover. RERA + Emirates ID built in.",
@@ -523,9 +523,8 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		{ name: "Urgent", bgColor: "#fecaca", isDefault: false, position: 0 },
 		{ name: "Today", bgColor: "#fde68a", isDefault: true, position: 1 },
 		{ name: "Hot Inquiry", bgColor: "#fed7aa", isDefault: false, position: 2 },
-		{ name: "Document Pending", bgColor: "#bae6fd", isDefault: false, position: 3 },
-		{ name: "Viewing Notes", bgColor: "#ddd6fe", isDefault: false, position: 4 },
-		{ name: "Done", bgColor: "#a7f3d0", isDefault: false, position: 5 },
+		{ name: "Viewing Notes", bgColor: "#ddd6fe", isDefault: false, position: 3 },
+		{ name: "Done", bgColor: "#a7f3d0", isDefault: false, position: 4 },
 	],
 
 	// ─── Tag presets ───────────────────────────────────────────────────────
@@ -574,14 +573,19 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 	aiPersona:
 		"You are a Dubai / UAE real-estate operations assistant. You understand RERA registration (every listing must have a RERA permit number), Form F (the standard MOU for property sales/rentals in Dubai), Ejari (Dubai's mandatory tenancy contract registration), the 90-day rent renewal notice required by UAE law, Emirates ID + passport requirements at the Documentation stage, and the standard buyer/tenant journey: New Inquiry → Viewing → Offer/MOU → Form F → Ejari → Handover → Active Tenancy. Use AED for all values. Areas to recognise without translation: Downtown Dubai, Dubai Marina, Business Bay, Palm Jumeirah, JVC, JLT, Arabian Ranches, Dubai Hills, Mirdif, Deira, Bur Dubai, Saadiyat, Al Reem, Yas Island. Refer to leads as 'inquiries', contacts as 'clients', deals as 'listings', companies as 'agencies' — those are the workspace's renamed labels. Always confirm before destructive actions (cancelling Form F, marking lost).",
 
-	// ─── Dashboard widgets ─────────────────────────────────────────────────
+	// ─── Dashboard widgets (ranked list — top = first row) ────────────────
+	// Order matches §9.6 of CODE-ARCHITECTURE-PHASE-3A.md.
 	dashboardMetrics: [
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",
-		"deals.won",
-		"reminders.dueToday",
 		"deals.staleByStage",
+		"reminders.list",
+		"deals.pipeline",
+		"today.focus",
+		"calendar.weekAhead",
+		"messages.recent",
+		"deals.renewingIn30Days",
 	],
 
 	// ─── Custom orgRoles (Listing Agent + BD Rep) ──────────────────────────
@@ -746,4 +750,154 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 			sortOrder: "desc",
 		},
 	],
+
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
+	mockData: {
+		companies: [
+			{
+				key: "driven-properties",
+				name: "Driven Properties LLC",
+				industry: "Real Estate",
+				website: "https://drivenproperties.example.ae",
+				fieldValues: { rera_orn: "ORN-12345", trade_license: "TL-987654" },
+			},
+		],
+		leads: [
+			{
+				displayName: "Sarah Khan",
+				email: "sarah.khan@example.com",
+				phone: "+971 50 123 4567",
+				status: "new",
+				fieldValues: {
+					preferred_area: "Dubai Marina",
+					property_type: "Apartment",
+					bedrooms: "2BR",
+					budget_aed: 1800000,
+					intent: "Buy",
+				},
+				tags: ["Hot inquiry", "End user"],
+			},
+			{
+				displayName: "Ahmed Al-Maktoum",
+				email: "ahmed.al@example.com",
+				phone: "+971 55 987 6543",
+				status: "contacted",
+				fieldValues: {
+					preferred_area: "JVC",
+					property_type: "Villa",
+					bedrooms: "3BR",
+					budget_aed: 2500000,
+					intent: "Buy",
+				},
+				tags: ["Cash buyer", "VIP client"],
+			},
+			{
+				displayName: "Priya Sharma",
+				email: "priya.s@example.com",
+				phone: "+971 52 456 7890",
+				status: "new",
+				fieldValues: {
+					preferred_area: "Business Bay",
+					property_type: "Office",
+					bedrooms: "Studio",
+					budget_aed: 950000,
+					intent: "Rent — Annual",
+				},
+				tags: ["Mortgage required"],
+			},
+		],
+		contacts: [
+			{
+				displayName: "Omar Hassan",
+				email: "omar.hassan@example.com",
+				phone: "+971 50 111 2222",
+				companyKey: "driven-properties",
+				fieldValues: { nationality: "UAE", preferred_language: "Arabic" },
+			},
+			{
+				displayName: "Lisa Chen",
+				email: "lisa.chen@example.com",
+				phone: "+971 56 333 4444",
+				fieldValues: { nationality: "Singapore", preferred_language: "English" },
+				tags: ["Investor"],
+			},
+		],
+		deals: [
+			{
+				title: "Marina Heights — 2BR Rental",
+				stageCode: "VIEW",
+				value: 145000,
+				contactDisplayName: "Lisa Chen",
+				fieldValues: {
+					property_address: "Marina Heights Tower, Dubai Marina",
+					rera_permit_number: "RP-2024-0001",
+					asking_price_aed: 145000,
+					commission_pct: 5,
+				},
+				tags: ["Hot inquiry"],
+			},
+			{
+				title: "JVC District 14 — 3BR Villa Sale",
+				stageCode: "FORMF",
+				value: 2400000,
+				contactDisplayName: "Omar Hassan",
+				companyKey: "driven-properties",
+				fieldValues: {
+					property_address: "District 14, Jumeirah Village Circle",
+					rera_permit_number: "RP-2024-0002",
+					asking_price_aed: 2500000,
+					agreed_price_aed: 2400000,
+					commission_pct: 2,
+				},
+				tags: ["Form F submitted", "Cash buyer"],
+			},
+		],
+		notes: [
+			{
+				content:
+					"Sarah called — wants to see Marina Heights this Saturday at 4pm. Bring floor plans + service charge breakdown.",
+				categoryName: "Today",
+				anchorTo: { kind: "lead", displayName: "Sarah Khan" },
+			},
+			{
+				content: "Ahmed pre-approved for AED 2.5M mortgage. Ready to move on JVC villa.",
+				categoryName: "Hot Inquiry",
+				anchorTo: { kind: "lead", displayName: "Ahmed Al-Maktoum" },
+			},
+			{
+				content:
+					"Form F signed. Awaiting Emirates ID copy from buyer + Ejari registration this week.",
+				categoryName: "Urgent",
+				anchorTo: { kind: "deal", title: "JVC District 14 — 3BR Villa Sale" },
+			},
+			{
+				content: "Lisa interested in second viewing — wants to bring her husband.",
+				categoryName: "Viewing Notes",
+				anchorTo: { kind: "deal", title: "Marina Heights — 2BR Rental" },
+			},
+		],
+		reminders: [
+			{
+				title: "Marina Heights viewing — Sarah Khan",
+				dueOffsetDays: 0,
+				priority: "high",
+				source: "manual",
+				anchorTo: { kind: "lead", displayName: "Sarah Khan" },
+			},
+			{
+				title: "Collect Emirates ID copy — JVC sale",
+				dueOffsetDays: 1,
+				priority: "urgent",
+				source: "followup",
+				anchorTo: { kind: "deal", title: "JVC District 14 — 3BR Villa Sale" },
+			},
+			{
+				title: "Call Priya re: Business Bay availability",
+				dueOffsetDays: 2,
+				priority: "normal",
+				source: "manual",
+				anchorTo: { kind: "lead", displayName: "Priya Sharma" },
+			},
+		],
+	},
 };

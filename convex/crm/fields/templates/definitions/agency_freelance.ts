@@ -323,11 +323,11 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 	],
 
 	noteCategories: [
-		{ name: "Brief Notes", bgColor: "#bae6fd", isDefault: true, position: 0 },
-		{ name: "Feedback", bgColor: "#fde68a", position: 1 },
-		{ name: "Scope Change", bgColor: "#fecaca", position: 2 },
-		{ name: "Internal", bgColor: "#ddd6fe", position: 3 },
-		{ name: "Delivered", bgColor: "#a7f3d0", position: 4 },
+		{ name: "Urgent", bgColor: "#fecaca", isDefault: false, position: 0 },
+		{ name: "Today", bgColor: "#fde68a", isDefault: true, position: 1 },
+		{ name: "Brief", bgColor: "#bae6fd", isDefault: false, position: 2 },
+		{ name: "Review", bgColor: "#ddd6fe", isDefault: false, position: 3 },
+		{ name: "Done", bgColor: "#a7f3d0", isDefault: false, position: 4 },
 	],
 
 	tags: [
@@ -365,11 +365,14 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		"You are a freelance/agency project management assistant. Help the user track inquiries, send quotes, manage project scope, track revisions, and follow up on invoices. Refer to leads as 'inquiries', contacts as 'clients', deals as 'projects', companies as 'agencies'. Understand scope creep, revision limits, deposit-before-work policies, and milestone billing. When a project is stuck in Review, suggest a follow-up. When an invoice is overdue (>14 days in Invoiced stage), flag it urgently. Always confirm before marking a project as Cancelled.",
 
 	dashboardMetrics: [
-		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",
-		"deals.won",
+		"deals.invoiced.unpaid",
 		"reminders.dueToday",
+		"deals.pipeline",
+		"reminders.list",
+		"messages.recent",
+		"today.focus",
 	],
 
 	customRoles: [
@@ -506,4 +509,134 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 			sortOrder: "desc",
 		},
 	],
+
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
+	mockData: {
+		companies: [
+			{
+				key: "northwind-creative",
+				name: "Northwind Creative",
+				industry: "Agency",
+				website: "https://northwind.example.com",
+			},
+		],
+		leads: [
+			{
+				displayName: "Tom Bauer",
+				email: "tom.b@example.com",
+				phone: "+1 415 555 0301",
+				status: "new",
+				fieldValues: {
+					project_type: "Branding",
+					budget_range: "$15K–$50K",
+					deadline: Date.now() + 30 * 86_400_000,
+					referral_source: "Portfolio",
+				},
+			},
+			{
+				displayName: "Eva Larsson",
+				email: "eva.l@example.com",
+				status: "contacted",
+				fieldValues: {
+					project_type: "Website",
+					budget_range: "$5K–$15K",
+					deadline: Date.now() + 21 * 86_400_000,
+					referral_source: "Referral",
+				},
+			},
+			{
+				displayName: "Carlos Mendes",
+				email: "carlos@example.com",
+				status: "new",
+				fieldValues: {
+					project_type: "Video",
+					budget_range: "$1K–$5K",
+					referral_source: "Social media",
+				},
+			},
+		],
+		contacts: [
+			{
+				displayName: "Aria Thompson",
+				email: "aria@example.com",
+				phone: "+1 213 555 0310",
+				companyKey: "northwind-creative",
+				fieldValues: {
+					company_name: "Northwind Creative",
+					payment_terms: "50% upfront",
+				},
+			},
+			{
+				displayName: "Riku Yamada",
+				email: "riku@example.com",
+				fieldValues: {
+					payment_terms: "Milestone-based",
+				},
+			},
+		],
+		deals: [
+			{
+				title: "Northwind — Website redesign",
+				stageCode: "WIP",
+				value: 12000,
+				contactDisplayName: "Aria Thompson",
+				companyKey: "northwind-creative",
+				fieldValues: {
+					scope_summary: "Marketing site redesign — homepage + 6 inner pages + CMS migration.",
+					quoted_amount: 12000,
+					deposit_amount: 6000,
+					estimated_hours: 80,
+					hourly_rate: 150,
+					delivery_date: Date.now() + 21 * 86_400_000,
+				},
+				tags: ["Repeat client"],
+			},
+			{
+				title: "Riku — Brand identity",
+				stageCode: "REV",
+				value: 8500,
+				contactDisplayName: "Riku Yamada",
+				fieldValues: {
+					scope_summary: "Logo + brand guide + business card mockups.",
+					quoted_amount: 8500,
+					estimated_hours: 60,
+					delivery_date: Date.now() + 7 * 86_400_000,
+					revision_count: 2,
+				},
+			},
+		],
+		notes: [
+			{
+				content: "Northwind kickoff call — confirmed scope + signed deposit invoice.",
+				categoryName: "Brief",
+				anchorTo: { kind: "deal", title: "Northwind — Website redesign" },
+			},
+			{
+				content: "Riku requested third revision on logo color palette. Track scope.",
+				categoryName: "Review",
+				anchorTo: { kind: "deal", title: "Riku — Brand identity" },
+			},
+			{
+				content: "Tom asked for portfolio samples in agency style — send Wednesday.",
+				categoryName: "Today",
+				anchorTo: { kind: "lead", displayName: "Tom Bauer" },
+			},
+		],
+		reminders: [
+			{
+				title: "Northwind — homepage v1 to client",
+				dueOffsetDays: 3,
+				priority: "high",
+				source: "followup",
+				anchorTo: { kind: "deal", title: "Northwind — Website redesign" },
+			},
+			{
+				title: "Riku — present revised logo set",
+				dueOffsetDays: 1,
+				priority: "high",
+				source: "manual",
+				anchorTo: { kind: "deal", title: "Riku — Brand identity" },
+			},
+		],
+	},
 };

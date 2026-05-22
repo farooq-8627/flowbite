@@ -24,6 +24,7 @@ import {
 	Sun,
 	Tag,
 	Target,
+	Trash2,
 	UserCog,
 	Users,
 	Workflow,
@@ -299,6 +300,12 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 					label: "Export",
 					icon: Database,
 					description: "Export your CRM data as CSV or JSON",
+				},
+				{
+					id: "data.trash",
+					label: "Trash",
+					icon: Trash2,
+					description: "Restore or permanently remove deleted records",
 				},
 				{
 					id: "data.security",

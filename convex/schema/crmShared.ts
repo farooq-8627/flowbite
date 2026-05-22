@@ -31,7 +31,7 @@
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
 import { entityTypeForChatValidator } from "../_shared/entityCodes";
-import { orgScoped, softDelete, timestamps } from "../_shared/validators";
+import { aiExcluded, orgScoped, softDelete, timestamps } from "../_shared/validators";
 
 // ─── Notes ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +127,7 @@ export const notes = defineTable({
 	sortOrder: v.optional(v.number()),
 	embedding: v.optional(v.array(v.float64())),
 	...timestamps,
+	...aiExcluded,
 })
 	.index("by_entity", ["orgId", "entityType", "entityId"])
 	.index("by_entity_and_pinned", ["orgId", "entityType", "entityId", "isPinned", "createdAt"])
@@ -376,6 +377,7 @@ export const reminders = defineTable({
 	 * legacy rows. Mutations keep this fresh going forward.
 	 */
 	updatedAt: v.optional(v.number()),
+	...aiExcluded,
 })
 	.index("by_org_and_person", ["orgId", "personCode"])
 	.index("by_org_and_due", ["orgId", "dueAt"])

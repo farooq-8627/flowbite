@@ -88,6 +88,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, { label: string; descripti
 	activityLogs: { label: "Activity Logs" },
 	notifications: { label: "Notifications" },
 	files: { label: "Files" },
+	data: { label: "Data & Privacy" },
 };
 
 /** Module render order in the role-editor UI. */
@@ -109,6 +110,7 @@ export const PERMISSION_MODULE_ORDER: readonly string[] = [
 	"activityLogs",
 	"notifications",
 	"files",
+	"data",
 ];
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
@@ -645,6 +647,29 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Delete any file",
 		description: "Moderator-level — remove other members' files.",
 		defaultRoles: ["Owner", "Admin"],
+	},
+
+	// ── Data & privacy ──────────────────────────────────────────────────────
+	{
+		key: "data.viewTrash",
+		module: "data",
+		label: "View trash",
+		description: "See deleted records pending purge.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "data.restore",
+		module: "data",
+		label: "Restore deleted records",
+		description: "Bring soft-deleted records back from trash.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "data.export",
+		module: "data",
+		label: "Export data",
+		description: "Generate a GDPR data bundle.",
+		defaultRoles: ["Owner"],
 	},
 ] as const;
 

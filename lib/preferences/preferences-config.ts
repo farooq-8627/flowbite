@@ -55,7 +55,7 @@ export const PREFERENCE_DEFAULTS: PreferenceTypeMap = {
 	sidebar_collapsible: "icon",
 	content_layout: "centered",
 	navbar_style: "sticky",
-	theme_preset: "tangerine",
+	theme_preset: "soft-pop",
 	theme_mode: "system",
 	radius: "0.5",
 	font: "nunito-sans",

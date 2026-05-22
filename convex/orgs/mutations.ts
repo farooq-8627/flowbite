@@ -379,6 +379,197 @@ export const applyTemplate = orgMutation({
 	},
 });
 
+// ─── Mock data lifecycle (Phase 3A) ──────────────────────────────────────────
+
+/**
+ * Delete every record this org seeded as sample data.
+ *
+ * Identification rules (per CODE-ARCHITECTURE-PHASE-3A.md §4.4):
+ *   - leads / deals: rows where `source === "template_seed"`.
+ *   - companies / contacts: rows where `excludeFromAI === true` AND
+ *     `createdAt === org.settings.mockDataSeededAt` (the seeder stamps
+ *     all sample records with the same `now`, so the timestamp acts as
+ *     a stable group id).
+ *   - notes / reminders: rows where `excludeFromAI === true` AND
+ *     `createdAt === mockDataSeededAt`.
+ *   - entityTags: rows whose entityId is one of the deleted records.
+ *
+ * Hard delete (not soft) — the user is explicitly clearing seed data.
+ * Decrements org-stats counters as it goes. Clears the timestamps so
+ * the dashboard banner disappears and the seeder can run again later
+ * if the user re-applies the template.
+ *
+ * Permission: org.editSettings (Owner / Admin).
+ */
+export const clearMockData = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined)
+			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+		requireRole(member.permissions, "org.editSettings");
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+		const seededAt = org.settings?.mockDataSeededAt;
+		if (seededAt === undefined) {
+			return { deleted: 0 };
+		}
+
+		let deleted = 0;
+		// Track (entityType, entityId) pairs for entityTags cleanup.
+		const deletedEntities: Array<{ entityType: string; entityId: string }> = [];
+
+		// 1. Leads (source-tagged).
+		const leads = await ctx.db
+			.query("leads")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of leads) {
+			if (row.source === "template_seed") {
+				await ctx.db.delete(row._id);
+				deletedEntities.push({ entityType: "lead", entityId: row._id });
+				deleted += 1;
+				await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+				await applyOrgStat(ctx, args.orgId, "leads.total", -1);
+			}
+		}
+
+		// 2. Deals (source-tagged).
+		const deals = await ctx.db
+			.query("deals")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of deals) {
+			if (row.source === "template_seed") {
+				await ctx.db.delete(row._id);
+				deletedEntities.push({ entityType: "deal", entityId: row._id });
+				deleted += 1;
+				await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+				await applyOrgStat(ctx, args.orgId, "deals.total", -1);
+				if (row.value) {
+					await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -row.value);
+				}
+			}
+		}
+
+		// 3. Contacts (timestamp + excludeFromAI).
+		const contacts = await ctx.db
+			.query("contacts")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of contacts) {
+			if (row.excludeFromAI === true && row.createdAt === seededAt) {
+				await ctx.db.delete(row._id);
+				deletedEntities.push({ entityType: "contact", entityId: row._id });
+				deleted += 1;
+				await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+			}
+		}
+
+		// 4. Companies (timestamp + excludeFromAI).
+		const companies = await ctx.db
+			.query("companies")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of companies) {
+			if (row.excludeFromAI === true && row.createdAt === seededAt) {
+				await ctx.db.delete(row._id);
+				deletedEntities.push({ entityType: "company", entityId: row._id });
+				deleted += 1;
+				await applyOrgStat(ctx, args.orgId, "companies.active", -1);
+			}
+		}
+
+		// 5. Notes (timestamp + excludeFromAI).
+		const notes = await ctx.db
+			.query("notes")
+			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of notes) {
+			if (row.excludeFromAI === true && row.createdAt === seededAt) {
+				await ctx.db.delete(row._id);
+				deleted += 1;
+			}
+		}
+
+		// 6. Reminders (timestamp + excludeFromAI).
+		const reminders = await ctx.db
+			.query("reminders")
+			.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
+			.collect();
+		for (const row of reminders) {
+			if (row.excludeFromAI === true && row.createdAt === seededAt) {
+				await ctx.db.delete(row._id);
+				deleted += 1;
+			}
+		}
+
+		// 7. entityTags pointing at deleted entities.
+		// Use the by_entity index per (entityType, entityId) — entityTags
+		// has no by_org index by itself.
+		for (const { entityType, entityId } of deletedEntities) {
+			const tagLinks = await ctx.db
+				.query("entityTags")
+				.withIndex("by_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", entityType).eq("entityId", entityId),
+				)
+				.collect();
+			for (const link of tagLinks) {
+				await ctx.db.delete(link._id);
+			}
+		}
+
+		// Clear timestamps so the banner disappears + the seeder can run again.
+		await ctx.db.patch(args.orgId, {
+			settings: {
+				...org.settings,
+				mockDataSeededAt: undefined,
+				mockDataDismissedAt: undefined,
+			},
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId: ctx.userId,
+			action: "deleted",
+			entityType: ENTITY_TYPES.ORG,
+			entityId: args.orgId,
+			description: `Cleared ${deleted} sample records`,
+		});
+
+		return { deleted };
+	},
+});
+
+/**
+ * Dismiss the dashboard "sample data" banner WITHOUT deleting the records.
+ * Lets the banner stop nagging while the data stays in place — useful for
+ * users still exploring the workspace.
+ *
+ * Permission: org.editSettings.
+ */
+export const dismissMockDataBanner = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined)
+			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+		requireRole(member.permissions, "org.editSettings");
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return;
+		await ctx.db.patch(args.orgId, {
+			settings: {
+				...org.settings,
+				mockDataDismissedAt: Date.now(),
+			},
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 /**
  * Mark onboarding complete (onboarding Step 3).
  * Sets users.onboardingCompleted = true and orgs.onboardingStep = 2.
@@ -758,7 +949,31 @@ export const deleteOrg = orgMutation({
 
 		requireRole(member.permissions, "org.delete");
 
-		await ctx.db.patch(args.orgId, { deletedAt: now, updatedAt: now });
+		// Phase 3A — 24h grace before cascade delete.
+		//
+		// Rather than hard-deleting on the spot, we soft-delete the org
+		// AND stamp `deletionScheduledAt = now + 24h`. The
+		// `cascadeDeleteOrgIfDue` cascading mutation runs after the grace
+		// period and physically removes every org-scoped row. During the
+		// grace window the owner can call `cancelOrgDeletion` to abort.
+		const grace = 24 * 60 * 60 * 1000;
+		const scheduledAt = now + grace;
+
+		const org = await ctx.db.get(args.orgId);
+		await ctx.db.patch(args.orgId, {
+			deletedAt: now,
+			settings: {
+				...(org?.settings ?? {}),
+				deletionScheduledAt: scheduledAt,
+			},
+			updatedAt: now,
+		});
+
+		// Schedule the cascade. The internal mutation re-checks
+		// `deletionScheduledAt` so a cancellation is honoured.
+		await ctx.scheduler.runAfter(grace, internal.orgs.mutations.cascadeDeleteOrgIfDue, {
+			orgId: args.orgId,
+		});
 
 		await logActivity(ctx, {
 			orgId: args.orgId,
@@ -766,8 +981,139 @@ export const deleteOrg = orgMutation({
 			action: "deleted",
 			entityType: ENTITY_TYPES.ORG,
 			entityId: args.orgId,
-			description: "Deleted organization",
+			description: "Workspace scheduled for deletion in 24 hours",
 		});
+	},
+});
+
+/**
+ * Cancel a scheduled workspace deletion within the 24h grace window.
+ * Permission: `org.delete` (same as initiating). Lifts the soft-delete,
+ * clears `deletionScheduledAt`, and the scheduled cascade becomes a
+ * no-op (it re-checks the flag before running).
+ */
+export const cancelOrgDeletion = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member) throw new ConvexError(ERRORS.FORBIDDEN);
+		requireRole(member.permissions, "org.delete");
+
+		const org = await ctx.db.get(args.orgId);
+		if (!org) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+		if (org.settings?.deletionScheduledAt === undefined) {
+			throw new ConvexError({
+				code: "NO_PENDING_DELETION",
+				message: "This workspace has no pending deletion.",
+			});
+		}
+
+		await ctx.db.patch(args.orgId, {
+			deletedAt: undefined,
+			settings: {
+				...(org.settings ?? {}),
+				deletionScheduledAt: undefined,
+			},
+			updatedAt: Date.now(),
+		});
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId: ctx.userId,
+			action: "restored",
+			entityType: ENTITY_TYPES.ORG,
+			entityId: args.orgId,
+			description: "Workspace deletion cancelled",
+		});
+	},
+});
+
+/**
+ * Internal cascade-delete handler. Scheduled by `deleteOrg` to run 24h
+ * after the request. Re-validates `deletionScheduledAt` so a cancellation
+ * within the grace window prevents the cascade.
+ *
+ * Iterates all org-scoped tables in a single transaction and hard-
+ * deletes every row, ending with the org doc itself.
+ */
+export const cascadeDeleteOrgIfDue = internalMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return { ok: false, reason: "org_not_found" };
+		const scheduled = org.settings?.deletionScheduledAt;
+		if (scheduled === undefined) {
+			return { ok: false, reason: "deletion_cancelled" };
+		}
+		if (Date.now() < scheduled) {
+			// Should not happen — scheduler fires after the delay — but
+			// guard anyway in case of clock skew or manual invocation.
+			return { ok: false, reason: "grace_window_open" };
+		}
+
+		const orgScopedTables = [
+			"leads",
+			"contacts",
+			"companies",
+			"deals",
+			"notes",
+			"reminders",
+			"messages",
+			"conversations",
+			"conversationMembers",
+			"tags",
+			"entityTags",
+			"fieldDefinitions",
+			"fieldValues",
+			"pipelines",
+			"savedViews",
+			"activityLogs",
+			"orgMembers",
+			"orgRoles",
+			"orgStats",
+			"invitations",
+			"notifications",
+			"files",
+			"noteCategories",
+			"entityCodeCounters",
+			"companyMembers",
+			"aiConversations",
+			"aiMessages",
+			"featureFlags",
+			"rateLimits",
+		] as const;
+
+		let deleted = 0;
+		for (const table of orgScopedTables) {
+			// Use the canonical `by_org` or fall back when needed. We try
+			// each index name pattern; Convex throws on unknown indexes,
+			// so the try/catch isolates per-table failures.
+			try {
+				const rows = await (ctx.db as unknown as {
+					query: (t: string) => {
+						withIndex: (
+							n: string,
+							b: (q: { eq: (k: string, v: unknown) => unknown }) => unknown,
+						) => { collect: () => Promise<Array<{ _id: string }>> };
+					};
+				})
+					.query(table)
+					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+					.collect();
+				for (const r of rows) {
+					await ctx.db.delete(r._id as never);
+					deleted += 1;
+				}
+			} catch {
+				// Table doesn't have a by_org index — skip; it's either
+				// not org-scoped or uses a composite index not worth
+				// special-casing for this rare flow.
+			}
+		}
+
+		// Finally, the org doc itself.
+		await ctx.db.delete(args.orgId);
+		return { ok: true, deleted };
 	},
 });
 

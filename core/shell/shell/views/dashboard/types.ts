@@ -30,5 +30,8 @@ export interface DashboardStats {
 	companiesCount: number;
 	currency: string;
 	remindersDueToday: number;
+	tasksDueToday: number;
+	tasksOverdue: number;
+	tasksDoneThisWeek: number;
 	recentActivity: ActivityItem[];
 }

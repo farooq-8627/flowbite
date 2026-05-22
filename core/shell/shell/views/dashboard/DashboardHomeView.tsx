@@ -32,6 +32,7 @@ import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineAc
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { AIBriefingCard } from "./cards/AIBriefingCard";
 import { MetricStrip, MockDataBanner, PipelineCard, RemindersCard, TodaySummaryCard } from "./cards";
 import { resolveWidgets } from "./cards/WidgetRegistry";
 
@@ -99,6 +100,11 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					mockDataSeededAt={settings?.mockDataSeededAt}
 					mockDataDismissedAt={settings?.mockDataDismissedAt}
 				/>
+
+				{/* AI Morning Briefing — full-width card; only shown if template opted in. */}
+				{isEnabled("ai.morningBriefing") && (
+					<AIBriefingCard orgId={orgId} orgSlug={orgSlug} />
+				)}
 
 				{/* Row 1 — Registry-driven metric strip */}
 				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />

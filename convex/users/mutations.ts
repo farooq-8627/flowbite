@@ -161,17 +161,36 @@ export const updatePreferences = authenticatedMutation({
 				),
 			),
 		),
+		// Phase 3B — AI preferences
+		aiDefaultModel: v.optional(v.string()),
+		aiDefaultProvider: v.optional(v.string()),
+		aiAutoContextLoad: v.optional(v.boolean()),
+		aiBriefingEnabled: v.optional(v.boolean()),
+		aiContextCardCollapsed: v.optional(v.boolean()),
+		aiPanelOpenByDefault: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
 		const existing = ctx.user.preferences ?? {};
+
+		// Patch only the keys present in `args`. Each AI field is independently
+		// optional so a single setter (e.g. setting just `aiDefaultModel`) does
+		// not clobber unrelated fields. The previous handler silently dropped
+		// every AI field — that was the root cause of the model picker not
+		// persisting changes.
+		const next: typeof existing = { ...existing };
+		if (args.entityDefaultView !== undefined) next.entityDefaultView = args.entityDefaultView;
+		if (args.savedViews !== undefined) next.savedViews = args.savedViews;
+		if (args.aiDefaultModel !== undefined) next.aiDefaultModel = args.aiDefaultModel;
+		if (args.aiDefaultProvider !== undefined) next.aiDefaultProvider = args.aiDefaultProvider;
+		if (args.aiAutoContextLoad !== undefined) next.aiAutoContextLoad = args.aiAutoContextLoad;
+		if (args.aiBriefingEnabled !== undefined) next.aiBriefingEnabled = args.aiBriefingEnabled;
+		if (args.aiContextCardCollapsed !== undefined)
+			next.aiContextCardCollapsed = args.aiContextCardCollapsed;
+		if (args.aiPanelOpenByDefault !== undefined)
+			next.aiPanelOpenByDefault = args.aiPanelOpenByDefault;
+
 		await ctx.db.patch(ctx.userId, {
-			preferences: {
-				...existing,
-				...(args.entityDefaultView !== undefined
-					? { entityDefaultView: args.entityDefaultView }
-					: {}),
-				...(args.savedViews !== undefined ? { savedViews: args.savedViews } : {}),
-			},
+			preferences: next,
 			updatedAt: Date.now(),
 		});
 	},

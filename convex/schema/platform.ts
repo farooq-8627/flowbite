@@ -69,3 +69,18 @@ export const rateLimits = defineTable({
 	resetAt: v.number(),
 	updatedAt: v.number(),
 }).index("by_scope_key", ["scope", "key"]);
+
+/**
+ * Platform-wide AI context.
+ *
+ * Single row keyed "main". Injected into Layer 1 of every AI system prompt.
+ * Only super_admin can write. Platform_owner edits from admin UI.
+ */
+export const platformContext = defineTable({
+	key: v.string(),              // "main" — only one record
+	version: v.string(),          // "v1.0.0" — track changes
+	content: v.string(),          // Markdown injected into every system prompt
+	rules: v.optional(v.array(v.string())), // Explicit AI dos and don'ts
+	updatedBy: v.id("users"),
+	...timestamps,
+}).index("by_key", ["key"]);

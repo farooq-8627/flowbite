@@ -69,6 +69,32 @@ export type OrgSettings = {
 			allowedMimeCategories?: string[];
 			maxSizeMb?: number;
 		};
+		/**
+		 * Phase 3A — dashboard widget rank list (template-driven). Each
+		 * entry is a widget key; order = display priority.
+		 */
+		dashboardMetrics?: string[];
+		/**
+		 * Phase 3A — per-org soft-delete retention (days). Range 7–365.
+		 * Default 30. Surfaced in platform-owner dashboard.
+		 */
+		softDeleteRetentionDays?: number;
+		/**
+		 * Phase 3A — set when the template seeder created sample records.
+		 * Drives the dashboard banner and gates the "Delete sample data"
+		 * button in Settings → Workspace.
+		 */
+		mockDataSeededAt?: number;
+		/**
+		 * Phase 3A — user dismissed the dashboard mock-data banner. The
+		 * data may still be there; only the banner is gone. Settings UI
+		 * still surfaces the button while `mockDataSeededAt` is set.
+		 */
+		mockDataDismissedAt?: number;
+		/**
+		 * Phase 3A GDPR — countdown timer for cascade-delete of the org.
+		 */
+		deletionScheduledAt?: number;
 	} | null;
 };
 

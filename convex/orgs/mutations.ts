@@ -34,7 +34,6 @@ import {
 import { RESERVED_SLUGS, validateSlug } from "../_shared/reservedSlugs";
 import { logActivity } from "../activityLogs/helpers";
 import { INDUSTRY_ID_ALIASES, INDUSTRY_TEMPLATES } from "../crm/fields/templates/registry";
-import { seedNoteCategoriesForOrg } from "../crm/shared/noteCategories/internal";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
 
@@ -167,9 +166,12 @@ export const createOrg = authenticatedMutation({
 		// Counter — workspace creator is the first active member.
 		await applyOrgStat(ctx, orgId, "members.active", +1);
 
-		// Seed default sticky-note categories (Yellow / Blue / Green / …).
-		// Idempotent — calling again is a no-op.
-		await seedNoteCategoriesForOrg(ctx, orgId, now);
+		// Note: sticky-note categories are seeded in step 2 of onboarding by
+		// `updateOrgIndustry → setupWorkspaceFromTemplate`, which seeds the
+		// industry-aware semantic categories (Urgent / Today / Done / …).
+		// We deliberately do NOT seed the legacy color categories
+		// (Yellow / Blue / Green / Pink / Purple / Gray) at org creation —
+		// they would be overwritten one screen later by the template.
 
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, { defaultOrgId: orgId, updatedAt: now });
@@ -248,8 +250,18 @@ export const create = authenticatedMutation({
 
 		await applyOrgStat(ctx, orgId, "members.active", +1);
 
-		// Seed default sticky-note categories (idempotent).
-		await seedNoteCategoriesForOrg(ctx, orgId, now);
+		// Bootstrap the workspace with the generic template so the new org
+		// gets pipelines, default fields, semantic note categories, and a
+		// dashboard-metrics list out of the box. `create` is used by the
+		// "create another org" path (settings → workspaces) and by tests
+		// that don't go through onboarding's industry picker. Onboarding
+		// itself calls `createOrg` then `updateOrgIndustry` which applies
+		// the user's chosen industry template.
+		await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
+			orgId,
+			templateId: "generic",
+			actorUserId: ctx.userId,
+		});
 
 		if (!ctx.user.defaultOrgId) {
 			await ctx.db.patch(ctx.userId, {
@@ -723,6 +735,17 @@ export const update = orgMutation({
 						maxSizeMb: v.optional(v.number()),
 					}),
 				),
+				// Phase 3A — owner-tunable settings surfaced in Settings → Workspace.
+				/** Ordered list of dashboard widget keys; renders top-to-bottom. */
+				dashboardMetrics: v.optional(v.array(v.string())),
+				/** Per-org soft-delete retention in days (default 30, range 7–365). */
+				softDeleteRetentionDays: v.optional(v.number()),
+				/** Timestamp of mock-data seed; gates the MockDataBanner + idempotency. */
+				mockDataSeededAt: v.optional(v.number()),
+				/** Timestamp the mock-data banner was dismissed by the user. */
+				mockDataDismissedAt: v.optional(v.number()),
+				/** Set when the owner schedules an org-level GDPR cascade-delete. */
+				deletionScheduledAt: v.optional(v.number()),
 			}),
 		),
 		aiContext: v.optional(v.string()),

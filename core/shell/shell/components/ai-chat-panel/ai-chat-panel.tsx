@@ -1,96 +1,30 @@
 "use client";
-
-import { Bot, Send } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Sidebar,
-	SidebarContent,
-	SidebarFooter,
-	SidebarHeader,
-	SidebarMenu,
-	SidebarMenuButton,
-	SidebarMenuItem,
-} from "@/components/ui/sidebar";
+import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
+/**
+ * core/shell/shell/components/ai-chat-panel/ai-chat-panel.tsx
+ *
+ * Shell-level mount point for the AI chat panel.
+ * Thin wrapper — all logic lives in core/ai/components/ChatSheet.tsx.
+ *
+ * Two variants:
+ *   AIChatPanel       — Desktop sidebar slot (uses Sidebar primitives)
+ *   AIChatPanelContent — Mobile Sheet content (plain div)
+ */
+import { ChatSheet } from "@/core/ai/components/ChatSheet";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 
-/**
- * AIChatPanel - Right sidebar AI assistant panel for desktop (left in RTL)
- * Uses Sidebar primitives and adapts to user's sidebar variant preference
- */
 export function AIChatPanel({ side = "right" }: { side?: "left" | "right" }) {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
 
 	return (
 		<Sidebar side={side} variant={sidebar_variant} collapsible="offcanvas">
-			<SidebarHeader>
-				<SidebarMenu>
-					<SidebarMenuItem>
-						<SidebarMenuButton>
-							<Bot />
-							<span className="font-semibold text-base">AI Assistant</span>
-						</SidebarMenuButton>
-					</SidebarMenuItem>
-				</SidebarMenu>
-			</SidebarHeader>
-			<SidebarContent>
-				<ScrollArea className="flex-1 p-4">
-					<div className="space-y-4">
-						<div className="flex items-start gap-3">
-							<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary">
-								<Bot className="size-4 text-primary-foreground" />
-							</div>
-							<p className="flex-1 text-sm">
-								Hello! I'm your AI assistant. How can I help you today?
-							</p>
-						</div>
-					</div>
-				</ScrollArea>
+			<SidebarContent className="p-0">
+				<ChatSheet />
 			</SidebarContent>
-			<SidebarFooter>
-				<div className="flex gap-2 p-2">
-					<Input placeholder="Ask me anything..." className="flex-1" />
-					<Button size="icon">
-						<Send className="size-4" />
-					</Button>
-				</div>
-			</SidebarFooter>
 		</Sidebar>
 	);
 }
 
-/**
- * AIChatPanelContent - Standalone chat panel content for mobile/tablet Sheet
- * Does not use Sidebar primitives to avoid conflicts with Sheet component
- */
 export function AIChatPanelContent() {
-	return (
-		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-			<div className="flex items-center gap-2 border-b border-sidebar-border p-4 shrink-0">
-				<Bot className="size-4" />
-				<span className="font-semibold text-base">AI Assistant</span>
-			</div>
-			<ScrollArea className="flex-1 p-4">
-				<div className="space-y-4">
-					<div className="flex items-start gap-3">
-						<div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary">
-							<Bot className="size-4 text-primary-foreground" />
-						</div>
-						<p className="flex-1 text-sm">
-							Hello! I'm your AI assistant. How can I help you today?
-						</p>
-					</div>
-				</div>
-			</ScrollArea>
-			<div className="border-t border-sidebar-border p-4 shrink-0">
-				<div className="flex gap-2">
-					<Input placeholder="Ask me anything..." className="flex-1" />
-					<Button size="icon">
-						<Send className="size-4" />
-					</Button>
-				</div>
-			</div>
-		</div>
-	);
+	return <ChatSheet />;
 }

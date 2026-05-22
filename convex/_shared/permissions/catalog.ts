@@ -592,6 +592,34 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "View AI history",
 		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
 	},
+	{
+		key: "ai.byokOrg",
+		module: "ai",
+		label: "Manage org-level AI API keys (BYOK)",
+		description: "Add, remove, and rotate API keys that apply to the whole workspace.",
+		defaultRoles: ["Owner"],
+	},
+	{
+		key: "ai.byokUser",
+		module: "ai",
+		label: "Manage own AI API key",
+		description: "Add or remove their own personal API key (user-scope BYOK).",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "ai.briefingRefresh",
+		module: "ai",
+		label: "Manually refresh AI morning briefing",
+		description: "Triggers an immediate re-generation. Counts against message quota.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		key: "ai.expandTools",
+		module: "ai",
+		label: "Use advanced AI tool layers",
+		description: "Allow AI to load expanded tool sets (pipelines, fields, settings, bulk ops).",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
 
 	// ── Activity Logs ────────────────────────────────────────────────────────
 	{

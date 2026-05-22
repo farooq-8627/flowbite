@@ -576,6 +576,7 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 	// ─── Dashboard widgets (ranked list — top = first row) ────────────────
 	// Order matches §9.6 of CODE-ARCHITECTURE-PHASE-3A.md.
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",

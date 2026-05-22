@@ -400,3 +400,30 @@ export const getDashboardStats = orgQuery({
 		};
 	},
 });
+
+/**
+ * Internal query for processChat: get a member's permissions + org plan in one call.
+ * Returns null if user is not a member of the org.
+ */
+export const getMemberWithPermissions = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const org = await ctx.db.get(args.orgId);
+		if (!org || org.deletedAt !== undefined) return null;
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", args.userId),
+			)
+			.first();
+		if (!member || member.deletedAt !== undefined) return null;
+		const orgRole = await ctx.db.get(member.roleId);
+		if (!orgRole) return null;
+		return {
+			permissions: orgRole.permissions as string[],
+			plan: (org.plan as string) ?? "free",
+			settings: (org.settings ?? {}) as Record<string, unknown>,
+			aiMessagesUsed: (org as Record<string, unknown>).aiMessagesUsedThisPeriod as number ?? 0,
+		};
+	},
+});

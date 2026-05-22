@@ -10,6 +10,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
 import type { OrgSettings } from "../../types";
+import { AIPreferencesSection } from "./ai/AIPreferencesSection";
+import { ApiKeySection } from "./ai/ApiKeySection";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
@@ -144,6 +146,8 @@ export function AIGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> })
 	return (
 		<div className="grid gap-6">
 			<BusinessContextSection org={org} orgId={orgId} />
+			<AIPreferencesSection />
+			<ApiKeySection orgId={orgId} />
 			<UsageSection org={org} />
 		</div>
 	);

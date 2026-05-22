@@ -120,3 +120,21 @@ export const getByEmail = internalQuery({
 			.unique();
 	},
 });
+
+/**
+ * Internal query: get AI preferences for a user.
+ * Used by processChat to resolve model defaults.
+ */
+export const getPreferences = internalQuery({
+	args: { userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const user = await ctx.db.get(args.userId);
+		if (!user) return null;
+		return {
+			aiDefaultModel: user.preferences?.aiDefaultModel ?? null,
+			aiDefaultProvider: user.preferences?.aiDefaultProvider ?? null,
+			aiAutoContextLoad: user.preferences?.aiAutoContextLoad ?? true,
+			aiBriefingEnabled: user.preferences?.aiBriefingEnabled ?? true,
+		};
+	},
+});

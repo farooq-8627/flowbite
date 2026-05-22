@@ -28,6 +28,7 @@ import {
 	ClockIcon,
 	DollarSignIcon,
 	TrendingUpIcon,
+	Sparkles,
 	UsersIcon,
 } from "lucide-react";
 import { formatCurrency } from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
@@ -152,6 +153,17 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 		icon: <TrendingUpIcon className="size-3.5" />,
 		accent: "text-orange-600",
 		placeholder: true,
+	},
+	// Phase 3B — AI Morning Briefing. Renders as a full-width card via AIBriefingCard.
+	// The "get" returns a stub here because the briefing widget renders its own card,
+	// not a stat tile — the dashboard view checks for this key and renders AIBriefingCard
+	// at the top of the layout.
+	"ai.morningBriefing": {
+		key: "ai.morningBriefing",
+		label: "AI briefing",
+		get: () => "—",
+		icon: <Sparkles className="size-3.5" />,
+		accent: "text-primary",
 	},
 };
 

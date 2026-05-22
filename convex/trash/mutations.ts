@@ -10,7 +10,6 @@
 import { ConvexError, v } from "convex/values";
 import { orgMutation } from "../_functions/authenticated";
 import { internalMutation } from "../_generated/server";
-import { ENTITY_TYPES } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";
 import { requireRole } from "../_shared/permissions";

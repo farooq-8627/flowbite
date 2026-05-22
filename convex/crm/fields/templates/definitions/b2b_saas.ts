@@ -539,6 +539,7 @@ export const b2bSaasTemplate: IndustryTemplate = {
 
 	// ─── Dashboard widgets (ranked) ────────────────────────────────────────
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"deals.open",
 		"deals.pipelineValue",
 		"deals.won",

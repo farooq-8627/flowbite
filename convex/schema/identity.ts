@@ -45,6 +45,13 @@ export const users = defineTable({
 					),
 				),
 			),
+			// Phase 3B — AI preferences
+			aiDefaultModel: v.optional(v.string()),        // "claude-sonnet-4-5"
+			aiDefaultProvider: v.optional(v.string()),     // "anthropic"
+			aiAutoContextLoad: v.optional(v.boolean()),    // default true
+			aiBriefingEnabled: v.optional(v.boolean()),    // default true
+			aiContextCardCollapsed: v.optional(v.boolean()), // UI state
+			aiPanelOpenByDefault: v.optional(v.boolean()), // default false mobile, true desktop
 		}),
 	),
 	...timestamps,

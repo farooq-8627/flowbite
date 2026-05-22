@@ -64,4 +64,22 @@ crons.interval(
  */
 crons.interval("purge-old-trash", { hours: 24 }, internal.trash.mutations.purgeOldTrash, {});
 
+/**
+ * Daily AI Morning Briefing generation.
+ *
+ * Iterates active users (lastActiveAt within 14 days, briefing opt-in) and
+ * generates a Haiku-tier briefing per user. Throttled to 1 req/sec to stay
+ * under provider rate limits. Briefings are cached for 24h in `aiBriefings`.
+ *
+ * Manual refresh available via `ai.briefingsPublic.refreshNow` mutation —
+ * counts against the user's AI message quota when triggered manually.
+ */
+crons.interval(
+	"generate-ai-briefings",
+	{ hours: 24 },
+	// biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern (briefingsActions.ts is "use node" file)
+	"ai/briefingsActions:generateForActiveUsers" as any,
+	{},
+);
+
 export default crons;

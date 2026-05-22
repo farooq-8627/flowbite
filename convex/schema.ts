@@ -41,6 +41,7 @@ export default defineSchema({
 	platformTemplates: platform.platformTemplates,
 	featureFlags: platform.featureFlags,
 	rateLimits: platform.rateLimits,
+	platformContext: platform.platformContext,
 
 	// CRM — entities
 	leads: crmEntities.leads,
@@ -76,4 +77,6 @@ export default defineSchema({
 	// AI (Phase 3)
 	aiConversations: ai.aiConversations,
 	aiMessages: ai.aiMessages,
+	orgAiKeys: ai.orgAiKeys,
+	aiBriefings: ai.aiBriefings,
 });

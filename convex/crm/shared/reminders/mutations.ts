@@ -47,12 +47,7 @@ export const create = orgMutation({
 		),
 		/** Optional triage priority — used by the Follow-ups view for sort/chip color. */
 		priority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("normal"),
-				v.literal("high"),
-				v.literal("urgent"),
-			),
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
 		),
 	},
 	handler: async (ctx, args) => {
@@ -184,12 +179,7 @@ export const update = orgMutation({
 		assignedTo: v.optional(v.id("users")),
 		/** Optional priority change — used by the Follow-ups view's triage chip. */
 		priority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("normal"),
-				v.literal("high"),
-				v.literal("urgent"),
-			),
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
 		),
 	},
 	handler: async (ctx, args) => {
@@ -319,12 +309,7 @@ export const createFollowup = orgMutation({
 		 * (fallback: "normal").
 		 */
 		priority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("normal"),
-				v.literal("high"),
-				v.literal("urgent"),
-			),
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
 		),
 	},
 	handler: async (ctx, args) => {
@@ -338,7 +323,15 @@ export const createFollowup = orgMutation({
 
 		// Resolve org-level defaults for unset fields.
 		const org = await ctx.db.get(args.orgId);
-		const followupDefaults = (org?.settings as { followupDefaults?: { defaultDueOffsetDays?: number; defaultPriority?: "low" | "normal" | "high" | "urgent" } })?.followupDefaults ?? {};
+		const followupDefaults =
+			(
+				org?.settings as {
+					followupDefaults?: {
+						defaultDueOffsetDays?: number;
+						defaultPriority?: "low" | "normal" | "high" | "urgent";
+					};
+				}
+			)?.followupDefaults ?? {};
 		const offsetDays = Math.max(
 			1,
 			Math.min(365, followupDefaults.defaultDueOffsetDays ?? DEFAULT_FOLLOWUP_OFFSET_DAYS),

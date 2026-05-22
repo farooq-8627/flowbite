@@ -7,6 +7,7 @@ import {
 	CalendarClockIcon,
 	CheckCircle2Icon,
 	ClockIcon,
+	HistoryIcon,
 	MailIcon,
 	MessageSquareTextIcon,
 	PhoneIcon,
@@ -116,7 +117,7 @@ export function OverviewCard({ personCode, compact = false, className }: Props) 
 					/>
 
 					{!compact && (
-						<div className="grid gap-3 lg:grid-cols-3">
+						<div className="grid gap-3 lg:grid-cols-2">
 							<RecentMessagesCard
 								personCode={personCode}
 								profileBase={profileBaseHref}
@@ -124,6 +125,10 @@ export function OverviewCard({ personCode, compact = false, className }: Props) 
 								personEntity={entity}
 								messages={messages as Array<Doc<"messages">> | undefined}
 								limit={PER_CARD_LIMIT}
+							/>
+							<RecentActivityCard
+								personCode={personCode}
+								profileBase={profileBaseHref}
 							/>
 							<FollowupsCard
 								personCode={personCode}
@@ -619,6 +624,74 @@ function DealRow({ deal }: { deal: Doc<"deals"> }) {
 				</span>
 			)}
 		</li>
+	);
+}
+
+// ─── Recent activity card ───────────────────────────────────────────────────
+
+function RecentActivityCard({
+	personCode,
+	profileBase,
+}: {
+	personCode: string;
+	profileBase: string | null;
+}) {
+	const { orgId } = useCurrentOrg();
+	const events = useQuery(
+		api.crm.shared.timeline.queries.getForPerson,
+		orgId ? { orgId, personCode, limit: 4 } : "skip",
+	) as
+		| Array<{
+				_id: string;
+				_entryType: "activity" | "note" | "reminder";
+				createdAt: number;
+				action?: string;
+				description?: string;
+				title?: string;
+				body?: string;
+				_color?: string;
+		  }>
+		| undefined;
+
+	const items = (events ?? []).slice(0, 4);
+	const href = profileBase ? `${profileBase}#timeline.feed` : null;
+
+	return (
+		<MiniCard
+			title="Recent activity"
+			Icon={HistoryIcon}
+			href={href}
+			emptyLabel="No activity yet"
+			isEmpty={items.length === 0}
+		>
+			<ul className="flex flex-col gap-1.5 text-[11px]">
+				{items.map((e) => {
+					const label =
+						e.description ??
+						e.title ??
+						e.body ??
+						e.action ??
+						(e._entryType === "note"
+							? "Note added"
+							: e._entryType === "reminder"
+								? "Reminder set"
+								: "Activity");
+					return (
+						<li key={e._id} className="flex items-start gap-1.5">
+							<span
+								aria-hidden
+								className="mt-1 inline-block size-1.5 shrink-0 rounded-full"
+								style={{ backgroundColor: e._color ?? "#6b7280" }}
+							/>
+							<span className="min-w-0 flex-1 truncate text-foreground">{label}</span>
+							<span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+								{relativeShort(e.createdAt)}
+							</span>
+						</li>
+					);
+				})}
+			</ul>
+		</MiniCard>
 	);
 }
 

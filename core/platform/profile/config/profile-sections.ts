@@ -139,8 +139,7 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 		id: "files.by-deal-stage",
 		groupId: "files",
 		label: "By deal & stage",
-		description:
-			"The same files, grouped per deal and per stage they were uploaded against.",
+		description: "The same files, grouped per deal and per stage they were uploaded against.",
 		keywords: ["files", "deal", "stage", "pipeline", "per-stage", "grouped"],
 	},
 

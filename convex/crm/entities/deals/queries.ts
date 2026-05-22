@@ -300,7 +300,8 @@ export const getStageFieldsToFill = orgQuery({
 			for (const fr of fileRows) {
 				if (fr.deletedAt) continue;
 				if (fr.fieldKey) {
-					fileCountsByFieldKey[fr.fieldKey] = (fileCountsByFieldKey[fr.fieldKey] ?? 0) + 1;
+					fileCountsByFieldKey[fr.fieldKey] =
+						(fileCountsByFieldKey[fr.fieldKey] ?? 0) + 1;
 				}
 			}
 		}
@@ -477,7 +478,8 @@ export const listDealsMissingFieldsByPipeline = orgQuery({
 				for (const fr of fileRows) {
 					if (fr.deletedAt) continue;
 					if (fr.fieldKey) {
-						fileCountsByFieldKey[fr.fieldKey] = (fileCountsByFieldKey[fr.fieldKey] ?? 0) + 1;
+						fileCountsByFieldKey[fr.fieldKey] =
+							(fileCountsByFieldKey[fr.fieldKey] ?? 0) + 1;
 					}
 				}
 			}

@@ -40,16 +40,13 @@ interface TimelineCardEntryProps {
 export function TimelineCardEntry({ entry, isLast, gapPx }: TimelineCardEntryProps) {
 	const memberMap = useOrgMemberMap();
 	const authorId =
-		entry._entryType === "note"
-			? entry.authorId
-			: (entry as TimelineReminderEntry).assignedTo;
+		entry._entryType === "note" ? entry.authorId : (entry as TimelineReminderEntry).assignedTo;
 	const member = memberMap.get(String(authorId));
 	const actorName = member?.user?.name ?? member?.user?.email ?? "Someone";
 	const avatarUrl = member?.user?.avatarUrl;
 
 	// Synthesise an action so the theme resolver works uniformly.
-	const synthesisedAction =
-		entry._entryType === "note" ? "note_created" : "reminder_created";
+	const synthesisedAction = entry._entryType === "note" ? "note_created" : "reminder_created";
 
 	const theme = resolveActionTheme({
 		entityType: entry._entryType,
@@ -63,9 +60,7 @@ export function TimelineCardEntry({ entry, isLast, gapPx }: TimelineCardEntryPro
 			<div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-1">
 				{/* Title row — same pattern as bare entry */}
 				<div className="flex items-baseline justify-between gap-3">
-					<div className="text-sm font-semibold text-foreground">
-						{theme.titleVerb}
-					</div>
+					<div className="text-sm font-semibold text-foreground">{theme.titleVerb}</div>
 					<TrailingMeta
 						time={entry.createdAt}
 						actorName={actorName}
@@ -147,10 +142,7 @@ function ReminderBody({ entry }: { entry: TimelineReminderEntry }) {
 						aria-label="Completed"
 					/>
 				) : (
-					<Clock
-						className="mt-0.5 size-4 shrink-0 text-amber-600"
-						aria-label="Pending"
-					/>
+					<Clock className="mt-0.5 size-4 shrink-0 text-amber-600" aria-label="Pending" />
 				)}
 				<div className="min-w-0 flex-1">
 					<div
@@ -161,9 +153,7 @@ function ReminderBody({ entry }: { entry: TimelineReminderEntry }) {
 					>
 						{entry.title}
 					</div>
-					{entry.note && (
-						<div className="mt-0.5 text-foreground/80">{entry.note}</div>
-					)}
+					{entry.note && <div className="mt-0.5 text-foreground/80">{entry.note}</div>}
 				</div>
 			</div>
 

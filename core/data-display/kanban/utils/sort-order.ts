@@ -37,13 +37,11 @@ function readSortKey(item: { sortOrder?: number; _creationTime?: number }): numb
  * If both neighbours are missing (column had only the dropped card), returns
  * a sensible default near 0 (`-Date.now()`).
  */
-export function computeSortOrderForDrop<T extends { id: string; sortOrder?: number; _creationTime?: number }>(
-	itemsAfterDrop: T[],
-	newIndex: number,
-): number {
+export function computeSortOrderForDrop<
+	T extends { id: string; sortOrder?: number; _creationTime?: number },
+>(itemsAfterDrop: T[], newIndex: number): number {
 	const above = newIndex > 0 ? itemsAfterDrop[newIndex - 1] : undefined;
-	const below =
-		newIndex < itemsAfterDrop.length - 1 ? itemsAfterDrop[newIndex + 1] : undefined;
+	const below = newIndex < itemsAfterDrop.length - 1 ? itemsAfterDrop[newIndex + 1] : undefined;
 
 	if (!above && !below) {
 		// Empty column except for the dropped card.

@@ -36,14 +36,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 
-const KNOWN_SOURCES = new Set([
-	"manual",
-	"followup",
-	"calendar",
-	"ai",
-	"note",
-	"system",
-] as const);
+const KNOWN_SOURCES = new Set(["manual", "followup", "calendar", "ai", "note", "system"] as const);
 
 type KnownSource = "manual" | "followup" | "calendar" | "ai" | "note" | "system";
 

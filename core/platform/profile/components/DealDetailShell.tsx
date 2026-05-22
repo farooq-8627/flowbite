@@ -49,16 +49,26 @@ import {
 	BellIcon,
 	BriefcaseIcon,
 	CalendarIcon,
+	CheckCircle2Icon,
 	FileTextIcon,
 	HistoryIcon,
+	MoreVerticalIcon,
 	PencilIcon,
 	PlusIcon,
+	XCircleIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -70,6 +80,8 @@ import {
 } from "@/core/data-io/files/components/FileUpload";
 import type { FileCategory } from "@/core/data-io/files/file-categories";
 import { EditDealDrawer } from "@/core/entities/_entities/deals/components/EditDealDrawer";
+import { MarkAsDoneDialog } from "@/core/entities/_entities/deals/components/MarkAsDoneDialog";
+import { MarkAsLostDialog } from "@/core/entities/_entities/deals/components/MarkAsLostDialog";
 import { useDealPipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { FieldValueRenderer } from "@/core/entities/shared/components/FieldValueRenderer";
@@ -234,6 +246,11 @@ function DealDetailCard({ deal, orgId }: { deal: Deal; orgId: Id<"orgs"> }) {
 
 	const [activeTab, setActiveTab] = useState<TabId>("overview");
 
+	// Mark as Won / Mark as Lost dialog state
+	const [markDoneOpen, setMarkDoneOpen] = useState(false);
+	const [markLostOpen, setMarkLostOpen] = useState(false);
+	const isClosed = !!deal.wonAt || !!deal.lostAt;
+
 	// Reset to overview whenever the active deal changes — `Files` of one
 	// deal don't make sense for the next deal in the strip.
 	// biome-ignore lint/correctness/useExhaustiveDependencies: deal._id is the trigger
@@ -364,6 +381,34 @@ function DealDetailCard({ deal, orgId }: { deal: Deal; orgId: Id<"orgs"> }) {
 								</TooltipContent>
 							</Tooltip>
 						)}
+						{!isClosed && (
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										size="icon"
+										variant="ghost"
+										aria-label="Deal actions"
+										className="size-7"
+									>
+										<MoreVerticalIcon className="size-4" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="text-xs">
+									<DropdownMenuItem onSelect={() => setMarkDoneOpen(true)}>
+										<CheckCircle2Icon className="me-2 size-3.5 text-green-600" />
+										Mark as won
+									</DropdownMenuItem>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem
+										onSelect={() => setMarkLostOpen(true)}
+										className="text-destructive focus:text-destructive"
+									>
+										<XCircleIcon className="me-2 size-3.5" />
+										Mark as lost
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
 					</div>
 				</div>
 
@@ -414,6 +459,10 @@ function DealDetailCard({ deal, orgId }: { deal: Deal; orgId: Id<"orgs"> }) {
 					})}
 				</div>
 			</header>
+
+			{/* ─── Dialogs ──────────────────────────────────────────────── */}
+			<MarkAsDoneDialog deal={deal} open={markDoneOpen} onOpenChange={setMarkDoneOpen} />
+			<MarkAsLostDialog deal={deal} open={markLostOpen} onOpenChange={setMarkLostOpen} />
 
 			{/* ─── Tab body — scrolls within the shell, mirrors CompanyShell. */}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">

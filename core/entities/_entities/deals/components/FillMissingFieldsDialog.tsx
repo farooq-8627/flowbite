@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
@@ -9,7 +10,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
 	EntityFieldForm,
@@ -84,8 +84,8 @@ export function FillMissingFieldsDialog({
 					<DialogTitle>Fill required fields</DialogTitle>
 					<DialogDescription>
 						These {missingFields.length === 1 ? "field is" : "fields are"} required
-						before moving to <strong>{targetStageName}</strong>.{" "}
-						{labels.deal.singular} will move automatically after saving.
+						before moving to <strong>{targetStageName}</strong>. {labels.deal.singular}{" "}
+						will move automatically after saving.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -103,7 +103,11 @@ export function FillMissingFieldsDialog({
 				</div>
 
 				<DialogFooter>
-					<Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+					<Button
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={isSubmitting}
+					>
 						Cancel
 					</Button>
 					<Button onClick={handleSave} disabled={isSubmitting}>

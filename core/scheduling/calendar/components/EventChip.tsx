@@ -36,7 +36,13 @@ interface EventChipProps {
 	className?: string;
 }
 
-export function EventChip({ event, onSelect, variant = "cell", draggable: isDraggable, className }: EventChipProps) {
+export function EventChip({
+	event,
+	onSelect,
+	variant = "cell",
+	draggable: isDraggable,
+	className,
+}: EventChipProps) {
 	const time = format(event.startsAt, "h:mm a");
 	const ariaLabel = `${event.source} · ${time} · ${event.title}`;
 

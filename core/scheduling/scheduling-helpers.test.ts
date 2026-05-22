@@ -4,22 +4,23 @@
  *
  * Run: pnpm vitest run core/scheduling/
  */
-import { describe, expect, it } from "vitest";
+
 import { addDays, set, subDays, subHours } from "date-fns";
-import { getReminderState } from "./reminders/lib/reminder-status";
-import { bucketByDue, openCount, totalCount } from "./reminders/lib/reminder-buckets";
+import { describe, expect, it } from "vitest";
+import type { CalendarEventDTO } from "@/convex/crm/shared/calendar/queries";
+import { bucketByDay, eventsForDay } from "./calendar/lib/calendar-buckets";
 import {
-	getMonthGrid,
-	getWeekDays,
+	formatViewTitle,
 	getDayHours,
+	getMonthGrid,
 	getRangeForView,
+	getWeekDays,
 	shiftAnchor,
 	ymdKey,
-	formatViewTitle,
 } from "./calendar/lib/calendar-grid";
-import { bucketByDay, eventsForDay } from "./calendar/lib/calendar-buckets";
 import { EVENT_SOURCE_META, EVENT_SOURCE_ORDER } from "./calendar/lib/event-source-colors";
-import type { CalendarEventDTO } from "@/convex/crm/shared/calendar/queries";
+import { bucketByDue, openCount, totalCount } from "./reminders/lib/reminder-buckets";
+import { getReminderState } from "./reminders/lib/reminder-status";
 
 // ─── reminder-status ─────────────────────────────────────────────────────────
 
@@ -27,12 +28,18 @@ describe("getReminderState", () => {
 	const now = new Date("2026-05-18T10:00:00").getTime();
 
 	it("returns 'completed' for completed reminders regardless of dueAt", () => {
-		expect(getReminderState({ dueAt: now - 100000, status: "completed" }, now)).toBe("completed");
-		expect(getReminderState({ dueAt: now + 100000, status: "completed" }, now)).toBe("completed");
+		expect(getReminderState({ dueAt: now - 100000, status: "completed" }, now)).toBe(
+			"completed",
+		);
+		expect(getReminderState({ dueAt: now + 100000, status: "completed" }, now)).toBe(
+			"completed",
+		);
 	});
 
 	it("returns 'overdue' for pending reminders past due", () => {
-		expect(getReminderState({ dueAt: subHours(now, 2).getTime(), status: "pending" }, now)).toBe("overdue");
+		expect(
+			getReminderState({ dueAt: subHours(now, 2).getTime(), status: "pending" }, now),
+		).toBe("overdue");
 	});
 
 	it("returns 'today' for pending reminders due later today", () => {
@@ -124,9 +131,27 @@ describe("calendar-grid helpers", () => {
 
 describe("bucketByDay", () => {
 	const events: CalendarEventDTO[] = [
-		{ id: "1", source: "reminder", title: "A", startsAt: new Date("2026-05-18T09:00").getTime(), color: "#f97316" },
-		{ id: "2", source: "reminder", title: "B", startsAt: new Date("2026-05-18T14:00").getTime(), color: "#f97316" },
-		{ id: "3", source: "deal", title: "C", startsAt: new Date("2026-05-19T10:00").getTime(), color: "#3b82f6" },
+		{
+			id: "1",
+			source: "reminder",
+			title: "A",
+			startsAt: new Date("2026-05-18T09:00").getTime(),
+			color: "#f97316",
+		},
+		{
+			id: "2",
+			source: "reminder",
+			title: "B",
+			startsAt: new Date("2026-05-18T14:00").getTime(),
+			color: "#f97316",
+		},
+		{
+			id: "3",
+			source: "deal",
+			title: "C",
+			startsAt: new Date("2026-05-19T10:00").getTime(),
+			color: "#3b82f6",
+		},
 	];
 
 	it("groups events by day", () => {

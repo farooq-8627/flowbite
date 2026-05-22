@@ -82,9 +82,7 @@ async function getOtherDefaultStageIds(
 	const pipelines = (await ctx.db
 		.query("pipelines")
 		// biome-ignore lint/suspicious/noExplicitAny: index callback param is implicitly any in Convex internals
-		.withIndex("by_org_and_entity", (q: any) =>
-			q.eq("orgId", orgId).eq("entityType", "deal"),
-		)
+		.withIndex("by_org_and_entity", (q: any) => q.eq("orgId", orgId).eq("entityType", "deal"))
 		.collect()) as Array<{
 		_id: unknown;
 		stages: Array<{ id: string; isDefaultStage?: boolean }>;
@@ -232,9 +230,7 @@ export const create = orgMutation({
 							args.orgId,
 							pipelineId,
 						);
-						const stillDefault = existing.every((id) =>
-							otherDefaults.has(id),
-						);
+						const stillDefault = existing.every((id) => otherDefaults.has(id));
 						if (stillDefault) {
 							await ctx.db.patch(f._id, {
 								showInStages: [...existing, newDefaultStage.id],
@@ -422,9 +418,7 @@ export const reorderStages = orgMutation({
 		const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
 		const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
 
-		const requestedIds = args.stageIds.filter(
-			(id) => !defaultStage || id !== defaultStage.id,
-		);
+		const requestedIds = args.stageIds.filter((id) => !defaultStage || id !== defaultStage.id);
 		const orderedIds = defaultStage ? [defaultStage.id, ...requestedIds] : requestedIds;
 
 		const reordered = orderedIds.map((id, i) => {

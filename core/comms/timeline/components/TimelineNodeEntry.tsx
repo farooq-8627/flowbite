@@ -65,9 +65,7 @@ export function TimelineNodeEntry({ entry, isLast, gapPx }: TimelineNodeEntryPro
 
 				{subject && (
 					<div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-						{subject.name && (
-							<span className="text-foreground/80">{subject.name}</span>
-						)}
+						{subject.name && <span className="text-foreground/80">{subject.name}</span>}
 						{subject.code && (
 							<>
 								{subject.name && <span aria-hidden>·</span>}
@@ -102,9 +100,7 @@ function extractSubject(entry: TimelineActivityEntry): {
 	code?: string;
 	codeKind: "person" | "deal" | "company" | "lead" | "contact";
 } | null {
-	const meta = entry.metadata as
-		| { dealCode?: string; companyCode?: string }
-		| undefined;
+	const meta = entry.metadata as { dealCode?: string; companyCode?: string } | undefined;
 
 	const codeKind: "person" | "deal" | "company" | "lead" | "contact" =
 		entry.entityType === "deal"

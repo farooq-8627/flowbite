@@ -275,8 +275,6 @@ export const listFollowupsForEntity = orgQuery({
 			)
 			.collect();
 
-		return rows.filter(
-			(r) => r.entityType === args.entityType && r.entityId === args.entityId,
-		);
+		return rows.filter((r) => r.entityType === args.entityType && r.entityId === args.entityId);
 	},
 });

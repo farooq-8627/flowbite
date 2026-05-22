@@ -667,7 +667,6 @@ export const changePipeline = orgMutation({
 	},
 });
 
-
 /**
  * markAsLost — close a deal as lost from any stage (no need to move it to
  * a final stage first). The user must type the deal's `dealCode` exactly
@@ -736,9 +735,7 @@ export const markAsLost = orgMutation({
 		}
 
 		const pipeline = await ctx.db.get(deal.pipelineId);
-		const negativeFinal = pipeline?.stages.find(
-			(s) => s.isFinal && s.finalType === "negative",
-		);
+		const negativeFinal = pipeline?.stages.find((s) => s.isFinal && s.finalType === "negative");
 
 		const now = Date.now();
 		const patch: Record<string, unknown> = {
@@ -770,7 +767,9 @@ export const markAsLost = orgMutation({
 			description: `Deal lost: ${deal.title}`,
 			metadata: {
 				dealCode: deal.dealCode,
-				...(negativeFinal ? { toStageId: negativeFinal.id, toCode: negativeFinal.code } : {}),
+				...(negativeFinal
+					? { toStageId: negativeFinal.id, toCode: negativeFinal.code }
+					: {}),
 				...(args.outcomeReason ? { outcomeReason: args.outcomeReason } : {}),
 			},
 		});

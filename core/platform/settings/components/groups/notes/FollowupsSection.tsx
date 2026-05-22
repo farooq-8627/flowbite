@@ -78,10 +78,12 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 					followupDefaults: {
 						defaultDueOffsetDays: data.defaultDueOffsetDays,
 						defaultPriority: data.defaultPriority,
-						autoCloseAfterDays: data.autoCloseAfterDays > 0 ? data.autoCloseAfterDays : undefined,
+						autoCloseAfterDays:
+							data.autoCloseAfterDays > 0 ? data.autoCloseAfterDays : undefined,
 						notifyAssignee: data.notifyAssignee,
 						requireDealCode: data.requireDealCode,
-						reminderBeforeHours: data.reminderBeforeHours > 0 ? data.reminderBeforeHours : undefined,
+						reminderBeforeHours:
+							data.reminderBeforeHours > 0 ? data.reminderBeforeHours : undefined,
 					},
 				},
 			});
@@ -174,13 +176,7 @@ export function FollowupsSection({ org, orgId }: { org: OrgSettings; orgId: Id<"
 					>
 						{(field) => (
 							<div className="flex items-center gap-2">
-								<Input
-									type="number"
-									min={0}
-									max={72}
-									className="w-24"
-									{...field}
-								/>
+								<Input type="number" min={0} max={72} className="w-24" {...field} />
 								<span className="text-xs text-muted-foreground">
 									hours before due (0 = off)
 								</span>

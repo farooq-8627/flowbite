@@ -182,9 +182,7 @@ export function FollowUpCard({
 					{followup.followUpCode && (
 						<>
 							{((!hidePersonCode && followup.personCode) ||
-								(!hideDealCode && followup.dealCode)) && (
-								<span aria-hidden>·</span>
-							)}
+								(!hideDealCode && followup.dealCode)) && <span aria-hidden>·</span>}
 							<span className="font-mono text-[10px] text-muted-foreground/80">
 								{followup.followUpCode}
 							</span>

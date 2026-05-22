@@ -34,8 +34,8 @@
  */
 
 import { v } from "convex/values";
-import { internalMutation } from "../_generated/server";
 import type { Doc } from "../_generated/dataModel";
+import { internalMutation } from "../_generated/server";
 
 export const run = internalMutation({
 	args: {

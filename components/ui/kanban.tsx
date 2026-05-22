@@ -1220,7 +1220,7 @@ export {
 	KanbanItem,
 	KanbanItemHandle,
 	KanbanOverlay,
-	useKanbanItems,
 	//
 	type KanbanProps,
+	useKanbanItems,
 };

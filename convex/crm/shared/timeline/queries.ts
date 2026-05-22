@@ -220,8 +220,7 @@ export const getForEntity = orgQuery({
 				.then((rows) =>
 					rows
 						.filter(
-							(r) =>
-								r.entityType === args.entityType && r.entityId === args.entityId,
+							(r) => r.entityType === args.entityType && r.entityId === args.entityId,
 						)
 						.sort((a, b) => b.createdAt - a.createdAt)
 						.slice(0, cap),
@@ -383,9 +382,7 @@ export const getForScope = orgQuery({
 			.then((rows) =>
 				rows
 					.filter((r) => canViewInternal || !r.isInternal)
-					.filter(
-						(r) => r.createdAt >= oldestInPage && r.createdAt <= newestInPage + 1,
-					),
+					.filter((r) => r.createdAt >= oldestInPage && r.createdAt <= newestInPage + 1),
 			);
 
 		// Reminders within the page's time window.
@@ -415,9 +412,7 @@ export const getForScope = orgQuery({
 						}
 						return true;
 					})
-					.filter(
-						(r) => r.createdAt >= oldestInPage && r.createdAt <= newestInPage + 1,
-					),
+					.filter((r) => r.createdAt >= oldestInPage && r.createdAt <= newestInPage + 1),
 			);
 
 		const merged = [

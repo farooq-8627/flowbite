@@ -36,12 +36,7 @@ import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineAc
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
-import {
-	PipelineCard,
-	RemindersCard,
-	StatStrip,
-	TodaySummaryCard,
-} from "./cards";
+import { PipelineCard, RemindersCard, StatStrip, TodaySummaryCard } from "./cards";
 
 const DASHBOARD_TOUR_STEPS: TourStep[] = [
 	{
@@ -78,6 +73,27 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 		[stats],
 	);
 
+	// Industry-template-driven widget gating.
+	//
+	// Templates seed `org.settings.dashboardMetrics` with the keys that
+	// matter for that vertical (e.g. "leads.open", "deals.pipelineValue",
+	// "reminders.dueToday"). When the array exists, we render ONLY widgets
+	// whose key is in the set; when it's absent or empty, we render all
+	// widgets (back-compat path for orgs that pre-date the template
+	// seeder). Each widget below uses `isEnabled(key)` to opt in.
+	//
+	// Schema note: `dashboardMetrics` is on the `platformTemplates`
+	// validator today; the Phase 3A template-seeder extension will
+	// propagate it onto `orgs.settings`. Until then, the cast below is a
+	// no-op for orgs that haven't been seeded with the new shape.
+	const enabledMetrics = useMemo<Set<string> | null>(() => {
+		const settings = currentOrg?.org.settings as { dashboardMetrics?: string[] } | undefined;
+		const list = settings?.dashboardMetrics;
+		if (!list || list.length === 0) return null;
+		return new Set(list);
+	}, [currentOrg?.org.settings]);
+	const isEnabled = (key: string) => enabledMetrics === null || enabledMetrics.has(key);
+
 	if (!currentOrg || !stats || user === undefined) {
 		return null;
 	}
@@ -92,12 +108,16 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 
 				{/* Row 2 — Reminders + Pipeline */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					<div className="lg:col-span-7">
-						<RemindersCard orgId={orgId} orgSlug={orgSlug} />
-					</div>
-					<div className="lg:col-span-5">
-						{pipelineStats && <PipelineCard stats={pipelineStats} orgSlug={orgSlug} />}
-					</div>
+					{isEnabled("reminders.dueToday") && (
+						<div className="lg:col-span-7">
+							<RemindersCard orgId={orgId} orgSlug={orgSlug} />
+						</div>
+					)}
+					{isEnabled("deals.pipelineValue") && pipelineStats && (
+						<div className="lg:col-span-5">
+							<PipelineCard stats={pipelineStats} orgSlug={orgSlug} />
+						</div>
+					)}
 				</div>
 
 				{/* Row 3 — Recent messages + Recent activity (equal-width, decoupled
@@ -105,38 +125,48 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				    by its own content; their inner lists use the SAME `limit`
 				    so the visual density matches across the row. */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					<div className="lg:col-span-6">
-						<MessagesPreviewWidget
-							orgId={orgId}
-							orgSlug={orgSlug}
-							limit={8}
-							className="h-full"
-						/>
-					</div>
-					<div className="lg:col-span-6">
-						<TimelineActivityWidget orgSlug={orgSlug} limit={6} />
-					</div>
+					{isEnabled("messages.recent") && (
+						<div className="lg:col-span-6">
+							<MessagesPreviewWidget
+								orgId={orgId}
+								orgSlug={orgSlug}
+								limit={8}
+								className="h-full"
+							/>
+						</div>
+					)}
+					{isEnabled("activity.recent") && (
+						<div className="lg:col-span-6">
+							<TimelineActivityWidget orgSlug={orgSlug} limit={6} />
+						</div>
+					)}
 				</div>
 
 				{/* Row 4 — Week ahead (full-width compact strip) */}
-				<WeekAheadWidget orgId={orgId} orgSlug={orgSlug} />
+				{isEnabled("calendar.weekAhead") && (
+					<WeekAheadWidget orgId={orgId} orgSlug={orgSlug} />
+				)}
 
 				{/* Row 5 — Mini calendar + Today's focus */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					<div className="lg:col-span-7">
-						<MiniCalendarWidget orgSlug={orgSlug} className="h-full" />
-					</div>
-					<div className="lg:col-span-5">
-						<TodaySummaryCard
-							stats={{
-								remindersDueToday: stats.remindersDueToday,
-								dealsWon: stats.dealsWon,
-								leadCount: stats.leadCount,
-								dealCount: stats.dealCount,
-							}}
-							orgSlug={orgSlug}
-						/>
-					</div>
+					{isEnabled("calendar.mini") && (
+						<div className="lg:col-span-7">
+							<MiniCalendarWidget orgSlug={orgSlug} className="h-full" />
+						</div>
+					)}
+					{isEnabled("today.focus") && (
+						<div className="lg:col-span-5">
+							<TodaySummaryCard
+								stats={{
+									remindersDueToday: stats.remindersDueToday,
+									dealsWon: stats.dealsWon,
+									leadCount: stats.leadCount,
+									dealCount: stats.dealCount,
+								}}
+								orgSlug={orgSlug}
+							/>
+						</div>
+					)}
 				</div>
 			</div>
 			<FirstTimeTour id="dashboard-v1" steps={DASHBOARD_TOUR_STEPS} />

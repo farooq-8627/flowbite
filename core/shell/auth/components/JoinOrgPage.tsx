@@ -192,9 +192,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 						</div>
 						<div className="flex items-baseline justify-between gap-3">
 							<dt className="text-muted-foreground">Role</dt>
-							<dd className="truncate text-end font-medium">
-								{invitation.roleName}
-							</dd>
+							<dd className="truncate text-end font-medium">{invitation.roleName}</dd>
 						</div>
 						<div className="flex items-baseline justify-between gap-3">
 							<dt className="text-muted-foreground">Invited email</dt>

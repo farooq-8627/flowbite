@@ -22,10 +22,10 @@
 
 | Task | Priority | Notes |
 |---|---|---|
-| Seed default pipeline on industry selection | HIGH | Pipeline seeding mutations not built |
 | Resume from last step | MEDIUM | Read org.onboardingStep on mount |
 | Guard: redirect completed users away from /onboarding | LOW | Currently no guard |
 | Product tour (post-onboarding) | LOW | See MODULE.md for full plan using onborda library |
+| Sub-niche picker (Step 2b) | HIGH | Phase 3A — show sub-niche cards when industry = real-estate or b2b-saas |
 
 ---
 
@@ -33,7 +33,13 @@
 
 ### Route
 - `/onboarding` → `OnboardingPage` (single page, no sub-routes)
-- Post-completion redirect: `/${slug}/dashboard` (real slug from `markOnboardingComplete` return value)
+- Post-completion redirect: `/${slug}` (real slug from `markOnboardingComplete` return value)
+
+### Seeding
+- Industry selection calls `orgs.mutations.updateOrgIndustry` → `internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate`
+- Seeds 17 surfaces atomically: pipelines, fields, entity labels, note categories, tags, saved views, custom roles, AI persona, code prefixes, currency, timezone, modules, reminder defaults, follow-up defaults, file-upload policy
+- Idempotent — safe to re-run with same template
+- Phase 3A adds `seedMockEntities()` as surface #18 (2–3 deletable sample records)
 
 ### Error Handling
 - All mutation errors use `toast.mutationError(err, fallback)` from `lib/toast.ts`

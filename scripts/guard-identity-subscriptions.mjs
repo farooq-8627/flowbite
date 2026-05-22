@@ -54,18 +54,15 @@ const BANNED = [
 	},
 	{
 		api: "api.orgRoles.queries.getMyPermissions",
-		reason:
-			"Permissions are already resolved on getMyMembership; read via useOrgPermissions(). Never call this from the client.",
+		reason: "Permissions are already resolved on getMyMembership; read via useOrgPermissions(). Never call this from the client.",
 	},
 	{
 		api: "api.featureFlags.queries.getForOrg",
-		reason:
-			"Hoisted to OrgProvider; read via useFeatureFlags() or useModuleEnabled(key).",
+		reason: "Hoisted to OrgProvider; read via useFeatureFlags() or useModuleEnabled(key).",
 	},
 	{
 		api: "api.crm.shared.tags.queries.listByOrg",
-		reason:
-			"Hoisted to CrmDataProvider; read via useOrgTags(orgId) — reference-counted so unopened popovers pay nothing.",
+		reason: "Hoisted to CrmDataProvider; read via useOrgTags(orgId) — reference-counted so unopened popovers pay nothing.",
 	},
 ];
 
@@ -187,7 +184,5 @@ for (const v of violations) {
 	console.error("");
 }
 console.error(`Total: ${violations.length} violation(s).`);
-console.error(
-	"See AGENTS.md → 'RULE: Identity/auth/labels via context, not subscriptions'.",
-);
+console.error("See AGENTS.md → 'RULE: Identity/auth/labels via context, not subscriptions'.");
 process.exit(1);

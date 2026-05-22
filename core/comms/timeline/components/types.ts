@@ -36,10 +36,7 @@ export type TimelineNoteEntry = Doc<"notes"> &
 export type TimelineReminderEntry = Doc<"reminders"> &
 	BaseTimelineEntry & { _entryType: "reminder"; _kind: "card" };
 
-export type TimelineEntry =
-	| TimelineActivityEntry
-	| TimelineNoteEntry
-	| TimelineReminderEntry;
+export type TimelineEntry = TimelineActivityEntry | TimelineNoteEntry | TimelineReminderEntry;
 
 // ─── Filter chip state ───────────────────────────────────────────────────────
 
@@ -53,13 +50,7 @@ export type TimelineEntry =
  *   - Server-side filtering would require six different queries (or six
  *     args) and complicate the cursor.
  */
-export type TimelineFilter =
-	| "all"
-	| "notes"
-	| "reminders"
-	| "activity"
-	| "ai"
-	| "system";
+export type TimelineFilter = "all" | "notes" | "reminders" | "activity" | "ai" | "system";
 
 /** Test whether an entry matches the active filter. */
 export function entryMatchesFilter(entry: TimelineEntry, filter: TimelineFilter): boolean {

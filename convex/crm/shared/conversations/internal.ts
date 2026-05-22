@@ -61,9 +61,7 @@ export async function findConversation(
 			q.eq("orgId", args.orgId).eq("entityType", target).eq("entityId", args.entityId),
 		)
 		.take(50); // bounded — typical entity has 1–3 threads
-	const direct = matches.find(
-		(c) => (c.threadId ?? null) === (args.threadId ?? null),
-	);
+	const direct = matches.find((c) => (c.threadId ?? null) === (args.threadId ?? null));
 	if (direct) return direct;
 
 	// Backwards-compat: if we're looking for a person, also check the legacy
@@ -77,18 +75,13 @@ export async function findConversation(
 				q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.entityId),
 			)
 			.take(50);
-		const legacyMatch = legacy.find(
-			(c) => (c.threadId ?? null) === (args.threadId ?? null),
-		);
+		const legacyMatch = legacy.find((c) => (c.threadId ?? null) === (args.threadId ?? null));
 		if (legacyMatch) return legacyMatch;
 
 		const contactLegacy = await ctx.db
 			.query("conversations")
 			.withIndex("by_org_and_entity", (q) =>
-				q
-					.eq("orgId", args.orgId)
-					.eq("entityType", "contact")
-					.eq("entityId", args.entityId),
+				q.eq("orgId", args.orgId).eq("entityType", "contact").eq("entityId", args.entityId),
 			)
 			.take(50);
 		const contactMatch = contactLegacy.find(

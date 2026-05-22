@@ -47,10 +47,6 @@ export function TimelineEntry({ entry, isLast, gapPx }: TimelineEntryProps) {
 		);
 	}
 	return (
-		<TimelineBareEntry
-			entry={entry as TimelineActivityEntry}
-			isLast={isLast}
-			gapPx={gapPx}
-		/>
+		<TimelineBareEntry entry={entry as TimelineActivityEntry} isLast={isLast} gapPx={gapPx} />
 	);
 }

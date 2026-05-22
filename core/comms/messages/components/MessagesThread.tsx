@@ -71,7 +71,8 @@ export function MessagesThread(props: MessagesThreadProps) {
 	// panel case). The entity-path query returns `null` until the user sends
 	// the first message; in that case the conversation is auto-created
 	// server-side on first `messages.send`.
-	const isEntityMode = "entityType" in props && Boolean(props.entityType) && Boolean(props.entityId);
+	const isEntityMode =
+		"entityType" in props && Boolean(props.entityType) && Boolean(props.entityId);
 	const byEntity = useConversationForEntity({
 		orgId: isEntityMode ? orgId : undefined,
 		entityType: isEntityMode ? (props as MessagesThreadByEntityProps).entityType : "person",

@@ -9,11 +9,7 @@ import { FollowUpsView } from "@/core/scheduling/followups/views/FollowUpsView";
  * `/reminders` — the two surfaces stay in sync via the same optimistic-
  * update layer.
  */
-export default async function FollowUpsPage({
-	params,
-}: {
-	params: Promise<{ orgSlug: string }>;
-}) {
+export default async function FollowUpsPage({ params }: { params: Promise<{ orgSlug: string }> }) {
 	const { orgSlug } = await params;
 	return <FollowUpsView orgSlug={orgSlug} />;
 }

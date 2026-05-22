@@ -57,10 +57,7 @@ export function CrmDataProvider({ children }: { children: ReactNode }) {
 	const [tagSubscriberCount, setTagSubscriberCount] = useState(0);
 
 	const subscribeTags = useCallback(() => setTagSubscriberCount((n) => n + 1), []);
-	const unsubscribeTags = useCallback(
-		() => setTagSubscriberCount((n) => Math.max(0, n - 1)),
-		[],
-	);
+	const unsubscribeTags = useCallback(() => setTagSubscriberCount((n) => Math.max(0, n - 1)), []);
 
 	const tagsArgs = orgId && tagSubscriberCount > 0 ? { orgId } : "skip";
 	const tags = useQuery(api.crm.shared.tags.queries.listByOrg, tagsArgs);

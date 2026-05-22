@@ -206,12 +206,7 @@ function DealFilesByStageCard({ orgId, deal, pipelines, allFields }: DealFilesBy
 							{deal.title}
 						</span>
 					)}
-					<IdentityBadge
-						entityType="deal"
-						code={deal.dealCode}
-						layout="code"
-						size="xs"
-					/>
+					<IdentityBadge entityType="deal" code={deal.dealCode} layout="code" size="xs" />
 				</div>
 				<Badge
 					variant={totalFiles === 0 ? "outline" : "secondary"}
@@ -279,13 +274,7 @@ interface StageFileGroupProps {
 	isDefault: boolean;
 }
 
-function StageFileGroup({
-	stage,
-	stageNumber,
-	files,
-	isCurrent,
-	isDefault,
-}: StageFileGroupProps) {
+function StageFileGroup({ stage, stageNumber, files, isCurrent, isDefault }: StageFileGroupProps) {
 	const stageColor = stage.color ?? "#94a3b8";
 
 	return (

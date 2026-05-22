@@ -132,7 +132,10 @@ export const listForEntity = orgQuery({
 				? ctx.db
 						.query("files")
 						.withIndex("by_org_and_scope", (q) =>
-							q.eq("orgId", args.orgId).eq("scope", "person").eq("scopeId", args.personCode!),
+							q
+								.eq("orgId", args.orgId)
+								.eq("scope", "person")
+								.eq("scopeId", args.personCode!),
 						)
 						.collect()
 				: Promise.resolve([]),

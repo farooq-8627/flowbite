@@ -9,11 +9,7 @@ interface DealPipelineTabsProps {
 	onSelect: (id: Id<"pipelines">) => void;
 }
 
-export function DealPipelineTabs({
-	pipelines,
-	activePipelineId,
-	onSelect,
-}: DealPipelineTabsProps) {
+export function DealPipelineTabs({ pipelines, activePipelineId, onSelect }: DealPipelineTabsProps) {
 	if (pipelines.length <= 1) return null;
 	return (
 		<div role="tablist" aria-label="Pipelines" className="flex items-center gap-1">

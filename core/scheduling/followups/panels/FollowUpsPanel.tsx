@@ -39,11 +39,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { FollowUpCard } from "../components/FollowUpCard";
 import { FollowUpForm } from "../components/FollowUpForm";
-import {
-	useDeleteFollowup,
-	useFollowupsForEntity,
-	useFollowupsForPerson,
-} from "../hooks";
+import { useDeleteFollowup, useFollowupsForEntity, useFollowupsForPerson } from "../hooks";
 import {
 	bucketFollowups,
 	FOLLOWUP_BUCKET_LABEL,

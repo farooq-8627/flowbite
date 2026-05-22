@@ -79,9 +79,7 @@ describe("invitations.mutations.create", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -109,9 +107,7 @@ describe("invitations.mutations.create", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -132,15 +128,11 @@ describe("invitations.mutations.create", () => {
 		const { memberRoleId, adminRoleId } = await t.run(async (ctx) => {
 			const member = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			const admin = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Admin"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Admin"))
 				.first();
 			return { memberRoleId: member!._id, adminRoleId: admin!._id };
 		});
@@ -195,9 +187,7 @@ describe("invitations.mutations.create", () => {
 		const ownerRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Owner"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Owner"))
 				.first();
 			return r!._id;
 		});
@@ -217,9 +207,7 @@ describe("invitations.mutations.create", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -247,9 +235,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -285,9 +271,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -321,9 +305,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -352,9 +334,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -378,9 +358,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -411,9 +389,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -442,9 +418,7 @@ describe("invitations.mutations.accept", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -471,9 +445,7 @@ describe("invitations.mutations.accept", () => {
 		const adminRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Admin"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Admin"))
 				.first();
 			return r!._id;
 		});
@@ -514,9 +486,7 @@ describe("invitations.mutations.decline", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -543,9 +513,7 @@ describe("invitations.mutations.decline", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -572,9 +540,7 @@ describe("invitations.mutations.cancel", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -600,9 +566,7 @@ describe("invitations.mutations.cancel", () => {
 		const memberRoleId = await t.run(async (ctx) => {
 			const r = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			return r!._id;
 		});
@@ -632,15 +596,11 @@ describe("invitations.queries.listPending", () => {
 		const { memberRoleId, adminRoleId } = await t.run(async (ctx) => {
 			const member = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Member"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Member"))
 				.first();
 			const admin = await ctx.db
 				.query("orgRoles")
-				.withIndex("by_orgId_and_name", (q) =>
-					q.eq("orgId", orgId).eq("name", "Admin"),
-				)
+				.withIndex("by_orgId_and_name", (q) => q.eq("orgId", orgId).eq("name", "Admin"))
 				.first();
 			return { memberRoleId: member!._id, adminRoleId: admin!._id };
 		});

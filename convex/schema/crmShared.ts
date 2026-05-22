@@ -368,12 +368,7 @@ export const reminders = defineTable({
 	 * Follow-ups surface uses it for sort order + chip color.
 	 */
 	priority: v.optional(
-		v.union(
-			v.literal("low"),
-			v.literal("normal"),
-			v.literal("high"),
-			v.literal("urgent"),
-		),
+		v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
 	),
 	createdAt: v.number(),
 	/**

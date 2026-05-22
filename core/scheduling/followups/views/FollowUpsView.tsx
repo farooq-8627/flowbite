@@ -305,11 +305,7 @@ export function FollowUpsView({ orgSlug: _orgSlug }: { orgSlug?: string }) {
 			</div>
 
 			{/* Drawer */}
-			<FollowUpForm
-				open={drawerOpen}
-				onOpenChange={setDrawerOpen}
-				followup={editing}
-			/>
+			<FollowUpForm open={drawerOpen} onOpenChange={setDrawerOpen} followup={editing} />
 
 			{/* Delete confirm */}
 			<AlertDialog open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)}>
@@ -394,9 +390,7 @@ function BucketSection({
 					<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						{FOLLOWUP_BUCKET_LABEL[bucket]}
 					</h3>
-					<span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">
-						{count}
-					</span>
+					<span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px]">{count}</span>
 				</div>
 			</header>
 			{children}
@@ -404,13 +398,7 @@ function BucketSection({
 	);
 }
 
-function EmptyState({
-	onCreate,
-	loading,
-}: {
-	onCreate?: () => void;
-	loading?: boolean;
-}) {
+function EmptyState({ onCreate, loading }: { onCreate?: () => void; loading?: boolean }) {
 	if (loading) {
 		return (
 			<div className="flex min-h-[180px] items-center justify-center rounded-[var(--radius)] border border-dashed bg-muted/20 p-6">
@@ -424,8 +412,8 @@ function EmptyState({
 			<h3 className="text-sm font-semibold">No follow-ups yet</h3>
 			<p className="max-w-md text-xs text-muted-foreground">
 				Schedule the next touch with a lead, contact, or deal. Follow-ups land on the
-				assignee's queue, the calendar, and the timeline — and surface as overdue if
-				they slip past their due date.
+				assignee's queue, the calendar, and the timeline — and surface as overdue if they
+				slip past their due date.
 			</p>
 			{onCreate && (
 				<Button size="sm" onClick={onCreate} className="mt-2">

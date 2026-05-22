@@ -49,7 +49,10 @@ interface UseEntityColumnsOptions<TRow extends EntityRow> {
 	/** Batch tag data from useEntityTagsMap — enables sorting + eliminates per-row flash. */
 	tagsByEntityId?: Record<string, Array<{ _id: unknown; name: string; color?: string | null }>>;
 	/** Batch company data from useCompaniesByPersonCodes — eliminates per-row CompanyCell query. */
-	companiesByPersonCode?: Record<string, { companyId: string; name: string; companyCode: string }>;
+	companiesByPersonCode?: Record<
+		string,
+		{ companyId: string; name: string; companyCode: string }
+	>;
 }
 
 export function useEntityColumns<TRow extends EntityRow>(
@@ -125,7 +128,14 @@ export function useEntityColumns<TRow extends EntityRow>(
 						field.kind === "company-ref" && companiesByPersonCode
 							? (companiesByPersonCode[r.personCode as string] ?? null)
 							: undefined;
-					return renderer({ slot, field, row: r, customValues, prefetchedTags, prefetchedCompany });
+					return renderer({
+						slot,
+						field,
+						row: r,
+						customValues,
+						prefetchedTags,
+						prefetchedCompany,
+					});
 				},
 				// Tags are sortable when batch data is provided; otherwise
 				// join-storage fields remain unsortable.

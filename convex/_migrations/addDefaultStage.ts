@@ -84,10 +84,7 @@ export const run = internalMutation({
 				color: "#94a3b8",
 				isDefaultStage: true,
 			};
-			const renumbered = [
-				fresh,
-				...sorted.map((s, i) => ({ ...s, order: i + 1 })),
-			];
+			const renumbered = [fresh, ...sorted.map((s, i) => ({ ...s, order: i + 1 }))];
 			if (!dryRun) {
 				await ctx.db.patch(p._id, { stages: renumbered, updatedAt: Date.now() });
 			}

@@ -6,8 +6,21 @@
 
 ## Ownership
 - **Location**: `features/industry-templates/`
-- **Backend**: `convex/platform/` (platformTemplates table)
-- **Phase**: 2 | **Status**: NOT_STARTED
+- **Backend**: `convex/crm/fields/templates/` (registry + seeder + 7 definitions)
+- **Phase**: 2 | **Status**: ✅ SEEDER SHIPPED — 7 templates. Phase 3A adds productivity + Saudi + mock data.
+
+## Phase 3A changes (NEXT)
+
+| # | Change |
+|---|---|
+| 1 | Build `productivity.ts` template (new) |
+| 2 | Rebuild `freelancer.ts` as lean solo (not agency) |
+| 3 | Add `real-estate-saudi.ts` (Ejar/REGA compliance) |
+| 4 | Rename `dubai-real-estate → real-estate-dubai`, `real-estate → real-estate-global` |
+| 5 | Add `mockData?` slot to `IndustryTemplate` type + `seedMockEntities()` in mutations.ts |
+| 6 | Standardise note categories to semantic names (Urgent/Today/.../Done) across all templates |
+
+Full plan: **PHASE-3-PLAN.md §3 + §4**.
 
 ---
 

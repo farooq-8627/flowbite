@@ -39,10 +39,7 @@ import {
  * full-table scan. Members without `reminders.manage` see only their own
  * assigned items.
  */
-export function useFollowupsForOrg(args: {
-	orgId?: Id<"orgs">;
-	status?: "pending" | "completed";
-}) {
+export function useFollowupsForOrg(args: { orgId?: Id<"orgs">; status?: "pending" | "completed" }) {
 	return useQuery(
 		api.crm.shared.reminders.queries.listFollowupsForOrg,
 		args.orgId

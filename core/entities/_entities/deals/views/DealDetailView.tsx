@@ -25,7 +25,7 @@
  */
 
 import { useMutation, useQuery } from "convex/react";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckCircle2Icon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -36,6 +36,8 @@ import { AddDealDrawer } from "@/core/entities/_entities/deals/components/AddDea
 import { DealPipelineTabs } from "@/core/entities/_entities/deals/components/DealPipelineTabs";
 import { EditDealDrawer } from "@/core/entities/_entities/deals/components/EditDealDrawer";
 import { FillMissingFieldsDialog } from "@/core/entities/_entities/deals/components/FillMissingFieldsDialog";
+import { MarkAsDoneDialog } from "@/core/entities/_entities/deals/components/MarkAsDoneDialog";
+import { MarkAsLostDialog } from "@/core/entities/_entities/deals/components/MarkAsLostDialog";
 import { useDealsBoard } from "@/core/entities/_entities/deals/hooks/useDealsBoard";
 import { useActiveDealPipeline } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { EntityListPage } from "@/core/entities/scaffolds/EntityListPage";
@@ -173,6 +175,12 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		sortOrder: number;
 	} | null>(null);
 
+	// Mark-as-Won + Mark-as-Lost dialog state. Triggered from:
+	//  - Green tick shortcut on each card (Won)
+	//  - Red dropdown / drag-to-Lost-stage (Lost — confirmation compulsory)
+	const [markDoneFor, setMarkDoneFor] = useState<Doc<"deals"> | null>(null);
+	const [markLostFor, setMarkLostFor] = useState<Doc<"deals"> | null>(null);
+
 	useQuickAddListener("create-deal", () => setAddOpen(true));
 
 	const { valuesByEntityId: customValuesByEntityId } = useEntityFieldValuesMap("deal", orgId);
@@ -198,6 +206,7 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		grouped,
 		rankedItems: rankedItems as unknown as Parameters<typeof useDealsBoard>[0]["rankedItems"],
 		memberNameById,
+		onMarkLostFromDrag: ({ deal }) => setMarkLostFor(deal),
 		onBlockPolicy: (data) => {
 			const deal = (rankedItems.items as Array<Record<string, unknown>>).find(
 				(d) => (d.id as string) === data.dealId,
@@ -402,25 +411,50 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 						| undefined;
 					const stageName = stageId ? (stageNameById.get(stageId) ?? stageId) : "";
 
-					const shortcuts: EntityShortcut[] = hasMissing
-						? [
-								{
-									label: `Fill "${stageName}" fields (${missingCount})`,
-									icon: PlusIcon,
-									onSelect: () => {
-										setEditMode("fillStage");
-										setEditingDeal(
-											((
-												rankedItems.items as Array<Record<string, unknown>>
-											).find(
-												(d) => (d.id as string) === item.id,
-											) as Doc<"deals">) ?? null,
-										);
+					// Hide Mark Won/Lost shortcuts when:
+					//  - Deal is already closed (wonAt/lostAt set), OR
+					//  - Card is currently rendered in a Final column (it
+					//    would jump out of itself on click).
+					const dealRecord = item as unknown as Doc<"deals">;
+					const stageObj = stageId
+						? pipeline?.stages.find((s) => s.id === stageId)
+						: undefined;
+					const isClosed = !!dealRecord.wonAt || !!dealRecord.lostAt;
+					const showCloseShortcuts = !isClosed && !stageObj?.isFinal;
+
+					const shortcuts: EntityShortcut[] = [
+						...(hasMissing
+							? [
+									{
+										label: `Fill "${stageName}" fields (${missingCount})`,
+										icon: PlusIcon,
+										onSelect: () => {
+											setEditMode("fillStage");
+											setEditingDeal(
+												((
+													rankedItems.items as Array<
+														Record<string, unknown>
+													>
+												).find(
+													(d) => (d.id as string) === item.id,
+												) as Doc<"deals">) ?? null,
+											);
+										},
+										variant: "primary" as const,
 									},
-									variant: "primary",
-								},
-							]
-						: [];
+								]
+							: []),
+						...(showCloseShortcuts
+							? [
+									{
+										label: "Mark as won",
+										icon: CheckCircle2Icon,
+										onSelect: () => setMarkDoneFor(dealRecord),
+										variant: "primary" as const,
+									},
+								]
+							: []),
+					];
 
 					const menuItems: MenuAction[] = [
 						{
@@ -435,6 +469,17 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 								);
 							},
 						},
+						...(showCloseShortcuts
+							? [
+									{
+										label: "Mark as lost",
+										icon: Trash2Icon,
+										variant: "destructive" as const,
+										separatorBefore: true,
+										onSelect: () => setMarkLostFor(dealRecord),
+									},
+								]
+							: []),
 						{
 							label: "Delete",
 							icon: Trash2Icon,
@@ -544,6 +589,27 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				<FirstTimeTour
 					id="deals-board-v2"
 					steps={buildEntityBoardTour({ primaryActionVerb: "Edit", groupedBy: "stage" })}
+				/>
+			)}
+
+			{markDoneFor && (
+				<MarkAsDoneDialog
+					deal={markDoneFor}
+					open={true}
+					onOpenChange={(v) => {
+						if (!v) setMarkDoneFor(null);
+					}}
+				/>
+			)}
+
+			{markLostFor && (
+				<MarkAsLostDialog
+					deal={markLostFor}
+					open={true}
+					onOpenChange={(v) => {
+						if (!v) setMarkLostFor(null);
+					}}
+					onMarked={() => setMarkLostFor(null)}
 				/>
 			)}
 		</>

@@ -345,7 +345,14 @@ interface FieldGroupProps {
 	render: (field: FieldDef) => React.ReactNode;
 }
 
-function FieldGroup({ name, fields, showHeader, submittedOnce, valueFor, render }: FieldGroupProps) {
+function FieldGroup({
+	name,
+	fields,
+	showHeader,
+	submittedOnce,
+	valueFor,
+	render,
+}: FieldGroupProps) {
 	// Pair adjacent half-width fields so they render side-by-side.
 	const rows = useMemo(() => groupIntoRows(fields), [fields]);
 
@@ -364,7 +371,11 @@ function FieldGroup({ name, fields, showHeader, submittedOnce, valueFor, render 
 					const f = row[0]!;
 					const isEmpty = !valueFor(f) && valueFor(f) !== 0 && valueFor(f) !== false;
 					return (
-						<FormRow key={f._id} field={f} hasError={submittedOnce && !!f.required && isEmpty}>
+						<FormRow
+							key={f._id}
+							field={f}
+							hasError={submittedOnce && !!f.required && isEmpty}
+						>
 							{render(f)}
 						</FormRow>
 					);
@@ -373,9 +384,14 @@ function FieldGroup({ name, fields, showHeader, submittedOnce, valueFor, render 
 				return (
 					<div key={pairKey} className="grid grid-cols-2 gap-2.5">
 						{row.map((f) => {
-							const isEmpty = !valueFor(f) && valueFor(f) !== 0 && valueFor(f) !== false;
+							const isEmpty =
+								!valueFor(f) && valueFor(f) !== 0 && valueFor(f) !== false;
 							return (
-								<FormRow key={f._id} field={f} hasError={submittedOnce && !!f.required && isEmpty}>
+								<FormRow
+									key={f._id}
+									field={f}
+									hasError={submittedOnce && !!f.required && isEmpty}
+								>
 									{render(f)}
 								</FormRow>
 							);
@@ -430,7 +446,13 @@ function FormRow({ field, children, hasError }: FormRowProps) {
 	const id = `field-${field._id}`;
 	return (
 		<div className="flex flex-col gap-1">
-			<Label htmlFor={id} className={cn("text-[11px] font-medium leading-none", hasError ? "text-destructive" : "text-foreground/90")}>
+			<Label
+				htmlFor={id}
+				className={cn(
+					"text-[11px] font-medium leading-none",
+					hasError ? "text-destructive" : "text-foreground/90",
+				)}
+			>
 				{field.label}
 				{field.required && (
 					<span className="ms-0.5 text-destructive/60" title="Required">
@@ -438,12 +460,15 @@ function FormRow({ field, children, hasError }: FormRowProps) {
 					</span>
 				)}
 			</Label>
-			<div className={cn("w-full min-w-0", hasError && "[&>*]:ring-1 [&>*]:ring-destructive [&>*]:ring-offset-0")}>
+			<div
+				className={cn(
+					"w-full min-w-0",
+					hasError && "[&>*]:ring-1 [&>*]:ring-destructive [&>*]:ring-offset-0",
+				)}
+			>
 				{children}
 			</div>
-			{hasError && (
-				<p className="text-[10px] text-destructive">This field is required</p>
-			)}
+			{hasError && <p className="text-[10px] text-destructive">This field is required</p>}
 		</div>
 	);
 }

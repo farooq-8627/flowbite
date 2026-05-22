@@ -30,16 +30,16 @@ import { useContext, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import {
+	ENTITY_LABEL_DEFAULTS,
 	type EntityLabel,
 	type EntityLabels,
-	ENTITY_LABEL_DEFAULTS,
 	type EntitySlot,
 	mergeEntityLabelDefaults,
 } from "./entity-labels-types";
 import { OrgEntityLabelsContext } from "./org-entity-labels-context";
 
 // Re-export types & defaults so existing callers don't have to update imports.
-export { type EntityLabel, type EntityLabels, ENTITY_LABEL_DEFAULTS, type EntitySlot };
+export { ENTITY_LABEL_DEFAULTS, type EntityLabel, type EntityLabels, type EntitySlot };
 
 /**
  * Returns the active org's entity labels with defaults as fallback.

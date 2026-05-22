@@ -106,11 +106,15 @@ export function FollowUpForm({ open, onOpenChange, followup, defaults }: FollowU
 	// Read org-level defaults so the "Use default" preset and the initial
 	// priority chip reflect the org owner's chosen cadence.
 	const orgFollowupDefaults =
-		(fullOrgEntry?.org?.settings as { followupDefaults?: { defaultDueOffsetDays?: number; defaultPriority?: FollowupPriority } })?.followupDefaults ?? {};
-	const orgOffsetDays = Math.max(
-		1,
-		Math.min(365, orgFollowupDefaults.defaultDueOffsetDays ?? 3),
-	);
+		(
+			fullOrgEntry?.org?.settings as {
+				followupDefaults?: {
+					defaultDueOffsetDays?: number;
+					defaultPriority?: FollowupPriority;
+				};
+			}
+		)?.followupDefaults ?? {};
+	const orgOffsetDays = Math.max(1, Math.min(365, orgFollowupDefaults.defaultDueOffsetDays ?? 3));
 	const orgDefaultPriority = orgFollowupDefaults.defaultPriority ?? "normal";
 
 	const orgDefaultDueAt = useMemo(() => {
@@ -166,7 +170,9 @@ export function FollowUpForm({ open, onOpenChange, followup, defaults }: FollowU
 			setTitle(defaults?.title ?? "");
 			setNote("");
 			setDueAtLocal(
-				toLocalInputValue(defaults?.dueAt ? new Date(defaults.dueAt) : new Date(orgDefaultDueAt)),
+				toLocalInputValue(
+					defaults?.dueAt ? new Date(defaults.dueAt) : new Date(orgDefaultDueAt),
+				),
 			);
 			setPriority(defaults?.priority ?? orgDefaultPriority);
 			setAssignee(
@@ -439,8 +445,8 @@ export function FollowUpForm({ open, onOpenChange, followup, defaults }: FollowU
 							</p>
 						) : (
 							<p className="text-[11px] text-muted-foreground">
-								Profiles search merges leads + contacts on personCode (P-001).
-								Deals (D-…) and companies (CO-…) are also searchable.
+								Profiles search merges leads + contacts on personCode (P-001). Deals
+								(D-…) and companies (CO-…) are also searchable.
 							</p>
 						)}
 					</div>

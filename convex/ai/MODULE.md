@@ -1,6 +1,10 @@
 # convex/ai — MODULE.md
 
-**Ownership:** `convex/ai/` | Phase 3 | Consumers: `core/ai/` frontend, `app/api/ai/chat/route.ts`, WhatsApp voice processor
+> **STATUS: ⬜ STUB — no-op placeholder only.**
+> `convex/ai/internal.ts` is a 30-line no-op scheduled mutation.
+> Phase 3B fills in the full AI runtime. See **PHASE-3-PLAN.md §5** for the complete build plan.
+
+**Ownership:** `convex/ai/` | Phase 3B | Consumers: `core/ai/` frontend, `app/api/ai/chat/route.ts`, WhatsApp voice processor
 
 ## Purpose
 

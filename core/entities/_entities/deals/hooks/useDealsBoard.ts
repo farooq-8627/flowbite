@@ -1,7 +1,9 @@
 "use client";
 
+import { useMutation } from "convex/react";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
+import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { computeSortOrderForDrop } from "@/core/data-display/kanban/utils/sort-order";
@@ -27,6 +29,14 @@ interface BlockPolicyData {
 	sortOrder: number;
 }
 
+/** Args passed to the consumer when a card is dropped on a NEGATIVE-final stage.
+ *  Consumer opens MarkAsLostDialog with this deal pre-filled. */
+interface MarkLostFromDragData {
+	deal: Doc<"deals">;
+	targetStageId: string;
+	sortOrder: number;
+}
+
 interface UseDealsBoardArgs {
 	orgId: Id<"orgs"> | undefined;
 	groupBy: string;
@@ -37,6 +47,12 @@ interface UseDealsBoardArgs {
 	rankedItems: RankedSearchResult<DealRow>;
 	memberNameById: Map<string, string>;
 	onBlockPolicy?: (data: BlockPolicyData) => void;
+	/**
+	 * Called when a card is dragged onto a NEGATIVE-final stage. Mark-as-lost
+	 * is destructive + irreversible, so we surface the confirmation dialog
+	 * (type-the-dealCode) instead of running the mutation silently.
+	 */
+	onMarkLostFromDrag?: (data: MarkLostFromDragData) => void;
 }
 
 export function useDealsBoard({
@@ -47,12 +63,14 @@ export function useDealsBoard({
 	rankedItems,
 	memberNameById,
 	onBlockPolicy,
+	onMarkLostFromDrag,
 }: UseDealsBoardArgs) {
 	const labels = useEntityLabels();
 	const moveToStage = useMoveDealToStage();
 	const updateDeal = useUpdateDeal();
 	const attachTag = useAttachTagToEntity();
 	const detachTag = useDetachTagFromEntity();
+	const closeAsDone = useMutation(api.crm.entities.deals.mutations.closeAsDone);
 
 	const boardColumns: KanbanColumnConfig[] = useMemo(() => {
 		if (groupBy === "currentStageId") {
@@ -168,19 +186,78 @@ export function useDealsBoard({
 					return;
 				}
 				if (groupBy === "currentStageId") {
+					const toStage = pipeline?.stages.find((s) => s.id === toCol);
+
+					// Negative-final drop → MUST go through MarkAsLost
+					// confirmation dialog (compulsory per user spec — type
+					// dealCode to confirm). Bail out of the silent move.
+					if (toStage?.isFinal && toStage.finalType === "negative") {
+						const movedItem = (rankedItems.items as DealRow[]).find(
+							(it) => it.id === itemId,
+						);
+						if (movedItem && onMarkLostFromDrag) {
+							onMarkLostFromDrag({
+								deal: movedItem as unknown as Doc<"deals">,
+								targetStageId: toCol,
+								sortOrder,
+							});
+						} else {
+							toast.error(
+								`Open the deal and choose "Mark as lost" to move it to ${toStage.name}.`,
+							);
+						}
+						return;
+					}
+
+					// Positive-final drop → use closeAsDone so wonAt is set
+					// AND the deal auto-moves to the positive-final stage.
+					// Plain moveToStage would relocate the card without
+					// closing the deal (no confetti + no won timestamp).
+					if (toStage?.isFinal && toStage.finalType === "positive") {
+						try {
+							await closeAsDone({
+								orgId,
+								dealId: itemId as Id<"deals">,
+								finalType: "positive",
+							});
+							toast.success(`🎉 ${labels.deal.singular} won!`);
+							import("canvas-confetti")
+								.then((mod) => mod.default({ particleCount: 100, spread: 70 }))
+								.catch(() => {});
+						} catch (err) {
+							const errorData = (err as { data?: Record<string, unknown> })?.data;
+							const code =
+								typeof errorData === "object" && errorData !== null
+									? (errorData.code as string | undefined)
+									: undefined;
+							if (code === "MISSING_REQUIRED_FIELDS_FOR_DONE") {
+								const data = errorData as {
+									missingFields?: Array<{ label: string; stageName: string }>;
+								};
+								const labelList = (data.missingFields ?? [])
+									.map((f) => `${f.label} (${f.stageName})`)
+									.slice(0, 4)
+									.join(", ");
+								toast.error(`Can't mark won — required fields missing`, {
+									description: labelList,
+									duration: 7000,
+								});
+								return;
+							}
+							toast.error(`Couldn't mark ${labels.deal.singular.toLowerCase()} won`, {
+								description: normalizeErrorDescription(err),
+							});
+						}
+						return;
+					}
+
+					// Non-final stage → existing path
 					await moveToStage({
 						orgId,
 						dealId: itemId as Id<"deals">,
 						stageId: toCol,
 						sortOrder,
 					});
-					const toStage = pipeline?.stages.find((s) => s.id === toCol);
-					if (toStage?.isFinal && toStage.finalType === "positive") {
-						toast.success(`🎉 ${labels.deal.singular} won!`);
-						import("canvas-confetti")
-							.then((mod) => mod.default({ particleCount: 100, spread: 70 }))
-							.catch(() => {});
-					}
 					return;
 				}
 				if (groupBy === "assignedTo") {
@@ -262,6 +339,8 @@ export function useDealsBoard({
 			attachTag,
 			detachTag,
 			onBlockPolicy,
+			closeAsDone,
+			onMarkLostFromDrag,
 		],
 	);
 

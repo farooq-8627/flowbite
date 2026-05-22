@@ -64,12 +64,7 @@ const intlMiddleware = createIntlMiddleware(routing);
  * `/join/<token>` always see the accept screen — even owners on a fresh
  * incognito tab.
  */
-const isAuthPage = createRouteMatcher([
-	"/signin",
-	"/signup",
-	"/:locale/signin",
-	"/:locale/signup",
-]);
+const isAuthPage = createRouteMatcher(["/signin", "/signup", "/:locale/signin", "/:locale/signup"]);
 
 /**
  * Routes that require authentication. Everything except `/`, the auth
@@ -125,10 +120,7 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
 	// back to "/" which then routes a no-org user into onboarding.
 	if (isProtectedRoute(request) && !token) {
 		const target = request.nextUrl.pathname + request.nextUrl.search;
-		return nextjsMiddlewareRedirect(
-			request,
-			`/signin?redirect=${encodeURIComponent(target)}`,
-		);
+		return nextjsMiddlewareRedirect(request, `/signin?redirect=${encodeURIComponent(target)}`);
 	}
 
 	// Otherwise let next-intl handle locale negotiation + prefix.

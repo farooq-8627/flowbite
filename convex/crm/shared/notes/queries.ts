@@ -38,6 +38,31 @@ function sortNotesByOrder(a: Doc<"notes">, b: Doc<"notes">): number {
 	return noteSortKey(a) - noteSortKey(b);
 }
 
+// ─── getById ─────────────────────────────────────────────────────────────────
+
+/**
+ * Single-note read by ID. Used by AI chat result rendering when a tool
+ * returns `display: { kind: "note", noteId }` — the chat bubble pulls
+ * the full note via this query and renders the canonical NoteCard.
+ *
+ * Honours the same privacy gate as listForEntity: callers without
+ * `notes.viewInternal` get null for any internal note.
+ */
+export const getById = orgQuery({
+	args: { orgId: v.id("orgs"), noteId: v.id("notes") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "notes.view");
+
+		const note = await ctx.db.get(args.noteId);
+		if (!note || note.orgId !== args.orgId) return null;
+		if (note.isInternal && !hasPermission(member.permissions, "notes.viewInternal")) {
+			return null;
+		}
+		return note;
+	},
+});
+
 // ─── listForEntity ───────────────────────────────────────────────────────────
 
 export const listForEntity = orgQuery({

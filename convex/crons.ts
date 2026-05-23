@@ -65,6 +65,22 @@ crons.interval(
 crons.interval("purge-old-trash", { hours: 24 }, internal.trash.mutations.purgeOldTrash, {});
 
 /**
+ * Daily archive of old activity-log rows (>90 days by default).
+ *
+ * Activity logs are an audit trail — older entries have diminishing
+ * operational value and storing personal-data-tagged rows past their
+ * retention window is a compliance liability. The mutation is paginated
+ * and idempotent; if a run truncates partway through, the next tick
+ * resumes from the same cutoff predicate.
+ */
+crons.interval(
+	"archive-activity-logs",
+	{ hours: 24 },
+	internal.activityLogs.mutations.archiveOld,
+	{},
+);
+
+/**
  * Daily AI Morning Briefing generation.
  *
  * Iterates active users (lastActiveAt within 14 days, briefing opt-in) and
@@ -79,6 +95,23 @@ crons.interval(
 	{ hours: 24 },
 	// biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern (briefingsActions.ts is "use node" file)
 	"ai/briefingsActions:generateForActiveUsers" as any,
+	{},
+);
+
+/**
+ * Weekly AI org-wide insight (Sprint 5).
+ *
+ * Generates ONE briefing per org every 7 days, scope=`weekly-org`. The
+ * row is visible to all members and surfaced via `WeeklyInsightCard` on
+ * the dashboard. Uses the standard model tier (heavier than Haiku) so
+ * the output finds week-over-week patterns instead of just dumping
+ * numbers. Throttled to 1.5 req/sec to stay under provider rate limits.
+ */
+crons.interval(
+	"generate-ai-weekly-insights",
+	{ hours: 24 * 7 },
+	// biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern (briefingsActions.ts is "use node" file)
+	"ai/briefingsActions:generateForAllOrgs" as any,
 	{},
 );
 

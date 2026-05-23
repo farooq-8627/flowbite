@@ -11,7 +11,13 @@
  */
 
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -56,6 +62,72 @@ export const ensureForOrg = orgMutation({
 
 // ─── create ──────────────────────────────────────────────────────────────────
 
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		name: string;
+		bgColor: string;
+		textColor?: string;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "noteCategories.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const name = validateName(args.name);
+	const bgColor = validateHex(args.bgColor);
+	const textColor =
+		args.textColor !== undefined && args.textColor !== ""
+			? validateHex(args.textColor)
+			: undefined;
+
+	const existing = await ctx.db
+		.query("noteCategories")
+		.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", name))
+		.first();
+	if (existing) {
+		throw new ConvexError({
+			code: "DUPLICATE",
+			message: `A category named "${name}" already exists`,
+		});
+	}
+
+	const all = await ctx.db
+		.query("noteCategories")
+		.withIndex("by_org_and_position", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	const position = all.reduce((m, r) => Math.max(m, r.position), -1) + 1;
+
+	const now = Date.now();
+	const id = await ctx.db.insert("noteCategories", {
+		orgId: args.orgId,
+		name,
+		bgColor,
+		textColor,
+		position,
+		isDefault: false,
+		isArchived: false,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "noteCategory_created",
+		entityType: "note",
+		entityId: id,
+		description: `Note category "${name}" created`,
+		metadata: { categoryId: id, name },
+	});
+
+	return id;
+}
+
 export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -66,66 +138,80 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
-		await enforceRateLimit(ctx, {
-			scope: "noteCategories.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createImpl(ctx, { ...args, userId });
+	},
+});
 
-		const name = validateName(args.name);
-		const bgColor = validateHex(args.bgColor);
-		const textColor =
-			args.textColor !== undefined && args.textColor !== ""
-				? validateHex(args.textColor)
-				: undefined;
-
-		// Reject duplicate names within the org (case-insensitive).
-		const existing = await ctx.db
-			.query("noteCategories")
-			.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", name))
-			.first();
-		if (existing) {
-			throw new ConvexError({
-				code: "DUPLICATE",
-				message: `A category named "${name}" already exists`,
-			});
-		}
-
-		// Append to the end.
-		const all = await ctx.db
-			.query("noteCategories")
-			.withIndex("by_org_and_position", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		const position = all.reduce((m, r) => Math.max(m, r.position), -1) + 1;
-
-		const now = Date.now();
-		const id = await ctx.db.insert("noteCategories", {
-			orgId: args.orgId,
-			name,
-			bgColor,
-			textColor,
-			position,
-			isDefault: false,
-			isArchived: false,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "noteCategory_created",
-			entityType: "note",
-			entityId: id,
-			description: `Note category "${name}" created`,
-			metadata: { categoryId: id, name },
-		});
-
-		return id;
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		name: v.string(),
+		bgColor: v.string(),
+		textColor: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return createImpl(ctx, args);
 	},
 });
 
 // ─── update ──────────────────────────────────────────────────────────────────
+
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		categoryId: Id<"noteCategories">;
+		name?: string;
+		bgColor?: string;
+		textColor?: string;
+	},
+) {
+	const cat = await ctx.db.get(args.categoryId);
+	if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	// biome-ignore lint/suspicious/noExplicitAny: building a partial patch
+	const patch: any = { updatedAt: Date.now() };
+
+	if (args.name !== undefined) {
+		const next = validateName(args.name);
+		if (next !== cat.name) {
+			const dup = await ctx.db
+				.query("noteCategories")
+				.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", next))
+				.first();
+			if (dup && dup._id !== cat._id) {
+				throw new ConvexError({
+					code: "DUPLICATE",
+					message: `A category named "${next}" already exists`,
+				});
+			}
+			patch.name = next;
+		}
+	}
+	if (args.bgColor !== undefined) {
+		patch.bgColor = validateHex(args.bgColor);
+	}
+	if (args.textColor !== undefined) {
+		patch.textColor = args.textColor === "" ? undefined : validateHex(args.textColor);
+	}
+
+	await ctx.db.patch(args.categoryId, patch);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "noteCategory_updated",
+		entityType: "note",
+		entityId: args.categoryId,
+		description: `Note category "${cat.name}" updated`,
+		metadata: { categoryId: args.categoryId },
+	});
+}
 
 export const update = orgMutation({
 	args: {
@@ -138,52 +224,65 @@ export const update = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
+		return updateImpl(ctx, { ...args, userId });
+	},
+});
 
-		const cat = await ctx.db.get(args.categoryId);
-		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// biome-ignore lint/suspicious/noExplicitAny: building a partial patch
-		const patch: any = { updatedAt: Date.now() };
-
-		if (args.name !== undefined) {
-			const next = validateName(args.name);
-			if (next !== cat.name) {
-				const dup = await ctx.db
-					.query("noteCategories")
-					.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", next))
-					.first();
-				if (dup && dup._id !== cat._id) {
-					throw new ConvexError({
-						code: "DUPLICATE",
-						message: `A category named "${next}" already exists`,
-					});
-				}
-				patch.name = next;
-			}
-		}
-		if (args.bgColor !== undefined) {
-			patch.bgColor = validateHex(args.bgColor);
-		}
-		if (args.textColor !== undefined) {
-			// Empty string clears the explicit text color → revert to dynamic derivation.
-			patch.textColor = args.textColor === "" ? undefined : validateHex(args.textColor);
-		}
-
-		await ctx.db.patch(args.categoryId, patch);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "noteCategory_updated",
-			entityType: "note",
-			entityId: args.categoryId,
-			description: `Note category "${cat.name}" updated`,
-			metadata: { categoryId: args.categoryId },
-		});
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryId: v.id("noteCategories"),
+		name: v.optional(v.string()),
+		bgColor: v.optional(v.string()),
+		textColor: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return updateImpl(ctx, args);
 	},
 });
 
 // ─── archive / restore ───────────────────────────────────────────────────────
+
+async function setArchivedImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		categoryId: Id<"noteCategories">;
+		isArchived: boolean;
+	},
+) {
+	const cat = await ctx.db.get(args.categoryId);
+	if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	if (args.isArchived && cat.isDefault) {
+		throw new ConvexError({
+			code: "DEFAULT_REQUIRED",
+			message: "Mark a different category as default before archiving this one.",
+		});
+	}
+
+	await ctx.db.patch(args.categoryId, {
+		isArchived: args.isArchived,
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: args.isArchived ? "noteCategory_archived" : "noteCategory_restored",
+		entityType: "note",
+		entityId: args.categoryId,
+		description: args.isArchived
+			? `Note category "${cat.name}" archived`
+			: `Note category "${cat.name}" restored`,
+		metadata: { categoryId: args.categoryId },
+	});
+}
 
 export const setArchived = orgMutation({
 	args: {
@@ -194,39 +293,52 @@ export const setArchived = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
-
-		const cat = await ctx.db.get(args.categoryId);
-		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// Don't allow archiving the only non-archived default category — there
-		// must always be a default for new-note creation.
-		if (args.isArchived && cat.isDefault) {
-			throw new ConvexError({
-				code: "DEFAULT_REQUIRED",
-				message: "Mark a different category as default before archiving this one.",
-			});
-		}
-
-		await ctx.db.patch(args.categoryId, {
-			isArchived: args.isArchived,
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: args.isArchived ? "noteCategory_archived" : "noteCategory_restored",
-			entityType: "note",
-			entityId: args.categoryId,
-			description: args.isArchived
-				? `Note category "${cat.name}" archived`
-				: `Note category "${cat.name}" restored`,
-			metadata: { categoryId: args.categoryId },
-		});
+		return setArchivedImpl(ctx, { ...args, userId });
 	},
 });
 
-// ─── reorder (bulk position update) ──────────────────────────────────────────
+/** AI-callable internal twin. */
+export const setArchivedForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryId: v.id("noteCategories"),
+		isArchived: v.boolean(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return setArchivedImpl(ctx, args);
+	},
+});
+
+async function reorderImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		categoryIds: Id<"noteCategories">[];
+	},
+) {
+	const now = Date.now();
+	for (let i = 0; i < args.categoryIds.length; i += 1) {
+		const id = args.categoryIds[i];
+		const row = await ctx.db.get(id);
+		if (!row || row.orgId !== args.orgId) continue;
+		if (row.position !== i) {
+			await ctx.db.patch(id, { position: i, updatedAt: now });
+		}
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "noteCategories_reordered",
+		entityType: "note",
+		entityId: args.categoryIds.join(","),
+		description: "Note categories reordered",
+	});
+}
 
 export const reorder = orgMutation({
 	args: {
@@ -236,25 +348,21 @@ export const reorder = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
+		return reorderImpl(ctx, { ...args, userId });
+	},
+});
 
-		const now = Date.now();
-		for (let i = 0; i < args.categoryIds.length; i += 1) {
-			const id = args.categoryIds[i];
-			const row = await ctx.db.get(id);
-			if (!row || row.orgId !== args.orgId) continue;
-			if (row.position !== i) {
-				await ctx.db.patch(id, { position: i, updatedAt: now });
-			}
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "noteCategories_reordered",
-			entityType: "note",
-			entityId: args.categoryIds.join(","),
-			description: "Note categories reordered",
-		});
+/** AI-callable internal twin. */
+export const reorderForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryIds: v.array(v.id("noteCategories")),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return reorderImpl(ctx, args);
 	},
 });
 

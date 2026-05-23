@@ -17,9 +17,13 @@
  * `noteCategories`. Migration backfill: `_migrations/seedNoteCategories.ts`.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import type { Doc, Id } from "../../../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../../../_generated/server";
+import { internalMutation, type MutationCtx, type QueryCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -30,6 +34,106 @@ import { getDefaultCategoryForOrg, seedNoteCategoriesForOrg } from "../noteCateg
 const TITLE_MAX_LEN = 80;
 
 // ─── create ──────────────────────────────────────────────────────────────────
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		entityType: string;
+		entityId: string;
+		personCode?: string;
+		title?: string;
+		content: string;
+		categoryId?: Id<"noteCategories">;
+		authorType: string;
+		isInternal: boolean;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "notes.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const trimmedContent = args.content.trim();
+	if (trimmedContent.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
+
+	const trimmedTitle = args.title?.trim();
+	if (trimmedTitle && trimmedTitle.length > TITLE_MAX_LEN) {
+		throw new ConvexError(ERRORS.INVALID_ARGS);
+	}
+
+	let categoryId: typeof args.categoryId = args.categoryId;
+	if (categoryId === undefined) {
+		await seedNoteCategoriesForOrg(ctx, args.orgId);
+		const def = await getDefaultCategoryForOrg(ctx, args.orgId);
+		if (!def) {
+			throw new ConvexError({
+				code: "NO_DEFAULT_CATEGORY",
+				message: "Workspace has no note categories configured.",
+			});
+		}
+		categoryId = def;
+	} else {
+		const cat = await ctx.db.get(categoryId);
+		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const now = Date.now();
+	const sortOrder = await topOfColumnSortOrder(ctx, args.orgId, categoryId);
+	const noteId = await ctx.db.insert("notes", {
+		orgId: args.orgId,
+		entityType: args.entityType,
+		entityId: args.entityId,
+		personCode: args.personCode,
+		title: trimmedTitle && trimmedTitle.length > 0 ? trimmedTitle : undefined,
+		content: trimmedContent,
+		categoryId,
+		authorId: args.userId,
+		authorType: args.authorType,
+		isPinned: false,
+		isInternal: args.isInternal,
+		sortOrder,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		actorType: args.authorType === "ai" ? "ai" : "user",
+		action: "note_added",
+		entityType: args.entityType,
+		entityId: args.entityId,
+		personCode: args.personCode,
+		description: `Note added${args.isInternal ? " (internal)" : ""}`,
+		metadata: { noteId, categoryId },
+	});
+
+	const assigneeId = await resolveNoteEntityAssignee(ctx, {
+		orgId: args.orgId,
+		entityType: args.entityType,
+		entityId: args.entityId,
+	});
+	if (assigneeId && assigneeId !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: assigneeId,
+			type: "note.added",
+			title: "New note on your record",
+			body:
+				trimmedContent.length > 120
+					? `${trimmedContent.slice(0, 117)}…`
+					: trimmedContent,
+			entityType: args.entityType,
+			entityId: args.entityId,
+			metadata: { noteId, personCode: args.personCode ?? "" },
+		});
+	}
+
+	return noteId;
+}
 
 export const create = orgMutation({
 	args: {
@@ -47,98 +151,28 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.create");
-		await enforceRateLimit(ctx, {
-			scope: "notes.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createImpl(ctx, { ...args, userId });
+	},
+});
 
-		const trimmedContent = args.content.trim();
-		if (trimmedContent.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
-
-		const trimmedTitle = args.title?.trim();
-		if (trimmedTitle && trimmedTitle.length > TITLE_MAX_LEN) {
-			throw new ConvexError(ERRORS.INVALID_ARGS);
-		}
-
-		// Resolve the category — explicit param OR fallback to org default.
-		let categoryId: typeof args.categoryId = args.categoryId;
-		if (categoryId === undefined) {
-			// Lazy seed: any org that predates this feature gets defaults the
-			// first time someone tries to create a note. Idempotent.
-			await seedNoteCategoriesForOrg(ctx, args.orgId);
-			const def = await getDefaultCategoryForOrg(ctx, args.orgId);
-			if (!def) {
-				throw new ConvexError({
-					code: "NO_DEFAULT_CATEGORY",
-					message: "Workspace has no note categories configured.",
-				});
-			}
-			categoryId = def;
-		} else {
-			// Validate the explicit category belongs to the org.
-			const cat = await ctx.db.get(categoryId);
-			if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const now = Date.now();
-		// New cards land at the top of their category column. Compute the
-		// top-of-column sortOrder from the existing rows so the freshly-created
-		// note sits above every existing card. (gap-based: subtract 1024 from
-		// the current minimum.)
-		const sortOrder = await topOfColumnSortOrder(ctx, args.orgId, categoryId);
-		const noteId = await ctx.db.insert("notes", {
-			orgId: args.orgId,
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			title: trimmedTitle && trimmedTitle.length > 0 ? trimmedTitle : undefined,
-			content: trimmedContent,
-			categoryId,
-			authorId: userId,
-			authorType: args.authorType,
-			isPinned: false,
-			isInternal: args.isInternal,
-			sortOrder,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			actorType: args.authorType === "ai" ? "ai" : "user",
-			action: "note_added",
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			description: `Note added${args.isInternal ? " (internal)" : ""}`,
-			metadata: { noteId, categoryId },
-		});
-
-		// Notify the entity assignee (if any) so they see notes on their records.
-		const assigneeId = await resolveNoteEntityAssignee(ctx, {
-			orgId: args.orgId,
-			entityType: args.entityType,
-			entityId: args.entityId,
-		});
-		if (assigneeId && assigneeId !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: assigneeId,
-				type: "note.added",
-				title: "New note on your record",
-				body:
-					trimmedContent.length > 120
-						? `${trimmedContent.slice(0, 117)}…`
-						: trimmedContent,
-				entityType: args.entityType,
-				entityId: args.entityId,
-				metadata: { noteId, personCode: args.personCode ?? "" },
-			});
-		}
-
-		return noteId;
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: v.string(),
+		entityId: v.string(),
+		personCode: v.optional(v.string()),
+		title: v.optional(v.string()),
+		content: v.string(),
+		categoryId: v.optional(v.id("noteCategories")),
+		authorType: v.string(),
+		isInternal: v.boolean(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.create");
+		return createImpl(ctx, args);
 	},
 });
 

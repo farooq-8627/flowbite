@@ -104,6 +104,7 @@ export const genericTemplate: IndustryTemplate = {
 	},
 
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"leads.open",
 		"contacts.active",
 		"deals.open",

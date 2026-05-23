@@ -71,6 +71,7 @@ import { DataTable } from "@/core/data-display/datatable/components/DataTable";
 import { DataTableColumnHeader } from "@/core/data-display/datatable/components/DataTableColumnHeader";
 import { useDataTable } from "@/core/data-display/datatable/hooks/useDataTable";
 import { CompanyDrawer } from "@/core/entities/_entities/companies/components/CompanyDrawer";
+import { EntityAISummaryCard } from "@/core/entities/shared/components/EntityAISummaryCard";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { FieldValueRenderer } from "@/core/entities/shared/components/FieldValueRenderer";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
@@ -328,91 +329,18 @@ function CompanyOverviewTab({ company, orgId, assignee }: CompanyOverviewTabProp
 	const websiteHref = company.website ? normalizeExternalUrl(company.website) : null;
 
 	return (
-		<div className="grid gap-3 p-3 sm:p-4 md:grid-cols-2">
-			{/* ── Primary details card ──────────────────────────────── */}
-			<Card>
-				<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
-					<CardTitle className="text-sm">Details</CardTitle>
-					{canEdit && (
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button
-									type="button"
-									size="icon"
-									variant="ghost"
-									onClick={() => setEditOpen(true)}
-									className="size-7"
-									aria-label={`Edit ${labels.company.singular.toLowerCase()}`}
-								>
-									<PencilIcon className="size-3.5" aria-hidden />
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="top" className="text-xs">
-								Edit {labels.company.singular.toLowerCase()}
-							</TooltipContent>
-						</Tooltip>
-					)}
-				</CardHeader>
-				<CardContent>
-					<dl className="flex flex-col divide-y text-xs">
-						<DetailRow label="Code">
-							<span className="font-mono">{company.companyCode}</span>
-						</DetailRow>
-						<DetailRow label="Industry">
-							{company.industry ?? <Muted>—</Muted>}
-						</DetailRow>
-						<DetailRow label="Size">{company.size ?? <Muted>—</Muted>}</DetailRow>
-						<DetailRow label="Website">
-							{websiteHref ? (
-								<a
-									href={websiteHref}
-									target="_blank"
-									rel="noopener noreferrer external"
-									className="text-primary hover:underline"
-								>
-									{displayUrlLabel(websiteHref, 32)}
-								</a>
-							) : (
-								<Muted>—</Muted>
-							)}
-						</DetailRow>
-						<DetailRow label="Owner">
-							{assignee ? (
-								<span className="inline-flex items-center gap-1.5">
-									<Avatar className="size-4">
-										<AvatarImage src={assignee.avatarUrl ?? undefined} />
-										<AvatarFallback className="text-[8px]">
-											{getInitials(assignee.name ?? assignee.email ?? "?")}
-										</AvatarFallback>
-									</Avatar>
-									<span className="truncate">
-										{assignee.name ?? assignee.email}
-									</span>
-								</span>
-							) : (
-								<Muted>Unassigned</Muted>
-							)}
-						</DetailRow>
-						<DetailRow label="People">
-							<span className="tabular-nums">{company.personCodes?.length ?? 0}</span>
-						</DetailRow>
-						<DetailRow label="Tags">
-							<TagsCell
-								orgId={orgId}
-								entityType="company"
-								entityId={company._id}
-								className="justify-end"
-							/>
-						</DetailRow>
-					</dl>
-				</CardContent>
-			</Card>
-
-			{/* ── Custom fields card (admin-defined extras) ─────────── */}
-			{fieldsToRender.length > 0 && (
+		<div className="space-y-3 p-3 sm:p-4">
+			{/* AI summary — only renders when aiContext.summary or keyFacts are set. */}
+			<EntityAISummaryCard
+				summary={company.aiContext?.summary}
+				keyFacts={company.aiContext?.keyFacts}
+				lastUpdatedAt={company.aiContext?.lastUpdatedAt}
+			/>
+			<div className="grid gap-3 md:grid-cols-2">
+				{/* ── Primary details card ──────────────────────────────── */}
 				<Card>
 					<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
-						<CardTitle className="text-sm">More fields</CardTitle>
+						<CardTitle className="text-sm">Details</CardTitle>
 						{canEdit && (
 							<Tooltip>
 								<TooltipTrigger asChild>
@@ -422,94 +350,179 @@ function CompanyOverviewTab({ company, orgId, assignee }: CompanyOverviewTabProp
 										variant="ghost"
 										onClick={() => setEditOpen(true)}
 										className="size-7"
-										aria-label="Edit fields"
+										aria-label={`Edit ${labels.company.singular.toLowerCase()}`}
 									>
 										<PencilIcon className="size-3.5" aria-hidden />
 									</Button>
 								</TooltipTrigger>
 								<TooltipContent side="top" className="text-xs">
-									Edit fields
+									Edit {labels.company.singular.toLowerCase()}
 								</TooltipContent>
 							</Tooltip>
 						)}
 					</CardHeader>
 					<CardContent>
 						<dl className="flex flex-col divide-y text-xs">
-							{fieldsToRender.map((field) => {
-								const raw =
-									field.storage === "column"
-										? (company as unknown as Record<string, unknown>)[
-												field.columnKey ?? field.name
-											]
-										: customValues[field.name];
-								const has =
-									raw !== undefined &&
-									raw !== null &&
-									!(typeof raw === "string" && raw.length === 0) &&
-									!(Array.isArray(raw) && raw.length === 0);
-								return (
-									<DetailRow key={field._id} label={field.label}>
-										{has ? (
-											<FieldValueRenderer
-												kind={pickRenderKind(field)}
-												value={raw}
-											/>
-										) : (
-											<Muted>—</Muted>
-										)}
-									</DetailRow>
-								);
-							})}
+							<DetailRow label="Code">
+								<span className="font-mono">{company.companyCode}</span>
+							</DetailRow>
+							<DetailRow label="Industry">
+								{company.industry ?? <Muted>—</Muted>}
+							</DetailRow>
+							<DetailRow label="Size">{company.size ?? <Muted>—</Muted>}</DetailRow>
+							<DetailRow label="Website">
+								{websiteHref ? (
+									<a
+										href={websiteHref}
+										target="_blank"
+										rel="noopener noreferrer external"
+										className="text-primary hover:underline"
+									>
+										{displayUrlLabel(websiteHref, 32)}
+									</a>
+								) : (
+									<Muted>—</Muted>
+								)}
+							</DetailRow>
+							<DetailRow label="Owner">
+								{assignee ? (
+									<span className="inline-flex items-center gap-1.5">
+										<Avatar className="size-4">
+											<AvatarImage src={assignee.avatarUrl ?? undefined} />
+											<AvatarFallback className="text-[8px]">
+												{getInitials(
+													assignee.name ?? assignee.email ?? "?",
+												)}
+											</AvatarFallback>
+										</Avatar>
+										<span className="truncate">
+											{assignee.name ?? assignee.email}
+										</span>
+									</span>
+								) : (
+									<Muted>Unassigned</Muted>
+								)}
+							</DetailRow>
+							<DetailRow label="People">
+								<span className="tabular-nums">
+									{company.personCodes?.length ?? 0}
+								</span>
+							</DetailRow>
+							<DetailRow label="Tags">
+								<TagsCell
+									orgId={orgId}
+									entityType="company"
+									entityId={company._id}
+									className="justify-end"
+								/>
+							</DetailRow>
 						</dl>
 					</CardContent>
 				</Card>
-			)}
 
-			{/* ── Recent activity preview — full-width on tablet+ ──── */}
-			<Card className="md:col-span-2">
-				<CardHeader className="pb-2">
-					<CardTitle className="text-sm">Recent activity</CardTitle>
-				</CardHeader>
-				<CardContent className="-mx-2 sm:-mx-3">
-					<EntityTimeline
-						entityType="company"
-						entityId={company.companyCode}
-						pageSize={20}
-						visibleCap={20}
-						showFilters={false}
-						showComposer={false}
-					/>
-				</CardContent>
-			</Card>
+				{/* ── Custom fields card (admin-defined extras) ─────────── */}
+				{fieldsToRender.length > 0 && (
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
+							<CardTitle className="text-sm">More fields</CardTitle>
+							{canEdit && (
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											type="button"
+											size="icon"
+											variant="ghost"
+											onClick={() => setEditOpen(true)}
+											className="size-7"
+											aria-label="Edit fields"
+										>
+											<PencilIcon className="size-3.5" aria-hidden />
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent side="top" className="text-xs">
+										Edit fields
+									</TooltipContent>
+								</Tooltip>
+							)}
+						</CardHeader>
+						<CardContent>
+							<dl className="flex flex-col divide-y text-xs">
+								{fieldsToRender.map((field) => {
+									const raw =
+										field.storage === "column"
+											? (company as unknown as Record<string, unknown>)[
+													field.columnKey ?? field.name
+												]
+											: customValues[field.name];
+									const has =
+										raw !== undefined &&
+										raw !== null &&
+										!(typeof raw === "string" && raw.length === 0) &&
+										!(Array.isArray(raw) && raw.length === 0);
+									return (
+										<DetailRow key={field._id} label={field.label}>
+											{has ? (
+												<FieldValueRenderer
+													kind={pickRenderKind(field)}
+													value={raw}
+												/>
+											) : (
+												<Muted>—</Muted>
+											)}
+										</DetailRow>
+									);
+								})}
+							</dl>
+						</CardContent>
+					</Card>
+				)}
 
-			{/* ── Open follow-ups card — same row on md+ ───────────── */}
-			<Card className="md:col-span-2">
-				<CardHeader className="pb-2">
-					<CardTitle className="text-sm">Open follow-ups</CardTitle>
-				</CardHeader>
-				<CardContent>
-					<EntityFollowups entityType="company" entityId={company.companyCode} />
-				</CardContent>
-			</Card>
+				{/* ── Recent activity preview — full-width on tablet+ ──── */}
+				<Card className="md:col-span-2">
+					<CardHeader className="pb-2">
+						<CardTitle className="text-sm">Recent activity</CardTitle>
+					</CardHeader>
+					<CardContent className="-mx-2 sm:-mx-3">
+						<EntityTimeline
+							entityType="company"
+							entityId={company.companyCode}
+							pageSize={20}
+							visibleCap={20}
+							showFilters={false}
+							showComposer={false}
+						/>
+					</CardContent>
+				</Card>
 
-			{/* ── Empty-state hint ──────────────────────────────────── */}
-			{fieldsToRender.length === 0 && (
-				<p className="text-xs text-muted-foreground md:col-span-2">
-					Add custom fields under Settings → {labels.company.singular} to surface more
-					information here.
-				</p>
-			)}
+				{/* ── Open follow-ups card — same row on md+ ───────────── */}
+				<Card className="md:col-span-2">
+					<CardHeader className="pb-2">
+						<CardTitle className="text-sm">Open follow-ups</CardTitle>
+					</CardHeader>
+					<CardContent>
+						<EntityFollowups entityType="company" entityId={company.companyCode} />
+					</CardContent>
+				</Card>
 
-			{/* Edit drawer — re-used by both Details and More fields card
+				{/* ── Empty-state hint ──────────────────────────────────── */}
+				{fieldsToRender.length === 0 && (
+					<p className="text-xs text-muted-foreground md:col-span-2">
+						Add custom fields under Settings → {labels.company.singular} to surface more
+						information here.
+					</p>
+				)}
+
+				{/* Edit drawer — re-used by both Details and More fields card
 			    headers. Re-mounting it once at the tab level keeps a
 			    single form instance in flight. */}
-			<CompanyDrawer
-				open={editOpen}
-				onOpenChange={setEditOpen}
-				orgId={orgId}
-				mode="edit"
-				company={company}
-			/>
+				<CompanyDrawer
+					open={editOpen}
+					onOpenChange={setEditOpen}
+					orgId={orgId}
+					mode="edit"
+					company={company}
+				/>
+			</div>
 		</div>
 	);
 }

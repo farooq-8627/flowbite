@@ -20,6 +20,9 @@ registerTool({
 	permission: "notes.categories.manage",
 	confirmation: "none",
 	description: "Create a new note category.",
+	runbook: {
+		onSuccess: "Confirm with the new category name.",
+	},
 	schema: z.object({
 		name: z.string(),
 		color: z.optional(z.string()),
@@ -29,7 +32,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
-			const result = await toolMutation(ctx, "crm/shared/noteCategories/mutations:create", {
+			const result = await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:create", {
 				orgId,
 				...args,
 			});
@@ -47,6 +50,9 @@ registerTool({
 	permission: "notes.categories.manage",
 	confirmation: "none",
 	description: "Rename or update a note category.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({
 		categoryId: z.string(),
 		name: z.optional(z.string()),
@@ -57,7 +63,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
-			await toolMutation(ctx, "crm/shared/noteCategories/mutations:update", {
+			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:update", {
 				orgId,
 				...args,
 			});
@@ -71,6 +77,9 @@ registerTool({
 	permission: "notes.categories.manage",
 	confirmation: "twoStep",
 	description: "Archive a note category. Existing notes keep their assignment.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({ categoryId: z.string(), name: z.string().describe("For preview") }),
 	execute: async (args) => {
 		const { permissions } = getCtx();
@@ -93,7 +102,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
-			await toolMutation(ctx, "crm/shared/noteCategories/mutations:setArchived", {
+			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:setArchived", {
 				orgId,
 				categoryId: args.categoryId,
 				archived: true,
@@ -108,12 +117,15 @@ registerTool({
 	permission: "notes.categories.manage",
 	confirmation: "none",
 	description: "Reorder note categories. Provide the new ordered list of categoryIds.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({ orderedIds: z.array(z.string()) }),
 	execute: async (args) =>
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
-			await toolMutation(ctx, "crm/shared/noteCategories/mutations:reorder", {
+			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:reorder", {
 				orgId,
 				...args,
 			});

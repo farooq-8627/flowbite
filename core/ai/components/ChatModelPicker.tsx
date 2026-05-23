@@ -21,7 +21,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { type ModelTier } from "@/convex/ai/modelRegistry";
+import type { ModelTier } from "@/convex/ai/modelRegistry";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useModelPreference } from "../hooks/useModelPreference";
 
@@ -75,14 +75,8 @@ interface Props {
 }
 
 export function ChatModelPicker({ onModelChange }: Props) {
-	const {
-		defaultModel,
-		modelInfo,
-		availableModelsByProvider,
-		isReady,
-		hasNoKeys,
-		setModel,
-	} = useModelPreference();
+	const { defaultModel, modelInfo, availableModelsByProvider, isReady, hasNoKeys, setModel } =
+		useModelPreference();
 	const { fullOrgEntry } = useCurrentOrg();
 	const orgSlug = fullOrgEntry?.org.slug;
 

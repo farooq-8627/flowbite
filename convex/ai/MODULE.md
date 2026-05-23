@@ -1,6 +1,6 @@
 # convex/ai — MODULE.md
 
-> **STATUS:** 🟡 Phase 3B core landed; runtime needs platform key OR BYOK to actually respond.
+> **STATUS:** 🟢 Phase 3B core + Sprints 4–5 shipped. Sprint 6 (tests) is the only open work.
 > Updated: 2026-05-23.
 
 **Ownership:** `convex/ai/` (Convex backend) | Consumers: `core/ai/` (Next.js frontend), `core/inbox/ai/`, `convex/crons.ts` (briefings), future WhatsApp voice processor.
@@ -21,13 +21,20 @@ AI chat runtime + BYOK key management + morning briefings. `processChat.run` is 
 | `encryptionTypes.ts` | V8 | Pure `ProviderId`, `detectProvider`, `keyHint`. **V8-safe so non-Node files can import without pulling `node:crypto` into the V8 bundle.** |
 | `models.ts` | **Node** | `buildLanguageModel` (Vercel AI SDK provider factories), `getPlatformKey`, `getModel`. Imports `@ai-sdk/*` packages. |
 | `modelRegistry.ts` | V8 | Static `MODEL_REGISTRY`, `PLAN_ALLOWED_TIERS`, default model constants. **Safe to import from frontend AND Node actions.** |
-| `processChat.ts` | **Node** | `run` (internalAction) and `resume` (internalAction). Streams the LLM response, dispatches tools, patches the assistant message progressively. |
-| `briefings.ts` | V8 | Internal queries/mutations for the morning briefing (`collectUserBriefingData`, `insertBriefing`, `listEligibleUsers`). |
-| `briefingsActions.ts` | **Node** | `generate` (internalAction) and `generateForActiveUsers` (cron internalAction). Calls `generateText`. |
-| `briefingsPublic.ts` | V8 | Public surface for briefings — `getLatest` (query), `refreshNow` (mutation that schedules `briefingsActions:generate`). |
-| `systemPrompt.ts` | V8 | 3-layer system prompt builder (platform → org → entity context). Internal query. |
-| `toolRegistry.ts` | V8 | `getToolsForRequest` filters tools by permissions + model tier + expanded layers. |
-| `tools/*` | V8 | Tool definitions (zod schema → handler). Each tool has a `setXContext(toolCtx)` setter called from `processChat.run`. Layer tools live in `tools/layers/`. |
+| `processChat.ts` | **Node** | 20-line re-export shim — the real orchestrator lives under `orchestrator/`. Preserves the public path `api.ai.processChat:run`. |
+| `orchestrator/run.ts` | **Node** | `processChat.run` entry-point. Auth → model → prompt → bind tools → call streamLoop → log activity → **suggestion generation (Sprint 5)** → auto-title. |
+| `orchestrator/resume.ts` | **Node** | `processChat.resume` entry-point. Approved confirmations + ask_user_choice + ask_user_input branches. |
+| `orchestrator/streamLoop.ts` | **Node** | The for-await chunk-handling loop. AI SDK v6 chunk-shape adapters with v5/v4 fallback. |
+| `orchestrator/modelResolver.ts` | **Node** | Resolves model + BYOK key + plan tier. |
+| `orchestrator/reasoningBuffer.ts` | V8 | `formatToolErrorForReasoning` + cap constants. |
+| `orchestrator/toolContextBinder.ts` | **Node** | One-call helper that wires `ToolContext` into every tool module. |
+| `orchestrator/suggestionGenerator.ts` | **Node** | **Sprint 5** — generates 2-3 follow-up chip suggestions per turn (briefing-tier model, JSON contract). |
+| `briefings.ts` | V8 | Internal queries/mutations for the morning briefing. **Sprint 5** added `collectOrgWeeklyData`, `insertWeeklyBriefing`, `listActiveOrgs`. |
+| `briefingsActions.ts` | **Node** | `generate` (daily) and `generateForActiveUsers` (cron). **Sprint 5** added `generateWeeklyForOrg` + `generateForAllOrgs`. |
+| `briefingsPublic.ts` | V8 | Public surface — `getLatest`, `refreshNow`. **Sprint 5** added `todayForUser` + `thisWeekForOrg`. |
+| `systemPrompt.ts` | V8 | 3-layer system prompt builder. **Sprint 4** injects a `## Tool Runbooks` block from `getActiveRunbooks`. |
+| `toolRegistry.ts` | V8 | `getToolsForRequest` filters tools by permissions + model tier + expanded layers. **Sprint 4** added `ToolRunbook` type + `getActiveRunbooks` + `formatRunbooksBlock`. |
+| `tools/*` | V8 | Tool definitions (zod schema → handler). Each tool has a `setXContext(toolCtx)` setter. Layer tools live in `tools/layers/`. **Sprint 4** added `runbook` to every always-on + user-facing layer tool. |
 | `internal.ts` | V8 | Misc internal helpers. |
 | `_logAIActivityInternal.ts` | V8 | Helper to write activity-log rows from AI tool calls. |
 
@@ -41,8 +48,14 @@ AI chat runtime + BYOK key management + morning briefings. `processChat.run` is 
 | 4 | **V8 / Node split is a strict convention** — see "V8 vs Node runtime convention" below. Bundling errors `Could not resolve "node:crypto"` and `function is a Query function. Only actions can be defined in Node.js` both come from violations of this convention. | Each file has a single runtime; pairs (`X.ts` V8 + `XActions.ts` Node) communicate only via `ctx.runQuery`/`ctx.runMutation`/`ctx.runAction`. |
 | 5 | **`MODEL_REGISTRY` is the single source of truth** for which models the UI exposes. Adding a provider requires (a) `getPlatformKey` env-var case in `models.ts`, (b) factory case in `buildLanguageModel`, (c) at least one entry in `modelRegistry.ts`. NVIDIA + OpenRouter free models added 2026-05-23. | One place to gate plan tiers, supportsTools, costs. |
 | 6 | **Tools register their context via `setXContext(toolCtx)`** at the start of `processChat.run`. Each tool reads `toolCtx` lazily inside its handler. This works around the Vercel AI SDK's stateless `tool()` factory. | Tools can hit Convex via the action context without each tool reimplementing auth. |
-| 7 | **Briefings are platform-billed only** — never use BYOK. Generated nightly by cron + on-demand via `briefingsPublic.refreshNow` (rate-limited 5/min/user). | Cost predictability; users don't pay for cron-generated work. |
+| 7 | **Briefings are platform-billed only** — never use BYOK. Generated nightly by cron + on-demand via `briefingsPublic.refreshNow` (rate-limited 5/min/user). Sprint 5 added a weekly-org briefing scope generated every 7 days. | Cost predictability; users don't pay for cron-generated work. |
 | 8 | **Two-step confirmation gate** for destructive tools — model emits a tool-call, `processChat.run` writes a `confirmationState: "pending"` record, the UI surfaces a confirm/reject dialog, `confirmConfirmation` mutation updates state and schedules `processChat.resume`. | Safe by default for delete / bulk-update / billing changes. |
+| 9 | **Live `thinkingState` field on aiMessages** drives the Claude/OpenAI-style indicator (`thinking → calling_tool → streaming → done`). Plus optional `reasoning` chain-of-thought (capped at 10 KB) and `activeTool` (running tool name). | UI never silently spins; user always sees what the model is doing. |
+| 10 | **Stream-loop is bullet-proofed** — handles `error` chunk-types, settles the placeholder if the stream ends without a `finish` chunk, maps auth/quota errors to friendly hints. | A user can never be left staring at a permanent spinner. |
+| 11 | **Composer pre-flight gate** — `useModelPreference().hasNoKeys` disables the Composer and replaces it with a "No AI key configured" banner. | Defense in depth + zero-confusion onboarding. |
+| 12 | **Per-tool `runbook` field (Sprint 4)** — every active tool injects ≤6 one-line policies into the system prompt's `## Tool Runbooks` block. Cost scales with the active set, not with the total registry size. | Localised guidance; no global doctrine block; consistent behaviour across providers. |
+| 13 | **Suggestions are best-effort, post-turn (Sprint 5)** — `orchestrator/suggestionGenerator.ts` runs after the chat already settled. Failures are logged + swallowed; no user-visible error. | Polish, not hot-path; chat reliability untouched. |
+| 14 | **Daily + weekly briefings live in one table, distinguished by `aiBriefings.scope`** — `daily-user` rows have a `userId`; `weekly-org` rows leave it null. | One index family; the `payload` discriminator carries the structured shape. |
 
 ## V8 vs Node runtime convention
 
@@ -174,7 +187,7 @@ If neither is set for the resolved model's provider, `processChat.run` writes `�
 
 | # | Item | Where |
 |---|------|-------|
-| 1 | `excludeFromAI` flag on entities + notes/reminders → respected by tool queries (Phase 3A schema landed; tool-side filter NOT yet applied). | `convex/ai/tools/search.ts`, `convex/ai/tools/notesReminders.ts` |
-| 2 | NVIDIA + OpenRouter providers added to model registry but not wired into the org plan-gating UI yet. | `core/platform/settings/components/groups/ai/` |
+| 1 | **Sprint 6 — tests.** Unit (Zod helpers + tool schemas), integration (tool execute → DB + display.kind contract), E2E (chat → propose → approve flow), snapshot per `ToolDisplay` kind. | Future PR — see [AI-MODULE-PLAN.md §3.1](../../AI-MODULE-PLAN.md). |
+| 2 | NVIDIA + OpenRouter providers added to model registry but not surfaced in the org plan-gating UI. | `core/platform/settings/components/groups/ai/` |
 | 3 | Streak widget placeholder in productivity template; tool to query `userDailyActivity` deferred to Phase 4. | `convex/ai/tools/layers/data.ts` (future) |
-| 4 | Action contexts (`setSearchToolContext`, etc.) are set per request but the underlying tool definitions are imported eagerly. Cold start is fine on Convex's V8 isolate but watch bundle size as more tools land. | `convex/ai/processChat.ts` |
+| 4 | Action contexts (`setSearchToolContext`, etc.) are set per request but the underlying tool definitions are imported eagerly. Cold start is fine on Convex's V8 isolate but watch bundle size as more tools land. | `convex/ai/orchestrator/toolContextBinder.ts` |

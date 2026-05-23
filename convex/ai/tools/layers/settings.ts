@@ -22,6 +22,11 @@ registerTool({
 	confirmation: "twoStep",
 	description:
 		"Update workspace settings (timezone, currency, badge counts, etc.). Pass the patch object.",
+	runbook: {
+		onSuccess: "Confirm with the keys that were updated. Don't restate every value.",
+		onPermissionDenied:
+			"Tell the user they need org.editSettings permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		patch: z.record(z.string(), z.unknown()),
 	}),
@@ -46,8 +51,19 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "org.editSettings");
-			await toolMutation(ctx, "orgs/mutations:update", { orgId, settings: args.patch });
-			return { ok: true as const, data: args, display: `✅ Settings updated.` };
+			await toolMutation(getCtx(), "orgs/mutations:update", { orgId, settings: args.patch });
+			// Sprint 3 doctrine: emit a `settings` display payload so the
+			// chat renders a deep-link card to the affected section. We
+			// pick the best-matching section id by inspecting the patch keys.
+			const sectionId = pickSettingsSection(args.patch);
+			return {
+				ok: true as const,
+				data: args,
+				display: {
+					kind: "settings" as const,
+					sectionId,
+				},
+			};
 		}),
 });
 
@@ -59,6 +75,10 @@ registerTool({
 	confirmation: "twoStep",
 	description:
 		"Rename CRM entity labels (e.g. 'Lead' → 'Inquiry'). Pass new singular/plural for any entity.",
+	runbook: {
+		onSuccess:
+			"Confirm with the new singular labels. Mention that the change applies app-wide and the user can refresh to see it everywhere.",
+	},
 	schema: z.object({
 		labels: z.object({
 			lead: z.optional(z.object({ singular: z.string(), plural: z.string() })),
@@ -98,7 +118,31 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "org.editSettings");
-			await toolMutation(ctx, "orgs/mutations:update", { orgId, entityLabels: args.labels });
-			return { ok: true as const, data: args, display: `✅ Entity labels updated.` };
+			await toolMutation(getCtx(), "orgs/mutations:update", { orgId, entityLabels: args.labels });
+			return {
+				ok: true as const,
+				data: args,
+				display: {
+					kind: "settings" as const,
+					sectionId: "entity-labels",
+				},
+			};
 		}),
 });
+
+/**
+ * Pick the best matching settings section id for a settings patch.
+ * Used so commit_update_org_settings can deep-link to the right page.
+ * Defaults to "general" when no specific match.
+ */
+function pickSettingsSection(patch: Record<string, unknown>): string {
+	const keys = Object.keys(patch);
+	if (keys.some((k) => k.includes("currency") || k.includes("timezone"))) return "general";
+	if (keys.some((k) => k.includes("dashboardMetrics") || k.includes("modules")))
+		return "appearance";
+	if (keys.some((k) => k.includes("softDelete") || k.includes("retention")))
+		return "data-retention";
+	if (keys.some((k) => k.includes("reminder") || k.includes("followUp"))) return "reminders";
+	if (keys.some((k) => k.includes("ai"))) return "ai";
+	return "general";
+}

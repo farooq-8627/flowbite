@@ -83,6 +83,7 @@ import { EditDealDrawer } from "@/core/entities/_entities/deals/components/EditD
 import { MarkAsDoneDialog } from "@/core/entities/_entities/deals/components/MarkAsDoneDialog";
 import { MarkAsLostDialog } from "@/core/entities/_entities/deals/components/MarkAsLostDialog";
 import { useDealPipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
+import { EntityAISummaryCard } from "@/core/entities/shared/components/EntityAISummaryCard";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { FieldValueRenderer } from "@/core/entities/shared/components/FieldValueRenderer";
 import { IdentityBadge } from "@/core/entities/shared/components/IdentityBadge";
@@ -613,123 +614,18 @@ function DealOverviewTab({
 	}, [pipeline]);
 
 	return (
-		<div className="grid gap-3 p-3 sm:p-4 md:grid-cols-2">
-			{/* ── Vitals card ─────────────────────────────────────── */}
-			<Card>
-				<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
-					<CardTitle className="text-sm">Vitals</CardTitle>
-					{canEdit && (
-						<div className="flex items-center gap-1">
-							{missingCount > 0 && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<Button
-											type="button"
-											size="sm"
-											variant="default"
-											onClick={() => openEditDrawer("fillStage")}
-											className="h-7 gap-1 px-2 text-[11px]"
-										>
-											<PlusIcon className="size-3" aria-hidden />
-											<span className="truncate max-w-[14ch]">
-												Fill {stageNameForFill} fields ({missingCount})
-											</span>
-										</Button>
-									</TooltipTrigger>
-									<TooltipContent side="top" className="text-xs">
-										{missingCount} {missingCount === 1 ? "field" : "fields"}{" "}
-										required at this stage
-									</TooltipContent>
-								</Tooltip>
-							)}
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										type="button"
-										size="icon"
-										variant="ghost"
-										onClick={() => openEditDrawer("edit")}
-										className="size-7"
-										aria-label={`Edit ${labels.deal.singular.toLowerCase()}`}
-									>
-										<PencilIcon className="size-3.5" aria-hidden />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent side="top" className="text-xs">
-									Edit {labels.deal.singular.toLowerCase()}
-								</TooltipContent>
-							</Tooltip>
-						</div>
-					)}
-				</CardHeader>
-				<CardContent>
-					<dl className="flex flex-col divide-y text-xs">
-						<DetailRow label="Code">
-							<span className="font-mono">{deal.dealCode}</span>
-						</DetailRow>
-						<DetailRow label="Stage">
-							{currentStage ? (
-								<span className="truncate">{currentStage.name}</span>
-							) : (
-								<Muted>—</Muted>
-							)}
-						</DetailRow>
-						<DetailRow label="Value">{formattedValue ?? <Muted>—</Muted>}</DetailRow>
-						<DetailRow label="Owner">
-							{assignee ? (
-								<span className="inline-flex items-center gap-1.5">
-									<Avatar className="size-4">
-										<AvatarImage src={assignee.avatarUrl ?? undefined} />
-										<AvatarFallback className="text-[8px]">
-											{(assignee.name ?? assignee.email ?? "?")
-												.slice(0, 2)
-												.toUpperCase()}
-										</AvatarFallback>
-									</Avatar>
-									<span className="truncate">
-										{assignee.name ?? assignee.email}
-									</span>
-								</span>
-							) : (
-								<Muted>Unassigned</Muted>
-							)}
-						</DetailRow>
-						{deal.expectedCloseDate ? (
-							<DetailRow label="Close date">
-								{new Date(deal.expectedCloseDate).toLocaleDateString()}
-							</DetailRow>
-						) : null}
-						{deal.wonAt ? (
-							<DetailRow label="Won">
-								{new Date(deal.wonAt).toLocaleDateString()}
-							</DetailRow>
-						) : null}
-						{deal.lostAt ? (
-							<DetailRow label="Lost">
-								{new Date(deal.lostAt).toLocaleDateString()}
-							</DetailRow>
-						) : null}
-						<DetailRow label="Tags">
-							<TagsCell
-								orgId={orgId}
-								entityType="deal"
-								entityId={deal._id}
-								className="justify-end"
-							/>
-						</DetailRow>
-					</dl>
-				</CardContent>
-			</Card>
-
-			{/* ── Stage-aware fields ──────────────────────────────── */}
-			{fieldsToRender.length > 0 && (
+		<div className="space-y-3 p-3 sm:p-4">
+			{/* AI summary — only renders when aiContext.summary or keyFacts are set. */}
+			<EntityAISummaryCard
+				summary={deal.aiContext?.summary}
+				keyFacts={deal.aiContext?.keyFacts}
+				lastUpdatedAt={deal.aiContext?.lastUpdatedAt}
+			/>
+			<div className="grid gap-3 md:grid-cols-2">
+				{/* ── Vitals card ─────────────────────────────────────── */}
 				<Card>
 					<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
-						<CardTitle className="text-sm">
-							{currentStage
-								? `${currentStage.name} fields`
-								: `${labels.deal.singular} fields`}
-						</CardTitle>
+						<CardTitle className="text-sm">Vitals</CardTitle>
 						{canEdit && (
 							<div className="flex items-center gap-1">
 								{missingCount > 0 && (
@@ -737,19 +633,20 @@ function DealOverviewTab({
 										<TooltipTrigger asChild>
 											<Button
 												type="button"
-												size="icon"
+												size="sm"
 												variant="default"
 												onClick={() => openEditDrawer("fillStage")}
-												className="size-7"
-												aria-label={`Fill ${stageNameForFill} fields (${missingCount})`}
+												className="h-7 gap-1 px-2 text-[11px]"
 											>
-												<PlusIcon className="size-3.5" aria-hidden />
+												<PlusIcon className="size-3" aria-hidden />
+												<span className="truncate max-w-[14ch]">
+													Fill {stageNameForFill} fields ({missingCount})
+												</span>
 											</Button>
 										</TooltipTrigger>
 										<TooltipContent side="top" className="text-xs">
-											Fill {missingCount}{" "}
-											{missingCount === 1 ? "field" : "fields"} for{" "}
-											{stageNameForFill}
+											{missingCount} {missingCount === 1 ? "field" : "fields"}{" "}
+											required at this stage
 										</TooltipContent>
 									</Tooltip>
 								)}
@@ -759,15 +656,15 @@ function DealOverviewTab({
 											type="button"
 											size="icon"
 											variant="ghost"
-											onClick={() => openEditDrawer("editStage")}
+											onClick={() => openEditDrawer("edit")}
 											className="size-7"
-											aria-label={`Edit ${stageNameForFill || "stage"} fields`}
+											aria-label={`Edit ${labels.deal.singular.toLowerCase()}`}
 										>
 											<PencilIcon className="size-3.5" aria-hidden />
 										</Button>
 									</TooltipTrigger>
 									<TooltipContent side="top" className="text-xs">
-										Edit {stageNameForFill || "stage"} fields
+										Edit {labels.deal.singular.toLowerCase()}
 									</TooltipContent>
 								</Tooltip>
 							</div>
@@ -775,88 +672,202 @@ function DealOverviewTab({
 					</CardHeader>
 					<CardContent>
 						<dl className="flex flex-col divide-y text-xs">
-							{fieldsToRender.map((field) => {
-								// File-type fields don't store their value in
-								// `entityFieldValues` — files live in the `files`
-								// table keyed by (scope, scopeId, fieldKey).
-								// Render an inline dropzone + list bound to that
-								// fieldKey so the user can drop files straight
-								// into the right slot AND see what's already
-								// attached, without clicking through to the
-								// Files tab.
-								if (field.type === "file" || field.type === "files") {
-									return (
-										<FileFieldRow
-											key={field._id}
-											orgId={orgId}
-											scopeId={deal.dealCode}
-											field={field}
-										/>
-									);
-								}
-								const raw = readFieldValue(field, deal, customValues);
-								const resolved = resolveFieldValue(
-									field,
-									raw,
-									memberNameMap,
-									stageNameMap,
-								);
-								const has =
-									resolved !== undefined &&
-									resolved !== null &&
-									!(typeof resolved === "string" && resolved.length === 0) &&
-									!(Array.isArray(resolved) && resolved.length === 0);
-								return (
-									<DetailRow
-										key={field._id}
-										label={field.label + (field.required ? " *" : "")}
-									>
-										{has ? (
-											<FieldValueRenderer
-												kind={pickRenderKind(field)}
-												value={resolved}
-												currencyCode={currencyCode}
-											/>
-										) : (
-											<Muted>—</Muted>
-										)}
-									</DetailRow>
-								);
-							})}
+							<DetailRow label="Code">
+								<span className="font-mono">{deal.dealCode}</span>
+							</DetailRow>
+							<DetailRow label="Stage">
+								{currentStage ? (
+									<span className="truncate">{currentStage.name}</span>
+								) : (
+									<Muted>—</Muted>
+								)}
+							</DetailRow>
+							<DetailRow label="Value">
+								{formattedValue ?? <Muted>—</Muted>}
+							</DetailRow>
+							<DetailRow label="Owner">
+								{assignee ? (
+									<span className="inline-flex items-center gap-1.5">
+										<Avatar className="size-4">
+											<AvatarImage src={assignee.avatarUrl ?? undefined} />
+											<AvatarFallback className="text-[8px]">
+												{(assignee.name ?? assignee.email ?? "?")
+													.slice(0, 2)
+													.toUpperCase()}
+											</AvatarFallback>
+										</Avatar>
+										<span className="truncate">
+											{assignee.name ?? assignee.email}
+										</span>
+									</span>
+								) : (
+									<Muted>Unassigned</Muted>
+								)}
+							</DetailRow>
+							{deal.expectedCloseDate ? (
+								<DetailRow label="Close date">
+									{new Date(deal.expectedCloseDate).toLocaleDateString()}
+								</DetailRow>
+							) : null}
+							{deal.wonAt ? (
+								<DetailRow label="Won">
+									{new Date(deal.wonAt).toLocaleDateString()}
+								</DetailRow>
+							) : null}
+							{deal.lostAt ? (
+								<DetailRow label="Lost">
+									{new Date(deal.lostAt).toLocaleDateString()}
+								</DetailRow>
+							) : null}
+							<DetailRow label="Tags">
+								<TagsCell
+									orgId={orgId}
+									entityType="deal"
+									entityId={deal._id}
+									className="justify-end"
+								/>
+							</DetailRow>
 						</dl>
 					</CardContent>
 				</Card>
-			)}
 
-			{/* ── Recent activity preview — full width on tablet+ ── */}
-			<Card className="md:col-span-2">
-				<CardHeader className="pb-2">
-					<CardTitle className="text-sm">Recent activity</CardTitle>
-				</CardHeader>
-				<CardContent className="-mx-2 sm:-mx-3">
-					<EntityTimeline
-						entityType="deal"
-						entityId={deal.dealCode}
-						pageSize={20}
-						visibleCap={20}
-						showFilters={false}
-						showComposer={false}
-					/>
-				</CardContent>
-			</Card>
+				{/* ── Stage-aware fields ──────────────────────────────── */}
+				{fieldsToRender.length > 0 && (
+					<Card>
+						<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2 space-y-0">
+							<CardTitle className="text-sm">
+								{currentStage
+									? `${currentStage.name} fields`
+									: `${labels.deal.singular} fields`}
+							</CardTitle>
+							{canEdit && (
+								<div className="flex items-center gap-1">
+									{missingCount > 0 && (
+										<Tooltip>
+											<TooltipTrigger asChild>
+												<Button
+													type="button"
+													size="icon"
+													variant="default"
+													onClick={() => openEditDrawer("fillStage")}
+													className="size-7"
+													aria-label={`Fill ${stageNameForFill} fields (${missingCount})`}
+												>
+													<PlusIcon className="size-3.5" aria-hidden />
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent side="top" className="text-xs">
+												Fill {missingCount}{" "}
+												{missingCount === 1 ? "field" : "fields"} for{" "}
+												{stageNameForFill}
+											</TooltipContent>
+										</Tooltip>
+									)}
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<Button
+												type="button"
+												size="icon"
+												variant="ghost"
+												onClick={() => openEditDrawer("editStage")}
+												className="size-7"
+												aria-label={`Edit ${stageNameForFill || "stage"} fields`}
+											>
+												<PencilIcon className="size-3.5" aria-hidden />
+											</Button>
+										</TooltipTrigger>
+										<TooltipContent side="top" className="text-xs">
+											Edit {stageNameForFill || "stage"} fields
+										</TooltipContent>
+									</Tooltip>
+								</div>
+							)}
+						</CardHeader>
+						<CardContent>
+							<dl className="flex flex-col divide-y text-xs">
+								{fieldsToRender.map((field) => {
+									// File-type fields don't store their value in
+									// `entityFieldValues` — files live in the `files`
+									// table keyed by (scope, scopeId, fieldKey).
+									// Render an inline dropzone + list bound to that
+									// fieldKey so the user can drop files straight
+									// into the right slot AND see what's already
+									// attached, without clicking through to the
+									// Files tab.
+									if (field.type === "file" || field.type === "files") {
+										return (
+											<FileFieldRow
+												key={field._id}
+												orgId={orgId}
+												scopeId={deal.dealCode}
+												field={field}
+											/>
+										);
+									}
+									const raw = readFieldValue(field, deal, customValues);
+									const resolved = resolveFieldValue(
+										field,
+										raw,
+										memberNameMap,
+										stageNameMap,
+									);
+									const has =
+										resolved !== undefined &&
+										resolved !== null &&
+										!(typeof resolved === "string" && resolved.length === 0) &&
+										!(Array.isArray(resolved) && resolved.length === 0);
+									return (
+										<DetailRow
+											key={field._id}
+											label={field.label + (field.required ? " *" : "")}
+										>
+											{has ? (
+												<FieldValueRenderer
+													kind={pickRenderKind(field)}
+													value={resolved}
+													currencyCode={currencyCode}
+												/>
+											) : (
+												<Muted>—</Muted>
+											)}
+										</DetailRow>
+									);
+								})}
+							</dl>
+						</CardContent>
+					</Card>
+				)}
 
-			{/* Edit / Fill-stage drawer — re-used by both Vitals and
+				{/* ── Recent activity preview — full width on tablet+ ── */}
+				<Card className="md:col-span-2">
+					<CardHeader className="pb-2">
+						<CardTitle className="text-sm">Recent activity</CardTitle>
+					</CardHeader>
+					<CardContent className="-mx-2 sm:-mx-3">
+						<EntityTimeline
+							entityType="deal"
+							entityId={deal.dealCode}
+							pageSize={20}
+							visibleCap={20}
+							showFilters={false}
+							showComposer={false}
+						/>
+					</CardContent>
+				</Card>
+
+				{/* Edit / Fill-stage drawer — re-used by both Vitals and
 			    Stage-aware fields card headers. Mode determines which
 			    field set is rendered. */}
-			<EditDealDrawer
-				open={editOpen}
-				onOpenChange={setEditOpen}
-				orgId={orgId}
-				deal={deal}
-				mode={editMode}
-				stageFieldNames={fieldsToRender.map((f) => f.name)}
-				stageDisplayName={currentStage?.name}
-			/>
+				<EditDealDrawer
+					open={editOpen}
+					onOpenChange={setEditOpen}
+					orgId={orgId}
+					deal={deal}
+					mode={editMode}
+					stageFieldNames={fieldsToRender.map((f) => f.name)}
+					stageDisplayName={currentStage?.name}
+				/>
+			</div>
 		</div>
 	);
 }

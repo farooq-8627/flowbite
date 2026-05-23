@@ -6,6 +6,7 @@
  */
 import { ConvexError, v } from "convex/values";
 import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
+import { internalMutation, internalQuery } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions/helpers";
 import { enforceRateLimit } from "../_shared/rateLimit";
@@ -46,6 +47,20 @@ export const get = orgQuery({
 		) {
 			return null;
 		}
+		return conv;
+	},
+});
+
+/**
+ * Internal-only conversation getter for the processChat orchestrator.
+ * Skips the user-identity check (the caller is an internalAction running
+ * with a service identity) but defends in depth by asserting orgId match.
+ */
+export const getInternal = internalQuery({
+	args: { orgId: v.id("orgs"), conversationId: v.id("aiConversations") },
+	handler: async (ctx, args) => {
+		const conv = await ctx.db.get(args.conversationId);
+		if (!conv || conv.orgId !== args.orgId) return null;
 		return conv;
 	},
 });
@@ -158,5 +173,80 @@ export const setDefaultModel = orgMutation({
 			defaultProvider: args.provider,
 			updatedAt: Date.now(),
 		});
+	},
+});
+
+
+// ─── Week 3.2 — contextBag (Salesforce L4 variables) ─────────────────────────
+//
+// `set_context_var` (synthetic AI tool) calls this internal mutation to
+// patch the per-conversation contextBag. The bag is enforced to ~4KB
+// total — the system-prompt builder injects it on EVERY turn, so unbounded
+// growth is real money. When the cap is hit, oldest keys evicted FIFO.
+
+const CONTEXT_BAG_BYTE_BUDGET = 4_000;
+
+/** Conservative byte estimator that doesn't import Buffer (Node) or TextEncoder. */
+function estimateBytes(value: unknown): number {
+	try {
+		return JSON.stringify(value).length;
+	} catch {
+		return 0;
+	}
+}
+
+export const patchContextBag = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		conversationId: v.id("aiConversations"),
+		key: v.string(),
+		value: v.optional(v.any()),
+		delete: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const conv = await ctx.db.get(args.conversationId);
+		if (!conv || conv.orgId !== args.orgId) {
+			throw new ConvexError(ERRORS.NOT_FOUND);
+		}
+
+		// Mutable copy. We deliberately sort the entries so eviction is FIFO
+		// when budget is exceeded (last-touched-stays — `bag[key] = value`
+		// re-inserts the key at the end of the natural insertion order).
+		const bag: Record<string, unknown> = { ...(conv.contextBag ?? {}) };
+
+		if (args.delete === true) {
+			if (!(args.key in bag)) {
+				return { ok: true as const, key: args.key, deleted: false };
+			}
+			delete bag[args.key];
+			await ctx.db.patch(args.conversationId, {
+				contextBag: bag,
+				updatedAt: Date.now(),
+			});
+			return { ok: true as const, key: args.key, deleted: true };
+		}
+
+		// Re-insert at the end so frequently-updated keys stay newest.
+		delete bag[args.key];
+		bag[args.key] = args.value;
+
+		// Enforce budget. Pop from the start of insertion order until under.
+		while (estimateBytes(bag) > CONTEXT_BAG_BYTE_BUDGET) {
+			const keys = Object.keys(bag);
+			if (keys.length <= 1) break; // never evict the value we just set
+			const oldest = keys[0];
+			if (oldest === args.key) {
+				// Edge case: only the new key remains and it's STILL too big.
+				// Bail rather than infinite-loop.
+				break;
+			}
+			delete bag[oldest];
+		}
+
+		await ctx.db.patch(args.conversationId, {
+			contextBag: bag,
+			updatedAt: Date.now(),
+		});
+		return { ok: true as const, key: args.key, deleted: false };
 	},
 });

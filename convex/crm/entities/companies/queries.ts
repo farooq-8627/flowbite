@@ -3,7 +3,13 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { requireRole } from "../../../_shared/permissions";
 
 export const list = orgQuery({
@@ -47,18 +53,96 @@ export const getById = orgQuery({
 	},
 });
 
+async function getByCompanyCodeImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; companyCode: string },
+) {
+	return ctx.db
+		.query("companies")
+		.withIndex("by_org_and_companyCode", (q) =>
+			q.eq("orgId", args.orgId).eq("companyCode", args.companyCode),
+		)
+		.first();
+}
+
 export const getByCompanyCode = orgQuery({
 	args: { orgId: v.id("orgs"), companyCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
+		return getByCompanyCodeImpl(ctx, args);
+	},
+});
 
-		return ctx.db
-			.query("companies")
-			.withIndex("by_org_and_companyCode", (q) =>
-				q.eq("orgId", args.orgId).eq("companyCode", args.companyCode),
-			)
-			.first();
+/** AI-callable internal twin — see `convex/ai/tools/_shared.ts` for rationale. */
+export const getByCompanyCodeForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), companyCode: v.string() },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.view");
+		return getByCompanyCodeImpl(ctx, args);
+	},
+});
+
+/**
+ * searchCompanies — text search for the AI tools.
+ *
+ * Substring-matches `query` (case-insensitive) against name, companyCode,
+ * website, and industry. Honours `excludeFromAI: false`.
+ */
+async function searchCompaniesImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; query: string; limit?: number; excludeFromAI?: boolean },
+) {
+	const cap = args.limit ?? 10;
+	const q = args.query.trim().toLowerCase();
+	if (!q) return [];
+
+	const rows = await ctx.db
+		.query("companies")
+		.withIndex("by_org", (qi) => qi.eq("orgId", args.orgId))
+		.take(500);
+
+	const matches: typeof rows = [];
+	for (const r of rows) {
+		if (r.deletedAt !== undefined) continue;
+		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
+		const haystack = [r.name, r.companyCode ?? "", r.website ?? "", r.industry ?? ""]
+			.join(" ")
+			.toLowerCase();
+		if (haystack.includes(q)) matches.push(r);
+		if (matches.length >= cap) break;
+	}
+	return matches;
+}
+
+export const searchCompanies = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		excludeFromAI: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "companies.view");
+		return searchCompaniesImpl(ctx, args);
+	},
+});
+
+/** AI-callable internal twin. */
+export const searchCompaniesForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		excludeFromAI: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.view");
+		return searchCompaniesImpl(ctx, args);
 	},
 });
 

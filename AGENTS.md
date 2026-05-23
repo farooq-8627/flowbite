@@ -25,6 +25,70 @@ Every time you make a design decision, architecture choice, or answer a "why" qu
 - If a `MODULE.md` doesn't exist for the module you're working in, create it.
 - Scan `MODULE.md` at the start of every task before writing code for that module.
 
+## RULE: Deferred restrictions live in `Future-Enhancements.md` (NON-NEGOTIABLE)
+
+> Whenever you DISABLE, RELAX, REMOVE, OR SKIP a guardrail / restriction /
+> capability — even temporarily, even "just for testing" — you MUST add a
+> structured entry to `Future-Enhancements.md` in the same change. No
+> exceptions. The file's section "How to read this file" defines the
+> required entry shape.
+
+### What counts as a deferred restriction (and triggers this rule)
+
+| Change | Why it triggers the rule |
+|---|---|
+| Removing or commenting out a plan-tier / model-tier check | Must be re-enabled before public launch. |
+| Loosening a `requiredCapability`, `permission`, or `confirmation` gate on a tool | Same. |
+| Raising a `stopWhen`, rate limit, or step cap above its design value | Same. |
+| Disabling a feature flag default that was on in prod | Same. |
+| Skipping a UI guard ("just unblock the test path") | Same. |
+| Stubbing out a critical mutation / action with a no-op | Same. |
+| Lowering a quota in `_platform/limits.ts` for testing | Same. |
+| Adding a `// TODO: re-enable` comment without an entry in this file | Same. |
+| "We'll do this in Phase N" in chat without a card | Same — chat history is not durable. |
+
+### What you MUST deliver in the same change
+
+1. **The disabling code edit itself.**
+2. **A new entry in `Future-Enhancements.md`** with these required fields:
+   - Section (A: currently-disabled / B: backlog / C: audit-flagged / D: governance).
+   - Status (Disabled / Removed / Backlog / In progress).
+   - Category (Model gating / RBAC / Rate limit / Billing / UX / Performance / etc.).
+   - **Phase to ship** — when the restriction comes back on. Reference the doc that says so (e.g. `PHASE-3-AI-AUDIT.md §6 Week 6`).
+   - Owners — module(s) responsible.
+   - Risk if skipped — what breaks in production if we forget.
+   - Files involved — concrete paths + line ranges when known.
+   - **Why we deferred** — one paragraph.
+   - **Benefits when reinstated** — bullet list (cost / reliability / cost-control / UX / trust).
+   - **Use cases / who it protects** — concrete users (free tier, RE teams, viewers, etc.).
+   - **Implementation sketch** when re-enabling — code snippet or numbered steps.
+   - **Verification** — exact unit/integration/e2e test or manual check that confirms it's back on.
+3. **An entry in the "Additions log" table at the bottom** of `Future-Enhancements.md` with date + category.
+4. **A code comment at the disabling site** that points at the doc:
+   ```ts
+   // DEFERRED: see Future-Enhancements.md §A.2 (per-tool premium capability gate).
+   //          Re-enable in Phase 6 / Week 6 of PHASE-3-AI-AUDIT.md §6.
+   ```
+
+### When a user asks to add an enhancement / restriction / cleanup item
+
+If the user (or any audit doc) describes a feature that won't ship right now, you MUST:
+1. **Ask first** whether it's "ship now" or "defer" if ambiguous.
+2. If defer: add a card under the right section (typically B: backlog) with all the required fields BEFORE replying with the result.
+3. If the user says "I'll write it later" — push back: the cheapest moment to capture the rationale is now.
+
+### Workflow before ending the message
+
+Before considering a deferral "done":
+- [ ] `Future-Enhancements.md` has the new card with every required field filled in.
+- [ ] The "Additions log" table at the bottom has the new row.
+- [ ] The disabling site has a `// DEFERRED:` comment pointing at the card.
+- [ ] If the deferral was driven by an audit / planning doc, that doc is cross-referenced from the card's "Phase to ship" field.
+
+### Why this rule exists
+
+Deferred restrictions don't surface until the day they bite. By then the original context is gone, the agent who wrote the comment is two sessions back, and the only signal is "production is on fire." Capturing the rationale at the moment of deferral pays back 10× when it's time to re-enable. Chat history is NOT durable; this file is.
+
 ## RULE: RTL-safe Tailwind classes only
 
 This app supports Arabic (RTL) and English (LTR). **Never use directional CSS classes.**

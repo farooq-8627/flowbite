@@ -5,6 +5,15 @@
  * Parses the current pathname and returns entity context for the AI chat.
  * FREE — no LLM tokens. Reads from already-cached Convex queries on the page.
  * Only injects into prompts when the user sends a message.
+ *
+ * Supported route prefixes:
+ *   /profile/P-XXX     → person (lead OR contact)
+ *   /deals/D-XXX       → deal
+ *   /companies/C-XXX   → company
+ *
+ * Each route uses a parallel `useQuery` call with `"skip"` for the inactive
+ * branches; Convex de-dupes skipped queries so this is cheaper than three
+ * sequential effects.
  */
 import { useQuery } from "convex/react";
 import { usePathname } from "next/navigation";
@@ -33,10 +42,20 @@ export function useRouteContext(): RouteEntityContext | null {
 
 	const parsed = useMemo(() => parseEntityRoute(pathname), [pathname]);
 
-	// Conditionally query — person codes (leads + contacts)
+	// Three parallel queries; only the matching one runs — others "skip".
+	// Convex's reactive layer dedupes skipped queries so the inactive
+	// branches don't open subscriptions.
 	const person = useQuery(
 		api.crm.people.queries.getByPersonCode,
 		parsed?.type === "person" && orgId ? { orgId, personCode: parsed.code } : "skip",
+	);
+	const deal = useQuery(
+		api.crm.entities.deals.queries.getByDealCode,
+		parsed?.type === "deal" && orgId ? { orgId, dealCode: parsed.code } : "skip",
+	);
+	const company = useQuery(
+		api.crm.entities.companies.queries.getByCompanyCode,
+		parsed?.type === "company" && orgId ? { orgId, companyCode: parsed.code } : "skip",
 	);
 
 	return useMemo<RouteEntityContext | null>(() => {
@@ -60,6 +79,28 @@ export function useRouteContext(): RouteEntityContext | null {
 			};
 		}
 
+		if (parsed.type === "deal" && deal) {
+			return {
+				entityType: "deal",
+				entityId: deal._id as string,
+				dealCode: deal.dealCode,
+				personCode: deal.personCode,
+				name: deal.title,
+				aiContextSummary: deal.aiContext?.summary,
+				aiContextKeyFacts: deal.aiContext?.keyFacts,
+			};
+		}
+
+		if (parsed.type === "company" && company) {
+			return {
+				entityType: "company",
+				entityId: company._id as string,
+				name: company.name,
+				aiContextSummary: company.aiContext?.summary,
+				aiContextKeyFacts: company.aiContext?.keyFacts,
+			};
+		}
+
 		return null;
-	}, [parsed, person]);
+	}, [parsed, person, deal, company]);
 }

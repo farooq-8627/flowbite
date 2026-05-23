@@ -29,6 +29,14 @@ Search across CRM records (leads, contacts, deals, companies).
 Always search before creating to avoid duplicates.
 Returns up to 10 matching records with key fields.
   `.trim(),
+	runbook: {
+		onSuccess:
+			"Render the result list (already a live entity-list card). If exactly one match: confirm in one short sentence. If 2-8 matches and the next action depends on knowing which: call ask_user_choice.",
+		onEmpty:
+			"Tell the user nothing matched and offer to broaden the search (try a partial name, or remove the entity-type filter).",
+		onValidationError:
+			"Re-issue the call with a stricter, shorter query string. Do not retry with the same arguments.",
+	},
 	schema: z.object({
 		query: z.string().describe("Search term — name, email, company, deal title, etc."),
 		entityType: z.enum(["lead", "contact", "deal", "company", "all"]).default("all"),
@@ -44,10 +52,11 @@ Returns up to 10 matching records with key fields.
 				(entityType === "lead" || entityType === "all") &&
 				permissions.includes("leads.view")
 			) {
-				const r = await toolQuery(ctx, "crm/entities/leads/queries:searchLeads", {
+				const r = await toolQuery(getCtx(), "crm/entities/leads/queries:searchLeads", {
 					orgId,
 					query: q,
 					limit,
+					excludeFromAI: false, // hide rows opted out of AI exposure
 				}).catch(() => []);
 				results.leads = r as unknown[];
 			}
@@ -55,10 +64,11 @@ Returns up to 10 matching records with key fields.
 				(entityType === "contact" || entityType === "all") &&
 				permissions.includes("contacts.view")
 			) {
-				const r = await toolQuery(ctx, "crm/entities/contacts/queries:searchContacts", {
+				const r = await toolQuery(getCtx(), "crm/entities/contacts/queries:searchContacts", {
 					orgId,
 					query: q,
 					limit,
+					excludeFromAI: false,
 				}).catch(() => []);
 				results.contacts = r as unknown[];
 			}
@@ -66,10 +76,11 @@ Returns up to 10 matching records with key fields.
 				(entityType === "deal" || entityType === "all") &&
 				permissions.includes("deals.view")
 			) {
-				const r = await toolQuery(ctx, "crm/entities/deals/queries:searchDeals", {
+				const r = await toolQuery(getCtx(), "crm/entities/deals/queries:searchDeals", {
 					orgId,
 					query: q,
 					limit,
+					excludeFromAI: false,
 				}).catch(() => []);
 				results.deals = r as unknown[];
 			}
@@ -77,16 +88,55 @@ Returns up to 10 matching records with key fields.
 				(entityType === "company" || entityType === "all") &&
 				permissions.includes("companies.view")
 			) {
-				const r = await toolQuery(ctx, "crm/entities/companies/queries:searchCompanies", {
+				const r = await toolQuery(getCtx(), "crm/entities/companies/queries:searchCompanies", {
 					orgId,
 					query: q,
 					limit,
+					excludeFromAI: false,
 				}).catch(() => []);
 				results.companies = r as unknown[];
 			}
 
 			const total = Object.values(results).reduce((s, a) => s + a.length, 0);
-			return { ok: true as const, data: { ...results, total, query } };
+
+			// Sprint 3 doctrine: when the search was scoped to one entity
+			// type, surface the matches as a live <EntityListResultCard>
+			// stack. The user gets click-to-navigate cards instead of an
+			// AI-paraphrased prose list. When the search was multi-type
+			// ("all"), we leave `display` unset so the AI's prose answer
+			// takes over — the renderer can't dispatch on multiple types
+			// at once and a multi-type custom card hasn't been registered
+			// yet.
+			let display:
+				| {
+						kind: "entityList";
+						entityType: "lead" | "contact" | "deal" | "company";
+						entityIds: string[];
+				  }
+				| undefined;
+			if (entityType !== "all") {
+				const bucket =
+					entityType === "lead"
+						? results.leads
+						: entityType === "contact"
+							? results.contacts
+							: entityType === "deal"
+								? results.deals
+								: results.companies;
+				if (bucket && bucket.length > 0) {
+					display = {
+						kind: "entityList" as const,
+						entityType,
+						entityIds: (bucket as Array<{ _id: string }>).map((r) => r._id),
+					};
+				}
+			}
+
+			return {
+				ok: true as const,
+				data: { ...results, total, query },
+				...(display ? { display } : {}),
+			};
 		});
 	},
 });
@@ -100,6 +150,14 @@ registerTool({
 Get full details for a specific CRM record by code (P-001, D-042, C-007).
 Returns all fields, recent notes, linked records, and AI context summary.
   `.trim(),
+	runbook: {
+		onSuccess:
+			"The entity card renders below — keep your prose short, just summarise the most relevant 1-2 facts. Don't restate every field.",
+		onEmpty:
+			"Tell the user no record was found for that code. Offer to search by name via search_crm.",
+		onPermissionDenied:
+			"Tell the user they need <entity>.view permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		code: z
@@ -117,27 +175,54 @@ Returns all fields, recent notes, linked records, and AI context summary.
 			};
 			requirePermission(permissions, permMap[entityType] ?? "leads.view");
 
-			let record: unknown = null;
+			let record: { excludeFromAI?: boolean } | null = null;
 			if (entityType === "lead" || entityType === "contact") {
-				record = await toolQuery(ctx, "crm/people/queries:getByPersonCode", {
+				record = (await toolQuery(getCtx(), "crm/people/queries:getByPersonCode", {
 					orgId,
 					personCode: code,
-				}).catch(() => null);
+				}).catch(() => null)) as { excludeFromAI?: boolean } | null;
 			} else if (entityType === "deal") {
-				record = await toolQuery(ctx, "crm/entities/deals/queries:getByCode", {
+				record = (await toolQuery(getCtx(), "crm/entities/deals/queries:getByDealCode", {
 					orgId,
 					dealCode: code,
-				}).catch(() => null);
+				}).catch(() => null)) as { excludeFromAI?: boolean } | null;
 			} else if (entityType === "company") {
-				record = await toolQuery(ctx, "crm/entities/companies/queries:getByCode", {
+				record = (await toolQuery(getCtx(), "crm/entities/companies/queries:getByCompanyCode", {
 					orgId,
-					code,
-				}).catch(() => null);
+					companyCode: code,
+				}).catch(() => null)) as { excludeFromAI?: boolean } | null;
 			}
 
 			if (!record)
 				return { ok: false as const, error: `No ${entityType} found with code ${code}.` };
-			return { ok: true as const, data: record };
+
+			// Respect the user's "exclude this record from AI" opt-out. The
+			// human-facing detail page still shows the record (different
+			// codepath); the AI must not.
+			if (record.excludeFromAI === true) {
+				return {
+					ok: false as const,
+					error: `This ${entityType} is excluded from AI assistance. Ask the user to toggle "Include in AI" on the record if they want help with it.`,
+				};
+			}
+
+			// Sprint 3 doctrine: surface the record as a live entity card
+			// instead of letting the AI re-paraphrase its fields in prose.
+			// `_id` always exists because every Convex doc has one.
+			const recordId = (record as { _id?: string })._id;
+			const display = recordId
+				? {
+						kind: "entity" as const,
+						entityType,
+						entityId: recordId,
+					}
+				: undefined;
+
+			return {
+				ok: true as const,
+				data: record,
+				...(display ? { display } : {}),
+			};
 		});
 	},
 });
@@ -151,11 +236,16 @@ registerTool({
 Get a summary of the workspace: lead counts, open deals, pipeline value, reminders due today.
 Use this to answer "how are we doing?" or "what should I focus on today?"
   `.trim(),
+	runbook: {
+		onSuccess:
+			"Pick the 2-3 most actionable numbers. Highlight overdue items and high-value open deals first. Don't dump every stat.",
+		suggestNext: "search_crm",
+	},
 	schema: z.object({}),
 	execute: async () => {
 		return runTool(async () => {
 			const { ctx, orgId } = getCtx();
-			const stats = await toolQuery(ctx, "orgs/queries:getDashboardStats", { orgId });
+			const stats = await toolQuery(getCtx(), "orgs/queries:getDashboardStats", { orgId });
 			return { ok: true as const, data: stats };
 		});
 	},

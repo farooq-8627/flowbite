@@ -3,19 +3,38 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { requireRole } from "../../../_shared/permissions";
+
+async function listByOrgImpl(ctx: QueryCtx, args: { orgId: Id<"orgs"> }) {
+	return ctx.db
+		.query("pipelines")
+		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+		.collect();
+}
 
 export const listByOrg = orgQuery({
 	args: { orgId: v.id("orgs") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.view");
+		return listByOrgImpl(ctx, args);
+	},
+});
 
-		return ctx.db
-			.query("pipelines")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
+/** AI-callable internal twin — see `convex/ai/tools/_shared.ts` for rationale. */
+export const listByOrgForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.view");
+		return listByOrgImpl(ctx, args);
 	},
 });
 

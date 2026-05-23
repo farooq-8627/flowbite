@@ -20,12 +20,16 @@ registerTool({
 	permission: "tags.manage",
 	confirmation: "none",
 	description: "Create a new org-wide tag.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence. Offer to attach the tag to a record.",
+		suggestNext: "attach_tag",
+	},
 	schema: z.object({ name: z.string(), color: z.optional(z.string()) }),
 	execute: async (args) =>
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.manage");
-			const result = await toolMutation(ctx, "crm/shared/tags/mutations:create", {
+			const result = await toolMutation(getCtx(), "crm/shared/tags/mutations:create", {
 				orgId,
 				...args,
 			});
@@ -39,6 +43,11 @@ registerTool({
 	permission: "tags.attach",
 	confirmation: "none",
 	description: "Attach a tag to a lead, contact, deal, or company.",
+	runbook: {
+		onSuccess: "Confirm with the tag name and the entity's display name.",
+		onValidationError:
+			"If tagId or entityId doesn't resolve, call search_crm or list-tags first.",
+	},
 	schema: z.object({
 		tagId: z.string(),
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
@@ -48,7 +57,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.attach");
-			await toolMutation(ctx, "crm/shared/tags/mutations:attachToEntity", { orgId, ...args });
+			await toolMutation(getCtx(), "crm/shared/tags/mutations:attachToEntity", { orgId, ...args });
 			return { ok: true as const, data: args, display: `🏷️ Tag attached.` };
 		}),
 });
@@ -59,6 +68,9 @@ registerTool({
 	permission: "tags.attach",
 	confirmation: "none",
 	description: "Remove a tag from an entity.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({
 		tagId: z.string(),
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
@@ -68,7 +80,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.attach");
-			await toolMutation(ctx, "crm/shared/tags/mutations:detachFromEntity", {
+			await toolMutation(getCtx(), "crm/shared/tags/mutations:detachFromEntity", {
 				orgId,
 				...args,
 			});
@@ -82,6 +94,10 @@ registerTool({
 	permission: "tags.manage",
 	confirmation: "twoStep",
 	description: "Delete a tag from the org. Detaches from all entities.",
+	runbook: {
+		onSuccess: "Confirm and mention how many entities the tag was detached from if known.",
+		onValidationError: "If tagId doesn't resolve, list available tags so the user can pick.",
+	},
 	schema: z.object({ tagId: z.string(), name: z.string().describe("For preview only") }),
 	execute: async (args) => {
 		const { permissions } = getCtx();
@@ -104,7 +120,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.manage");
-			await toolMutation(ctx, "crm/shared/tags/mutations:remove", { orgId, ...args });
+			await toolMutation(getCtx(), "crm/shared/tags/mutations:remove", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ Tag deleted.` };
 		}),
 });

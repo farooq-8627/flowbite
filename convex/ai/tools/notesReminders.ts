@@ -26,6 +26,14 @@ registerTool({
 Add a text note to a lead, contact, deal, or company.
 Notes are visible to all team members with notes.view permission.
   `.trim(),
+	runbook: {
+		onSuccess:
+			"The note card renders below — say one short sentence confirming the note attached. Don't restate the content.",
+		onValidationError:
+			"If the entityCode doesn't resolve, call search_crm first. Don't retry with the same code.",
+		onPermissionDenied:
+			"Tell the user they need notes.create permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		entityCode: z.string().describe("Entity code (P-XXX, D-XXX, C-XXX)."),
@@ -39,18 +47,21 @@ Notes are visible to all team members with notes.view permission.
 		return runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.create");
-			const result = await toolMutation(ctx, "crm/shared/notes/mutations:create", {
+			const result = (await toolMutation(getCtx(), "crm/shared/notes/mutations:create", {
 				orgId,
 				entityType,
 				entityCode,
 				content,
 				isInternal,
 				authorType: "ai",
-			});
+			})) as string; // notes.create returns the new noteId directly
 			return {
 				ok: true as const,
-				data: result,
-				display: `📝 Note added to ${entityType} ${entityCode}.`,
+				data: { noteId: result },
+				display: {
+					kind: "note" as const,
+					noteId: result,
+				},
 			};
 		});
 	},
@@ -66,6 +77,14 @@ Create a reminder for a specific date/time.
 Can be linked to an entity (lead, contact, deal) or standalone.
 Types: call, email, meeting, follow_up, custom.
   `.trim(),
+	runbook: {
+		onSuccess:
+			"Confirm in one short sentence with the due-date in human-readable form (e.g. 'Tomorrow at 9am'). The reminder card renders below.",
+		onValidationError:
+			"If dueAt is missing or in the past, ask the user for a date. Don't retry with the same args.",
+		onPermissionDenied:
+			"Tell the user they need reminders.create permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		title: z.string(),
 		dueAt: z.number().describe("Due timestamp in milliseconds (Unix ms)."),
@@ -81,15 +100,18 @@ Types: call, email, meeting, follow_up, custom.
 		return runTool(async () => {
 			const { ctx, orgId, userId, permissions } = getCtx();
 			requirePermission(permissions, "reminders.create");
-			const result = await toolMutation(ctx, "crm/shared/reminders/mutations:create", {
+			const result = (await toolMutation(getCtx(), "crm/shared/reminders/mutations:create", {
 				orgId,
 				assignedTo: userId,
 				...args,
-			});
+			})) as { reminderId: string };
 			return {
 				ok: true as const,
 				data: result,
-				display: `🔔 Reminder created: ${args.title}`,
+				display: {
+					kind: "reminder" as const,
+					reminderId: result.reminderId,
+				},
 			};
 		});
 	},
@@ -105,6 +127,12 @@ Create a follow-up reminder for a specific lead or contact.
 Uses the org's follow-up cadence defaults for timing.
 Preferred over create_reminder for CRM follow-ups — it sets source:"followup" and applies default offsets.
   `.trim(),
+	runbook: {
+		onSuccess:
+			"Confirm in one short sentence with the human-readable due-date. The reminder card renders below.",
+		onValidationError:
+			"If personCode doesn't resolve, call search_crm first. Don't retry with the same code.",
+	},
 	schema: z.object({
 		personCode: z
 			.string()
@@ -120,15 +148,15 @@ Preferred over create_reminder for CRM follow-ups — it sets source:"followup" 
 		return runTool(async () => {
 			const { ctx, orgId, userId, permissions } = getCtx();
 			requirePermission(permissions, "reminders.create");
-			const result = await toolMutation(
-				ctx,
-				"crm/shared/reminders/mutations:createFollowup",
-				{ orgId, actorUserId: userId, ...args },
-			);
+			const result = (await toolMutation(getCtx(), "crm/shared/reminders/mutations:createFollowup",
+				{ orgId, actorUserId: userId, ...args },)) as { reminderId: string; followUpCode?: string };
 			return {
 				ok: true as const,
 				data: result,
-				display: `✅ Follow-up created for ${args.personCode}.`,
+				display: {
+					kind: "reminder" as const,
+					reminderId: result.reminderId,
+				},
 			};
 		});
 	},
@@ -140,6 +168,12 @@ registerTool({
 	permission: "reminders.manage",
 	confirmation: "none",
 	description: "Mark a reminder as completed.",
+	runbook: {
+		onSuccess:
+			"Confirm in one short sentence (e.g. 'Marked complete.'). The reminder card already shows the new state.",
+		onPermissionDenied:
+			"Tell the user they need reminders.manage permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		reminderId: z.string().describe("Id of the reminder to mark complete."),
 		completionNote: z.optional(z.string()).describe("Optional note about the completion."),
@@ -148,7 +182,7 @@ registerTool({
 		return runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "reminders.manage");
-			await toolMutation(ctx, "crm/shared/reminders/mutations:complete", {
+			await toolMutation(getCtx(), "crm/shared/reminders/mutations:complete", {
 				orgId,
 				reminderId,
 				completionNote,
@@ -156,7 +190,10 @@ registerTool({
 			return {
 				ok: true as const,
 				data: { reminderId },
-				display: `✅ Reminder marked complete.`,
+				display: {
+					kind: "reminder" as const,
+					reminderId,
+				},
 			};
 		});
 	},

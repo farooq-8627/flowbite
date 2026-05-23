@@ -27,12 +27,17 @@ registerTool({
 	permission: "org.viewSettings",
 	confirmation: "none",
 	description: "List the available industry templates.",
+	runbook: {
+		onSuccess:
+			"Show the list of templates. If the user wants to apply one, call apply_template.",
+		suggestNext: "apply_template",
+	},
 	schema: z.object({}),
 	execute: async () =>
 		runTool(async () => {
 			const { ctx, permissions } = getCtx();
 			requirePermission(permissions, "org.viewSettings");
-			const templates = await toolQuery(ctx, "crm/fields/templates/queries:list", {});
+			const templates = await toolQuery(getCtx(), "crm/fields/templates/queries:list", {});
 			return { ok: true as const, data: templates };
 		}),
 });
@@ -44,6 +49,12 @@ registerTool({
 	requiredCapability: "premium",
 	confirmation: "twoStep",
 	description: "Apply or re-apply an industry template. Additive — never deletes existing data.",
+	runbook: {
+		onSuccess:
+			"Confirm with the template name. Mention that existing data was preserved (templates are additive).",
+		onPermissionDenied:
+			"Tell the user they need org.editSettings permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		templateId: z.string(),
 		templateName: z.string().describe("For preview"),
@@ -72,7 +83,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "org.editSettings");
-			await toolMutation(ctx, "orgs/mutations:applyTemplate", { orgId, ...args });
+			await toolMutation(getCtx(), "orgs/mutations:applyTemplate", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ Template applied.` };
 		}),
 });
@@ -83,6 +94,11 @@ registerTool({
 	permission: "org.editSettings",
 	confirmation: "twoStep",
 	description: 'Hard-delete all sample data seeded by the template (source: "template_seed").',
+	runbook: {
+		onSuccess: "Confirm with the count of records cleared.",
+		onPermissionDenied:
+			"Tell the user they need org.editSettings permission. Suggest contacting an admin.",
+	},
 	schema: z.object({}),
 	execute: async () => {
 		const { permissions } = getCtx();
@@ -116,7 +132,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "org.editSettings");
-			const result = await toolMutation(ctx, "orgs/mutations:clearMockData", { orgId });
+			const result = await toolMutation(getCtx(), "orgs/mutations:clearMockData", { orgId });
 			const r = result as { deleted?: number };
 			return {
 				ok: true as const,

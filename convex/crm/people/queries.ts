@@ -6,7 +6,71 @@
  * The frontend never needs to know which table — it just gets the person.
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../_functions/authenticated";
+import type { Id } from "../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../_generated/server";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../_functions/authenticated";
+
+async function getByPersonCodeImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; personCode: string },
+) {
+	// Check contacts first — converted person lives here
+	const contact = await ctx.db
+		.query("contacts")
+		.withIndex("by_org_and_personCode", (q) =>
+			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+		)
+		.first();
+
+	// Resolve the creator from activity logs (shared by both branches).
+	const logs = await ctx.db
+		.query("activityLogs")
+		.withIndex("by_org_and_personCode", (q) =>
+			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+		)
+		.order("asc")
+		.take(50);
+	const createdLog = logs.find((l) => l.action === "created");
+	let createdBy: {
+		userId: string;
+		name?: string;
+		email?: string;
+		avatarUrl?: string;
+	} | null = null;
+	if (createdLog) {
+		const creator = await ctx.db.get(createdLog.userId);
+		if (creator) {
+			createdBy = {
+				userId: creator._id as string,
+				name: creator.name,
+				email: creator.email,
+				avatarUrl: creator.avatarUrl,
+			};
+		}
+	}
+
+	if (contact && !contact.deletedAt) {
+		return { entity: contact, type: "contact" as const, createdBy };
+	}
+
+	// Fall back to leads — unconverted person
+	const lead = await ctx.db
+		.query("leads")
+		.withIndex("by_org_and_personCode", (q) =>
+			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+		)
+		.first();
+
+	if (lead && !lead.deletedAt) {
+		return { entity: lead, type: "lead" as const, createdBy };
+	}
+
+	return null;
+}
 
 /**
  * Resolve a personCode to a lead or contact.
@@ -28,63 +92,20 @@ export const getByPersonCode = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		await requireOrgMember(ctx, args.orgId);
+		return getByPersonCodeImpl(ctx, args);
+	},
+});
 
-		// Check contacts first — converted person lives here
-		const contact = await ctx.db
-			.query("contacts")
-			.withIndex("by_org_and_personCode", (q) =>
-				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
-			)
-			.first();
-
-		// Resolve the creator from activity logs (shared by both branches).
-		// We read newest-first then linearly find the oldest "created" entry.
-		// `take(50)` is a hard cap — far more than any single person should
-		// need, and still O(log n) thanks to the `by_org_and_personCode`
-		// index. No `.collect()` (per AGENTS.md backend rules).
-		const logs = await ctx.db
-			.query("activityLogs")
-			.withIndex("by_org_and_personCode", (q) =>
-				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
-			)
-			.order("asc")
-			.take(50);
-		const createdLog = logs.find((l) => l.action === "created");
-		let createdBy: {
-			userId: string;
-			name?: string;
-			email?: string;
-			avatarUrl?: string;
-		} | null = null;
-		if (createdLog) {
-			const creator = await ctx.db.get(createdLog.userId);
-			if (creator) {
-				createdBy = {
-					userId: creator._id as string,
-					name: creator.name,
-					email: creator.email,
-					avatarUrl: creator.avatarUrl,
-				};
-			}
-		}
-
-		if (contact && !contact.deletedAt) {
-			return { entity: contact, type: "contact" as const, createdBy };
-		}
-
-		// Fall back to leads — unconverted person
-		const lead = await ctx.db
-			.query("leads")
-			.withIndex("by_org_and_personCode", (q) =>
-				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
-			)
-			.first();
-
-		if (lead && !lead.deletedAt) {
-			return { entity: lead, type: "lead" as const, createdBy };
-		}
-
-		return null;
+/** AI-callable internal twin — see `convex/ai/tools/_shared.ts` for rationale. */
+export const getByPersonCodeForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return getByPersonCodeImpl(ctx, args);
 	},
 });
 

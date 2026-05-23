@@ -365,6 +365,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		"You are a freelance/agency project management assistant. Help the user track inquiries, send quotes, manage project scope, track revisions, and follow up on invoices. Refer to leads as 'inquiries', contacts as 'clients', deals as 'projects', companies as 'agencies'. Understand scope creep, revision limits, deposit-before-work policies, and milestone billing. When a project is stuck in Review, suggest a follow-up. When an invoice is overdue (>14 days in Invoiced stage), flag it urgently. Always confirm before marking a project as Cancelled.",
 
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"deals.open",
 		"deals.pipelineValue",
 		"deals.invoiced.unpaid",
@@ -582,7 +583,8 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 				contactDisplayName: "Aria Thompson",
 				companyKey: "northwind-creative",
 				fieldValues: {
-					scope_summary: "Marketing site redesign — homepage + 6 inner pages + CMS migration.",
+					scope_summary:
+						"Marketing site redesign — homepage + 6 inner pages + CMS migration.",
 					quoted_amount: 12000,
 					deposit_amount: 6000,
 					estimated_hours: 80,

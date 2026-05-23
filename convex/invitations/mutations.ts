@@ -18,9 +18,14 @@
  * - https://github.com/get-convex/convex-saas/blob/main/convex/invitations.ts
  */
 import { ConvexError, v } from "convex/values";
-import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import type { Id } from "../_generated/dataModel";
+import {
+	authenticatedMutation,
+	orgMutation,
+	requireOrgMemberByIds,
+} from "../_functions/authenticated";
 import { internal } from "../_generated/api";
-import { internalMutation } from "../_generated/server";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";
@@ -55,6 +60,84 @@ function buildAcceptUrl(token: string): string {
  * from whatever the role doc currently contains. This way a role rename or
  * permission edit between invite and accept always uses the latest state.
  */
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		email: string;
+		roleId: Id<"orgRoles">;
+	},
+) {
+	const now = Date.now();
+
+	const role = await ctx.db.get(args.roleId);
+	if (!role || role.orgId !== args.orgId) {
+		throw new ConvexError({
+			code: "INVALID_ROLE",
+			message: "Selected role does not belong to this organization.",
+		});
+	}
+	if (role.name === "Owner") {
+		throw new ConvexError({
+			code: "OWNER_NOT_INVITABLE",
+			message: "Owner role cannot be assigned via invitation.",
+		});
+	}
+
+	const existing = await ctx.db
+		.query("invitations")
+		.withIndex("by_orgId_and_email", (q) =>
+			q.eq("orgId", args.orgId).eq("email", args.email),
+		)
+		.first();
+
+	if (existing && existing.status === "pending" && existing.expiresAt > now) {
+		throw new ConvexError("An active invitation already exists for this email address.");
+	}
+
+	const existingUser = await ctx.db
+		.query("users")
+		.withIndex("by_email", (q) => q.eq("email", args.email))
+		.first();
+
+	if (existingUser) {
+		const existingMember = await getOrgMember(ctx, args.orgId, existingUser._id);
+		if (existingMember && existingMember.deletedAt === undefined) {
+			throw new ConvexError(ERRORS.ORG_ALREADY_MEMBER);
+		}
+	}
+
+	const token = crypto.randomUUID();
+
+	const invitationId = await ctx.db.insert("invitations", {
+		orgId: args.orgId,
+		email: args.email,
+		roleId: args.roleId,
+		status: "pending",
+		invitedBy: args.userId,
+		token,
+		expiresAt: now + INVITATION_EXPIRY_MS,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "created",
+		entityType: ENTITY_TYPES.INVITATION,
+		entityId: invitationId,
+		description: `Invited ${args.email} as ${role.name}`,
+	});
+
+	await ctx.scheduler.runAfter(0, internal.invitations.actions.sendInvitationEmail, {
+		invitationId,
+	});
+
+	return { invitationId, token, acceptUrl: buildAcceptUrl(token) };
+}
+
 export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -62,85 +145,25 @@ export const create = orgMutation({
 		roleId: v.id("orgRoles"),
 	},
 	handler: async (ctx, args) => {
-		const now = Date.now();
-
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
-
 		requireRole(member.permissions, "members.invite");
+		return createImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		// Validate the target role: must belong to this org, must NOT be Owner.
-		const role = await ctx.db.get(args.roleId);
-		if (!role || role.orgId !== args.orgId) {
-			throw new ConvexError({
-				code: "INVALID_ROLE",
-				message: "Selected role does not belong to this organization.",
-			});
-		}
-		if (role.name === "Owner") {
-			throw new ConvexError({
-				code: "OWNER_NOT_INVITABLE",
-				message: "Owner role cannot be assigned via invitation.",
-			});
-		}
-
-		// Check for existing pending invitation to same email
-		const existing = await ctx.db
-			.query("invitations")
-			.withIndex("by_orgId_and_email", (q) =>
-				q.eq("orgId", args.orgId).eq("email", args.email),
-			)
-			.first();
-
-		if (existing && existing.status === "pending" && existing.expiresAt > now) {
-			throw new ConvexError("An active invitation already exists for this email address.");
-		}
-
-		// Check if user is already a member
-		const existingUser = await ctx.db
-			.query("users")
-			.withIndex("by_email", (q) => q.eq("email", args.email))
-			.first();
-
-		if (existingUser) {
-			const existingMember = await getOrgMember(ctx, args.orgId, existingUser._id);
-			if (existingMember && existingMember.deletedAt === undefined) {
-				throw new ConvexError(ERRORS.ORG_ALREADY_MEMBER);
-			}
-		}
-
-		const token = crypto.randomUUID();
-
-		const invitationId = await ctx.db.insert("invitations", {
-			orgId: args.orgId,
-			email: args.email,
-			roleId: args.roleId,
-			status: "pending",
-			invitedBy: ctx.userId,
-			token,
-			expiresAt: now + INVITATION_EXPIRY_MS,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "created",
-			entityType: ENTITY_TYPES.INVITATION,
-			entityId: invitationId,
-			description: `Invited ${args.email} as ${role.name}`,
-		});
-
-		// Schedule the email send. Runs as an internal action (Node runtime)
-		// so it can call Resend. Soft-fails when RESEND_API_KEY is unset —
-		// the inviter still gets the accept URL via the return value below
-		// so they can share the link manually.
-		await ctx.scheduler.runAfter(0, internal.invitations.actions.sendInvitationEmail, {
-			invitationId,
-		});
-
-		return { invitationId, token, acceptUrl: buildAcceptUrl(token) };
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		email: v.string(),
+		roleId: v.id("orgRoles"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "members.invite");
+		return createImpl(ctx, args);
 	},
 });
 
@@ -321,37 +344,60 @@ export const decline = authenticatedMutation({
 /**
  * Cancel a pending invitation. Requires `members.invite` permission.
  */
+async function cancelImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		invitationId: Id<"invitations">;
+	},
+) {
+	const now = Date.now();
+
+	const invitation = await ctx.db.get(args.invitationId);
+	if (!invitation || invitation.orgId !== args.orgId)
+		throw new ConvexError(ERRORS.INVITATION_NOT_FOUND);
+	if (invitation.status !== "pending") throw new ConvexError(ERRORS.INVITATION_ALREADY_USED);
+
+	await ctx.db.patch(invitation._id, {
+		status: "expired",
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: ENTITY_TYPES.INVITATION,
+		entityId: invitation._id,
+		description: `Cancelled invitation for ${invitation.email}`,
+	});
+}
+
 export const cancel = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		invitationId: v.id("invitations"),
 	},
 	handler: async (ctx, args) => {
-		const now = Date.now();
-
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
-
 		requireRole(member.permissions, "members.invite");
+		return cancelImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		const invitation = await ctx.db.get(args.invitationId);
-		if (!invitation || invitation.orgId !== args.orgId)
-			throw new ConvexError(ERRORS.INVITATION_NOT_FOUND);
-		if (invitation.status !== "pending") throw new ConvexError(ERRORS.INVITATION_ALREADY_USED);
-
-		await ctx.db.patch(invitation._id, {
-			status: "expired",
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "deleted",
-			entityType: ENTITY_TYPES.INVITATION,
-			entityId: invitation._id,
-			description: `Cancelled invitation for ${invitation.email}`,
-		});
+/** AI-callable internal twin. */
+export const cancelForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		invitationId: v.id("invitations"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "members.invite");
+		return cancelImpl(ctx, args);
 	},
 });
 

@@ -16,7 +16,13 @@
  * and writes through `ctx.db.patch` to keep stage `id`s stable.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { getPlanLimits, isWithinLimit, type PlanTier } from "../../../_platform/limits";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
@@ -96,6 +102,149 @@ async function getOtherDefaultStageIds(
 	return out;
 }
 
+type StageInput = {
+	id: string;
+	name: string;
+	code: string;
+	order: number;
+	color?: string;
+	isDefaultStage?: boolean;
+	isFinal?: boolean;
+	finalType?: "positive" | "negative" | "neutral";
+	staleAfterDays?: number;
+};
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		name: string;
+		entityType: string;
+		stages?: StageInput[];
+		isDefault?: boolean;
+	},
+) {
+	const org = await ctx.db.get(args.orgId);
+	const tier: PlanTier = (org?.plan as PlanTier | undefined) ?? "free";
+	const limits = getPlanLimits(tier);
+	const existingForType = await ctx.db
+		.query("pipelines")
+		.withIndex("by_org_and_entity", (q) =>
+			q.eq("orgId", args.orgId).eq("entityType", args.entityType),
+		)
+		.collect();
+	if (!isWithinLimit(existingForType.length, limits.maxPipelinesPerEntityType)) {
+		throw new ConvexError({
+			code: "PLAN_LIMIT_EXCEEDED",
+			message: `Your ${tier} plan allows ${limits.maxPipelinesPerEntityType} ${args.entityType} pipeline(s). Upgrade to add more.`,
+		});
+	}
+
+	if (args.isDefault) {
+		const existingDefault = await ctx.db
+			.query("pipelines")
+			.withIndex("by_org_and_entity_and_default", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("isDefault", true),
+			)
+			.first();
+		if (existingDefault) {
+			await ctx.db.patch(existingDefault._id, {
+				isDefault: false,
+				updatedAt: Date.now(),
+			});
+		}
+	}
+
+	const callerStages = args.stages ?? [];
+	const defaultStage = callerStages.find((s) => s.isDefaultStage === true);
+
+	const stages: StageInput[] = [];
+	if (defaultStage) {
+		stages.push({ ...defaultStage, order: 0, isDefaultStage: true });
+		let idx = 1;
+		for (const s of callerStages) {
+			if (s.id === defaultStage.id) continue;
+			stages.push({ ...s, order: idx, isDefaultStage: false });
+			idx += 1;
+		}
+	} else {
+		stages.push(makeDefaultStage());
+		let idx = 1;
+		for (const s of callerStages) {
+			stages.push({ ...s, order: idx, isDefaultStage: false });
+			idx += 1;
+		}
+	}
+
+	const seen = new Set<string>();
+	for (const s of stages) {
+		const err = validateStageCode(s.code, seen);
+		if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
+		seen.add(s.code);
+	}
+
+	const pipelineId = await ctx.db.insert("pipelines", {
+		orgId: args.orgId,
+		name: args.name,
+		entityType: args.entityType,
+		isDefault: args.isDefault ?? false,
+		stages,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	});
+
+	if (args.entityType === "deal") {
+		const newDefaultStage = stages.find((s) => s.isDefaultStage === true);
+		if (newDefaultStage) {
+			const dealFields = await ctx.db
+				.query("fieldDefinitions")
+				.withIndex("by_org_and_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", "deal"),
+				)
+				.collect();
+			const now = Date.now();
+			for (const f of dealFields) {
+				const existing = f.showInStages ?? [];
+				if (existing.includes(newDefaultStage.id)) continue;
+				if (existing.length === 0) {
+					await ctx.db.patch(f._id, {
+						showInStages: [newDefaultStage.id],
+						updatedAt: now,
+					});
+				} else {
+					const otherDefaults = await getOtherDefaultStageIds(
+						ctx,
+						args.orgId,
+						pipelineId,
+					);
+					const stillDefault = existing.every((id) => otherDefaults.has(id));
+					if (stillDefault) {
+						await ctx.db.patch(f._id, {
+							showInStages: [...existing, newDefaultStage.id],
+							updatedAt: now,
+						});
+					}
+				}
+			}
+		}
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "pipeline_created",
+		entityType: "pipeline",
+		entityId: pipelineId,
+		description: `Pipeline created: ${args.name}`,
+	});
+
+	return pipelineId;
+}
+
 export const create = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -107,153 +256,85 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-
-		// Plan-tier limit (single-source from convex/_platform/limits.ts).
-		const org = await ctx.db.get(args.orgId);
-		const tier: PlanTier = (org?.plan as PlanTier | undefined) ?? "free";
-		const limits = getPlanLimits(tier);
-		const existingForType = await ctx.db
-			.query("pipelines")
-			.withIndex("by_org_and_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType),
-			)
-			.collect();
-		if (!isWithinLimit(existingForType.length, limits.maxPipelinesPerEntityType)) {
-			throw new ConvexError({
-				code: "PLAN_LIMIT_EXCEEDED",
-				message: `Your ${tier} plan allows ${limits.maxPipelinesPerEntityType} ${args.entityType} pipeline(s). Upgrade to add more.`,
-			});
-		}
-
-		if (args.isDefault) {
-			const existingDefault = await ctx.db
-				.query("pipelines")
-				.withIndex("by_org_and_entity_and_default", (q) =>
-					q
-						.eq("orgId", args.orgId)
-						.eq("entityType", args.entityType)
-						.eq("isDefault", true),
-				)
-				.first();
-			if (existingDefault) {
-				await ctx.db.patch(existingDefault._id, {
-					isDefault: false,
-					updatedAt: Date.now(),
-				});
-			}
-		}
-
-		// Always start with the auto-created Default stage. If the caller
-		// supplies extra stages (e.g. seeded from an industry template),
-		// append them after — re-numbered so the Default sits at order 0
-		// and never collides with anything else.
-		const callerStages = args.stages ?? [];
-		const defaultStage = callerStages.find((s) => s.isDefaultStage === true);
-
-		const stages: typeof callerStages = [];
-		if (defaultStage) {
-			// Caller already provided a Default stage (industry template
-			// path). Make sure it's at order 0 and keep the rest re-numbered.
-			stages.push({ ...defaultStage, order: 0, isDefaultStage: true });
-			let idx = 1;
-			for (const s of callerStages) {
-				if (s.id === defaultStage.id) continue;
-				stages.push({ ...s, order: idx, isDefaultStage: false });
-				idx += 1;
-			}
-		} else {
-			// Auto-inject a Default stage.
-			stages.push(makeDefaultStage());
-			let idx = 1;
-			for (const s of callerStages) {
-				stages.push({ ...s, order: idx, isDefaultStage: false });
-				idx += 1;
-			}
-		}
-
-		// Final defensive validation — every code in the supplied stages must
-		// be unique within the pipeline. (Caller is supposed to ensure this
-		// already, but we guard so we never persist garbage.)
-		const seen = new Set<string>();
-		for (const s of stages) {
-			const err = validateStageCode(s.code, seen);
-			if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
-			seen.add(s.code);
-		}
-
-		const pipelineId = await ctx.db.insert("pipelines", {
-			orgId: args.orgId,
-			name: args.name,
-			entityType: args.entityType,
-			isDefault: args.isDefault ?? false,
-			stages,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-
-		// Default-stage backfill (deal pipelines only).
-		//
-		// Locked decision (2026-05-20): every deal field MUST be pinned to
-		// at least one stage. When an org creates a NEW deal pipeline,
-		// existing deal fields with empty / missing `showInStages` need to
-		// be pinned to this new pipeline's Default stage so they show up
-		// in the Defaults tab. We also extend already-pinned fields so
-		// the field appears across every pipeline's Defaults tab.
-		if (args.entityType === "deal") {
-			const newDefaultStage = stages.find((s) => s.isDefaultStage === true);
-			if (newDefaultStage) {
-				const dealFields = await ctx.db
-					.query("fieldDefinitions")
-					.withIndex("by_org_and_entity", (q) =>
-						q.eq("orgId", args.orgId).eq("entityType", "deal"),
-					)
-					.collect();
-				const now = Date.now();
-				for (const f of dealFields) {
-					const existing = f.showInStages ?? [];
-					if (existing.includes(newDefaultStage.id)) continue;
-					if (existing.length === 0) {
-						// Field was unpinned (legacy "show everywhere") — pin
-						// it to the new Default stage. Idempotent for fresh
-						// pipelines, also seeds them up.
-						await ctx.db.patch(f._id, {
-							showInStages: [newDefaultStage.id],
-							updatedAt: now,
-						});
-					} else {
-						// Already pinned to other Default stages — extend so
-						// the field appears in every pipeline's Defaults tab
-						// (which is what owners expect: identity fields are
-						// org-wide defaults, not per-pipeline).
-						const otherDefaults = await getOtherDefaultStageIds(
-							ctx,
-							args.orgId,
-							pipelineId,
-						);
-						const stillDefault = existing.every((id) => otherDefaults.has(id));
-						if (stillDefault) {
-							await ctx.db.patch(f._id, {
-								showInStages: [...existing, newDefaultStage.id],
-								updatedAt: now,
-							});
-						}
-					}
-				}
-			}
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "pipeline_created",
-			entityType: "pipeline",
-			entityId: pipelineId,
-			description: `Pipeline created: ${args.name}`,
-		});
-
-		return pipelineId;
+		return createImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		name: v.string(),
+		entityType: v.string(),
+		stages: v.optional(v.array(stageShape)),
+		isDefault: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		return createImpl(ctx, args);
+	},
+});
+
+async function addStageImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		pipelineId: Id<"pipelines">;
+		stage: {
+			name: string;
+			code?: string;
+			color?: string;
+			isFinal?: boolean;
+			finalType?: "positive" | "negative" | "neutral";
+			staleAfterDays?: number;
+		};
+	},
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const usedCodes = new Set(pipeline.stages.map((s) => s.code));
+	let code: string;
+	if (args.stage.code) {
+		const err = validateStageCode(args.stage.code, usedCodes);
+		if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
+		code = args.stage.code;
+	} else {
+		code = deriveStageCode(args.stage, usedCodes);
+	}
+
+	const newStage = {
+		id: `stage_${nanoid12()}`,
+		name: args.stage.name,
+		code,
+		order: pipeline.stages.length,
+		color: args.stage.color,
+		isDefaultStage: false,
+		isFinal: args.stage.isFinal,
+		finalType: args.stage.finalType,
+		staleAfterDays: args.stage.staleAfterDays,
+	};
+
+	await ctx.db.patch(args.pipelineId, {
+		stages: [...pipeline.stages, newStage],
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "stage_added",
+		entityType: "pipeline",
+		entityId: args.pipelineId,
+		description: `Stage added: ${args.stage.name}`,
+		metadata: { stageId: newStage.id, stageCode: code },
+	});
+
+	return newStage.id;
+}
 
 export const addStage = orgMutation({
 	args: {
@@ -273,51 +354,31 @@ export const addStage = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
+		return addStageImpl(ctx, { ...args, userId });
+	},
+});
 
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// Validate / derive the stage code
-		const usedCodes = new Set(pipeline.stages.map((s) => s.code));
-		let code: string;
-		if (args.stage.code) {
-			const err = validateStageCode(args.stage.code, usedCodes);
-			if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
-			code = args.stage.code;
-		} else {
-			code = deriveStageCode(args.stage, usedCodes);
-		}
-
-		const newStage = {
-			id: `stage_${nanoid12()}`,
-			name: args.stage.name,
-			code,
-			order: pipeline.stages.length,
-			color: args.stage.color,
-			// Never auto-flag user-added stages as the Default stage —
-			// only `pipelines.create` mints the Default stage.
-			isDefaultStage: false,
-			isFinal: args.stage.isFinal,
-			finalType: args.stage.finalType,
-			staleAfterDays: args.stage.staleAfterDays,
-		};
-
-		await ctx.db.patch(args.pipelineId, {
-			stages: [...pipeline.stages, newStage],
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "stage_added",
-			entityType: "pipeline",
-			entityId: args.pipelineId,
-			description: `Stage added: ${args.stage.name}`,
-			metadata: { stageId: newStage.id, stageCode: code },
-		});
-
-		return newStage.id;
+/** AI-callable internal twin. */
+export const addStageForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		stage: v.object({
+			name: v.string(),
+			code: v.optional(v.string()),
+			color: v.optional(v.string()),
+			isFinal: v.optional(v.boolean()),
+			finalType: v.optional(
+				v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+			),
+			staleAfterDays: v.optional(v.number()),
+		}),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		return addStageImpl(ctx, args);
 	},
 });
 

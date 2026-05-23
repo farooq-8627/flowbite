@@ -5,7 +5,13 @@
  * Field types per schema: text, number, select, multiselect, date, boolean, url, email, relation, file
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
@@ -26,6 +32,56 @@ export const ensureForOrg = orgMutation({
 		return seedFieldDefinitionsForOrg(ctx, args.orgId, industry);
 	},
 });
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		entityType: string;
+		name: string;
+		label: string;
+		labelAr?: string;
+		type: string;
+		groupName?: string;
+		required?: boolean;
+		options?: string[];
+		defaultValue?: unknown;
+		sensitive?: boolean;
+		allowedFileTypes?: string[];
+	},
+) {
+	const isFileType = args.type === "file" || args.type === "files";
+	const allowedFileTypes =
+		isFileType && args.allowedFileTypes && args.allowedFileTypes.length > 0
+			? args.allowedFileTypes
+			: undefined;
+
+	const existing = await ctx.db
+		.query("fieldDefinitions")
+		.withIndex("by_org_and_entity", (q) =>
+			q.eq("orgId", args.orgId).eq("entityType", args.entityType),
+		)
+		.collect();
+	const maxOrder = existing.reduce((max, f) => Math.max(max, f.order ?? 0), -1);
+
+	return ctx.db.insert("fieldDefinitions", {
+		orgId: args.orgId,
+		entityType: args.entityType,
+		name: args.name,
+		label: args.label,
+		labelAr: args.labelAr,
+		type: args.type,
+		groupName: args.groupName,
+		required: args.required ?? false,
+		options: args.options,
+		defaultValue: args.defaultValue,
+		sensitive: args.sensitive,
+		allowedFileTypes,
+		order: maxOrder + 1,
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	});
+}
 
 export const create = orgMutation({
 	args: {
@@ -49,41 +105,32 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "fieldDefinitions.manage");
+		return createImpl(ctx, args);
+	},
+});
 
-		// Ignore allowedFileTypes for non-file types — keeps the column
-		// clean so other readers don't get confused by a stray array
-		// on, say, a number field.
-		const isFileType = args.type === "file" || args.type === "files";
-		const allowedFileTypes =
-			isFileType && args.allowedFileTypes && args.allowedFileTypes.length > 0
-				? args.allowedFileTypes
-				: undefined;
-
-		const existing = await ctx.db
-			.query("fieldDefinitions")
-			.withIndex("by_org_and_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", args.entityType),
-			)
-			.collect();
-		const maxOrder = existing.reduce((max, f) => Math.max(max, f.order ?? 0), -1);
-
-		return ctx.db.insert("fieldDefinitions", {
-			orgId: args.orgId,
-			entityType: args.entityType,
-			name: args.name,
-			label: args.label,
-			labelAr: args.labelAr,
-			type: args.type,
-			groupName: args.groupName,
-			required: args.required ?? false,
-			options: args.options,
-			defaultValue: args.defaultValue,
-			sensitive: args.sensitive,
-			allowedFileTypes,
-			order: maxOrder + 1,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		});
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: v.string(),
+		name: v.string(),
+		label: v.string(),
+		labelAr: v.optional(v.string()),
+		type: v.string(),
+		groupName: v.optional(v.string()),
+		required: v.optional(v.boolean()),
+		options: v.optional(v.array(v.string())),
+		defaultValue: v.optional(v.any()),
+		sensitive: v.optional(v.boolean()),
+		allowedFileTypes: v.optional(v.array(v.string())),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "fieldDefinitions.manage");
+		const { userId: _u, ...rest } = args;
+		return createImpl(ctx, rest);
 	},
 });
 

@@ -894,7 +894,8 @@ export const b2bSaasTemplate: IndustryTemplate = {
 				anchorTo: { kind: "deal", title: "Buildplex — Enterprise rollout" },
 			},
 			{
-				content: "Fatima at NovaTech mentioned competitor X — research how we differentiate.",
+				content:
+					"Fatima at NovaTech mentioned competitor X — research how we differentiate.",
 				categoryName: "Today",
 				anchorTo: { kind: "lead", displayName: "Fatima Al-Hassan" },
 			},

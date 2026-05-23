@@ -20,6 +20,10 @@ registerTool({
 	permission: "savedViews.createPersonal",
 	confirmation: "twoStep",
 	description: "Create a new saved view (filter preset).",
+	runbook: {
+		onSuccess: "Confirm with the view's name and offer to pin it to the sidebar.",
+		suggestNext: "pin_saved_view",
+	},
 	schema: z.object({
 		name: z.string(),
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
@@ -61,7 +65,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.createPersonal");
-			const result = await toolMutation(ctx, "crm/shared/savedViews/mutations:create", {
+			const result = await toolMutation(getCtx(), "crm/shared/savedViews/mutations:create", {
 				orgId,
 				...args,
 			});
@@ -75,12 +79,15 @@ registerTool({
 	permission: "savedViews.createPersonal",
 	confirmation: "none",
 	description: "Pin or unpin a saved view to the sidebar.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({ viewId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.createPersonal");
-			await toolMutation(ctx, "crm/shared/savedViews/mutations:togglePin", {
+			await toolMutation(getCtx(), "crm/shared/savedViews/mutations:togglePin", {
 				orgId,
 				...args,
 			});
@@ -94,6 +101,10 @@ registerTool({
 	permission: "savedViews.delete",
 	confirmation: "twoStep",
 	description: "Delete a saved view.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+		onValidationError: "If viewId doesn't resolve, list the user's saved views.",
+	},
 	schema: z.object({ viewId: z.string(), name: z.string().describe("For preview") }),
 	execute: async (args) => {
 		const { permissions } = getCtx();
@@ -116,7 +127,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.delete");
-			await toolMutation(ctx, "crm/shared/savedViews/mutations:remove", { orgId, ...args });
+			await toolMutation(getCtx(), "crm/shared/savedViews/mutations:remove", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ View deleted.` };
 		}),
 });

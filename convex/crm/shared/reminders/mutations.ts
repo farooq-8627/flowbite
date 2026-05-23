@@ -13,13 +13,92 @@
  * Every mutation logs activity.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
+
+type ReminderSource = "manual" | "followup" | "calendar" | "ai" | "note" | "system";
+type ReminderPriority = "low" | "normal" | "high" | "urgent";
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		personCode: string;
+		dealCode?: string;
+		entityType: string;
+		entityId: string;
+		title: string;
+		note?: string;
+		dueAt: number;
+		assignedTo: Id<"users">;
+		source: ReminderSource;
+		priority?: ReminderPriority;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "reminders.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
+	const now = Date.now();
+
+	const reminderId = await ctx.db.insert("reminders", {
+		orgId: args.orgId,
+		followUpCode,
+		personCode: args.personCode,
+		dealCode: args.dealCode,
+		entityType: args.entityType,
+		entityId: args.entityId,
+		title: args.title,
+		note: args.note,
+		dueAt: args.dueAt,
+		assignedTo: args.assignedTo,
+		status: "pending",
+		source: args.source,
+		priority: args.priority,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reminder_created",
+		entityType: args.entityType,
+		entityId: args.entityId,
+		personCode: args.personCode,
+		description: `Reminder set: ${args.title}`,
+		metadata: { followUpCode, reminderId },
+	});
+
+	if (args.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.assignedTo,
+			type: "reminder.created",
+			title: `New reminder: ${args.title}`,
+			entityType: args.entityType,
+			entityId: args.entityId,
+			metadata: { followUpCode, personCode: args.personCode },
+		});
+	}
+
+	return { reminderId, followUpCode };
+}
 
 export const create = orgMutation({
 	args: {
@@ -53,57 +132,39 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "reminders.create");
-		await enforceRateLimit(ctx, {
-			scope: "reminders.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createImpl(ctx, { ...args, userId });
+	},
+});
 
-		const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
-		const now = Date.now();
-
-		const reminderId = await ctx.db.insert("reminders", {
-			orgId: args.orgId,
-			followUpCode,
-			personCode: args.personCode,
-			dealCode: args.dealCode,
-			entityType: args.entityType,
-			entityId: args.entityId,
-			title: args.title,
-			note: args.note,
-			dueAt: args.dueAt,
-			assignedTo: args.assignedTo,
-			status: "pending",
-			source: args.source,
-			priority: args.priority,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "reminder_created",
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			description: `Reminder set: ${args.title}`,
-			metadata: { followUpCode, reminderId },
-		});
-
-		if (args.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.assignedTo,
-				type: "reminder.created",
-				title: `New reminder: ${args.title}`,
-				entityType: args.entityType,
-				entityId: args.entityId,
-				metadata: { followUpCode, personCode: args.personCode },
-			});
-		}
-
-		return { reminderId, followUpCode };
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.string(),
+		dealCode: v.optional(v.string()),
+		entityType: v.string(),
+		entityId: v.string(),
+		title: v.string(),
+		note: v.optional(v.string()),
+		dueAt: v.number(),
+		assignedTo: v.id("users"),
+		source: v.union(
+			v.literal("manual"),
+			v.literal("followup"),
+			v.literal("calendar"),
+			v.literal("ai"),
+			v.literal("note"),
+			v.literal("system"),
+		),
+		priority: v.optional(
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
+		),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "reminders.create");
+		return createImpl(ctx, args);
 	},
 });
 
@@ -116,56 +177,71 @@ function canActOnReminder(
 	return reminderAssignedTo === userId || hasPermission(member.permissions, "reminders.manage");
 }
 
+async function completeImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		reminderId: Id<"reminders">;
+	},
+) {
+	const reminder = await ctx.db.get(args.reminderId);
+	if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (!canActOnReminder(args.member, args.userId, reminder.assignedTo)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+	await enforceRateLimit(ctx, {
+		scope: "reminders.write",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const now = Date.now();
+	await ctx.db.patch(args.reminderId, {
+		status: "completed",
+		completedAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reminder_completed",
+		entityType: reminder.entityType,
+		entityId: reminder.entityId,
+		personCode: reminder.personCode,
+		description: `Reminder completed: ${reminder.title}`,
+		metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+	});
+
+	if (reminder.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: reminder.assignedTo,
+			type: "reminder.completed",
+			title: `Reminder completed: ${reminder.title}`,
+			entityType: reminder.entityType,
+			entityId: reminder.entityId,
+			metadata: { followUpCode: reminder.followUpCode },
+		});
+	}
+}
+
 export const complete = orgMutation({
 	args: { orgId: v.id("orgs"), reminderId: v.id("reminders") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return completeImpl(ctx, { ...args, userId, member });
+	},
+});
 
-		const reminder = await ctx.db.get(args.reminderId);
-		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-		// Per SCHEDULING-IMPLEMENTATION.md §4.7 — every public mutation
-		// triggered by a user gesture is rate-limited. Scope is shared
-		// across reminder writes so a frantic user can't bypass by
-		// alternating between complete / update / remove.
-		await enforceRateLimit(ctx, {
-			scope: "reminders.write",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
-
-		const now = Date.now();
-		await ctx.db.patch(args.reminderId, {
-			status: "completed",
-			completedAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "reminder_completed",
-			entityType: reminder.entityType,
-			entityId: reminder.entityId,
-			personCode: reminder.personCode,
-			description: `Reminder completed: ${reminder.title}`,
-			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
-		});
-
-		// Notify the original creator if they aren't the assignee/actor.
-		if (reminder.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: reminder.assignedTo,
-				type: "reminder.completed",
-				title: `Reminder completed: ${reminder.title}`,
-				entityType: reminder.entityType,
-				entityId: reminder.entityId,
-				metadata: { followUpCode: reminder.followUpCode },
-			});
-		}
+/** AI-callable internal twin. */
+export const completeForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), reminderId: v.id("reminders") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return completeImpl(ctx, { ...args, member });
 	},
 });
 
@@ -281,6 +357,97 @@ const DEFAULT_FOLLOWUP_OFFSET_DAYS = 3;
 /** Default priority chip on a new follow-up when org settings are unset. */
 const DEFAULT_FOLLOWUP_PRIORITY = "normal" as const;
 
+async function createFollowupImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		personCode: string;
+		dealCode?: string;
+		entityType?: string;
+		entityId?: string;
+		title: string;
+		note?: string;
+		dueAt?: number;
+		assignedTo?: Id<"users">;
+		priority?: ReminderPriority;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "reminders.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const org = await ctx.db.get(args.orgId);
+	const followupDefaults =
+		(
+			org?.settings as {
+				followupDefaults?: {
+					defaultDueOffsetDays?: number;
+					defaultPriority?: ReminderPriority;
+				};
+			}
+		)?.followupDefaults ?? {};
+	const offsetDays = Math.max(
+		1,
+		Math.min(365, followupDefaults.defaultDueOffsetDays ?? DEFAULT_FOLLOWUP_OFFSET_DAYS),
+	);
+	const resolvedDueAt = args.dueAt ?? Date.now() + offsetDays * ONE_DAY_MS;
+	const resolvedPriority =
+		args.priority ?? followupDefaults.defaultPriority ?? DEFAULT_FOLLOWUP_PRIORITY;
+	const resolvedAssignee = args.assignedTo ?? args.userId;
+
+	const entityType = args.entityType ?? "person";
+	const entityId = args.entityId ?? args.personCode;
+
+	const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
+	const now = Date.now();
+
+	const reminderId = await ctx.db.insert("reminders", {
+		orgId: args.orgId,
+		followUpCode,
+		personCode: args.personCode,
+		dealCode: args.dealCode,
+		entityType,
+		entityId,
+		title: args.title,
+		note: args.note,
+		dueAt: resolvedDueAt,
+		assignedTo: resolvedAssignee,
+		status: "pending",
+		source: "followup",
+		priority: resolvedPriority,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "followup_created",
+		entityType,
+		entityId,
+		personCode: args.personCode,
+		description: `Follow-up scheduled: ${args.title}`,
+		metadata: { followUpCode, reminderId, priority: resolvedPriority },
+	});
+
+	if (resolvedAssignee !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: resolvedAssignee,
+			type: "reminder.created",
+			title: `New follow-up: ${args.title}`,
+			entityType,
+			entityId,
+			metadata: { followUpCode, personCode: args.personCode },
+		});
+	}
+
+	return { reminderId, followUpCode, dueAt: resolvedDueAt, priority: resolvedPriority };
+}
+
 export const createFollowup = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -315,82 +482,30 @@ export const createFollowup = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "reminders.create");
-		await enforceRateLimit(ctx, {
-			scope: "reminders.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createFollowupImpl(ctx, { ...args, userId });
+	},
+});
 
-		// Resolve org-level defaults for unset fields.
-		const org = await ctx.db.get(args.orgId);
-		const followupDefaults =
-			(
-				org?.settings as {
-					followupDefaults?: {
-						defaultDueOffsetDays?: number;
-						defaultPriority?: "low" | "normal" | "high" | "urgent";
-					};
-				}
-			)?.followupDefaults ?? {};
-		const offsetDays = Math.max(
-			1,
-			Math.min(365, followupDefaults.defaultDueOffsetDays ?? DEFAULT_FOLLOWUP_OFFSET_DAYS),
-		);
-		const resolvedDueAt = args.dueAt ?? Date.now() + offsetDays * ONE_DAY_MS;
-		const resolvedPriority =
-			args.priority ?? followupDefaults.defaultPriority ?? DEFAULT_FOLLOWUP_PRIORITY;
-		const resolvedAssignee = args.assignedTo ?? userId;
-
-		// Default the entity binding to the person profile when the caller
-		// didn't pre-bind a deal/company tab.
-		const entityType = args.entityType ?? "person";
-		const entityId = args.entityId ?? args.personCode;
-
-		const followUpCode = await generateEntityCode(ctx, args.orgId, "followup");
-		const now = Date.now();
-
-		const reminderId = await ctx.db.insert("reminders", {
-			orgId: args.orgId,
-			followUpCode,
-			personCode: args.personCode,
-			dealCode: args.dealCode,
-			entityType,
-			entityId,
-			title: args.title,
-			note: args.note,
-			dueAt: resolvedDueAt,
-			assignedTo: resolvedAssignee,
-			status: "pending",
-			source: "followup",
-			priority: resolvedPriority,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		// Distinct activity verb so the timeline narrative is unambiguous.
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "followup_created",
-			entityType,
-			entityId,
-			personCode: args.personCode,
-			description: `Follow-up scheduled: ${args.title}`,
-			metadata: { followUpCode, reminderId, priority: resolvedPriority },
-		});
-
-		if (resolvedAssignee !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: resolvedAssignee,
-				type: "reminder.created",
-				title: `New follow-up: ${args.title}`,
-				entityType,
-				entityId,
-				metadata: { followUpCode, personCode: args.personCode },
-			});
-		}
-
-		return { reminderId, followUpCode, dueAt: resolvedDueAt, priority: resolvedPriority };
+/** AI-callable internal twin. */
+export const createFollowupForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.string(),
+		dealCode: v.optional(v.string()),
+		entityType: v.optional(v.string()),
+		entityId: v.optional(v.string()),
+		title: v.string(),
+		note: v.optional(v.string()),
+		dueAt: v.optional(v.number()),
+		assignedTo: v.optional(v.id("users")),
+		priority: v.optional(
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
+		),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "reminders.create");
+		return createFollowupImpl(ctx, args);
 	},
 });

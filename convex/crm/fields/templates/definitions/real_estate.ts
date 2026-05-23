@@ -335,6 +335,7 @@ export const realEstateTemplate: IndustryTemplate = {
 		"You are a real-estate operations assistant. You understand the standard residential / commercial property workflow: New Inquiry → Viewing → Offer → Negotiation → Under Contract → Closed Won. Refer to leads as 'inquiries', contacts as 'clients', deals as 'listings', companies as 'agencies' — those are the workspace's renamed labels. Always confirm before destructive actions (cancelling a contract, marking lost).",
 
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",

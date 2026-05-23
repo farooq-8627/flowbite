@@ -217,6 +217,23 @@ export interface EntityCardProps {
 	 * even when tags are hidden (`cardFields` doesn't include "tags").
 	 */
 	statusDot?: { color: string; label: string; tooltip: string };
+	/**
+	 * Read-only render mode (Sprint 3 chat tool-result rendering).
+	 *
+	 * When true:
+	 *   - The drag grip, overflow menu, and shortcut buttons are hidden.
+	 *   - Tags render as static (no editor opens on click).
+	 *   - The card root becomes a click-to-navigate link (entire card
+	 *     surface routes to the entity detail page).
+	 *   - The KanbanItem wrapper is replaced with a plain div so the card
+	 *     is safe to render outside a Kanban / sortable context — for
+	 *     example inside a chat message bubble.
+	 *
+	 * Set this from `core/ai/components/results/EntityResultCard.tsx`. Do
+	 * NOT set it elsewhere — every other view of the card lives inside a
+	 * board / list where the actions ARE the point.
+	 */
+	readOnly?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -238,6 +255,7 @@ export function EntityCard({
 	prefetchedTags,
 	hasMissingRequiredFields,
 	statusDot,
+	readOnly = false,
 }: EntityCardProps) {
 	const [menuOpen, setMenuOpen] = useState(false);
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
@@ -417,229 +435,233 @@ export function EntityCard({
 		return { name: revealedName, value, color, location, label, fieldTitle };
 	}, [groupBy, slot, item, resolveReplacementLabel]);
 
-	return (
-		<KanbanItem value={item.id} asChild>
-			<div
-				ref={rootRef}
-				className={cn(
-					"group/card relative flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card ps-2.5 pe-5 py-2 text-xs shadow-xs transition-shadow",
-					!isDragging && "hover:border-ring/40 hover:shadow-sm",
-					borderClass,
-					isDragging && "rotate-1 shadow-lg",
-				)}
-			>
-				{/* ── Row 1: identity (top-left) + tags (top-right) ── */}
-				<div className="flex items-start gap-2">
-					{/* Identity — avatar + (name/email or industry/stage) → detail */}
-					<IdentityCluster
-						href={detailHref}
-						avatarUrl={item.avatarUrl}
-						initials={initials}
-						showAvatar={showAvatar}
-						showName={showName}
-						title={title}
-						subtitle={subtitle}
-					/>
+	// Effective shortcuts/menu — hidden entirely in read-only mode.
+	const effectiveShortcuts = readOnly ? undefined : shortcuts;
+	const effectiveMenuItems = readOnly ? undefined : menuItems;
 
-					{/* Top-right cluster — status dot first, then tags (or
+	const cardBody = (
+		<div
+			ref={rootRef}
+			className={cn(
+				"group/card relative flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card ps-2.5 py-2 text-xs shadow-xs transition-shadow",
+				readOnly ? "pe-2.5" : "pe-5",
+				!isDragging && "hover:border-ring/40 hover:shadow-sm",
+				readOnly && "cursor-pointer",
+				borderClass,
+				isDragging && "rotate-1 shadow-lg",
+			)}
+		>
+			{/* ── Row 1: identity (top-left) + tags (top-right) ── */}
+			<div className="flex items-start gap-2">
+				{/* Identity — avatar + (name/email or industry/stage) → detail */}
+				<IdentityCluster
+					href={detailHref}
+					avatarUrl={item.avatarUrl}
+					initials={initials}
+					showAvatar={showAvatar}
+					showName={showName}
+					title={title}
+					subtitle={subtitle}
+				/>
+
+				{/* Top-right cluster — status dot first, then tags (or
 					    a "fill the gap" replacement strip when grouping by
 					    tags hides the tags slot). Wrapping this in one
 					    `ms-auto` flex keeps the layout stable whether
 					    individual pieces are present or not. */}
-					<div className="ms-auto flex shrink-0 items-center gap-1.5">
-						{/* Status dot — small coloured circle with tooltip,
+				<div className="ms-auto flex shrink-0 items-center gap-1.5">
+					{/* Status dot — small coloured circle with tooltip,
 						    rendered just before tags. Currently only LeadCard
 						    sets this so the user can glance the lead's status
 						    even when groupBy is not "status". */}
-						{statusDot && (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<span
-										role="img"
-										aria-label={`Status: ${statusDot.label}`}
-										className="inline-block size-2 shrink-0 rounded-full"
-										style={{ backgroundColor: statusDot.color }}
-									/>
-								</TooltipTrigger>
-								<TooltipContent side="top" className="text-xs capitalize">
-									{statusDot.tooltip}
-								</TooltipContent>
-							</Tooltip>
-						)}
+					{statusDot && (
+						<Tooltip>
+							<TooltipTrigger asChild>
+								<span
+									role="img"
+									aria-label={`Status: ${statusDot.label}`}
+									className="inline-block size-2 shrink-0 rounded-full"
+									style={{ backgroundColor: statusDot.color }}
+								/>
+							</TooltipTrigger>
+							<TooltipContent side="top" className="text-xs capitalize">
+								{statusDot.tooltip}
+							</TooltipContent>
+						</Tooltip>
+					)}
 
-						{/* Tags — TOP-right corner */}
-						{showTags && (
-							// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates tag editor from drag listeners
+					{/* Tags — TOP-right corner */}
+					{showTags && (
+						// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates tag editor from drag listeners
+						<div
+							onPointerDown={(e) => e.stopPropagation()}
+							onClick={(e) => e.stopPropagation()}
+							onKeyDown={(e) => e.stopPropagation()}
+						>
+							<TagsCell
+								orgId={orgId as Id<"orgs">}
+								entityType={slot}
+								entityId={itemId}
+								size="xs"
+								readOnlyAfterFirst
+								prefetchedTags={prefetchedTags}
+							/>
+						</div>
+					)}
+
+					{/* "Fill the gap" replacement — when grouping by tags hides
+						    the tags slot, surface the reveal-matrix field here so
+						    the user still has a glance-able hint. */}
+					{!showTags && groupReplacement?.location === "top-right" && (
+						<GroupReplacementStrip replacement={groupReplacement} />
+					)}
+				</div>
+			</div>
+
+			{/* ── Row 2: AI summary (collapsed 2 lines, ▾ to expand) ── */}
+			{showSummary && (
+				<div className="flex items-start gap-1.5 rounded-[calc(var(--radius)-2px)] bg-muted/30 px-2 py-1">
+					<SparklesIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
+					<p className={summaryClassName}>{item.aiSummary}</p>
+					<button
+						type="button"
+						aria-label={summaryExpanded ? "Collapse summary" : "Expand summary"}
+						className="ms-auto shrink-0 rounded-[calc(var(--radius)-2px)] p-0.5 text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
+						onPointerDown={(e) => e.stopPropagation()}
+						onClick={(e) => {
+							e.stopPropagation();
+							setSummaryExpanded((v) => !v);
+						}}
+					>
+						<ChevronDownIcon
+							className={cn(
+								"size-3 transition-transform",
+								summaryExpanded && "rotate-180",
+							)}
+						/>
+					</button>
+				</div>
+			)}
+
+			{/* ── Highlighted custom fields ── */}
+			{highlightFieldDefs && highlightFieldDefs.length > 0 && customFieldValues && (
+				<HighlightFieldStrip
+					defs={highlightFieldDefs}
+					values={customFieldValues}
+					visibleFields={fields}
+					currencyCode={currencyCode}
+				/>
+			)}
+
+			{/* ── Row 3: personCode + assignee (bottom-left) | menu + shortcuts (bottom-right) ── */}
+			{(showPersonCode ||
+				showAssignee ||
+				groupReplacement?.location === "bottom-left" ||
+				groupReplacement?.location === "inline-dot" ||
+				(effectiveShortcuts && effectiveShortcuts.length > 0) ||
+				(effectiveMenuItems && effectiveMenuItems.length > 0)) && (
+				<div className="flex items-center justify-between gap-2 pt-0.5">
+					{/* Bottom-left cluster: personCode badge + assignee avatar */}
+					<div className="flex min-w-0 items-center gap-1.5">
+						{showPersonCode && (
+							// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates the badge link from drag listeners
 							<div
 								onPointerDown={(e) => e.stopPropagation()}
 								onClick={(e) => e.stopPropagation()}
 								onKeyDown={(e) => e.stopPropagation()}
 							>
-								<TagsCell
-									orgId={orgId as Id<"orgs">}
-									entityType={slot}
-									entityId={itemId}
+								<IdentityBadge
+									entityType={isCompany ? "company" : isDeal ? "deal" : "person"}
+									code={codeValue}
+									layout="code"
 									size="xs"
-									readOnlyAfterFirst
-									prefetchedTags={prefetchedTags}
+								/>
+							</div>
+						)}
+						{showAssignee && (
+							// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps the assignee link from starting a drag
+							<div
+								onPointerDown={(e) => e.stopPropagation()}
+								onClick={(e) => e.stopPropagation()}
+								onKeyDown={(e) => e.stopPropagation()}
+							>
+								<AssigneeCell
+									orgId={orgId as Id<"orgs"> | undefined}
+									userId={item.assignedTo as Id<"users"> | undefined}
+									show={["avatar"]}
 								/>
 							</div>
 						)}
 
-						{/* "Fill the gap" replacement — when grouping by tags hides
-						    the tags slot, surface the reveal-matrix field here so
-						    the user still has a glance-able hint. */}
-						{!showTags && groupReplacement?.location === "top-right" && (
-							<GroupReplacementStrip replacement={groupReplacement} />
-						)}
-					</div>
-				</div>
-
-				{/* ── Row 2: AI summary (collapsed 2 lines, ▾ to expand) ── */}
-				{showSummary && (
-					<div className="flex items-start gap-1.5 rounded-[calc(var(--radius)-2px)] bg-muted/30 px-2 py-1">
-						<SparklesIcon className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-						<p className={summaryClassName}>{item.aiSummary}</p>
-						<button
-							type="button"
-							aria-label={summaryExpanded ? "Collapse summary" : "Expand summary"}
-							className="ms-auto shrink-0 rounded-[calc(var(--radius)-2px)] p-0.5 text-muted-foreground transition-transform hover:bg-muted hover:text-foreground"
-							onPointerDown={(e) => e.stopPropagation()}
-							onClick={(e) => {
-								e.stopPropagation();
-								setSummaryExpanded((v) => !v);
-							}}
-						>
-							<ChevronDownIcon
-								className={cn(
-									"size-3 transition-transform",
-									summaryExpanded && "rotate-180",
-								)}
-							/>
-						</button>
-					</div>
-				)}
-
-				{/* ── Highlighted custom fields ── */}
-				{highlightFieldDefs && highlightFieldDefs.length > 0 && customFieldValues && (
-					<HighlightFieldStrip
-						defs={highlightFieldDefs}
-						values={customFieldValues}
-						visibleFields={fields}
-						currencyCode={currencyCode}
-					/>
-				)}
-
-				{/* ── Row 3: personCode + assignee (bottom-left) | menu + shortcuts (bottom-right) ── */}
-				{(showPersonCode ||
-					showAssignee ||
-					groupReplacement?.location === "bottom-left" ||
-					groupReplacement?.location === "inline-dot" ||
-					(shortcuts && shortcuts.length > 0) ||
-					(menuItems && menuItems.length > 0)) && (
-					<div className="flex items-center justify-between gap-2 pt-0.5">
-						{/* Bottom-left cluster: personCode badge + assignee avatar */}
-						<div className="flex min-w-0 items-center gap-1.5">
-							{showPersonCode && (
-								// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates the badge link from drag listeners
-								<div
-									onPointerDown={(e) => e.stopPropagation()}
-									onClick={(e) => e.stopPropagation()}
-									onKeyDown={(e) => e.stopPropagation()}
-								>
-									<IdentityBadge
-										entityType={
-											isCompany ? "company" : isDeal ? "deal" : "person"
-										}
-										code={codeValue}
-										layout="code"
-										size="xs"
-									/>
-								</div>
-							)}
-							{showAssignee && (
-								// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps the assignee link from starting a drag
-								<div
-									onPointerDown={(e) => e.stopPropagation()}
-									onClick={(e) => e.stopPropagation()}
-									onKeyDown={(e) => e.stopPropagation()}
-								>
-									<AssigneeCell
-										orgId={orgId as Id<"orgs"> | undefined}
-										userId={item.assignedTo as Id<"users"> | undefined}
-										show={["avatar"]}
-									/>
-								</div>
-							)}
-
-							{/* "Fill the gap" replacement — when grouping by
+						{/* "Fill the gap" replacement — when grouping by
 							    assignedTo hides the avatar slot, surface the
 							    revealed field as a coloured strip here. */}
-							{!showAssignee && groupReplacement?.location === "bottom-left" && (
-								<GroupReplacementStrip replacement={groupReplacement} />
-							)}
+						{!showAssignee && groupReplacement?.location === "bottom-left" && (
+							<GroupReplacementStrip replacement={groupReplacement} />
+						)}
 
-							{/* Inline coloured dot — when groupBy is a field
+						{/* Inline coloured dot — when groupBy is a field
 							    that has no fixed slot (status / source /
 							    industry / etc.), append a tiny dot here so
 							    the user still has a colour hint. The
 							    tooltip discloses what field + value the
 							    dot represents on hover. */}
-							{groupReplacement?.location === "inline-dot" && (
-								<Tooltip>
-									<TooltipTrigger asChild>
-										<span
-											role="img"
-											aria-label={`${groupReplacement.fieldTitle}: ${groupReplacement.label}`}
-											className="inline-block size-2 shrink-0 rounded-full"
-											style={{ backgroundColor: groupReplacement.color }}
-										/>
-									</TooltipTrigger>
-									<TooltipContent side="top" className="text-xs capitalize">
-										{groupReplacement.fieldTitle}: {groupReplacement.label}
-									</TooltipContent>
-								</Tooltip>
-							)}
-						</div>
-
-						{/* Bottom-right cluster: menu (⋮) + shortcuts + enrichment pills */}
-						{/* biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps menu/shortcut clicks from starting a drag */}
-						<div
-							className="flex items-center gap-1"
-							onPointerDown={(e) => e.stopPropagation()}
-							onClick={(e) => e.stopPropagation()}
-							onKeyDown={(e) => e.stopPropagation()}
-						>
-							{menuItems && menuItems.length > 0 && (
-								<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-									<DropdownMenuTrigger asChild>
-										<Button
-											size="icon"
-											variant="ghost"
-											className="size-5 text-muted-foreground hover:text-foreground"
-											aria-label="More actions"
-										>
-											<MoreVerticalIcon className="size-3" />
-										</Button>
-									</DropdownMenuTrigger>
-									<DropdownMenuContent align="end" className="text-xs">
-										{menuItems.map((a, i) => (
-											<MenuItemRow
-												key={a.label}
-												action={a}
-												closeMenu={() => setMenuOpen(false)}
-												separator={a.separatorBefore && i > 0}
-											/>
-										))}
-									</DropdownMenuContent>
-								</DropdownMenu>
-							)}
-							<ShortcutCluster shortcuts={shortcuts} item={item} />
-						</div>
+						{groupReplacement?.location === "inline-dot" && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span
+										role="img"
+										aria-label={`${groupReplacement.fieldTitle}: ${groupReplacement.label}`}
+										className="inline-block size-2 shrink-0 rounded-full"
+										style={{ backgroundColor: groupReplacement.color }}
+									/>
+								</TooltipTrigger>
+								<TooltipContent side="top" className="text-xs capitalize">
+									{groupReplacement.fieldTitle}: {groupReplacement.label}
+								</TooltipContent>
+							</Tooltip>
+						)}
 					</div>
-				)}
 
-				{/* ── Vertical drag grip — right-edge, the ONLY drag handle ── */}
+					{/* Bottom-right cluster: menu (⋮) + shortcuts + enrichment pills */}
+					{/* biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper keeps menu/shortcut clicks from starting a drag */}
+					<div
+						className="flex items-center gap-1"
+						onPointerDown={(e) => e.stopPropagation()}
+						onClick={(e) => e.stopPropagation()}
+						onKeyDown={(e) => e.stopPropagation()}
+					>
+						{effectiveMenuItems && effectiveMenuItems.length > 0 && (
+							<DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+								<DropdownMenuTrigger asChild>
+									<Button
+										size="icon"
+										variant="ghost"
+										className="size-5 text-muted-foreground hover:text-foreground"
+										aria-label="More actions"
+									>
+										<MoreVerticalIcon className="size-3" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="text-xs">
+									{effectiveMenuItems.map((a, i) => (
+										<MenuItemRow
+											key={a.label}
+											action={a}
+											closeMenu={() => setMenuOpen(false)}
+											separator={a.separatorBefore && i > 0}
+										/>
+									))}
+								</DropdownMenuContent>
+							</DropdownMenu>
+						)}
+						<ShortcutCluster shortcuts={effectiveShortcuts} item={item} />
+					</div>
+				</div>
+			)}
+
+			{/* ── Vertical drag grip — right-edge, the ONLY drag handle ── */}
+			{!readOnly && (
 				<KanbanItemHandle asChild>
 					<button
 						type="button"
@@ -654,7 +676,32 @@ export function EntityCard({
 						<GripVerticalIcon className="size-3" />
 					</button>
 				</KanbanItemHandle>
-			</div>
+			)}
+		</div>
+	);
+
+	// In read-only mode: skip the KanbanItem wrapper (the card may render
+	// outside any sortable context — e.g. a chat bubble) and wrap the whole
+	// surface in a Link to the entity detail page.
+	if (readOnly) {
+		if (detailHref) {
+			return (
+				<Link
+					href={detailHref}
+					className="block rounded-[var(--radius)] no-underline outline-none focus-visible:ring-1 focus-visible:ring-ring hover:no-underline"
+					title="Open in CRM"
+					style={{ textDecoration: "none" }}
+				>
+					{cardBody}
+				</Link>
+			);
+		}
+		return cardBody;
+	}
+
+	return (
+		<KanbanItem value={item.id} asChild>
+			{cardBody}
 		</KanbanItem>
 	);
 }

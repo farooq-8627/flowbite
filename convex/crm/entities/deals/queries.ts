@@ -3,7 +3,13 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { requireRole } from "../../../_shared/permissions";
 import {
 	getRequiredFieldsForStage,
@@ -107,18 +113,97 @@ export const getById = orgQuery({
 	},
 });
 
+async function getByDealCodeImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; dealCode: string },
+) {
+	return ctx.db
+		.query("deals")
+		.withIndex("by_org_and_dealCode", (q) =>
+			q.eq("orgId", args.orgId).eq("dealCode", args.dealCode),
+		)
+		.first();
+}
+
 export const getByDealCode = orgQuery({
 	args: { orgId: v.id("orgs"), dealCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
+		return getByDealCodeImpl(ctx, args);
+	},
+});
 
-		return ctx.db
-			.query("deals")
-			.withIndex("by_org_and_dealCode", (q) =>
-				q.eq("orgId", args.orgId).eq("dealCode", args.dealCode),
-			)
-			.first();
+/** AI-callable internal twin — see `convex/ai/tools/_shared.ts` for rationale. */
+export const getByDealCodeForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), dealCode: v.string() },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.view");
+		return getByDealCodeImpl(ctx, args);
+	},
+});
+
+/**
+ * searchDeals — text search for the AI tools.
+ *
+ * Substring-matches `query` (case-insensitive) against title, dealCode,
+ * personCode, and (when present) the deal's `currency`+`value` printout.
+ * Honours `excludeFromAI: false` to hide opted-out rows from the AI.
+ */
+async function searchDealsImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; query: string; limit?: number; excludeFromAI?: boolean },
+) {
+	const cap = args.limit ?? 10;
+	const q = args.query.trim().toLowerCase();
+	if (!q) return [];
+
+	const rows = await ctx.db
+		.query("deals")
+		.withIndex("by_org", (qi) => qi.eq("orgId", args.orgId))
+		.take(500);
+
+	const matches: typeof rows = [];
+	for (const r of rows) {
+		if (r.deletedAt !== undefined) continue;
+		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
+		const haystack = [r.title, r.dealCode ?? "", r.personCode ?? ""]
+			.join(" ")
+			.toLowerCase();
+		if (haystack.includes(q)) matches.push(r);
+		if (matches.length >= cap) break;
+	}
+	return matches;
+}
+
+export const searchDeals = orgQuery({
+	args: {
+		orgId: v.id("orgs"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		excludeFromAI: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "deals.view");
+		return searchDealsImpl(ctx, args);
+	},
+});
+
+/** AI-callable internal twin. */
+export const searchDealsForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		query: v.string(),
+		limit: v.optional(v.number()),
+		excludeFromAI: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.view");
+		return searchDealsImpl(ctx, args);
 	},
 });
 

@@ -29,6 +29,53 @@ export const getLatest = orgQuery({
 });
 
 /**
+ * Sprint 5 — daily briefing query, scope-aware.
+ * Returns the calling user's latest unexpired `daily-user` briefing.
+ * Identical signature to `getLatest` but filters by scope so a
+ * future weekly-org row in the same indexes won't accidentally be
+ * returned. Used by `DailyBriefingCard`.
+ */
+export const todayForUser = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { userId } = await requireOrgMember(ctx, args.orgId);
+		const all = await ctx.db
+			.query("aiBriefings")
+			.withIndex("by_org_and_user_and_generated", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", userId),
+			)
+			.order("desc")
+			.take(5);
+		const briefing = all.find((b) => (b.scope ?? "daily-user") === "daily-user");
+		if (!briefing) return null;
+		if (briefing.expiresAt < Date.now()) return null;
+		return briefing;
+	},
+});
+
+/**
+ * Sprint 5 — weekly insight for the org. Returns the latest unexpired
+ * `weekly-org` row. Visible to every member of the org. Used by
+ * `WeeklyInsightCard`.
+ */
+export const thisWeekForOrg = orgQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		await requireOrgMember(ctx, args.orgId);
+		const briefing = await ctx.db
+			.query("aiBriefings")
+			.withIndex("by_org_and_scope", (q) =>
+				q.eq("orgId", args.orgId).eq("scope", "weekly-org"),
+			)
+			.order("desc")
+			.first();
+		if (!briefing) return null;
+		if (briefing.expiresAt < Date.now()) return null;
+		return briefing;
+	},
+});
+
+/**
  * Manually trigger a fresh briefing generation.
  * Counts against the user's AI message quota when triggered manually.
  */

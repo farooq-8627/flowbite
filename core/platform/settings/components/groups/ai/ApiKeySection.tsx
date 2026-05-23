@@ -17,7 +17,7 @@
  */
 import { useAction, useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
-import { Key, Loader2, Plus, Trash2 } from "lucide-react";
+import { ExternalLink, Key, Loader2, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +65,41 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
 	nvidia: "NVIDIA NIM",
 	moonshot: "Moonshot / Kimi",
 	custom: "Custom (other / self-hosted)",
+};
+
+/**
+ * Free-tier hints + signup URLs for each provider. When the user picks a
+ * provider in the "Add API key" dialog we surface the matching hint
+ * underneath the input so first-time users know which providers offer
+ * a free tier and where to grab a key.
+ *
+ * `freeTier` is rendered as a small green pill; `signupUrl` becomes the
+ * "Get a key" link. Either field is optional — providers without a free
+ * tier (Anthropic, OpenAI, xAI, Moonshot) just show the signup URL.
+ */
+const PROVIDER_HINTS: Record<ProviderId, { freeTier?: string; signupUrl?: string }> = {
+	anthropic: { signupUrl: "https://console.anthropic.com/settings/keys" },
+	openai: { signupUrl: "https://platform.openai.com/api-keys" },
+	google: {
+		freeTier: "Generous AI Studio free tier",
+		signupUrl: "https://aistudio.google.com/apikey",
+	},
+	xai: { signupUrl: "https://console.x.ai/" },
+	groq: { freeTier: "30 req/min free", signupUrl: "https://console.groq.com/keys" },
+	mistral: {
+		freeTier: "Limited free trial",
+		signupUrl: "https://console.mistral.ai/api-keys",
+	},
+	openrouter: {
+		freeTier: "~200 req/day on `:free` models",
+		signupUrl: "https://openrouter.ai/keys",
+	},
+	nvidia: {
+		freeTier: "5,000 req/month free (build.nvidia.com)",
+		signupUrl: "https://build.nvidia.com",
+	},
+	moonshot: { signupUrl: "https://platform.moonshot.ai/console/api-keys" },
+	custom: {},
 };
 
 export function ApiKeySection({ orgId }: { orgId: Id<"orgs"> }) {
@@ -240,8 +275,8 @@ export function ApiKeySection({ orgId }: { orgId: Id<"orgs"> }) {
 						<DialogTitle>Add an API key</DialogTitle>
 						<DialogDescription>
 							Paste a key from any supported provider. The provider is auto-detected
-							where possible; pick it explicitly when prompted. Keys are encrypted
-							at rest with AES-GCM.
+							where possible; pick it explicitly when prompted. Keys are encrypted at
+							rest with AES-GCM.
 						</DialogDescription>
 					</DialogHeader>
 
@@ -306,9 +341,7 @@ export function ApiKeySection({ orgId }: { orgId: Id<"orgs"> }) {
 								<SelectTrigger id="key-provider" className="w-full">
 									<SelectValue
 										placeholder={
-											needsProviderPick
-												? "Pick a provider…"
-												: "Provider"
+											needsProviderPick ? "Pick a provider…" : "Provider"
 										}
 									/>
 								</SelectTrigger>
@@ -332,6 +365,36 @@ export function ApiKeySection({ orgId }: { orgId: Id<"orgs"> }) {
 									<code>sk-…</code> keys).
 								</p>
 							)}
+
+							{/* Free-tier hint + signup link for the chosen provider. */}
+							{effectiveProvider &&
+								(PROVIDER_HINTS[effectiveProvider]?.freeTier ||
+									PROVIDER_HINTS[effectiveProvider]?.signupUrl) && (
+									<div className="flex flex-col gap-1.5 rounded-[var(--radius)] border border-border bg-muted/40 px-2.5 py-2 text-xs">
+										{PROVIDER_HINTS[effectiveProvider]?.freeTier && (
+											<div className="flex items-center gap-1.5">
+												<Sparkles className="size-3 text-emerald-600 dark:text-emerald-400" />
+												<span className="font-medium text-emerald-700 dark:text-emerald-300">
+													Free tier:
+												</span>
+												<span className="text-muted-foreground">
+													{PROVIDER_HINTS[effectiveProvider]?.freeTier}
+												</span>
+											</div>
+										)}
+										{PROVIDER_HINTS[effectiveProvider]?.signupUrl && (
+											<a
+												href={PROVIDER_HINTS[effectiveProvider]?.signupUrl}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="flex items-center gap-1.5 text-primary hover:underline"
+											>
+												<ExternalLink className="size-3" />
+												Get a key from {PROVIDER_LABEL[effectiveProvider]}
+											</a>
+										)}
+									</div>
+								)}
 						</div>
 
 						<div className="flex flex-col gap-1.5">

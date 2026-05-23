@@ -24,6 +24,14 @@ registerTool({
 	requiredCapability: "premium",
 	confirmation: "twoStep",
 	description: "Create a custom field on a CRM entity.",
+	runbook: {
+		onSuccess:
+			"Confirm with the field's label and type. Mention it appears in the entity's form on next render.",
+		onValidationError:
+			"If `options` is missing for select/multiselect, ask the user for the options list. Don't retry without options.",
+		onPermissionDenied:
+			"Tell the user they need fieldDefinitions.manage permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		label: z.string(),
@@ -72,7 +80,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "fieldDefinitions.manage");
-			const result = await toolMutation(ctx, "crm/fields/fieldDefinitions/mutations:create", {
+			const result = await toolMutation(getCtx(), "crm/fields/fieldDefinitions/mutations:create", {
 				orgId,
 				...args,
 			});

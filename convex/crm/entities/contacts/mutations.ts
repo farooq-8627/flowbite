@@ -6,9 +6,14 @@
  * aiContext: PASSED from lead on conversion — never recreated. Updated in-place.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -20,6 +25,168 @@ import { sendNotification } from "../../../notifications/helpers";
 
 function normalizePhone(phone: string): string {
 	return phone.replace(/\D/g, "");
+}
+
+type AiContext = {
+	summary?: string;
+	keyFacts?: string[];
+	lastUpdatedAt?: number;
+	rawNotes?: string;
+};
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		personCode?: string;
+		displayName: string;
+		email?: string;
+		phone?: string;
+		leadId?: Id<"leads">;
+		companyId?: Id<"companies">;
+		assignedTo?: Id<"users">;
+		aiContext?: AiContext;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "contacts.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	if (args.email) {
+		const existing = await ctx.db
+			.query("contacts")
+			.withIndex("by_org_and_email", (q) =>
+				q.eq("orgId", args.orgId).eq("email", args.email!),
+			)
+			.first();
+		if (existing && !existing.deletedAt) {
+			throw new ConvexError({
+				code: "DUPLICATE",
+				message: "Contact with this email already exists",
+				personCode: existing.personCode,
+			});
+		}
+	}
+
+	const personCode = args.personCode ?? (await generatePersonCode(ctx, args.orgId));
+	const now = Date.now();
+	const normalizedPhone = args.phone ? normalizePhone(args.phone) : undefined;
+
+	const contactId = await ctx.db.insert("contacts", {
+		orgId: args.orgId,
+		personCode,
+		displayName: args.displayName,
+		email: args.email,
+		phone: args.phone,
+		normalizedPhone,
+		leadId: args.leadId,
+		companyId: args.companyId,
+		assignedTo: args.assignedTo,
+		aiContext: args.aiContext,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "created",
+		entityType: "contact",
+		entityId: contactId,
+		personCode,
+		description: `Contact created: ${args.displayName}`,
+	});
+
+	if (!args.leadId) {
+		await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
+	}
+
+	if (args.assignedTo && args.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.assignedTo,
+			type: "contact.assigned",
+			title: `Contact assigned to you: ${args.displayName}`,
+			entityType: "contact",
+			entityId: contactId,
+		});
+	}
+
+	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+		orgId: args.orgId,
+		entityType: "contact",
+		entityId: contactId,
+		personCode,
+	});
+
+	return { contactId, personCode };
+}
+
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		contactId: Id<"contacts">;
+		displayName?: string;
+		email?: string;
+		phone?: string;
+		companyId?: Id<"companies">;
+		assignedTo?: Id<"users">;
+		sortOrder?: number;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "contacts.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const contact = await ctx.db.get(args.contactId);
+	if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const { orgId: _o, userId: _u, contactId: _c, ...updates } = args;
+	const patch: Record<string, unknown> = Object.fromEntries(
+		Object.entries(updates).filter(([, val]) => val !== undefined),
+	);
+	if (args.phone) patch.normalizedPhone = normalizePhone(args.phone);
+
+	await ctx.db.patch(args.contactId, { ...patch, updatedAt: Date.now() });
+
+	if (
+		args.assignedTo !== undefined &&
+		contact.leadId !== undefined &&
+		contact.assignedTo !== args.assignedTo
+	) {
+		const lead = await ctx.db.get(contact.leadId);
+		if (lead && lead.orgId === args.orgId && lead.deletedAt === undefined) {
+			if (lead.assignedTo !== args.assignedTo) {
+				await ctx.db.patch(contact.leadId, {
+					assignedTo: args.assignedTo,
+					updatedAt: Date.now(),
+				});
+			}
+		}
+	}
+
+	await logFieldUpdates(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		entityType: "contact",
+		entityId: args.contactId,
+		personCode: contact.personCode,
+		displayName: contact.displayName,
+		before: contact as unknown as Record<string, unknown>,
+		after: { ...contact, ...patch } as unknown as Record<string, unknown>,
+		fields: ["displayName", "email", "phone", "companyId", "assignedTo"],
+	});
 }
 
 export const create = orgMutation({
@@ -37,83 +204,28 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "contacts.create");
-		await enforceRateLimit(ctx, {
-			scope: "contacts.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createImpl(ctx, { ...args, userId });
+	},
+});
 
-		// Email dedup via index — O(log n)
-		if (args.email) {
-			const existing = await ctx.db
-				.query("contacts")
-				.withIndex("by_org_and_email", (q) =>
-					q.eq("orgId", args.orgId).eq("email", args.email!),
-				)
-				.first();
-			if (existing && !existing.deletedAt) {
-				throw new ConvexError({
-					code: "DUPLICATE",
-					message: "Contact with this email already exists",
-					personCode: existing.personCode,
-				});
-			}
-		}
-
-		const personCode = args.personCode ?? (await generatePersonCode(ctx, args.orgId));
-		const now = Date.now();
-		const normalizedPhone = args.phone ? normalizePhone(args.phone) : undefined;
-
-		const contactId = await ctx.db.insert("contacts", {
-			orgId: args.orgId,
-			personCode,
-			displayName: args.displayName,
-			email: args.email,
-			phone: args.phone,
-			normalizedPhone,
-			leadId: args.leadId,
-			companyId: args.companyId,
-			assignedTo: args.assignedTo,
-			aiContext: args.aiContext,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "created",
-			entityType: "contact",
-			entityId: contactId,
-			personCode,
-			description: `Contact created: ${args.displayName}`,
-		});
-
-		// Counter increment when this is a *direct* contact creation. Conversion
-		// from lead handles its own counter rebalance in `leads.convertToContact`.
-		if (!args.leadId) {
-			await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
-		}
-
-		if (args.assignedTo && args.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.assignedTo,
-				type: "contact.assigned",
-				title: `Contact assigned to you: ${args.displayName}`,
-				entityType: "contact",
-				entityId: contactId,
-			});
-		}
-
-		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId,
-			entityType: "contact",
-			entityId: contactId,
-			personCode,
-		});
-
-		return { contactId, personCode };
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.optional(v.string()),
+		displayName: v.string(),
+		email: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		leadId: v.optional(v.id("leads")),
+		companyId: v.optional(v.id("companies")),
+		assignedTo: v.optional(v.id("users")),
+		aiContext: v.optional(v.any()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "contacts.create");
+		return createImpl(ctx, args);
 	},
 });
 
@@ -132,61 +244,27 @@ export const update = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "contacts.update");
+		return updateImpl(ctx, { ...args, userId });
+	},
+});
 
-		// Drag-rate guard — same shared 120/min budget as the other
-		// kanban-driven mutations.
-		await enforceRateLimit(ctx, {
-			scope: "contacts.update",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
-
-		const contact = await ctx.db.get(args.contactId);
-		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const { orgId: _o, contactId: _c, ...updates } = args;
-		const patch: Record<string, unknown> = Object.fromEntries(
-			Object.entries(updates).filter(([, val]) => val !== undefined),
-		);
-		if (args.phone) patch.normalizedPhone = normalizePhone(args.phone);
-
-		await ctx.db.patch(args.contactId, { ...patch, updatedAt: Date.now() });
-
-		// Propagate `assignedTo` change back to the source lead (if this
-		// contact was converted from one). Keeps the two records in lockstep
-		// — a kanban drag on the contacts board surfaces on the lead row's
-		// activity log under the same assignee. Idempotent.
-		if (
-			args.assignedTo !== undefined &&
-			contact.leadId !== undefined &&
-			contact.assignedTo !== args.assignedTo
-		) {
-			const lead = await ctx.db.get(contact.leadId);
-			if (lead && lead.orgId === args.orgId && lead.deletedAt === undefined) {
-				if (lead.assignedTo !== args.assignedTo) {
-					await ctx.db.patch(contact.leadId, {
-						assignedTo: args.assignedTo,
-						updatedAt: Date.now(),
-					});
-				}
-			}
-		}
-
-		await logFieldUpdates(ctx, {
-			orgId: args.orgId,
-			userId,
-			entityType: "contact",
-			entityId: args.contactId,
-			personCode: contact.personCode,
-			displayName: contact.displayName,
-			before: contact as unknown as Record<string, unknown>,
-			after: { ...contact, ...patch } as unknown as Record<string, unknown>,
-			fields: ["displayName", "email", "phone", "companyId", "assignedTo"],
-		});
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		contactId: v.id("contacts"),
+		displayName: v.optional(v.string()),
+		email: v.optional(v.string()),
+		phone: v.optional(v.string()),
+		companyId: v.optional(v.id("companies")),
+		assignedTo: v.optional(v.id("users")),
+		sortOrder: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "contacts.update");
+		return updateImpl(ctx, args);
 	},
 });
 

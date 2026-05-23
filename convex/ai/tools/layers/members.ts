@@ -22,6 +22,13 @@ registerTool({
 	permission: "members.invite",
 	confirmation: "twoStep",
 	description: "Send an invitation to join the workspace.",
+	runbook: {
+		onSuccess: "Confirm with the email and the role they were invited as.",
+		onValidationError:
+			"If email format is invalid or roleId doesn't exist, ask for a valid value.",
+		onPermissionDenied:
+			"Tell the user they need members.invite permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		email: z.string().email(),
 		roleId: z.string().describe("orgRoles id"),
@@ -50,7 +57,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "members.invite");
-			const result = await toolMutation(ctx, "invitations/mutations:create", {
+			const result = await toolMutation(getCtx(), "invitations/mutations:create", {
 				orgId,
 				...args,
 			});
@@ -68,6 +75,9 @@ registerTool({
 	permission: "members.cancelInvitation",
 	confirmation: "twoStep",
 	description: "Cancel a pending invitation.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+	},
 	schema: z.object({ invitationId: z.string(), email: z.string().describe("For preview") }),
 	execute: async (args) => {
 		const { permissions } = getCtx();
@@ -90,7 +100,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "members.cancelInvitation");
-			await toolMutation(ctx, "invitations/mutations:cancel", { orgId, ...args });
+			await toolMutation(getCtx(), "invitations/mutations:cancel", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ Invitation cancelled.` };
 		}),
 });
@@ -103,6 +113,11 @@ registerTool({
 	confirmation: "twoStep",
 	description:
 		"Change a member's role. AI cannot promote the calling user (self-promotion blocked).",
+	runbook: {
+		onSuccess: "Confirm with the member's name and new role.",
+		onPermissionDenied:
+			"If the user is trying to change their own role, tell them another admin must do it. Otherwise tell them they need members.changeRole permission.",
+	},
 	schema: z.object({
 		userId: z.string().describe("Target user id."),
 		newRoleId: z.string().describe("New orgRoles id."),
@@ -141,7 +156,11 @@ registerTool({
 			if (args.userId === callingUser) {
 				return { ok: false as const, error: "AI cannot change your own role." };
 			}
-			await toolMutation(ctx, "orgs/mutations:updateMemberRole", { orgId, ...args });
+			await toolMutation(getCtx(), "orgs/mutations:updateMemberRole", {
+				orgId,
+				targetUserId: args.userId,
+				roleId: args.newRoleId,
+			});
 			return { ok: true as const, data: args, display: `✅ Role updated.` };
 		}),
 });
@@ -153,6 +172,11 @@ registerTool({
 	requiredCapability: "premium",
 	confirmation: "twoStep",
 	description: "Remove a member from the workspace.",
+	runbook: {
+		onSuccess: "Confirm in one short sentence.",
+		onPermissionDenied:
+			"If the user is trying to remove themselves, tell them another admin must do it.",
+	},
 	schema: z.object({ userId: z.string(), name: z.string().describe("For preview") }),
 	execute: async (args) => {
 		const { permissions, userId: callingUser } = getCtx();
@@ -181,7 +205,10 @@ registerTool({
 			if (args.userId === callingUser) {
 				return { ok: false as const, error: "AI cannot remove you." };
 			}
-			await toolMutation(ctx, "orgs/mutations:removeMember", { orgId, ...args });
+			await toolMutation(getCtx(), "orgs/mutations:removeMember", {
+				orgId,
+				targetUserId: args.userId,
+			});
 			return { ok: true as const, data: args, display: `✅ Member removed.` };
 		}),
 });

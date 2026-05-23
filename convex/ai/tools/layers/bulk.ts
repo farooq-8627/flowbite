@@ -35,6 +35,15 @@ registerTool({
 	requiredCapability: "premium",
 	confirmation: "twoStep",
 	description: "Update multiple entities at once. Provide entityIds (max 200) and patch.",
+	runbook: {
+		onSuccess: "Confirm with the count of records updated.",
+		onPartialSuccess:
+			"List how many succeeded vs failed. Offer to retry the failed rows when the user is ready.",
+		onValidationError:
+			"If patch is empty or entityIds is empty, ask the user what to update and on which records.",
+		onPermissionDenied:
+			"Tell the user they need <entity>.update permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		entityIds: z.array(z.string()).min(1).max(200),
@@ -79,7 +88,7 @@ registerTool({
 			let failed = 0;
 			for (const id of args.entityIds) {
 				try {
-					await toolMutation(ctx, mutation, {
+					await toolMutation(getCtx(), mutation, {
 						orgId,
 						[`${args.entityType}Id`]: id,
 						...args.patch,
@@ -104,6 +113,13 @@ registerTool({
 	requiredCapability: "premium",
 	confirmation: "twoStep",
 	description: "Close multiple deals as won or lost.",
+	runbook: {
+		onSuccess: "Confirm with the count and outcome.",
+		onPartialSuccess:
+			"List how many closed vs failed. Offer to retry the failed deals when the user is ready.",
+		onPermissionDenied:
+			"Tell the user they need deals.close permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		dealIds: z.array(z.string()).min(1).max(100),
 		outcome: z.enum(["won", "lost"]),
@@ -143,7 +159,7 @@ registerTool({
 			let failed = 0;
 			for (const dealId of args.dealIds) {
 				try {
-					await toolMutation(ctx, mutation, { orgId, dealId });
+					await toolMutation(getCtx(), mutation, { orgId, dealId });
 					succeeded++;
 				} catch {
 					failed++;

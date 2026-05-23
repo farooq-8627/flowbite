@@ -3,6 +3,11 @@
 @import "shadcn/tailwind.css";
 @import "react-phone-number-input/style.css";
 
+/* Streamdown utility classes (AI markdown renderer) — Tailwind needs to scan
+   the package's compiled JS for the classes it uses at runtime. Path is
+   relative from this CSS file (app/[locale]/globals.css → root node_modules). */
+@source "../../node_modules/streamdown/dist/*.js";
+
 /* Theme presets — loaded via data-theme-preset attribute on <html> */
 @import "../../styles/presets/default.css";
 @import "../../styles/presets/tangerine.css";
@@ -330,4 +335,54 @@ html[data-font="source-code-pro"] body {
 	animation: note-card-flash 1.6s ease-out both;
 	position: relative;
 	z-index: 1;
+}
+
+
+/* ──────────────────────────────────────────────────────────────────────
+   AI chat scrollbar policy (PHASE-3-AI-AUDIT.md §6 Week 1 spec 1.5b/c)
+
+   - .chat-sheet-wrapper — outer chat panel scroll container. Hide the
+     vertical scrollbar entirely; the panel still scrolls. Targets the
+     Radix ScrollArea viewport that lives inside.
+   - .reasoning-panel-body — internal scroll for the reasoning audit
+     card list. Hide the vertical scrollbar.
+   - .code-block-body — inside <CodeBlock>. Hide vertical scrollbar but
+     keep the horizontal one visible (the user needs the affordance to
+     know they can scroll right when a long line overflows).
+   ────────────────────────────────────────────────────────────────────── */
+.chat-sheet-wrapper [data-slot="scroll-area-viewport"],
+.reasoning-panel-body {
+	scrollbar-width: none;
+}
+.chat-sheet-wrapper [data-slot="scroll-area-viewport"]::-webkit-scrollbar,
+.reasoning-panel-body::-webkit-scrollbar {
+	display: none;
+}
+/* Also hide the Radix custom scrollbar overlay inside the chat sheet so
+   we don't get a phantom track. */
+.chat-sheet-wrapper [data-slot="scroll-area-scrollbar"] {
+	display: none !important;
+}
+
+.code-block-body {
+	scrollbar-width: thin;
+	scrollbar-color: var(--muted-foreground) transparent;
+}
+.code-block-body::-webkit-scrollbar {
+	height: 8px;
+	width: 0; /* hide vertical track entirely */
+}
+.code-block-body::-webkit-scrollbar:vertical {
+	width: 0;
+	display: none;
+}
+.code-block-body::-webkit-scrollbar-thumb {
+	background: oklch(from var(--muted-foreground) l c h / 0.4);
+	border-radius: 999px;
+}
+.code-block-body::-webkit-scrollbar-thumb:hover {
+	background: oklch(from var(--muted-foreground) l c h / 0.6);
+}
+.code-block-body::-webkit-scrollbar-track {
+	background: transparent;
 }

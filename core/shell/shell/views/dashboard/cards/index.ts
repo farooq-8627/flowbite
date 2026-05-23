@@ -6,6 +6,8 @@
  * with one tidy import block.
  */
 
+export { AIBriefingCard } from "./AIBriefingCard";
+export { DailyBriefingCard } from "./DailyBriefingCard";
 export { MetricStrip } from "./MetricStrip";
 export { MockDataBanner } from "./MockDataBanner";
 export { NextReminderFallback } from "./NextReminderFallback";
@@ -14,3 +16,4 @@ export { RecentActivityCard } from "./RecentActivityCard";
 export { RemindersCard } from "./RemindersCard";
 export { StatTile } from "./StatTile";
 export { TodaySummaryCard } from "./TodaySummaryCard";
+export { WeeklyInsightCard } from "./WeeklyInsightCard";

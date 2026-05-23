@@ -7,6 +7,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
 import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
+import { EntityAISummaryCard } from "@/core/entities/shared/components/EntityAISummaryCard";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
 import { DealDetailShell } from "@/core/platform/profile/components/DealDetailShell";
 import { OverviewCard } from "@/core/platform/profile/components/OverviewCard";
@@ -70,15 +71,33 @@ export function ProfileContent({ activeGroup, personCode, orgSlug, orgId }: Prop
 // ─── Overview — single unified OverviewCard (replaces the 5-card layout) ─────
 
 function OverviewGroup({ personCode }: { personCode: string }) {
+	const { orgId } = useCurrentOrg();
+	const person = useQuery(
+		api.crm.people.queries.getByPersonCode,
+		orgId ? { orgId, personCode } : "skip",
+	);
+	const ai = (person?.entity as Doc<"leads"> | Doc<"contacts"> | undefined)?.aiContext;
+
 	return (
-		<ProfileSection
-			id="overview.card"
-			title="Overview"
-			description="Vitals, contact, owner, tags, latest messages, reminders, and deals."
-			chromeless
-		>
-			<OverviewCard personCode={personCode} />
-		</ProfileSection>
+		<div className="grid gap-4">
+			{/* AI summary surfaces the precomputed aiContext from leads/contacts.
+			    Renders null when summary + keyFacts are both empty so the
+			    page is unchanged for entities without context. */}
+			<EntityAISummaryCard
+				summary={ai?.summary}
+				keyFacts={ai?.keyFacts}
+				lastUpdatedAt={ai?.lastUpdatedAt}
+			/>
+
+			<ProfileSection
+				id="overview.card"
+				title="Overview"
+				description="Vitals, contact, owner, tags, latest messages, reminders, and deals."
+				chromeless
+			>
+				<OverviewCard personCode={personCode} />
+			</ProfileSection>
+		</div>
 	);
 }
 

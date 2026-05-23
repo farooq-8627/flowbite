@@ -10,7 +10,13 @@
  *     kept as the "primary" assignee for back-compat.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -19,6 +25,125 @@ import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
+
+async function createImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		name: string;
+		industry?: string;
+		website?: string;
+		size?: string;
+		assignedTo?: Id<"users">;
+		assignees?: Id<"users">[];
+		personCodes?: string[];
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "companies.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const companyCode = await generateEntityCode(ctx, args.orgId, "company");
+	const now = Date.now();
+
+	const companyId = await ctx.db.insert("companies", {
+		orgId: args.orgId,
+		companyCode,
+		name: args.name,
+		industry: args.industry,
+		website: args.website,
+		size: args.size,
+		assignedTo: args.assignedTo,
+		assignees: args.assignees,
+		personCodes: args.personCodes,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "created",
+		entityType: "company",
+		entityId: companyId,
+		description: `Company created: ${args.name}`,
+		metadata: { companyCode },
+	});
+
+	await applyOrgStat(ctx, args.orgId, "companies.active", +1);
+
+	if (args.assignedTo && args.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.assignedTo,
+			type: "company.assigned",
+			title: `Company assigned to you: ${args.name}`,
+			entityType: "company",
+			entityId: companyId,
+		});
+	}
+
+	return { companyId, companyCode };
+}
+
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		companyId: Id<"companies">;
+		name?: string;
+		industry?: string;
+		website?: string;
+		size?: string;
+		assignedTo?: Id<"users">;
+		assignees?: Id<"users">[];
+		personCodes?: string[];
+		sortOrder?: number;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "companies.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const company = await ctx.db.get(args.companyId);
+	if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const { orgId: _o, userId: _u, companyId: _c, ...updates } = args;
+	const patch = Object.fromEntries(
+		Object.entries(updates).filter(([, val]) => val !== undefined),
+	);
+
+	await ctx.db.patch(args.companyId, { ...patch, updatedAt: Date.now() });
+
+	await logFieldUpdates(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		entityType: "company",
+		entityId: args.companyId,
+		displayName: company.name,
+		before: company as unknown as Record<string, unknown>,
+		after: { ...company, ...patch } as unknown as Record<string, unknown>,
+		fields: [
+			"name",
+			"industry",
+			"website",
+			"size",
+			"assignedTo",
+			"assignees",
+			"personCodes",
+		],
+	});
+}
 
 export const create = orgMutation({
 	args: {
@@ -34,53 +159,27 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.create");
-		await enforceRateLimit(ctx, {
-			scope: "companies.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
+		return createImpl(ctx, { ...args, userId });
+	},
+});
 
-		const companyCode = await generateEntityCode(ctx, args.orgId, "company");
-		const now = Date.now();
-
-		const companyId = await ctx.db.insert("companies", {
-			orgId: args.orgId,
-			companyCode,
-			name: args.name,
-			industry: args.industry,
-			website: args.website,
-			size: args.size,
-			assignedTo: args.assignedTo,
-			assignees: args.assignees,
-			personCodes: args.personCodes,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "created",
-			entityType: "company",
-			entityId: companyId,
-			description: `Company created: ${args.name}`,
-			metadata: { companyCode },
-		});
-
-		await applyOrgStat(ctx, args.orgId, "companies.active", +1);
-
-		if (args.assignedTo && args.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.assignedTo,
-				type: "company.assigned",
-				title: `Company assigned to you: ${args.name}`,
-				entityType: "company",
-				entityId: companyId,
-			});
-		}
-
-		return { companyId, companyCode };
+/** AI-callable internal twin. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		name: v.string(),
+		industry: v.optional(v.string()),
+		website: v.optional(v.string()),
+		size: v.optional(v.string()),
+		assignedTo: v.optional(v.id("users")),
+		assignees: v.optional(v.array(v.id("users"))),
+		personCodes: v.optional(v.array(v.string())),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.create");
+		return createImpl(ctx, args);
 	},
 });
 
@@ -101,47 +200,29 @@ export const update = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.update");
+		return updateImpl(ctx, { ...args, userId });
+	},
+});
 
-		// Drag-rate guard — same shared 120/min budget as the other
-		// kanban-driven mutations (`leads.update`, `deals.update`, etc.).
-		await enforceRateLimit(ctx, {
-			scope: "companies.update",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
-
-		const company = await ctx.db.get(args.companyId);
-		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const { orgId: _o, companyId: _c, ...updates } = args;
-		const patch = Object.fromEntries(
-			Object.entries(updates).filter(([, val]) => val !== undefined),
-		);
-
-		await ctx.db.patch(args.companyId, { ...patch, updatedAt: Date.now() });
-
-		await logFieldUpdates(ctx, {
-			orgId: args.orgId,
-			userId,
-			entityType: "company",
-			entityId: args.companyId,
-			displayName: company.name,
-			before: company as unknown as Record<string, unknown>,
-			after: { ...company, ...patch } as unknown as Record<string, unknown>,
-			fields: [
-				"name",
-				"industry",
-				"website",
-				"size",
-				"assignedTo",
-				"assignees",
-				"personCodes",
-			],
-		});
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		companyId: v.id("companies"),
+		name: v.optional(v.string()),
+		industry: v.optional(v.string()),
+		website: v.optional(v.string()),
+		size: v.optional(v.string()),
+		assignedTo: v.optional(v.id("users")),
+		assignees: v.optional(v.array(v.id("users"))),
+		personCodes: v.optional(v.array(v.string())),
+		sortOrder: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.update");
+		return updateImpl(ctx, args);
 	},
 });
 

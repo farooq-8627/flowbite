@@ -32,8 +32,15 @@ import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineAc
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
-import { AIBriefingCard } from "./cards/AIBriefingCard";
-import { MetricStrip, MockDataBanner, PipelineCard, RemindersCard, TodaySummaryCard } from "./cards";
+import {
+	DailyBriefingCard,
+	MetricStrip,
+	MockDataBanner,
+	PipelineCard,
+	RemindersCard,
+	TodaySummaryCard,
+	WeeklyInsightCard,
+} from "./cards";
 import { resolveWidgets } from "./cards/WidgetRegistry";
 
 const DASHBOARD_TOUR_STEPS: TourStep[] = [
@@ -101,9 +108,14 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					mockDataDismissedAt={settings?.mockDataDismissedAt}
 				/>
 
-				{/* AI Morning Briefing — full-width card; only shown if template opted in. */}
+				{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
+				    Daily on the left (per-user), Weekly on the right (org-wide).
+				    Both visible only when the template opted in via `ai.morningBriefing`. */}
 				{isEnabled("ai.morningBriefing") && (
-					<AIBriefingCard orgId={orgId} orgSlug={orgSlug} />
+					<div className="grid gap-4 lg:grid-cols-2">
+						<DailyBriefingCard orgId={orgId} orgSlug={orgSlug} />
+						<WeeklyInsightCard orgId={orgId} />
+					</div>
 				)}
 
 				{/* Row 1 — Registry-driven metric strip */}

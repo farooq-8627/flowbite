@@ -7,8 +7,13 @@
  * `deal_won` notification preference for the assignee on positive close.
  */
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
+import { internalMutation } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -18,6 +23,119 @@ import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
 import { sendNotification } from "../../../notifications/helpers";
 import { getRequiredFieldsForStage, pickMissingFields } from "../../fields/pipelines/helpers";
+
+async function createImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		title: string;
+		pipelineId: import("../../../_generated/dataModel").Id<"pipelines">;
+		currentStageId?: string;
+		contactId?: import("../../../_generated/dataModel").Id<"contacts">;
+		companyId?: import("../../../_generated/dataModel").Id<"companies">;
+		personCode?: string;
+		companyCode?: string;
+		value?: number;
+		currency?: string;
+		assignedTo?: import("../../../_generated/dataModel").Id<"users">;
+		source: string;
+		expectedCloseDate?: number;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "deals.create",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	let resolvedStageId: string | undefined;
+	if (args.currentStageId) {
+		const exists = pipeline.stages.some((s) => s.id === args.currentStageId);
+		if (!exists) {
+			throw new ConvexError({
+				code: "INVALID_STAGE",
+				message: "Stage not found in pipeline",
+			});
+		}
+		resolvedStageId = args.currentStageId;
+	} else {
+		const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
+		if (defaultStage) {
+			resolvedStageId = defaultStage.id;
+		} else {
+			const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
+			resolvedStageId = (sorted.find((s) => !s.isFinal) ?? sorted[0])?.id;
+		}
+	}
+	if (!resolvedStageId) {
+		throw new ConvexError({
+			code: "EMPTY_PIPELINE",
+			message: "Pipeline has no stages — add stages before creating deals.",
+		});
+	}
+
+	const dealCode = await generateEntityCode(ctx, args.orgId, "deal");
+	const now = Date.now();
+
+	const dealId = await ctx.db.insert("deals", {
+		orgId: args.orgId,
+		dealCode,
+		title: args.title,
+		pipelineId: args.pipelineId,
+		currentStageId: resolvedStageId,
+		stageEnteredAt: now,
+		contactId: args.contactId,
+		companyId: args.companyId,
+		personCode: args.personCode,
+		companyCode: args.companyCode,
+		value: args.value,
+		currency: args.currency,
+		assignedTo: args.assignedTo,
+		source: args.source,
+		expectedCloseDate: args.expectedCloseDate,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "created",
+		entityType: "deal",
+		entityId: dealId,
+		personCode: args.personCode,
+		description: `Deal created: ${args.title}`,
+	});
+
+	await applyOrgStat(ctx, args.orgId, "deals.open", +1);
+	if (args.value && args.value > 0) {
+		await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", +args.value);
+	}
+
+	if (args.assignedTo && args.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.assignedTo,
+			type: "deal.assigned",
+			title: `Deal assigned to you: ${args.title}`,
+			entityType: "deal",
+			entityId: dealId,
+		});
+	}
+
+	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+		orgId: args.orgId,
+		entityType: "deal",
+		entityId: dealId,
+		personCode: args.personCode,
+	});
+
+	return { dealId, dealCode };
+}
 
 export const create = orgMutation({
 	args: {
@@ -45,107 +163,88 @@ export const create = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.create");
-		await enforceRateLimit(ctx, {
-			scope: "deals.create",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
-
-		// Validate pipeline belongs to org
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// Resolve the destination stage:
-		//   1. If caller passed `currentStageId` and it exists in the pipeline → use it.
-		//   2. Otherwise pick the Default stage (`isDefaultStage === true`).
-		//   3. Final fallback (pre-migration data without isDefaultStage) →
-		//      first non-final stage by order; first stage if all are final.
-		let resolvedStageId: string | undefined;
-		if (args.currentStageId) {
-			const exists = pipeline.stages.some((s) => s.id === args.currentStageId);
-			if (!exists) {
-				throw new ConvexError({
-					code: "INVALID_STAGE",
-					message: "Stage not found in pipeline",
-				});
-			}
-			resolvedStageId = args.currentStageId;
-		} else {
-			const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
-			if (defaultStage) {
-				resolvedStageId = defaultStage.id;
-			} else {
-				const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
-				resolvedStageId = (sorted.find((s) => !s.isFinal) ?? sorted[0])?.id;
-			}
-		}
-		if (!resolvedStageId) {
-			throw new ConvexError({
-				code: "EMPTY_PIPELINE",
-				message: "Pipeline has no stages — add stages before creating deals.",
-			});
-		}
-
-		const dealCode = await generateEntityCode(ctx, args.orgId, "deal");
-		const now = Date.now();
-
-		const dealId = await ctx.db.insert("deals", {
-			orgId: args.orgId,
-			dealCode,
-			title: args.title,
-			pipelineId: args.pipelineId,
-			currentStageId: resolvedStageId,
-			stageEnteredAt: now,
-			contactId: args.contactId,
-			companyId: args.companyId,
-			personCode: args.personCode,
-			companyCode: args.companyCode,
-			value: args.value,
-			currency: args.currency,
-			assignedTo: args.assignedTo,
-			source: args.source,
-			expectedCloseDate: args.expectedCloseDate,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "created",
-			entityType: "deal",
-			entityId: dealId,
-			personCode: args.personCode,
-			description: `Deal created: ${args.title}`,
-		});
-
-		// Counter increments — open deal + pipeline value.
-		await applyOrgStat(ctx, args.orgId, "deals.open", +1);
-		if (args.value && args.value > 0) {
-			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", +args.value);
-		}
-
-		if (args.assignedTo && args.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.assignedTo,
-				type: "deal.assigned",
-				title: `Deal assigned to you: ${args.title}`,
-				entityType: "deal",
-				entityId: dealId,
-			});
-		}
-
-		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId,
-			entityType: "deal",
-			entityId: dealId,
-			personCode: args.personCode,
-		});
-
-		return { dealId, dealCode };
+		return createImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin — see `convex/ai/tools/_shared.ts`. */
+export const createForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		title: v.string(),
+		pipelineId: v.id("pipelines"),
+		currentStageId: v.optional(v.string()),
+		contactId: v.optional(v.id("contacts")),
+		companyId: v.optional(v.id("companies")),
+		personCode: v.optional(v.string()),
+		companyCode: v.optional(v.string()),
+		value: v.optional(v.number()),
+		currency: v.optional(v.string()),
+		assignedTo: v.optional(v.id("users")),
+		source: v.string(),
+		expectedCloseDate: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.create");
+		return createImpl(ctx, args);
+	},
+});
+
+async function updateImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+		title?: string;
+		value?: number;
+		currency?: string;
+		assignedTo?: import("../../../_generated/dataModel").Id<"users">;
+		expectedCloseDate?: number;
+		sortOrder?: number;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "deals.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const { orgId: _o, userId: _u, dealId: _d, ...updates } = args;
+	const patch = Object.fromEntries(
+		Object.entries(updates).filter(([, val]) => val !== undefined),
+	);
+
+	if (args.value !== undefined && args.value !== (deal.value ?? 0)) {
+		const delta = (args.value ?? 0) - (deal.value ?? 0);
+		if (!deal.wonAt && !deal.lostAt) {
+			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", delta);
+		}
+	}
+
+	await ctx.db.patch(args.dealId, { ...patch, updatedAt: Date.now() });
+
+	await logFieldUpdates(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		displayName: deal.title,
+		before: deal as unknown as Record<string, unknown>,
+		after: { ...deal, ...patch } as unknown as Record<string, unknown>,
+		fields: ["title", "value", "currency", "assignedTo", "expectedCloseDate"],
+	});
+}
 
 export const update = orgMutation({
 	args: {
@@ -162,51 +261,182 @@ export const update = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.update");
-
-		// Drag-rate guard. Same shared 120/min budget as the other drag
-		// mutations. The deals kanban can fire `update` (assignee/value
-		// in-column) and `moveToStage` (cross-column) — both gated.
-		await enforceRateLimit(ctx, {
-			scope: "deals.update",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
-
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const { orgId: _o, dealId: _d, ...updates } = args;
-		const patch = Object.fromEntries(
-			Object.entries(updates).filter(([, val]) => val !== undefined),
-		);
-
-		// Pipeline-value drift: if `value` is being changed, rebalance the counter.
-		if (args.value !== undefined && args.value !== (deal.value ?? 0)) {
-			const delta = (args.value ?? 0) - (deal.value ?? 0);
-			if (!deal.wonAt && !deal.lostAt) {
-				await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", delta);
-			}
-		}
-
-		await ctx.db.patch(args.dealId, { ...patch, updatedAt: Date.now() });
-
-		await logFieldUpdates(ctx, {
-			orgId: args.orgId,
-			userId,
-			entityType: "deal",
-			entityId: args.dealId,
-			personCode: deal.personCode,
-			displayName: deal.title,
-			before: deal as unknown as Record<string, unknown>,
-			after: { ...deal, ...patch } as unknown as Record<string, unknown>,
-			fields: ["title", "value", "currency", "assignedTo", "expectedCloseDate"],
-		});
+		return updateImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+		title: v.optional(v.string()),
+		value: v.optional(v.number()),
+		currency: v.optional(v.string()),
+		assignedTo: v.optional(v.id("users")),
+		expectedCloseDate: v.optional(v.number()),
+		sortOrder: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.update");
+		return updateImpl(ctx, args);
+	},
+});
+
+async function moveToStageImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+		stageId: string;
+		sortOrder?: number;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "deals.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const pipeline = await ctx.db.get(deal.pipelineId);
+	if (!pipeline) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const toStage = pipeline.stages.find((s) => s.id === args.stageId);
+	if (!toStage)
+		throw new ConvexError({
+			code: "INVALID_STAGE",
+			message: "Stage not found in pipeline",
+		});
+
+	const fromStage = pipeline.stages.find((s) => s.id === deal.currentStageId);
+	if (fromStage?.isFinal && toStage.isFinal) {
+		throw new ConvexError({
+			code: "INVALID_TRANSITION",
+			message: "Cannot move between final stages",
+		});
+	}
+
+	const policy = pipeline.stageTransitionPolicy ?? "warn";
+	const allowSkip = pipeline.allowSkipStages === true;
+	if (policy === "block" && !allowSkip && !toStage.isFinal) {
+		const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
+		const fromIdx = sorted.findIndex((s) => s.id === deal.currentStageId);
+		const toIdx = sorted.findIndex((s) => s.id === args.stageId);
+		if (fromIdx >= 0 && toIdx > fromIdx + 1) {
+			throw new ConvexError({
+				code: "STAGE_SKIP_NOT_ALLOWED",
+				message: `Move one stage at a time — go through "${
+					sorted[fromIdx + 1]?.name ?? "the next stage"
+				}" first, or enable "Allow skipping stages" on the pipeline.`,
+				nextStageId: sorted[fromIdx + 1]?.id,
+				nextStageName: sorted[fromIdx + 1]?.name,
+			});
+		}
+	}
+
+	let missingFields: ReturnType<typeof pickMissingFields> = [];
+	if (policy !== "off") {
+		const required = await getRequiredFieldsForStage(ctx, {
+			orgId: args.orgId,
+			entityType: "deal",
+			stageId: args.stageId,
+		});
+		if (required.length > 0) {
+			const fieldValueRows = await ctx.db
+				.query("fieldValues")
+				.withIndex("by_entity", (q) =>
+					q
+						.eq("orgId", args.orgId)
+						.eq("entityType", "deal")
+						.eq("entityId", args.dealId),
+				)
+				.collect();
+			const valuesByName: Record<string, unknown> = {};
+			for (const v of fieldValueRows) valuesByName[v.fieldName] = v.value;
+
+			missingFields = pickMissingFields({
+				deal: deal as unknown as Record<string, unknown>,
+				fieldValuesByName: valuesByName,
+				requiredFields: required,
+			});
+		}
+
+		if (policy === "block" && missingFields.length > 0) {
+			throw new ConvexError({
+				code: "MISSING_REQUIRED_FIELDS",
+				message: `Cannot move to ${toStage.name} — ${missingFields.length} required field(s) missing`,
+				missingFields: missingFields.map((f) => ({
+					_id: f._id,
+					name: f.name,
+					label: f.label,
+					type: f.type,
+				})),
+				stageId: args.stageId,
+				stageName: toStage.name,
+			});
+		}
+	}
+
+	const now = Date.now();
+	const patch: Record<string, unknown> = {
+		currentStageId: args.stageId,
+		stageEnteredAt: now,
+		updatedAt: now,
+	};
+	if (args.sortOrder !== undefined) patch.sortOrder = args.sortOrder;
+	await ctx.db.patch(args.dealId, patch);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action:
+			policy === "warn" && missingFields.length > 0
+				? "stage_changed_with_missing_fields"
+				: "stage_changed",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description:
+			policy === "warn" && missingFields.length > 0
+				? `Deal moved to stage "${toStage.name}" with ${missingFields.length} required field(s) missing`
+				: `Deal moved to stage: ${toStage.name}`,
+		metadata: {
+			fromStageId: deal.currentStageId,
+			toStageId: args.stageId,
+			toCode: toStage.code,
+			pipelineId: deal.pipelineId,
+			...(fromStage?.code !== undefined ? { fromCode: fromStage.code } : {}),
+			...(missingFields.length > 0
+				? {
+						missingFieldNames: missingFields.map((f) => f.name).join(","),
+						missingFieldsCount: missingFields.length,
+						stageTransitionPolicy: policy,
+					}
+				: {}),
+		},
+	});
+
+	if (deal.assignedTo && deal.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: deal.assignedTo,
+			type: "deal.stage_changed",
+			title: `Deal moved to ${toStage.name}: ${deal.title}`,
+			entityType: "deal",
+			entityId: args.dealId,
+		});
+	}
+}
 
 export const moveToStage = orgMutation({
 	args: {
@@ -224,164 +454,148 @@ export const moveToStage = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.changeStage");
+		return moveToStageImpl(ctx, { ...args, userId });
+	},
+});
 
-		// Drag-rate guard. Cross-stage moves on the kanban are the most
-		// likely target for runaway drag loops — same scope-shared budget
-		// as `deals.update` so a user can't bypass by alternating.
-		await enforceRateLimit(ctx, {
-			scope: "deals.update",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
+/** AI-callable internal twin. */
+export const moveToStageForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+		stageId: v.string(),
+		sortOrder: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.changeStage");
+		return moveToStageImpl(ctx, args);
+	},
+});
 
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
+async function closeAsDoneImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+		finalType: "positive" | "negative" | "neutral";
+		outcomeReason?: string;
+	},
+) {
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
 
-		const pipeline = await ctx.db.get(deal.pipelineId);
-		if (!pipeline) throw new ConvexError(ERRORS.NOT_FOUND);
+	const pipeline = await ctx.db.get(deal.pipelineId);
+	const finalStage = pipeline?.stages.find(
+		(s) => s.isFinal && s.finalType === args.finalType,
+	);
 
-		const toStage = pipeline.stages.find((s) => s.id === args.stageId);
-		if (!toStage)
-			throw new ConvexError({
-				code: "INVALID_STAGE",
-				message: "Stage not found in pipeline",
-			});
+	if (
+		pipeline &&
+		args.finalType !== "negative" &&
+		pipeline.markDoneRequiresAllFields !== false
+	) {
+		const fieldValueRows = await ctx.db
+			.query("fieldValues")
+			.withIndex("by_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", "deal").eq("entityId", args.dealId),
+			)
+			.collect();
+		const valuesByName: Record<string, unknown> = {};
+		for (const fv of fieldValueRows) valuesByName[fv.fieldName] = fv.value;
 
-		const fromStage = pipeline.stages.find((s) => s.id === deal.currentStageId);
-		if (fromStage?.isFinal && toStage.isFinal) {
-			throw new ConvexError({
-				code: "INVALID_TRANSITION",
-				message: "Cannot move between final stages",
-			});
-		}
-
-		// ── Skip-stage policy ───────────────────────────────────────────
-		// When `stageTransitionPolicy === "block"` AND `allowSkipStages` is
-		// false (the default), deals can advance ONLY one stage forward at
-		// a time. Backwards moves and lateral moves to final stages are
-		// always allowed (mark-as-lost / mark-as-done shouldn't be blocked
-		// by skip rules).
-		const policy = pipeline.stageTransitionPolicy ?? "warn";
-		const allowSkip = pipeline.allowSkipStages === true;
-		if (policy === "block" && !allowSkip && !toStage.isFinal) {
-			const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
-			const fromIdx = sorted.findIndex((s) => s.id === deal.currentStageId);
-			const toIdx = sorted.findIndex((s) => s.id === args.stageId);
-			if (fromIdx >= 0 && toIdx > fromIdx + 1) {
-				throw new ConvexError({
-					code: "STAGE_SKIP_NOT_ALLOWED",
-					message: `Move one stage at a time — go through "${
-						sorted[fromIdx + 1]?.name ?? "the next stage"
-					}" first, or enable "Allow skipping stages" on the pipeline.`,
-					nextStageId: sorted[fromIdx + 1]?.id,
-					nextStageName: sorted[fromIdx + 1]?.name,
-				});
-			}
-		}
-
-		// ── Stage-aware required-field policy ───────────────────────────
-		// Per-pipeline owner setting. Skip the check when the destination
-		// is a final stage AND the source is non-final — closing a deal is
-		// already gated by closeAsDone / outcome-reason flow, so blocking
-		// it here would double-gate. (We still warn on final-stage moves.)
-		let missingFields: ReturnType<typeof pickMissingFields> = [];
-		if (policy !== "off") {
+		const missingAcrossStages: Array<{ name: string; label: string; stageName: string }> = [];
+		for (const stage of pipeline.stages) {
+			if (stage.isFinal) continue;
 			const required = await getRequiredFieldsForStage(ctx, {
 				orgId: args.orgId,
 				entityType: "deal",
-				stageId: args.stageId,
+				stageId: stage.id,
 			});
-			if (required.length > 0) {
-				const fieldValueRows = await ctx.db
-					.query("fieldValues")
-					.withIndex("by_entity", (q) =>
-						q
-							.eq("orgId", args.orgId)
-							.eq("entityType", "deal")
-							.eq("entityId", args.dealId),
-					)
-					.collect();
-				const valuesByName: Record<string, unknown> = {};
-				for (const v of fieldValueRows) valuesByName[v.fieldName] = v.value;
-
-				missingFields = pickMissingFields({
-					deal: deal as unknown as Record<string, unknown>,
-					fieldValuesByName: valuesByName,
-					requiredFields: required,
-				});
-			}
-
-			if (policy === "block" && missingFields.length > 0) {
-				throw new ConvexError({
-					code: "MISSING_REQUIRED_FIELDS",
-					message: `Cannot move to ${toStage.name} — ${missingFields.length} required field(s) missing`,
-					missingFields: missingFields.map((f) => ({
-						_id: f._id,
-						name: f.name,
-						label: f.label,
-						type: f.type,
-					})),
-					stageId: args.stageId,
-					stageName: toStage.name,
+			const missing = pickMissingFields({
+				deal: deal as unknown as Record<string, unknown>,
+				fieldValuesByName: valuesByName,
+				requiredFields: required,
+			});
+			for (const m of missing) {
+				if (missingAcrossStages.some((x) => x.name === m.name)) continue;
+				missingAcrossStages.push({
+					name: m.name,
+					label: m.label,
+					stageName: stage.name,
 				});
 			}
 		}
+		if (missingAcrossStages.length > 0) {
+			throw new ConvexError({
+				code: "MISSING_REQUIRED_FIELDS_FOR_DONE",
+				message: `Cannot mark as done — ${missingAcrossStages.length} required field(s) still missing across the pipeline. Disable "Require all fields before mark as done" on the pipeline if this isn't needed.`,
+				missingFields: missingAcrossStages,
+			});
+		}
+	}
 
-		const now = Date.now();
-		const patch: Record<string, unknown> = {
-			currentStageId: args.stageId,
-			stageEnteredAt: now,
-			updatedAt: now,
-		};
-		if (args.sortOrder !== undefined) patch.sortOrder = args.sortOrder;
-		await ctx.db.patch(args.dealId, patch);
+	const now = Date.now();
+	const patch: Record<string, unknown> = {
+		outcomeReason: args.outcomeReason,
+		updatedAt: now,
+	};
 
-		await logActivity(ctx, {
+	if (finalStage) {
+		patch.currentStageId = finalStage.id;
+		patch.stageEnteredAt = now;
+	}
+
+	if (args.finalType === "positive") {
+		patch.wonAt = now;
+	} else if (args.finalType === "negative") {
+		patch.lostAt = now;
+	}
+
+	await ctx.db.patch(args.dealId, patch);
+
+	await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+	if (deal.value && deal.value > 0) {
+		await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+	}
+	if (args.finalType === "positive") {
+		await applyOrgStat(ctx, args.orgId, "deals.won", +1);
+	} else if (args.finalType === "negative") {
+		await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: args.finalType === "positive" ? "won" : "lost",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description: `Deal ${args.finalType === "positive" ? "won" : "lost"}: ${deal.title}`,
+	});
+
+	if (deal.assignedTo && deal.assignedTo !== args.userId) {
+		const isWon = args.finalType === "positive";
+		await sendNotification(ctx, {
 			orgId: args.orgId,
-			userId,
-			action:
-				policy === "warn" && missingFields.length > 0
-					? "stage_changed_with_missing_fields"
-					: "stage_changed",
+			userId: deal.assignedTo,
+			type: isWon ? "deal.won" : "deal.lost",
+			title: isWon ? `Deal won: ${deal.title}` : `Deal closed lost: ${deal.title}`,
+			body: args.outcomeReason ? args.outcomeReason : undefined,
 			entityType: "deal",
 			entityId: args.dealId,
-			personCode: deal.personCode,
-			description:
-				policy === "warn" && missingFields.length > 0
-					? `Deal moved to stage "${toStage.name}" with ${missingFields.length} required field(s) missing`
-					: `Deal moved to stage: ${toStage.name}`,
 			metadata: {
-				fromStageId: deal.currentStageId,
-				toStageId: args.stageId,
-				toCode: toStage.code,
-				pipelineId: deal.pipelineId,
-				...(fromStage?.code !== undefined ? { fromCode: fromStage.code } : {}),
-				...(missingFields.length > 0
-					? {
-							missingFieldNames: missingFields.map((f) => f.name).join(","),
-							missingFieldsCount: missingFields.length,
-							stageTransitionPolicy: policy,
-						}
-					: {}),
+				dealCode: deal.dealCode,
+				value: deal.value ?? 0,
+				currency: deal.currency ?? "",
 			},
 		});
-
-		if (deal.assignedTo && deal.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: deal.assignedTo,
-				type: "deal.stage_changed",
-				title: `Deal moved to ${toStage.name}: ${deal.title}`,
-				entityType: "deal",
-				entityId: args.dealId,
-			});
-		}
-	},
-});
+	}
+}
 
 export const closeAsDone = orgMutation({
 	args: {
@@ -393,131 +607,23 @@ export const closeAsDone = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.close");
+		return closeAsDoneImpl(ctx, { ...args, userId });
+	},
+});
 
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const pipeline = await ctx.db.get(deal.pipelineId);
-		const finalStage = pipeline?.stages.find(
-			(s) => s.isFinal && s.finalType === args.finalType,
-		);
-
-		// ── Mark-as-done all-fields gate ───────────────────────────────
-		// When `markDoneRequiresAllFields` is true (default), closing a
-		// deal as won / neutral demands EVERY required field across every
-		// non-final stage be filled. Mark-as-lost (`finalType === "negative"`)
-		// is unaffected — owners need to be able to close out dead deals
-		// regardless of completeness, that's the whole point of `markAsLost`.
-		if (
-			pipeline &&
-			args.finalType !== "negative" &&
-			pipeline.markDoneRequiresAllFields !== false
-		) {
-			// Default true when undefined.
-			const fieldValueRows = await ctx.db
-				.query("fieldValues")
-				.withIndex("by_entity", (q) =>
-					q.eq("orgId", args.orgId).eq("entityType", "deal").eq("entityId", args.dealId),
-				)
-				.collect();
-			const valuesByName: Record<string, unknown> = {};
-			for (const fv of fieldValueRows) valuesByName[fv.fieldName] = fv.value;
-
-			const missingAcrossStages: Array<{ name: string; label: string; stageName: string }> =
-				[];
-			for (const stage of pipeline.stages) {
-				if (stage.isFinal) continue;
-				const required = await getRequiredFieldsForStage(ctx, {
-					orgId: args.orgId,
-					entityType: "deal",
-					stageId: stage.id,
-				});
-				const missing = pickMissingFields({
-					deal: deal as unknown as Record<string, unknown>,
-					fieldValuesByName: valuesByName,
-					requiredFields: required,
-				});
-				for (const m of missing) {
-					if (missingAcrossStages.some((x) => x.name === m.name)) continue;
-					missingAcrossStages.push({
-						name: m.name,
-						label: m.label,
-						stageName: stage.name,
-					});
-				}
-			}
-			if (missingAcrossStages.length > 0) {
-				throw new ConvexError({
-					code: "MISSING_REQUIRED_FIELDS_FOR_DONE",
-					message: `Cannot mark as done — ${missingAcrossStages.length} required field(s) still missing across the pipeline. Disable "Require all fields before mark as done" on the pipeline if this isn't needed.`,
-					missingFields: missingAcrossStages,
-				});
-			}
-		}
-
-		const now = Date.now();
-		const patch: Record<string, unknown> = {
-			outcomeReason: args.outcomeReason,
-			updatedAt: now,
-		};
-
-		if (finalStage) {
-			patch.currentStageId = finalStage.id;
-			patch.stageEnteredAt = now;
-		}
-
-		if (args.finalType === "positive") {
-			patch.wonAt = now;
-		} else if (args.finalType === "negative") {
-			patch.lostAt = now;
-		}
-
-		await ctx.db.patch(args.dealId, patch);
-
-		// Counter rebalance: leaving the open pool. Pipeline-value drops by
-		// the deal's current value.
-		await applyOrgStat(ctx, args.orgId, "deals.open", -1);
-		if (deal.value && deal.value > 0) {
-			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
-		}
-		if (args.finalType === "positive") {
-			await applyOrgStat(ctx, args.orgId, "deals.won", +1);
-		} else if (args.finalType === "negative") {
-			await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: args.finalType === "positive" ? "won" : "lost",
-			entityType: "deal",
-			entityId: args.dealId,
-			personCode: deal.personCode,
-			description: `Deal ${args.finalType === "positive" ? "won" : "lost"}: ${deal.title}`,
-		});
-
-		// Notify the assignee on win/loss (matches the user's `deal_won` /
-		// `deal_stage_changed` notification preferences). Skip if the actor
-		// is the assignee themselves.
-		if (deal.assignedTo && deal.assignedTo !== userId) {
-			const isWon = args.finalType === "positive";
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: deal.assignedTo,
-				type: isWon ? "deal.won" : "deal.lost",
-				title: isWon ? `Deal won: ${deal.title}` : `Deal closed lost: ${deal.title}`,
-				body: args.outcomeReason ? args.outcomeReason : undefined,
-				entityType: "deal",
-				entityId: args.dealId,
-				metadata: {
-					dealCode: deal.dealCode,
-					value: deal.value ?? 0,
-					currency: deal.currency ?? "",
-				},
-			});
-		}
+/** AI-callable internal twin. */
+export const closeAsDoneForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+		finalType: v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+		outcomeReason: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.close");
+		return closeAsDoneImpl(ctx, args);
 	},
 });
 
@@ -691,6 +797,105 @@ export const changePipeline = orgMutation({
  *
  * RBAC: `deals.close`. Rate limit: shared `deals.update` 120/min budget.
  */
+async function markAsLostImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+		deleteCodeConfirmation: string;
+		outcomeReason?: string;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "deals.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if (deal.lostAt) {
+		throw new ConvexError({
+			code: "ALREADY_LOST",
+			message: "Deal is already marked lost.",
+		});
+	}
+	if (deal.wonAt) {
+		throw new ConvexError({
+			code: "ALREADY_WON",
+			message: "Deal is already marked won — reopen it first.",
+		});
+	}
+
+	if (args.deleteCodeConfirmation.trim() !== deal.dealCode) {
+		throw new ConvexError({
+			code: "CONFIRMATION_MISMATCH",
+			message: `Confirmation didn't match. Type "${deal.dealCode}" exactly to mark this deal as lost.`,
+		});
+	}
+
+	const pipeline = await ctx.db.get(deal.pipelineId);
+	const negativeFinal = pipeline?.stages.find((s) => s.isFinal && s.finalType === "negative");
+
+	const now = Date.now();
+	const patch: Record<string, unknown> = {
+		lostAt: now,
+		outcomeReason: args.outcomeReason,
+		updatedAt: now,
+	};
+	if (negativeFinal) {
+		patch.currentStageId = negativeFinal.id;
+		patch.stageEnteredAt = now;
+	}
+
+	await ctx.db.patch(args.dealId, patch);
+
+	await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+	if (deal.value && deal.value > 0) {
+		await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+	}
+	await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "lost",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description: `Deal lost: ${deal.title}`,
+		metadata: {
+			dealCode: deal.dealCode,
+			...(negativeFinal
+				? { toStageId: negativeFinal.id, toCode: negativeFinal.code }
+				: {}),
+			...(args.outcomeReason ? { outcomeReason: args.outcomeReason } : {}),
+		},
+	});
+
+	if (deal.assignedTo && deal.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: deal.assignedTo,
+			type: "deal.lost",
+			title: `Deal closed lost: ${deal.title}`,
+			body: args.outcomeReason ? args.outcomeReason : undefined,
+			entityType: "deal",
+			entityId: args.dealId,
+			metadata: {
+				dealCode: deal.dealCode,
+				value: deal.value ?? 0,
+				currency: deal.currency ?? "",
+			},
+		});
+	}
+}
+
 export const markAsLost = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -701,94 +906,22 @@ export const markAsLost = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.close");
-		await enforceRateLimit(ctx, {
-			scope: "deals.update",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
+		return markAsLostImpl(ctx, { ...args, userId });
+	},
+});
 
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-		if (deal.lostAt) {
-			throw new ConvexError({
-				code: "ALREADY_LOST",
-				message: "Deal is already marked lost.",
-			});
-		}
-		if (deal.wonAt) {
-			throw new ConvexError({
-				code: "ALREADY_WON",
-				message: "Deal is already marked won — reopen it first.",
-			});
-		}
-
-		// Confirmation gate — must match the dealCode exactly.
-		if (args.deleteCodeConfirmation.trim() !== deal.dealCode) {
-			throw new ConvexError({
-				code: "CONFIRMATION_MISMATCH",
-				message: `Confirmation didn't match. Type "${deal.dealCode}" exactly to mark this deal as lost.`,
-			});
-		}
-
-		const pipeline = await ctx.db.get(deal.pipelineId);
-		const negativeFinal = pipeline?.stages.find((s) => s.isFinal && s.finalType === "negative");
-
-		const now = Date.now();
-		const patch: Record<string, unknown> = {
-			lostAt: now,
-			outcomeReason: args.outcomeReason,
-			updatedAt: now,
-		};
-		if (negativeFinal) {
-			patch.currentStageId = negativeFinal.id;
-			patch.stageEnteredAt = now;
-		}
-
-		await ctx.db.patch(args.dealId, patch);
-
-		// Counter rebalance — leaving the open pool.
-		await applyOrgStat(ctx, args.orgId, "deals.open", -1);
-		if (deal.value && deal.value > 0) {
-			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
-		}
-		await applyOrgStat(ctx, args.orgId, "deals.lost", +1);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "lost",
-			entityType: "deal",
-			entityId: args.dealId,
-			personCode: deal.personCode,
-			description: `Deal lost: ${deal.title}`,
-			metadata: {
-				dealCode: deal.dealCode,
-				...(negativeFinal
-					? { toStageId: negativeFinal.id, toCode: negativeFinal.code }
-					: {}),
-				...(args.outcomeReason ? { outcomeReason: args.outcomeReason } : {}),
-			},
-		});
-
-		if (deal.assignedTo && deal.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: deal.assignedTo,
-				type: "deal.lost",
-				title: `Deal closed lost: ${deal.title}`,
-				body: args.outcomeReason ? args.outcomeReason : undefined,
-				entityType: "deal",
-				entityId: args.dealId,
-				metadata: {
-					dealCode: deal.dealCode,
-					value: deal.value ?? 0,
-					currency: deal.currency ?? "",
-				},
-			});
-		}
+/** AI-callable internal twin. */
+export const markAsLostForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+		deleteCodeConfirmation: v.string(),
+		outcomeReason: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.close");
+		return markAsLostImpl(ctx, args);
 	},
 });

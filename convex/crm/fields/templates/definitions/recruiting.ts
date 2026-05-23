@@ -644,14 +644,22 @@ export const recruitingTemplate: IndustryTemplate = {
 				name: "Acme Corp",
 				industry: "SaaS",
 				website: "https://acme.example.com",
-				fieldValues: { headcount: 340, open_roles_count: 8, fee_structure: "Contingency 20%" },
+				fieldValues: {
+					headcount: 340,
+					open_roles_count: 8,
+					fee_structure: "Contingency 20%",
+				},
 			},
 			{
 				key: "buildplex",
 				name: "Buildplex",
 				industry: "Construction Tech",
 				website: "https://buildplex.example.com",
-				fieldValues: { headcount: 95, open_roles_count: 3, fee_structure: "Contingency 15%" },
+				fieldValues: {
+					headcount: 95,
+					open_roles_count: 3,
+					fee_structure: "Contingency 15%",
+				},
 			},
 		],
 		leads: [
@@ -747,7 +755,8 @@ export const recruitingTemplate: IndustryTemplate = {
 					role_title: "Senior Frontend Engineer",
 					comp_band_min: 130000,
 					comp_band_max: 160000,
-					interview_feedback: "Priya cleared phone screen with flying colors — schedule system design round.",
+					interview_feedback:
+						"Priya cleared phone screen with flying colors — schedule system design round.",
 				},
 				tags: ["Hot candidate", "Tech"],
 			},
@@ -763,7 +772,8 @@ export const recruitingTemplate: IndustryTemplate = {
 					comp_band_max: 150000,
 					placement_fee: 22000,
 					offer_amount: 138000,
-					interview_feedback: "Hannah outperformed all candidates in product sense. Verbal offer accepted.",
+					interview_feedback:
+						"Hannah outperformed all candidates in product sense. Verbal offer accepted.",
 				},
 				tags: ["Offer out"],
 			},

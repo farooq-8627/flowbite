@@ -1,0 +1,282 @@
+"use client";
+/**
+ * core/ai/components/reasoning/TimelineRow.tsx
+ *
+ * One row inside <ThinkingTimeline>. Renders:
+ *
+ *   ┌─ rail dot
+ *   │   title…                                    (optional meta on end)
+ *   │       (optional inline rich block — entity list, diff, note, etc.)
+ *   └──── connecting rail to the next row
+ *
+ * The row knows nothing about ordering. The parent timeline lays rows
+ * out vertically and draws the continuous rail via a CSS pseudo-element
+ * on the row container.
+ *
+ * The inline rich block is the same `ToolResultRenderer` used elsewhere,
+ * so a search-tool row pulls a real EntityList card under it the moment
+ * the tool returns. While the tool is still in flight the row reads
+ * just "Title…" with a spinner.
+ *
+ * Pending two-step confirmations DO NOT render here — they're handled
+ * in <ThinkingTimeline> and rendered as a full <ChatConfirmation> outside
+ * the timeline (so the approve/reject buttons stay reachable).
+ */
+import { CheckCircle2, ChevronRight, Globe, Loader2, XCircle } from "lucide-react";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import type { AIMessage } from "../../types";
+import { CodeBlock } from "../code/CodeBlock";
+import { ToolResultRenderer } from "../results/ToolResultRenderer";
+import type { ToolDisplay } from "../results/ToolResultRenderer";
+import { getRowTitle } from "./timelineTitles";
+
+interface Props {
+	toolMessage: AIMessage;
+	orgId: string;
+	/** When true, the rail line below this row is hidden (last row). */
+	isLast: boolean;
+}
+
+/**
+ * Pull the structured `display` payload out of the tool's output object,
+ * mirroring the logic that lived inline in ChatMessage. Tools either set
+ * `output.display` directly OR put it on `output.data.display` depending
+ * on how the helper they used wraps the return.
+ */
+function extractToolDisplay(output: unknown): ToolDisplay | string | undefined {
+	if (output === null || output === undefined) return undefined;
+	if (typeof output === "string") return output;
+	if (typeof output !== "object") return undefined;
+	const o = output as Record<string, unknown>;
+	const top = o.display;
+	if (top !== undefined) return top as ToolDisplay | string;
+	const d = o.data as Record<string, unknown> | undefined;
+	if (d?.display !== undefined) return d.display as ToolDisplay | string;
+	return undefined;
+}
+
+/**
+ * Pull a one-line error message out of the tool's output. Tool-error
+ * paths typically write `{ error: <string> }` or `{ ok: false, error }`.
+ */
+function extractError(output: unknown): string | null {
+	if (!output || typeof output !== "object") return null;
+	const o = output as Record<string, unknown>;
+	if (typeof o.error === "string") return o.error;
+	// Zod-formatter shape.
+	if (typeof o.hint === "string" && o.code === "TOOL_INPUT_VALIDATION") return o.hint;
+	return null;
+}
+
+export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
+	const toolCalls = toolMessage.toolCalls as Array<{
+		name: string;
+		status: "started" | "completed" | "failed";
+		input?: unknown;
+		output?: unknown;
+	}> | null;
+	const tc = toolCalls?.[0];
+	if (!tc) return null;
+
+	const status = tc.status;
+	const isInProgress = status === "started";
+	const isError = status === "failed";
+
+	const { title, meta } = getRowTitle(tc.name, tc.input, tc.output);
+	const display = extractToolDisplay(tc.output);
+	const errorText = isError ? extractError(tc.output) : null;
+	const hasRichBlock =
+		!isInProgress &&
+		!isError &&
+		display !== undefined &&
+		(typeof display !== "string" || display.length > 0);
+	const hasStructuredKind =
+		hasRichBlock &&
+		typeof display === "object" &&
+		display !== null &&
+		(display as ToolDisplay).kind !== "text";
+
+	// Raw-data fallback. When the tool returned data but didn't supply a
+	// structured display kind (so `hasStructuredKind === false`), we still
+	// want to let the user expand the row and see what came back. Pretty-
+	// print the `data` payload (or the whole output if there's no `data`
+	// field) into a CodeBlock. This is the path that surfaces the actual
+	// fields list under `list_entity_fields`, the actual permissions list
+	// under `list_my_permissions`, etc.
+	const rawData = (() => {
+		if (isInProgress || isError) return null;
+		const out = tc.output;
+		if (out === null || out === undefined) return null;
+		if (typeof out !== "object") return null;
+		const o = out as Record<string, unknown>;
+		// Strip the display field — we render that separately via
+		// hasStructuredKind. Anything else is "the actual data".
+		const { display: _d, ...rest } = o;
+		// If the tool wrapped its data under `data`, prefer that.
+		const data = (rest as { data?: unknown }).data ?? rest;
+		// Empty objects / "ok: true" only stubs aren't worth showing.
+		if (data === null || data === undefined) return null;
+		if (typeof data !== "object") return null;
+		const keys = Object.keys(data as object).filter((k) => k !== "ok");
+		if (keys.length === 0) return null;
+		try {
+			return JSON.stringify(data, null, 2);
+		} catch {
+			return null;
+		}
+	})();
+
+	const hasExpandableContent = hasStructuredKind || !!rawData || !!errorText;
+
+	// Default COLLAPSED — clicking the row title reveals the rich block
+	// or raw JSON. Keeps the timeline compact by default; the user opens
+	// only the rows they care about.
+	const [expanded, setExpanded] = useState(false);
+
+	const Icon = isInProgress ? Loader2 : isError ? XCircle : CheckCircle2;
+
+	return (
+		<div className={cn("relative ps-6", !isLast && "pb-2")}>
+			{/* Rail — vertical line behind the row. ::before is the
+			    line itself; we draw it from the dot center down to the
+			    next row's dot. The dot itself sits above the line. */}
+			<span
+				aria-hidden
+				className={cn(
+					"absolute start-[10px] top-5 w-px bg-border",
+					isLast ? "bottom-2" : "bottom-0",
+				)}
+			/>
+
+			{/* Status dot — sits ON the rail, slightly above the title baseline */}
+			<span
+				aria-hidden
+				className={cn(
+					"absolute start-[6px] top-1 size-[10px] rounded-full ring-2 ring-background",
+					isInProgress && "bg-primary/60 animate-pulse",
+					!isInProgress && !isError && "bg-emerald-500",
+					isError && "bg-destructive",
+				)}
+			/>
+
+			{/* Title row */}
+			<button
+				type="button"
+				onClick={() => hasExpandableContent && setExpanded((v) => !v)}
+				disabled={!hasExpandableContent}
+				className={cn(
+					"group flex w-full items-center gap-2 text-start min-w-0",
+					"text-[12px] leading-relaxed",
+					hasExpandableContent && "cursor-pointer",
+				)}
+				aria-expanded={hasExpandableContent ? expanded : undefined}
+			>
+				<Icon
+					className={cn(
+						"size-3.5 flex-none",
+						isInProgress && "animate-spin text-muted-foreground",
+						!isInProgress && !isError && "text-muted-foreground/70",
+						isError && "text-destructive",
+					)}
+				/>
+				<span
+					className={cn(
+						"truncate",
+						isError && "text-destructive",
+						!isError && "text-foreground/80",
+					)}
+				>
+					{title}
+				</span>
+				{meta && (
+					<span className="ms-auto shrink-0 text-[11px] text-muted-foreground/70">
+						{meta}
+					</span>
+				)}
+				{hasExpandableContent && (
+					<ChevronRight
+						aria-hidden
+						className={cn(
+							"size-3 flex-none text-muted-foreground/50 transition-transform",
+							!meta && "ms-auto",
+							expanded && "rotate-90",
+						)}
+					/>
+				)}
+			</button>
+
+			{/* Inline rich block — embedded under the title row. The
+			    `ms-0` keeps the rich block aligned to the title text,
+			    not indented further; the rail is on the OUTSIDE of the
+			    container so the block doesn't push the rail. */}
+			{expanded && hasRichBlock && hasStructuredKind && (
+				<div className="mt-1.5 mb-0.5 max-w-full min-w-0 rounded-[var(--radius)] border border-border/60 bg-background overflow-hidden">
+					<ToolResultRenderer display={display as ToolDisplay} orgId={orgId} />
+				</div>
+			)}
+
+			{/* Raw-data fallback for tools without a structured display. */}
+			{expanded && !hasStructuredKind && rawData && (
+				<div className="mt-1.5 mb-0.5">
+					<CodeBlock code={rawData} label="result" maxHeight={240} />
+				</div>
+			)}
+
+			{expanded && errorText && (
+				<div className="mt-1.5 mb-0.5">
+					<CodeBlock code={errorText} label="error" maxHeight={140} />
+				</div>
+			)}
+		</div>
+	);
+}
+
+/**
+ * Compact in-flight row used while the orchestrator has emitted
+ * `→ Calling …` but no tool message has materialised yet (rare race —
+ * the placeholder lasts ~50-200ms before the real tool message inserts).
+ *
+ * Re-uses the same visual structure as TimelineRow but takes only a
+ * tool name — there's no message id yet.
+ */
+export function PendingTimelineRow({ toolName }: { toolName: string }) {
+	const { title } = getRowTitle(toolName, {}, {});
+	return (
+		<div className="relative ps-6 pb-2">
+			<span
+				aria-hidden
+				className="absolute start-[10px] top-5 bottom-0 w-px bg-border"
+			/>
+			<span
+				aria-hidden
+				className="absolute start-[6px] top-1 size-[10px] rounded-full ring-2 ring-background bg-primary/60 animate-pulse"
+			/>
+			<div className="flex items-center gap-2 text-[12px] leading-relaxed text-muted-foreground/80">
+				<Loader2 className="size-3.5 flex-none animate-spin text-muted-foreground" />
+				<span className="truncate">{title}…</span>
+			</div>
+		</div>
+	);
+}
+
+/**
+ * A "thinking paragraph" row — the parser ran into a chunk of free-form
+ * chain-of-thought between tool calls. Looks like the screenshot's
+ * "Working" paragraph but inline within the rail.
+ */
+export function ThinkingTimelineRow({ text }: { text: string }) {
+	return (
+		<div className="relative ps-6 pb-2">
+			<span aria-hidden className="absolute start-[10px] top-5 bottom-0 w-px bg-border" />
+			<span
+				aria-hidden
+				className="absolute start-[6px] top-1.5 size-[8px] rounded-full ring-2 ring-background bg-muted-foreground/40"
+			/>
+			<div className="flex items-start gap-2 text-[12px] leading-relaxed text-muted-foreground whitespace-pre-wrap break-words">
+				<Globe className="size-3.5 mt-0.5 flex-none text-muted-foreground/50" />
+				<span className="min-w-0">{text}</span>
+			</div>
+		</div>
+	);
+}

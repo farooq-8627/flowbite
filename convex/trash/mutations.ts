@@ -8,8 +8,12 @@
  */
 
 import { ConvexError, v } from "convex/values";
-import { orgMutation } from "../_functions/authenticated";
-import { internalMutation } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
+import {
+	orgMutation,
+	requireOrgMemberByIds,
+} from "../_functions/authenticated";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";
 import { requireRole } from "../_shared/permissions";
@@ -18,13 +22,69 @@ import { getOrgMember } from "../orgs/helpers";
 
 const DEFAULT_RETENTION_DAYS = 30;
 
-/**
- * Restore a soft-deleted CRM entity. Permission: `data.restore`.
- *
- * Finds the row across the 4 entity tables by id, ensures it's
- * soft-deleted and belongs to the caller's org, clears `deletedAt`,
- * bumps the relevant counter back up, and logs the action.
- */
+async function restoreImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		entityType: "lead" | "contact" | "company" | "deal";
+		entityId: string;
+	},
+) {
+	const tableName =
+		args.entityType === "lead"
+			? "leads"
+			: args.entityType === "contact"
+				? "contacts"
+				: args.entityType === "company"
+					? "companies"
+					: "deals";
+
+	const row = await ctx.db.get(args.entityId as never);
+	if (!row || (row as { orgId?: string }).orgId !== args.orgId) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if ((row as { deletedAt?: number }).deletedAt === undefined) {
+		throw new ConvexError({
+			code: "ALREADY_RESTORED",
+			message: "Record is not in the trash.",
+		});
+	}
+
+	await ctx.db.patch(args.entityId as never, {
+		deletedAt: undefined,
+		updatedAt: Date.now(),
+	});
+
+	switch (args.entityType) {
+		case "lead":
+			await applyOrgStat(ctx, args.orgId, "leads.open", +1);
+			await applyOrgStat(ctx, args.orgId, "leads.total", +1);
+			break;
+		case "contact":
+			await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
+			break;
+		case "company":
+			await applyOrgStat(ctx, args.orgId, "companies.active", +1);
+			break;
+		case "deal":
+			await applyOrgStat(ctx, args.orgId, "deals.open", +1);
+			await applyOrgStat(ctx, args.orgId, "deals.total", +1);
+			break;
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "restored",
+		entityType: tableName,
+		entityId: args.entityId,
+		description: `Restored ${args.entityType} from trash`,
+	});
+
+	return { ok: true };
+}
+
 export const restore = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -42,60 +102,27 @@ export const restore = orgMutation({
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 		}
 		requireRole(member.permissions, "data.restore");
+		return restoreImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		const tableName =
-			args.entityType === "lead"
-				? "leads"
-				: args.entityType === "contact"
-					? "contacts"
-					: args.entityType === "company"
-						? "companies"
-						: "deals";
-
-		const row = await ctx.db.get(args.entityId as never);
-		if (!row || (row as { orgId?: string }).orgId !== args.orgId) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-		if ((row as { deletedAt?: number }).deletedAt === undefined) {
-			throw new ConvexError({
-				code: "ALREADY_RESTORED",
-				message: "Record is not in the trash.",
-			});
-		}
-
-		await ctx.db.patch(args.entityId as never, {
-			deletedAt: undefined,
-			updatedAt: Date.now(),
-		});
-
-		// Counter restoration mirrors the entity's delete mutation.
-		switch (args.entityType) {
-			case "lead":
-				await applyOrgStat(ctx, args.orgId, "leads.open", +1);
-				await applyOrgStat(ctx, args.orgId, "leads.total", +1);
-				break;
-			case "contact":
-				await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
-				break;
-			case "company":
-				await applyOrgStat(ctx, args.orgId, "companies.active", +1);
-				break;
-			case "deal":
-				await applyOrgStat(ctx, args.orgId, "deals.open", +1);
-				await applyOrgStat(ctx, args.orgId, "deals.total", +1);
-				break;
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "restored",
-			entityType: tableName,
-			entityId: args.entityId,
-			description: `Restored ${args.entityType} from trash`,
-		});
-
-		return { ok: true };
+/** AI-callable internal twin. */
+export const restoreForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: v.union(
+			v.literal("lead"),
+			v.literal("contact"),
+			v.literal("company"),
+			v.literal("deal"),
+		),
+		entityId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "data.restore");
+		return restoreImpl(ctx, args);
 	},
 });
 

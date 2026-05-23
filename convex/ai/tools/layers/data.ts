@@ -27,6 +27,11 @@ registerTool({
 	permission: "data.viewTrash",
 	confirmation: "none",
 	description: "List soft-deleted records still in trash, by entity type.",
+	runbook: {
+		onSuccess: "Show the trashed list. Offer to restore one when the user picks.",
+		onEmpty: "Tell the user the trash is empty for that entity type.",
+		suggestNext: "restore_entity",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		limit: z.number().min(1).max(50).default(20),
@@ -35,7 +40,7 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "data.viewTrash");
-			const result = await toolQuery(ctx, "trash/queries:list", { orgId, ...args });
+			const result = await toolQuery(getCtx(), "trash/queries:list", { orgId, ...args });
 			return { ok: true as const, data: result };
 		}),
 });
@@ -46,6 +51,11 @@ registerTool({
 	permission: "data.restore",
 	confirmation: "twoStep",
 	description: "Restore a soft-deleted entity from trash.",
+	runbook: {
+		onSuccess: "Confirm with the entity's display name.",
+		onPermissionDenied:
+			"Tell the user they need data.restore permission. Suggest contacting an admin.",
+	},
 	schema: z.object({
 		entityType: z.enum(["lead", "contact", "deal", "company"]),
 		entityId: z.string(),
@@ -78,7 +88,15 @@ registerTool({
 		runTool(async () => {
 			const { ctx, orgId, permissions } = getCtx();
 			requirePermission(permissions, "data.restore");
-			await toolMutation(ctx, "trash/mutations:restore", { orgId, ...args });
-			return { ok: true as const, data: args, display: `✅ ${args.entityType} restored.` };
+			await toolMutation(getCtx(), "trash/mutations:restore", { orgId, ...args });
+			return {
+				ok: true as const,
+				data: args,
+				display: {
+					kind: "entity" as const,
+					entityType: args.entityType,
+					entityId: args.entityId,
+				},
+			};
 		}),
 });

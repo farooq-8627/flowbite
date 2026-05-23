@@ -28,9 +28,9 @@
  *     (org admins with ai.byokOrg can remove others' user-scope keys).
  */
 import { ConvexError, v } from "convex/values";
+import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation, internalQuery } from "../_generated/server";
-import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions/helpers";
 import { enforceRateLimit } from "../_shared/rateLimit";
@@ -163,10 +163,7 @@ export const insertEncryptedKey = internalMutation({
 	},
 	handler: async (ctx, args): Promise<Id<"orgAiKeys">> => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(
-			member.permissions,
-			args.scope === "org" ? "ai.byokOrg" : "ai.byokUser",
-		);
+		requireRole(member.permissions, args.scope === "org" ? "ai.byokOrg" : "ai.byokUser");
 		await enforceRateLimit(ctx, {
 			scope: "ai.addKey",
 			key: `${userId}:${args.orgId}`,

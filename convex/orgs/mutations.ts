@@ -18,7 +18,11 @@
  * - https://github.com/dbjpanda/convex-tenants/blob/main/example/convex/tenants.ts
  */
 import { ConvexError, v } from "convex/values";
-import { authenticatedMutation, orgMutation } from "../_functions/authenticated";
+import {
+	authenticatedMutation,
+	orgMutation,
+	requireOrgMemberByIds,
+} from "../_functions/authenticated";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
@@ -355,6 +359,32 @@ export const updateOrgIndustry = authenticatedMutation({
  *   - Settings → Workspace → "Re-apply template" / "Switch template"
  *   - Phase 3 AI tool `setup_workspace_from_template`
  */
+async function applyTemplateImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; templateId: string },
+): Promise<{ ok: true; templateId: string }> {
+	const resolved = INDUSTRY_TEMPLATES[args.templateId]
+		? args.templateId
+		: (INDUSTRY_ID_ALIASES[args.templateId] ?? "generic");
+
+	await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
+		orgId: args.orgId,
+		templateId: resolved,
+		actorUserId: args.userId,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "updated",
+		entityType: ENTITY_TYPES.ORG,
+		entityId: args.orgId,
+		description: `Applied industry template "${resolved}"`,
+	});
+
+	return { ok: true, templateId: resolved };
+}
+
 export const applyTemplate = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -364,30 +394,22 @@ export const applyTemplate = orgMutation({
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
-
 		requireRole(member.permissions, "org.editSettings");
+		return applyTemplateImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		// Resolve via alias map (so callers can pass picker ids transparently).
-		const resolved = INDUSTRY_TEMPLATES[args.templateId]
-			? args.templateId
-			: (INDUSTRY_ID_ALIASES[args.templateId] ?? "generic");
-
-		await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
-			orgId: args.orgId,
-			templateId: resolved,
-			actorUserId: ctx.userId,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "updated",
-			entityType: ENTITY_TYPES.ORG,
-			entityId: args.orgId,
-			description: `Applied industry template "${resolved}"`,
-		});
-
-		return { ok: true, templateId: resolved };
+/** AI-callable internal twin. */
+export const applyTemplateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		templateId: v.string(),
+	},
+	handler: async (ctx, args): Promise<{ ok: true; templateId: string }> => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "org.editSettings");
+		return applyTemplateImpl(ctx, args);
 	},
 });
 
@@ -413,6 +435,132 @@ export const applyTemplate = orgMutation({
  *
  * Permission: org.editSettings (Owner / Admin).
  */
+async function clearMockDataImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users"> },
+) {
+	const org = await ctx.db.get(args.orgId);
+	if (!org) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+	const seededAt = org.settings?.mockDataSeededAt;
+	if (seededAt === undefined) {
+		return { deleted: 0 };
+	}
+
+	let deleted = 0;
+	const deletedEntities: Array<{ entityType: string; entityId: string }> = [];
+
+	const leads = await ctx.db
+		.query("leads")
+		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of leads) {
+		if (row.source === "template_seed") {
+			await ctx.db.delete(row._id);
+			deletedEntities.push({ entityType: "lead", entityId: row._id });
+			deleted += 1;
+			await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+			await applyOrgStat(ctx, args.orgId, "leads.total", -1);
+		}
+	}
+
+	const deals = await ctx.db
+		.query("deals")
+		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of deals) {
+		if (row.source === "template_seed") {
+			await ctx.db.delete(row._id);
+			deletedEntities.push({ entityType: "deal", entityId: row._id });
+			deleted += 1;
+			await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+			await applyOrgStat(ctx, args.orgId, "deals.total", -1);
+			if (row.value) {
+				await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -row.value);
+			}
+		}
+	}
+
+	const contacts = await ctx.db
+		.query("contacts")
+		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of contacts) {
+		if (row.excludeFromAI === true && row.createdAt === seededAt) {
+			await ctx.db.delete(row._id);
+			deletedEntities.push({ entityType: "contact", entityId: row._id });
+			deleted += 1;
+			await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+		}
+	}
+
+	const companies = await ctx.db
+		.query("companies")
+		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of companies) {
+		if (row.excludeFromAI === true && row.createdAt === seededAt) {
+			await ctx.db.delete(row._id);
+			deletedEntities.push({ entityType: "company", entityId: row._id });
+			deleted += 1;
+			await applyOrgStat(ctx, args.orgId, "companies.active", -1);
+		}
+	}
+
+	const notes = await ctx.db
+		.query("notes")
+		.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of notes) {
+		if (row.excludeFromAI === true && row.createdAt === seededAt) {
+			await ctx.db.delete(row._id);
+			deleted += 1;
+		}
+	}
+
+	const reminders = await ctx.db
+		.query("reminders")
+		.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	for (const row of reminders) {
+		if (row.excludeFromAI === true && row.createdAt === seededAt) {
+			await ctx.db.delete(row._id);
+			deleted += 1;
+		}
+	}
+
+	for (const { entityType, entityId } of deletedEntities) {
+		const tagLinks = await ctx.db
+			.query("entityTags")
+			.withIndex("by_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", entityType).eq("entityId", entityId),
+			)
+			.collect();
+		for (const link of tagLinks) {
+			await ctx.db.delete(link._id);
+		}
+	}
+
+	await ctx.db.patch(args.orgId, {
+		settings: {
+			...org.settings,
+			mockDataSeededAt: undefined,
+			mockDataDismissedAt: undefined,
+		},
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: ENTITY_TYPES.ORG,
+		entityId: args.orgId,
+		description: `Cleared ${deleted} sample records`,
+	});
+
+	return { deleted };
+}
+
 export const clearMockData = orgMutation({
 	args: { orgId: v.id("orgs") },
 	handler: async (ctx, args) => {
@@ -420,138 +568,17 @@ export const clearMockData = orgMutation({
 		if (!member || member.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
 		requireRole(member.permissions, "org.editSettings");
+		return clearMockDataImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		const org = await ctx.db.get(args.orgId);
-		if (!org) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
-		const seededAt = org.settings?.mockDataSeededAt;
-		if (seededAt === undefined) {
-			return { deleted: 0 };
-		}
-
-		let deleted = 0;
-		// Track (entityType, entityId) pairs for entityTags cleanup.
-		const deletedEntities: Array<{ entityType: string; entityId: string }> = [];
-
-		// 1. Leads (source-tagged).
-		const leads = await ctx.db
-			.query("leads")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of leads) {
-			if (row.source === "template_seed") {
-				await ctx.db.delete(row._id);
-				deletedEntities.push({ entityType: "lead", entityId: row._id });
-				deleted += 1;
-				await applyOrgStat(ctx, args.orgId, "leads.open", -1);
-				await applyOrgStat(ctx, args.orgId, "leads.total", -1);
-			}
-		}
-
-		// 2. Deals (source-tagged).
-		const deals = await ctx.db
-			.query("deals")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of deals) {
-			if (row.source === "template_seed") {
-				await ctx.db.delete(row._id);
-				deletedEntities.push({ entityType: "deal", entityId: row._id });
-				deleted += 1;
-				await applyOrgStat(ctx, args.orgId, "deals.open", -1);
-				await applyOrgStat(ctx, args.orgId, "deals.total", -1);
-				if (row.value) {
-					await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -row.value);
-				}
-			}
-		}
-
-		// 3. Contacts (timestamp + excludeFromAI).
-		const contacts = await ctx.db
-			.query("contacts")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of contacts) {
-			if (row.excludeFromAI === true && row.createdAt === seededAt) {
-				await ctx.db.delete(row._id);
-				deletedEntities.push({ entityType: "contact", entityId: row._id });
-				deleted += 1;
-				await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
-			}
-		}
-
-		// 4. Companies (timestamp + excludeFromAI).
-		const companies = await ctx.db
-			.query("companies")
-			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of companies) {
-			if (row.excludeFromAI === true && row.createdAt === seededAt) {
-				await ctx.db.delete(row._id);
-				deletedEntities.push({ entityType: "company", entityId: row._id });
-				deleted += 1;
-				await applyOrgStat(ctx, args.orgId, "companies.active", -1);
-			}
-		}
-
-		// 5. Notes (timestamp + excludeFromAI).
-		const notes = await ctx.db
-			.query("notes")
-			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of notes) {
-			if (row.excludeFromAI === true && row.createdAt === seededAt) {
-				await ctx.db.delete(row._id);
-				deleted += 1;
-			}
-		}
-
-		// 6. Reminders (timestamp + excludeFromAI).
-		const reminders = await ctx.db
-			.query("reminders")
-			.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
-			.collect();
-		for (const row of reminders) {
-			if (row.excludeFromAI === true && row.createdAt === seededAt) {
-				await ctx.db.delete(row._id);
-				deleted += 1;
-			}
-		}
-
-		// 7. entityTags pointing at deleted entities.
-		// Use the by_entity index per (entityType, entityId) — entityTags
-		// has no by_org index by itself.
-		for (const { entityType, entityId } of deletedEntities) {
-			const tagLinks = await ctx.db
-				.query("entityTags")
-				.withIndex("by_entity", (q) =>
-					q.eq("orgId", args.orgId).eq("entityType", entityType).eq("entityId", entityId),
-				)
-				.collect();
-			for (const link of tagLinks) {
-				await ctx.db.delete(link._id);
-			}
-		}
-
-		// Clear timestamps so the banner disappears + the seeder can run again.
-		await ctx.db.patch(args.orgId, {
-			settings: {
-				...org.settings,
-				mockDataSeededAt: undefined,
-				mockDataDismissedAt: undefined,
-			},
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "deleted",
-			entityType: ENTITY_TYPES.ORG,
-			entityId: args.orgId,
-			description: `Cleared ${deleted} sample records`,
-		});
-
-		return { deleted };
+/** AI-callable internal twin. */
+export const clearMockDataForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "org.editSettings");
+		return clearMockDataImpl(ctx, args);
 	},
 });
 
@@ -622,212 +649,226 @@ export const markOnboardingComplete = authenticatedMutation({
  *
  * Slug + entity-label slugs validated against `RESERVED_SLUGS` (SSOT).
  */
-export const update = orgMutation({
-	args: {
-		orgId: v.id("orgs"),
-		name: v.optional(v.string()),
-		slug: v.optional(v.string()),
-		entityLabels: v.optional(
-			v.object({
-				lead: v.optional(
+const orgUpdateArgs = {
+	orgId: v.id("orgs"),
+	name: v.optional(v.string()),
+	slug: v.optional(v.string()),
+	entityLabels: v.optional(
+		v.object({
+			lead: v.optional(
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
+			),
+			contact: v.optional(
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
+			),
+			deal: v.optional(
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
+			),
+			company: v.optional(
+				v.object({
+					singular: v.string(),
+					plural: v.string(),
+					slug: v.string(),
+					singularAr: v.optional(v.string()),
+					pluralAr: v.optional(v.string()),
+				}),
+			),
+		}),
+	),
+	settings: v.optional(
+		v.object({
+			defaultCurrency: v.optional(v.string()),
+			timezone: v.optional(v.string()),
+			leadStaleAfterDays: v.optional(v.number()),
+			badgeCountsVisible: v.optional(v.boolean()),
+			codePrefixes: v.optional(
+				v.object({
+					person: v.optional(v.string()),
+					deal: v.optional(v.string()),
+					company: v.optional(v.string()),
+					followup: v.optional(v.string()),
+				}),
+			),
+			modules: v.optional(
+				v.array(
 					v.object({
-						singular: v.string(),
-						plural: v.string(),
-						slug: v.string(),
-						singularAr: v.optional(v.string()),
-						pluralAr: v.optional(v.string()),
+						slot: v.string(),
+						label: v.optional(v.string()),
+						hidden: v.optional(v.boolean()),
+						order: v.optional(v.number()),
+						defaultView: v.optional(v.union(v.literal("list"), v.literal("board"))),
+						cardFields: v.optional(v.array(v.string())),
+						listColumns: v.optional(v.array(v.string())),
+						boardGroupBy: v.optional(v.string()),
+						defaultFilters: v.optional(v.array(v.string())),
+						meta: v.optional(v.any()),
 					}),
 				),
-				contact: v.optional(
-					v.object({
-						singular: v.string(),
-						plural: v.string(),
-						slug: v.string(),
-						singularAr: v.optional(v.string()),
-						pluralAr: v.optional(v.string()),
-					}),
-				),
-				deal: v.optional(
-					v.object({
-						singular: v.string(),
-						plural: v.string(),
-						slug: v.string(),
-						singularAr: v.optional(v.string()),
-						pluralAr: v.optional(v.string()),
-					}),
-				),
-				company: v.optional(
-					v.object({
-						singular: v.string(),
-						plural: v.string(),
-						slug: v.string(),
-						singularAr: v.optional(v.string()),
-						pluralAr: v.optional(v.string()),
-					}),
-				),
-			}),
-		),
-		settings: v.optional(
-			v.object({
-				defaultCurrency: v.optional(v.string()),
-				timezone: v.optional(v.string()),
-				leadStaleAfterDays: v.optional(v.number()),
-				badgeCountsVisible: v.optional(v.boolean()),
-				codePrefixes: v.optional(
-					v.object({
-						person: v.optional(v.string()),
-						deal: v.optional(v.string()),
-						company: v.optional(v.string()),
-						followup: v.optional(v.string()),
-					}),
-				),
-				modules: v.optional(
-					v.array(
-						v.object({
-							slot: v.string(),
-							label: v.optional(v.string()),
-							hidden: v.optional(v.boolean()),
-							order: v.optional(v.number()),
-							defaultView: v.optional(v.union(v.literal("list"), v.literal("board"))),
-							cardFields: v.optional(v.array(v.string())),
-							listColumns: v.optional(v.array(v.string())),
-							boardGroupBy: v.optional(v.string()),
-							defaultFilters: v.optional(v.array(v.string())),
-							meta: v.optional(v.any()),
-						}),
-					),
-				),
-				reminderDefaults: v.optional(
-					v.object({
-						followUpWindowHours: v.optional(v.number()),
-						staleAlertDays: v.optional(v.number()),
-						morningBriefingEnabled: v.optional(v.boolean()),
-						morningBriefingTime: v.optional(v.string()),
-						rentAlertDays: v.optional(v.number()),
-						rentAlertEnabled: v.optional(v.boolean()),
-					}),
-				),
-				/**
-				 * Follow-up cadence defaults — see schema/identity.ts for
-				 * the field-level docs. Optional so the section can be
-				 * saved partially.
-				 */
-				followupDefaults: v.optional(
-					v.object({
-						defaultDueOffsetDays: v.optional(v.number()),
-						defaultPriority: v.optional(
-							v.union(
-								v.literal("low"),
-								v.literal("normal"),
-								v.literal("high"),
-								v.literal("urgent"),
-							),
+			),
+			reminderDefaults: v.optional(
+				v.object({
+					followUpWindowHours: v.optional(v.number()),
+					staleAlertDays: v.optional(v.number()),
+					morningBriefingEnabled: v.optional(v.boolean()),
+					morningBriefingTime: v.optional(v.string()),
+					rentAlertDays: v.optional(v.number()),
+					rentAlertEnabled: v.optional(v.boolean()),
+				}),
+			),
+			followupDefaults: v.optional(
+				v.object({
+					defaultDueOffsetDays: v.optional(v.number()),
+					defaultPriority: v.optional(
+						v.union(
+							v.literal("low"),
+							v.literal("normal"),
+							v.literal("high"),
+							v.literal("urgent"),
 						),
-						autoCloseAfterDays: v.optional(v.number()),
-						notifyAssignee: v.optional(v.boolean()),
-						requireDealCode: v.optional(v.boolean()),
-						reminderBeforeHours: v.optional(v.number()),
-					}),
-				),
-				fileUpload: v.optional(
-					v.object({
-						allowedMimeCategories: v.optional(v.array(v.string())),
-						maxSizeMb: v.optional(v.number()),
-					}),
-				),
-				// Phase 3A — owner-tunable settings surfaced in Settings → Workspace.
-				/** Ordered list of dashboard widget keys; renders top-to-bottom. */
-				dashboardMetrics: v.optional(v.array(v.string())),
-				/** Per-org soft-delete retention in days (default 30, range 7–365). */
-				softDeleteRetentionDays: v.optional(v.number()),
-				/** Timestamp of mock-data seed; gates the MockDataBanner + idempotency. */
-				mockDataSeededAt: v.optional(v.number()),
-				/** Timestamp the mock-data banner was dismissed by the user. */
-				mockDataDismissedAt: v.optional(v.number()),
-				/** Set when the owner schedules an org-level GDPR cascade-delete. */
-				deletionScheduledAt: v.optional(v.number()),
-			}),
-		),
-		aiContext: v.optional(v.string()),
-	},
-	handler: async (ctx, args) => {
-		const now = Date.now();
+					),
+					autoCloseAfterDays: v.optional(v.number()),
+					notifyAssignee: v.optional(v.boolean()),
+					requireDealCode: v.optional(v.boolean()),
+					reminderBeforeHours: v.optional(v.number()),
+				}),
+			),
+			fileUpload: v.optional(
+				v.object({
+					allowedMimeCategories: v.optional(v.array(v.string())),
+					maxSizeMb: v.optional(v.number()),
+				}),
+			),
+			dashboardMetrics: v.optional(v.array(v.string())),
+			softDeleteRetentionDays: v.optional(v.number()),
+			mockDataSeededAt: v.optional(v.number()),
+			mockDataDismissedAt: v.optional(v.number()),
+			deletionScheduledAt: v.optional(v.number()),
+		}),
+	),
+	aiContext: v.optional(v.string()),
+};
 
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		// biome-ignore lint/suspicious/noExplicitAny: pass-through for the deep-merged settings shape; the validator above is the source of truth
+		[k: string]: any;
+	},
+) {
+	const now = Date.now();
+
+	const { orgId, userId, settings: newSettings, ...directUpdates } = args;
+
+	if (directUpdates.slug) {
+		const existing = await getOrgBySlug(ctx, directUpdates.slug);
+		if (existing && existing._id !== orgId) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
+	}
+
+	if (directUpdates.entityLabels) {
+		for (const [, label] of Object.entries(directUpdates.entityLabels) as Array<
+			[
+				string,
+				{ slug?: string } | undefined,
+			]
+		>) {
+			if (label?.slug && RESERVED_SLUGS.has(label.slug.toLowerCase())) {
+				throw new ConvexError(
+					`Entity slug "${label.slug}" conflicts with a reserved route. Choose a different slug.`,
+				);
+			}
+		}
+	}
+
+	const patchData: Record<string, unknown> = { ...directUpdates, updatedAt: now };
+	if (newSettings) {
+		const org = await ctx.db.get(orgId);
+		const existing: {
+			codePrefixes?: Record<string, string | undefined>;
+			reminderDefaults?: Record<string, unknown>;
+			followupDefaults?: Record<string, unknown>;
+			fileUpload?: Record<string, unknown>;
+			[k: string]: unknown;
+		} = org?.settings ?? {};
+		patchData.settings = {
+			...existing,
+			...newSettings,
+			...(newSettings.codePrefixes && {
+				codePrefixes: {
+					...existing.codePrefixes,
+					...newSettings.codePrefixes,
+				},
+			}),
+			...(newSettings.reminderDefaults && {
+				reminderDefaults: {
+					...existing.reminderDefaults,
+					...newSettings.reminderDefaults,
+				},
+			}),
+			...(newSettings.followupDefaults && {
+				followupDefaults: {
+					...existing.followupDefaults,
+					...newSettings.followupDefaults,
+				},
+			}),
+			...(newSettings.fileUpload && {
+				fileUpload: {
+					...existing.fileUpload,
+					...newSettings.fileUpload,
+				},
+			}),
+		};
+	}
+
+	await ctx.db.patch(orgId, patchData);
+
+	await logActivity(ctx, {
+		orgId,
+		userId,
+		action: "updated",
+		entityType: ENTITY_TYPES.ORG,
+		entityId: orgId,
+		description: "Updated organization settings",
+	});
+}
+
+export const update = orgMutation({
+	args: orgUpdateArgs,
+	handler: async (ctx, args) => {
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
-
 		requireRole(member.permissions, "org.editSettings");
+		return updateImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
 
-		const { orgId, settings: newSettings, ...directUpdates } = args;
-
-		if (directUpdates.slug) {
-			const existing = await getOrgBySlug(ctx, directUpdates.slug);
-			if (existing && existing._id !== orgId) throw new ConvexError(ERRORS.ORG_SLUG_TAKEN);
-		}
-
-		// Validate entity label slugs against the SSOT reserved-slug set.
-		if (directUpdates.entityLabels) {
-			for (const [, label] of Object.entries(directUpdates.entityLabels)) {
-				if (label?.slug && RESERVED_SLUGS.has(label.slug.toLowerCase())) {
-					throw new ConvexError(
-						`Entity slug "${label.slug}" conflicts with a reserved route. Choose a different slug.`,
-					);
-				}
-			}
-		}
-
-		// Merge settings (shallow merge at top level, deep merge for nested objects)
-		const patchData: Record<string, unknown> = { ...directUpdates, updatedAt: now };
-		if (newSettings) {
-			const org = await ctx.db.get(orgId);
-			const existing: {
-				codePrefixes?: Record<string, string | undefined>;
-				reminderDefaults?: Record<string, unknown>;
-				followupDefaults?: Record<string, unknown>;
-				fileUpload?: Record<string, unknown>;
-				[k: string]: unknown;
-			} = org?.settings ?? {};
-			patchData.settings = {
-				...existing,
-				...newSettings,
-				...(newSettings.codePrefixes && {
-					codePrefixes: {
-						...existing.codePrefixes,
-						...newSettings.codePrefixes,
-					},
-				}),
-				...(newSettings.reminderDefaults && {
-					reminderDefaults: {
-						...existing.reminderDefaults,
-						...newSettings.reminderDefaults,
-					},
-				}),
-				...(newSettings.followupDefaults && {
-					followupDefaults: {
-						...existing.followupDefaults,
-						...newSettings.followupDefaults,
-					},
-				}),
-				...(newSettings.fileUpload && {
-					fileUpload: {
-						...existing.fileUpload,
-						...newSettings.fileUpload,
-					},
-				}),
-			};
-		}
-
-		await ctx.db.patch(orgId, patchData);
-
-		await logActivity(ctx, {
-			orgId,
-			userId: ctx.userId,
-			action: "updated",
-			entityType: ENTITY_TYPES.ORG,
-			entityId: orgId,
-			description: "Updated organization settings",
-		});
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: { ...orgUpdateArgs, userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "org.editSettings");
+		return updateImpl(ctx, args);
 	},
 });
 
@@ -837,76 +878,153 @@ export const update = orgMutation({
  * Remove a member from the org (soft-delete). Requires `members.remove`.
  * Cannot remove the last owner.
  */
+async function removeMemberImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		actorUserId: Id<"users">;
+		targetUserId: Id<"users">;
+	},
+) {
+	const now = Date.now();
+
+	const targetMember = await getOrgMember(ctx, args.orgId, args.targetUserId);
+	if (!targetMember || targetMember.deletedAt !== undefined)
+		throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+
+	if (targetMember.roleId) {
+		const targetRole = await ctx.db.get(targetMember.roleId);
+		if (targetRole?.name === "Owner") {
+			const allMembers = await ctx.db
+				.query("orgMembers")
+				.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
+				.take(200);
+			const ownerRoleIds = await ctx.db
+				.query("orgRoles")
+				.withIndex("by_orgId_and_name", (q) =>
+					q.eq("orgId", args.orgId).eq("name", "Owner"),
+				)
+				.take(1);
+			const ownerRoleId = ownerRoleIds[0]?._id;
+			const activeOwners = allMembers.filter(
+				(m) => m.deletedAt === undefined && m.roleId === ownerRoleId,
+			);
+			if (activeOwners.length <= 1)
+				throw new ConvexError("Cannot remove the last owner of an organization.");
+		}
+	}
+
+	await ctx.db.patch(targetMember._id, { deletedAt: now });
+	await applyOrgStat(ctx, args.orgId, "members.active", -1);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.actorUserId,
+		action: "deleted",
+		entityType: ENTITY_TYPES.MEMBER,
+		entityId: targetMember._id,
+		description: `Removed member from organization`,
+	});
+
+	if (args.targetUserId !== args.actorUserId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.targetUserId,
+			type: "member.removed",
+			title: "You have been removed from an organization",
+			body: "Your membership has been revoked by an administrator.",
+			entityType: ENTITY_TYPES.MEMBER,
+			entityId: targetMember._id,
+		});
+	}
+}
+
 export const removeMember = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		userId: v.id("users"),
 	},
 	handler: async (ctx, args) => {
-		const now = Date.now();
-
 		const actorMember = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!actorMember || actorMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.FORBIDDEN);
-
 		requireRole(actorMember.permissions, "members.remove");
-
-		const targetMember = await getOrgMember(ctx, args.orgId, args.userId);
-		if (!targetMember || targetMember.deletedAt !== undefined)
-			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
-
-		if (targetMember.roleId) {
-			const targetRole = await ctx.db.get(targetMember.roleId);
-			if (targetRole?.name === "Owner") {
-				const allMembers = await ctx.db
-					.query("orgMembers")
-					.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
-					.take(200);
-				const ownerRoleIds = await ctx.db
-					.query("orgRoles")
-					.withIndex("by_orgId_and_name", (q) =>
-						q.eq("orgId", args.orgId).eq("name", "Owner"),
-					)
-					.take(1);
-				const ownerRoleId = ownerRoleIds[0]?._id;
-				const activeOwners = allMembers.filter(
-					(m) => m.deletedAt === undefined && m.roleId === ownerRoleId,
-				);
-				if (activeOwners.length <= 1)
-					throw new ConvexError("Cannot remove the last owner of an organization.");
-			}
-		}
-
-		await ctx.db.patch(targetMember._id, { deletedAt: now });
-		// Counter — leaving the active pool.
-		await applyOrgStat(ctx, args.orgId, "members.active", -1);
-
-		await logActivity(ctx, {
+		return removeMemberImpl(ctx, {
 			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "deleted",
-			entityType: ENTITY_TYPES.MEMBER,
-			entityId: targetMember._id,
-			description: `Removed member from organization`,
+			actorUserId: ctx.userId,
+			targetUserId: args.userId,
 		});
+	},
+});
 
-		if (args.userId !== ctx.userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.userId,
-				type: "member.removed",
-				title: "You have been removed from an organization",
-				body: "Your membership has been revoked by an administrator.",
-				entityType: ENTITY_TYPES.MEMBER,
-				entityId: targetMember._id,
-			});
-		}
+/** AI-callable internal twin. The `userId` arg is the orchestrator's actor; `targetUserId` is who's being removed. */
+export const removeMemberForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		targetUserId: v.id("users"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "members.remove");
+		return removeMemberImpl(ctx, {
+			orgId: args.orgId,
+			actorUserId: args.userId,
+			targetUserId: args.targetUserId,
+		});
 	},
 });
 
 /**
  * Update a member's role. Requires `members.changeRole` (owner only).
  */
+async function updateMemberRoleImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		actorUserId: Id<"users">;
+		targetUserId: Id<"users">;
+		roleId: Id<"orgRoles">;
+	},
+) {
+	const now = Date.now();
+
+	const targetMember = await getOrgMember(ctx, args.orgId, args.targetUserId);
+	if (!targetMember || targetMember.deletedAt !== undefined)
+		throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+
+	const newRoleDoc = await ctx.db.get(args.roleId);
+	if (!newRoleDoc || newRoleDoc.orgId !== args.orgId) {
+		throw new ConvexError("Role not found in this organization.");
+	}
+
+	await ctx.db.patch(targetMember._id, {
+		roleId: args.roleId,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.actorUserId,
+		action: "updated",
+		entityType: ENTITY_TYPES.MEMBER,
+		entityId: targetMember._id,
+		description: `Changed role to ${newRoleDoc.name}`,
+	});
+
+	if (args.targetUserId !== args.actorUserId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: args.targetUserId,
+			type: "member.roleChanged",
+			title: "Your role has been updated",
+			body: `Your role has been changed to ${newRoleDoc.name}.`,
+			entityType: ENTITY_TYPES.MEMBER,
+			entityId: targetMember._id,
+		});
+	}
+}
+
 export const updateMemberRole = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -914,48 +1032,36 @@ export const updateMemberRole = orgMutation({
 		roleId: v.id("orgRoles"),
 	},
 	handler: async (ctx, args) => {
-		const now = Date.now();
-
 		const actorMember = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!actorMember || actorMember.deletedAt !== undefined)
 			throw new ConvexError(ERRORS.FORBIDDEN);
-
 		requireRole(actorMember.permissions, "members.changeRole");
-
-		const targetMember = await getOrgMember(ctx, args.orgId, args.userId);
-		if (!targetMember || targetMember.deletedAt !== undefined)
-			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
-
-		const newRoleDoc = await ctx.db.get(args.roleId);
-		if (!newRoleDoc || newRoleDoc.orgId !== args.orgId) {
-			throw new ConvexError("Role not found in this organization.");
-		}
-
-		await ctx.db.patch(targetMember._id, {
-			roleId: args.roleId,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
+		return updateMemberRoleImpl(ctx, {
 			orgId: args.orgId,
-			userId: ctx.userId,
-			action: "updated",
-			entityType: ENTITY_TYPES.MEMBER,
-			entityId: targetMember._id,
-			description: `Changed role to ${newRoleDoc.name}`,
+			actorUserId: ctx.userId,
+			targetUserId: args.userId,
+			roleId: args.roleId,
 		});
+	},
+});
 
-		if (args.userId !== ctx.userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: args.userId,
-				type: "member.roleChanged",
-				title: "Your role has been updated",
-				body: `Your role has been changed to ${newRoleDoc.name}.`,
-				entityType: ENTITY_TYPES.MEMBER,
-				entityId: targetMember._id,
-			});
-		}
+/** AI-callable internal twin. `userId` is the orchestrator's actor; `targetUserId` is who's being modified. */
+export const updateMemberRoleForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		targetUserId: v.id("users"),
+		roleId: v.id("orgRoles"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "members.changeRole");
+		return updateMemberRoleImpl(ctx, {
+			orgId: args.orgId,
+			actorUserId: args.userId,
+			targetUserId: args.targetUserId,
+			roleId: args.roleId,
+		});
 	},
 });
 

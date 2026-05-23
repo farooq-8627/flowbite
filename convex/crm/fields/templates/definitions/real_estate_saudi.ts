@@ -441,6 +441,7 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 
 	// ─── Dashboard widgets (ranked) ────────────────────────────────────────
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",
@@ -599,7 +600,10 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 				key: "riyadh-properties",
 				name: "Riyadh Premier Properties",
 				industry: "Real Estate",
-				fieldValues: { rega_license: "REGA-1100123", commercial_registration: "CR-7894561" },
+				fieldValues: {
+					rega_license: "REGA-1100123",
+					commercial_registration: "CR-7894561",
+				},
 			},
 		],
 		leads: [

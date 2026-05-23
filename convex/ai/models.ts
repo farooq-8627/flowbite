@@ -20,6 +20,7 @@ export * from "./modelRegistry";
 import type { ProviderId } from "./encryptionTypes";
 import {
 	MODEL_REGISTRY,
+	type ModelInfo,
 	type ModelTier,
 	type OrgPlan,
 	PLAN_ALLOWED_TIERS,
@@ -39,6 +40,9 @@ export function buildLanguageModel(args: {
 		case "anthropic":
 			return createAnthropic({ apiKey })(modelId);
 		case "openai":
+			// Real OpenAI: default callable uses the Responses API, which OpenAI
+			// supports natively (and which the SDK prefers for new features like
+			// reasoning-delta + previous_response_id).
 			return createOpenAI({ apiKey, baseURL: baseUrl })(modelId);
 		case "google":
 			return createGoogleGenerativeAI({ apiKey })(modelId);
@@ -51,21 +55,29 @@ export function buildLanguageModel(args: {
 		case "openrouter":
 			return createOpenRouter({ apiKey, baseURL: baseUrl })(modelId);
 		case "moonshot":
-			// Moonshot exposes an OpenAI-compat surface; pick the international
-			// endpoint by default but allow per-key baseUrl override (e.g. .cn).
+			// Moonshot exposes an OpenAI-compat surface but only implements
+			// /v1/chat/completions — NOT /v1/responses. Force the SDK onto the
+			// Chat Completions path with .chat(modelId). Default to the
+			// international endpoint, allow .cn override via per-key baseUrl.
 			return createOpenAI({
 				apiKey,
 				baseURL: baseUrl ?? "https://api.moonshot.ai/v1",
-			})(modelId);
+			}).chat(modelId);
 		case "nvidia":
-			// NVIDIA NIM is OpenAI-compat. Default to the public hosted endpoint
-			// unless the key was added with a custom baseUrl (self-hosted NIM).
+			// NVIDIA NIM is OpenAI-compat at /v1/chat/completions only — it has
+			// no /v1/responses endpoint. Without .chat() the SDK posts to
+			// /v1/responses and gets a 404. Default to the hosted endpoint;
+			// allow self-hosted NIM via per-key baseUrl override.
 			return createOpenAI({
 				apiKey,
 				baseURL: baseUrl ?? "https://integrate.api.nvidia.com/v1",
-			})(modelId);
+			}).chat(modelId);
 		case "custom":
-			return createOpenAI({ apiKey, baseURL: baseUrl })(modelId);
+			// Custom OpenAI-compat endpoints (LM Studio, Ollama, llama.cpp,
+			// LiteLLM, vLLM, etc.) almost never implement /v1/responses. Force
+			// .chat(modelId) so we hit /v1/chat/completions, which is the
+			// universal baseline of the OpenAI-compat surface.
+			return createOpenAI({ apiKey, baseURL: baseUrl }).chat(modelId);
 		default: {
 			const _exhaustive: never = provider;
 			throw new Error(`Unknown provider: ${_exhaustive}`);
@@ -143,41 +155,84 @@ export function getModel(args: {
 	}
 
 	const allowedTiers = new Set<ModelTier>(PLAN_ALLOWED_TIERS[plan] ?? PLAN_ALLOWED_TIERS.free);
+	// DEFERRED: see Future-Enhancements.md §A.1 (plan-tier gating in getModel).
+	//          Re-enable in Phase 6 / Week 6 of PHASE-3-AI-AUDIT.md §6 by deleting
+	//          the next line. During testing every plan can run every tier so
+	//          dev workflows aren't blocked by a missing upgrade flow.
+	for (const t of ["small", "standard", "premium"] as const) allowedTiers.add(t);
+
+	// Helper: pick any model whose provider has a platform key set, preferring
+	// allowed-tier candidates first, then falling back to any tier. This lets
+	// the chat keep working when the user's saved preference (e.g. kimi-k2)
+	// has no platform key but ANTHROPIC_API_KEY is set.
+	const pickAnyConfiguredModel = (): {
+		key: string;
+		info: ModelInfo;
+		platformKey: string;
+	} | null => {
+		const candidates = Object.entries(MODEL_REGISTRY)
+			.filter(([, m]) => allowedTiers.has(m.tier))
+			.sort((a, b) => b[1].inputCostPerMTok - a[1].inputCostPerMTok);
+		for (const [key, m] of candidates) {
+			const k = getPlatformKey(m.provider as ProviderId);
+			if (k) return { key, info: m, platformKey: k };
+		}
+		// No allowed-tier match — try any model regardless of plan tier.
+		for (const [key, m] of Object.entries(MODEL_REGISTRY)) {
+			const k = getPlatformKey(m.provider as ProviderId);
+			if (k) return { key, info: m, platformKey: k };
+		}
+		return null;
+	};
+
 	if (!allowedTiers.has(info.tier)) {
-		const bestKey =
-			Object.entries(MODEL_REGISTRY)
-				.filter(([, m]) => allowedTiers.has(m.tier))
-				.sort((a, b) => b[1].inputCostPerMTok - a[1].inputCostPerMTok)[0]?.[0] ??
-			PLATFORM_DEFAULT_MODEL;
-		const bestInfo = MODEL_REGISTRY[bestKey];
-		const platformKey = getPlatformKey(bestInfo.provider as ProviderId);
-		if (!platformKey) throw new Error(`Platform API key not configured: ${bestInfo.provider}`);
+		const fallback = pickAnyConfiguredModel();
+		if (!fallback) throw new Error(`Platform API key not configured: ${info.provider}`);
 		return {
 			model: buildLanguageModel({
-				provider: bestInfo.provider as ProviderId,
-				modelId: bestInfo.modelId,
-				apiKey: platformKey,
+				provider: fallback.info.provider as ProviderId,
+				modelId: fallback.info.modelId,
+				apiKey: fallback.platformKey,
 			}),
-			provider: bestInfo.provider as ProviderId,
-			modelKey: bestKey,
-			modelId: bestInfo.modelId,
-			tier: bestInfo.tier,
+			provider: fallback.info.provider as ProviderId,
+			modelKey: fallback.key,
+			modelId: fallback.info.modelId,
+			tier: fallback.info.tier,
 			usageMode: "platform",
 		};
 	}
 
 	const platformKey = getPlatformKey(info.provider as ProviderId);
-	if (!platformKey) throw new Error(`Platform API key not configured: ${info.provider}`);
+	if (platformKey) {
+		return {
+			model: buildLanguageModel({
+				provider: info.provider as ProviderId,
+				modelId: info.modelId,
+				apiKey: platformKey,
+			}),
+			provider: info.provider as ProviderId,
+			modelKey: finalModelKey,
+			modelId: info.modelId,
+			tier: info.tier,
+			usageMode: "platform",
+		};
+	}
+
+	// Requested provider has no platform key — try ANY other configured provider
+	// before giving up so the chat keeps working as long as one platform key
+	// exists somewhere in the env.
+	const fallback = pickAnyConfiguredModel();
+	if (!fallback) throw new Error(`Platform API key not configured: ${info.provider}`);
 	return {
 		model: buildLanguageModel({
-			provider: info.provider as ProviderId,
-			modelId: info.modelId,
-			apiKey: platformKey,
+			provider: fallback.info.provider as ProviderId,
+			modelId: fallback.info.modelId,
+			apiKey: fallback.platformKey,
 		}),
-		provider: info.provider as ProviderId,
-		modelKey: finalModelKey,
-		modelId: info.modelId,
-		tier: info.tier,
+		provider: fallback.info.provider as ProviderId,
+		modelKey: fallback.key,
+		modelId: fallback.info.modelId,
+		tier: fallback.info.tier,
 		usageMode: "platform",
 	};
 }

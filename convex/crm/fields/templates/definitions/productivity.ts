@@ -140,7 +140,14 @@ export const productivityTemplate: IndustryTemplate = {
 			order: 1,
 			defaultView: "board",
 			cardFields: ["title", "priority", "due_date", "project"],
-			listColumns: ["dealCode", "title", "priority", "due_date", "estimated_hours", "currentStageId"],
+			listColumns: [
+				"dealCode",
+				"title",
+				"priority",
+				"due_date",
+				"estimated_hours",
+				"currentStageId",
+			],
 			boardGroupBy: "currentStageId",
 		},
 		// company hidden via entityVisibility.
@@ -187,6 +194,7 @@ export const productivityTemplate: IndustryTemplate = {
 
 	// ─── Dashboard widgets (ranked, productivity-shape) ───────────────────
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"tasks.dueToday",
 		"tasks.overdue",
 		"tasks.thisWeek",

@@ -11,6 +11,8 @@
  * Replaces the static stub in ai-chat-panel.tsx.
  * Mounts inside both the desktop Sidebar slot and mobile Sheet.
  */
+import { useMutation } from "convex/react";
+import { anyApi } from "convex/server";
 import { Bot, Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -22,6 +24,8 @@ import { ChatComposer } from "./ChatComposer";
 import { ChatContextCard } from "./ChatContextCard";
 import { ChatHistoryDropdown } from "./ChatHistoryDropdown";
 import { ChatMessage } from "./ChatMessage";
+import { AssistantTurn } from "./AssistantTurn";
+import { Suggestions } from "./composer/Suggestions";
 
 interface Props {
 	/** Called when user navigates to Settings → AI */
@@ -44,17 +48,43 @@ export function ChatSheet({ onOpenSettings }: Props) {
 		autoContextLoad,
 	});
 
-	const endRef = useRef<HTMLDivElement>(null);
+	const scrollViewportRef = useRef<HTMLDivElement>(null);
 
-	// Auto-scroll to bottom when new messages arrive
+	// Auto-scroll behaviour: whenever the messages array length changes (new
+	// turn) OR the last message's content / thinkingState changes (mid-stream
+	// updates), scroll the ScrollArea viewport itself to the bottom. We do
+	// NOT use `Element.scrollIntoView()` here — the dashboard shell nests
+	// 3+ scroll containers and scrollIntoView would walk up the DOM and
+	// shift the outer layout (banned by AGENTS.md → "RULE: Never use
+	// Element.scrollIntoView() inside nested scroll containers").
+	const lastMessage = messages.at(-1);
+	const lastContent = lastMessage?.content ?? "";
+	const lastState = lastMessage?.thinkingState ?? "done";
+	const messageCount = messages.length;
 	useEffect(() => {
-		endRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, []);
+		// Read the trigger values so biome sees them as deps (the value is not
+		// otherwise used — the effect's purpose is to react to *any* of them
+		// changing). `void` keeps the expression a statement.
+		void messageCount;
+		void lastContent;
+		void lastState;
+		const wrapper = scrollViewportRef.current;
+		if (!wrapper) return;
+		// shadcn's <ScrollArea> wraps a Radix Viewport (the actual scroll
+		// container) tagged with data-slot. Query for it once per effect.
+		const viewport = wrapper.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+		if (!viewport) return;
+		// rAF so the layout has settled before we measure scrollHeight.
+		const id = requestAnimationFrame(() => {
+			viewport.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+		});
+		return () => cancelAnimationFrame(id);
+	}, [messageCount, lastContent, lastState]);
 
 	const handleSend = useCallback(
-		async (body: string, model?: string) => {
+		async (body: string, model?: string, provider?: string) => {
 			if (!orgId) return;
-			const result = await send(body, model);
+			const result = await send(body, model, provider);
 			if (result && !conversationId) {
 				setConversationId(result.conversationId);
 			}
@@ -65,6 +95,57 @@ export function ChatSheet({ onOpenSettings }: Props) {
 	const handleNew = useCallback(() => {
 		setConversationId(null);
 	}, []);
+
+	// Cancel — wired to the Stop button + global keyboard shortcut.
+	const cancelStream = useMutation(anyApi.ai.messages.cancelStream);
+	const lastMessageId = lastMessage?._id;
+	const handleCancel = useCallback(() => {
+		if (!orgId || !lastMessageId || !isStreaming) return;
+		cancelStream({ orgId, messageId: lastMessageId }).catch(() => {
+			// non-fatal — UI will still settle when the stream loop exits.
+		});
+	}, [orgId, lastMessageId, isStreaming, cancelStream]);
+
+	// Global keyboard shortcuts to stop a running stream:
+	//   Ctrl+C (Win/Linux) / Cmd+C (Mac) — only when there's no text selection
+	//     (so the user can still copy chat content normally).
+	//   Esc                              — unconditional stop.
+	//
+	// We listen at window-level so the shortcut works regardless of where
+	// focus is, except inside the composer textarea / contentEditable —
+	// there we let the browser handle copy normally.
+	useEffect(() => {
+		if (!isStreaming) return;
+		const onKey = (e: KeyboardEvent) => {
+			const target = e.target as HTMLElement | null;
+			const inEditable =
+				target instanceof HTMLTextAreaElement ||
+				target instanceof HTMLInputElement ||
+				target?.isContentEditable === true;
+
+			const isCtrlC = (e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C");
+			const isEsc = e.key === "Escape";
+
+			if (isEsc) {
+				// Esc never has a "copy" meaning — always cancel.
+				e.preventDefault();
+				handleCancel();
+				return;
+			}
+
+			if (isCtrlC) {
+				// Don't steal copy when the user has text selected, or when
+				// they're typing in the composer (browser default = copy).
+				if (inEditable) return;
+				const sel = window.getSelection?.();
+				if (sel && sel.toString().length > 0) return;
+				e.preventDefault();
+				handleCancel();
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [isStreaming, handleCancel]);
 
 	if (!orgId) return null;
 
@@ -113,38 +194,122 @@ export function ChatSheet({ onOpenSettings }: Props) {
 			)}
 
 			{/* Messages */}
-			<ScrollArea className="flex-1">
-				<div className="flex flex-col py-2">
-					{messages.length === 0 && (
-						<div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-							<div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-								<Bot className="size-6 text-primary" />
+			<div ref={scrollViewportRef} className="flex-1 min-h-0 chat-sheet-wrapper">
+				<ScrollArea className="h-full">
+					<div className="flex flex-col py-2">
+						{messages.length === 0 && (
+							<div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+								<div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
+									<Bot className="size-6 text-primary" />
+								</div>
+								<div>
+									<p className="font-medium text-sm">AI Assistant</p>
+									<p className="mt-1 text-xs text-muted-foreground">
+										Ask me to search records, create leads, set reminders, or
+										explain your pipeline.
+									</p>
+								</div>
 							</div>
-							<div>
-								<p className="font-medium text-sm">AI Assistant</p>
-								<p className="mt-1 text-xs text-muted-foreground">
-									Ask me to search records, create leads, set reminders, or
-									explain your pipeline.
-								</p>
-							</div>
-						</div>
-					)}
-					{messages.map((msg, i) => (
-						<ChatMessage
-							key={msg._id}
-							message={msg}
-							orgId={orgId}
-							isLast={i === messages.length - 1}
-						/>
-					))}
-					<div ref={endRef} />
-				</div>
-			</ScrollArea>
+						)}
+						{(() => {
+							// Group the flat message list into turns. Each
+							// assistant message claims the tool messages that
+							// follow it (up to the next non-tool message) so
+							// the timeline UX (see AssistantTurn / ThinkingTimeline)
+							// can render them inside a single working dropdown.
+							//
+							// Anything that doesn't fit (orphan tool message
+							// without a preceding assistant — shouldn't normally
+							// happen, but defensively) falls through to the
+							// legacy <ChatMessage> branch so we never lose data.
+							const items: Array<
+								| { kind: "user"; msg: typeof messages[number] }
+								| { kind: "assistantTurn"; assistant: typeof messages[number]; tools: Array<typeof messages[number]> }
+								| { kind: "orphanTool"; msg: typeof messages[number] }
+							> = [];
+							let cursor = 0;
+							while (cursor < messages.length) {
+								const m = messages[cursor];
+								if (m.role === "user") {
+									items.push({ kind: "user", msg: m });
+									cursor += 1;
+									continue;
+								}
+								if (m.role === "assistant") {
+									const tools: typeof messages = [];
+									let j = cursor + 1;
+									while (j < messages.length && messages[j].role === "tool") {
+										tools.push(messages[j]);
+										j += 1;
+									}
+									items.push({ kind: "assistantTurn", assistant: m, tools });
+									cursor = j;
+									continue;
+								}
+								// Orphan tool message — render via legacy path
+								items.push({ kind: "orphanTool", msg: m });
+								cursor += 1;
+							}
+							return items.map((item, idx) => {
+								const isLast = idx === items.length - 1;
+								if (item.kind === "user") {
+									return (
+										<ChatMessage
+											key={item.msg._id}
+											message={item.msg}
+											orgId={orgId}
+											isLast={isLast}
+										/>
+									);
+								}
+								if (item.kind === "assistantTurn") {
+									return (
+										<AssistantTurn
+											key={item.assistant._id}
+											assistant={item.assistant}
+											tools={item.tools}
+											orgId={orgId}
+											isLast={isLast}
+										/>
+									);
+								}
+								return (
+									<ChatMessage
+										key={item.msg._id}
+										message={item.msg}
+										orgId={orgId}
+										isLast={isLast}
+									/>
+								);
+							});
+						})()}
+					</div>
+				</ScrollArea>
+			</div>
+
+			{/* Sprint 5 — follow-up suggestion chips, populated from the
+			    latest assistant message's `suggestions` field. Hidden
+			    while streaming (chips are stale fast). */}
+			{(() => {
+				// Find the most recent assistant message regardless of how many
+				// tool messages followed it. Assistant messages are rare relative
+				// to tool calls so a small reverse-walk is cheap.
+				const latestAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+				return (
+					<Suggestions
+						suggestions={latestAssistant?.suggestions ?? undefined}
+						disabled={isStreaming}
+						onPick={(s) => handleSend(s)}
+					/>
+				);
+			})()}
 
 			{/* Composer */}
 			<ChatComposer
 				onSend={handleSend}
+				onCancel={handleCancel}
 				disabled={isStreaming}
+				isStreaming={isStreaming}
 				placeholder={
 					routeContext
 						? `Ask about ${routeContext.name ?? routeContext.personCode}…`

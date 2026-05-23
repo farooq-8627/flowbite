@@ -168,7 +168,14 @@ export const freelancerTemplate: IndustryTemplate = {
 			order: 0,
 			defaultView: "list",
 			cardFields: ["displayName", "project_type", "deadline"],
-			listColumns: ["displayName", "personCode", "email", "project_type", "deadline", "status"],
+			listColumns: [
+				"displayName",
+				"personCode",
+				"email",
+				"project_type",
+				"deadline",
+				"status",
+			],
 			boardGroupBy: "status",
 		},
 		{
@@ -184,13 +191,7 @@ export const freelancerTemplate: IndustryTemplate = {
 			order: 2,
 			defaultView: "board",
 			cardFields: ["title", "quoted_amount", "deadline"],
-			listColumns: [
-				"dealCode",
-				"title",
-				"quoted_amount",
-				"deadline",
-				"currentStageId",
-			],
+			listColumns: ["dealCode", "title", "quoted_amount", "deadline", "currentStageId"],
 			boardGroupBy: "currentStageId",
 		},
 		// company hidden via entityVisibility above.
@@ -234,6 +235,7 @@ export const freelancerTemplate: IndustryTemplate = {
 		"You work with a solo freelancer. Keep responses short. Prioritise follow-up and invoice reminders. When a project is stuck in Invoiced for >14 days, flag it as overdue payment. Don't suggest hiring or team workflows. Refer to leads as 'inquiries', contacts as 'clients', deals as 'projects'.",
 
 	dashboardMetrics: [
+		"ai.morningBriefing",
 		"deals.invoiced.unpaid",
 		"reminders.dueToday",
 		"deals.open",
@@ -360,7 +362,8 @@ export const freelancerTemplate: IndustryTemplate = {
 				anchorTo: { kind: "deal", title: "Marketing site copy — Hiroshi" },
 			},
 			{
-				content: "Idea: package logo + brand-guide + landing-page copy as a 'starter kit' offer.",
+				content:
+					"Idea: package logo + brand-guide + landing-page copy as a 'starter kit' offer.",
 				categoryName: "Idea",
 			},
 		],

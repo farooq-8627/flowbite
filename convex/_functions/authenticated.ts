@@ -167,6 +167,58 @@ export async function requireSuperAdmin(ctx: QueryCtx | MutationCtx): Promise<Su
 	return resolveSuperAdmin(ctx);
 }
 
+/**
+ * Identity-free org-member resolver — used by AI internal queries/mutations.
+ *
+ * **Why this exists.** AI tool handlers run inside `processChat.run`, which
+ * is an `internalAction` scheduled via `ctx.scheduler.runAfter`. Scheduled
+ * actions carry NO auth identity; `getAuthUserId(ctx)` returns `null`.
+ * Calling a regular `orgQuery`/`orgMutation` from such an action therefore
+ * always throws `UNAUTHORIZED`.
+ *
+ * The orchestrator has already validated the user via `messages.sendMessage`
+ * (an `orgMutation` that runs in a real authenticated context) and forwards
+ * the trusted `{ orgId, userId }` to `processChat.run` as args. The bridge
+ * functions in `convex/ai/_bridge/*` accept those args, call this helper to
+ * re-fetch the org + member rows, and proceed.
+ *
+ * Security model:
+ *   - Identity-free helpers MUST only be called from `internalQuery` /
+ *     `internalMutation`. They are unreachable from the public API.
+ *   - The caller is always the AI orchestrator, which derived `{orgId, userId}`
+ *     from a properly-authenticated `orgMutation` before scheduling.
+ *   - We still validate the membership row exists + is not soft-deleted, so
+ *     a user who lost access mid-conversation cannot continue acting.
+ *   - Soft-deleted users / orgs / members all throw the same errors as the
+ *     auth-based path.
+ */
+export async function requireOrgMemberByIds(
+	ctx: QueryCtx | MutationCtx,
+	orgId: Id<"orgs">,
+	userId: Id<"users">,
+): Promise<OrgCtx> {
+	const user = await ctx.db.get(userId);
+	if (!user || user.deletedAt !== undefined) throw new ConvexError(ERRORS.USER_NOT_FOUND);
+
+	const org = await ctx.db.get(orgId);
+	if (!org || org.deletedAt !== undefined) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+
+	const member = await ctx.db
+		.query("orgMembers")
+		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId).eq("userId", userId))
+		.first();
+
+	if (!member || member.deletedAt !== undefined)
+		throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+
+	const orgRole = await ctx.db.get(member.roleId);
+	if (!orgRole) throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+	const role = orgRole.name.toLowerCase() as "owner" | "admin" | "member" | "viewer";
+	const permissions = orgRole.permissions;
+
+	return { user, userId, org, member: { ...member, role, permissions } };
+}
+
 // ─── Public authenticated query/mutation ─────────────────────────────────────
 
 /**

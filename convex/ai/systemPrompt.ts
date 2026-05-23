@@ -5,10 +5,20 @@
  *   Layer 1 — PLATFORM CONTEXT (from platformContext table; same for everyone)
  *   Layer 2 — ORG CONTEXT (org name, industry, entity labels, pipelines, custom fields)
  *   Layer 3 — ROUTE/ENTITY CONTEXT (entity aiContext blob when user is on an entity page)
+ *
+ * Week 2.4 (`PHASE-3-AI-AUDIT.md §6 Week 2`): builder takes a `subagent`
+ * argument. The subagent's `systemPromptHint` is appended verbatim and the
+ * tool-runbooks block only emits runbooks for tools the subagent allows.
+ *
+ * Week 3.2 (`PHASE-3-AI-AUDIT.md §6 Week 3`): builder takes a `contextBag`
+ * snapshot. The bag is rendered as a "## Facts already known" section so
+ * the model never has to re-ask for facts the user already supplied.
  */
 import type { Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { ModelTier } from "./models";
+import { getSubagent, type SubagentId } from "./subagents";
+import { formatRunbooksBlock, getActiveRunbooks } from "./toolRegistry";
 
 export type RouteContext = {
 	entityType: string;
@@ -23,6 +33,7 @@ export type RouteContext = {
 export type SystemPromptResult = {
 	system: string;
 	allowedLayers: string[];
+	subagentId: SubagentId;
 };
 
 /**
@@ -36,6 +47,10 @@ export type SystemPromptResult = {
  * @param args.routeContext - Optional entity context from current page (free, no tokens)
  * @param args.autoContextLoad - User preference: whether to inject entity context
  * @param args.expandedLayers - Tool layers already expanded for this conversation
+ * @param args.subagentId - The subagent the router selected for this turn (Week 2.4).
+ *                          When omitted, falls back to `crm_action`.
+ * @param args.contextBag - Per-conversation typed facts (Week 3.2). Injected as
+ *                          "Facts already known" so the model doesn't re-ask.
  */
 export async function buildSystemPrompt(
 	ctx: QueryCtx,
@@ -47,9 +62,12 @@ export async function buildSystemPrompt(
 		routeContext?: RouteContext | null;
 		autoContextLoad?: boolean;
 		expandedLayers?: string[];
+		subagentId?: SubagentId;
+		contextBag?: Record<string, unknown> | null;
 	},
 ): Promise<SystemPromptResult> {
 	const parts: string[] = [];
+	const subagent = getSubagent(args.subagentId);
 
 	// ── Layer 1: Platform context ───────────────────────────────────────────
 	const platform = await ctx.db
@@ -63,6 +81,14 @@ export async function buildSystemPrompt(
 			parts.push(`\n## Platform Rules\n${platform.rules.map((r) => `- ${r}`).join("\n")}`);
 		}
 	}
+
+	// ── Subagent hint (Week 2.4) ────────────────────────────────────────────
+	// Injected immediately after platform context so it sets the role for
+	// the rest of the prompt. Tool runbooks emitted later will be filtered
+	// to the subagent's allowed tools.
+	parts.push(
+		`## Active Specialist: ${subagent.displayName}\n\n${subagent.systemPromptHint}`,
+	);
 
 	// ── Layer 2: Org context ────────────────────────────────────────────────
 	const org = await ctx.db.get(args.orgId);
@@ -144,16 +170,21 @@ You ONLY perform actions the user has permission to do. If a requested action re
 	);
 
 	// ── Model capability disclaimer ─────────────────────────────────────────
+	// DEFERRED: see Future-Enhancements.md §A.4 — while the per-tool premium
+	//          gate (§A.2) is OFF for testing, the previous "you cannot use
+	//          premium tools" notice would lie to the model. We keep the
+	//          tier-aware advice block so the model still gets a hint that a
+	//          smaller model should be extra careful with destructive tools,
+	//          but we don't claim those tools are unavailable.
 	if (args.modelTier === "small") {
 		parts.push(
 			`
 ## Model Capability Notice
 
-You are running on a lightweight model. The following advanced capabilities are NOT available to you in this session:
-- Bulk operations (bulk_update, bulk_tag, bulk_assign, bulk_close_deals)
-- Pipeline restructuring (create_pipeline, add_stage, archive_pipeline)
-- Settings changes (update_org_settings, rename_entity_labels, set_module_visibility)
-- Always show a preview before any write. Do not attempt premium tools.
+You're running on a lightweight model. You DO have access to every tool the user's role allows, but please:
+- Always show a preview before any write (every destructive tool is two-step).
+- Prefer narrow filters on bulk operations — never close all deals or update all leads without an explicit user-supplied filter.
+- For settings or label changes, double-confirm intent before calling \`update_org_settings\` or \`rename_entity_labels\`.
 `.trim(),
 		);
 	}
@@ -194,12 +225,63 @@ To access advanced tools (pipelines, fields, tags, views, categories, members, s
 `.trim(),
 	);
 
+	// ── Per-tool runbooks (Sprint 4) ────────────────────────────────────────
+	// Inject ONE-line behavioural policies for every active tool. Cost
+	// scales with the active set: ~30-80 tokens per tool with a runbook.
+	// Tools without a `runbook` field are silently skipped, so this is
+	// opt-in per tool.
+	//
+	// Week 2.4 — runbooks are filtered to the subagent's allow-list so a
+	// `qa` turn doesn't waste tokens on `bulk_update` runbook text.
+	const runbooks = getActiveRunbooks({
+		permissions: args.permissions,
+		modelTier: args.modelTier,
+		expandedLayers: expanded,
+	});
+	const filteredRunbooks =
+		subagent.allowedTools === "*"
+			? runbooks
+			: (() => {
+					const allow = new Set([...subagent.allowedTools, "set_context_var"]);
+					return runbooks.filter((r) => allow.has(r.name));
+				})();
+	const runbooksBlock = formatRunbooksBlock(filteredRunbooks);
+	if (runbooksBlock) parts.push(runbooksBlock);
+
+	// ── Facts already known (Week 3.2 — contextBag) ─────────────────────────
+	// Salesforce L4 variables / `PHASE-3-AI-AUDIT.md §6 Week 3`. Injected
+	// near the bottom so it's the freshest context the model reads
+	// before the date stamp. Empty bag = nothing emitted (no header).
+	const bag = args.contextBag ?? {};
+	const bagEntries = Object.entries(bag).filter(([, v]) => v !== undefined && v !== null);
+	if (bagEntries.length > 0) {
+		const lines = bagEntries.map(([k, v]) => {
+			const rendered =
+				typeof v === "string"
+					? v
+					: typeof v === "number" || typeof v === "boolean"
+						? String(v)
+						: JSON.stringify(v);
+			return `- ${k} = ${rendered}`;
+		});
+		parts.push(
+			[
+				"## Facts already known",
+				"",
+				"You persisted these in earlier turns via set_context_var. Treat them as ground truth — don't re-ask the user.",
+				"",
+				...lines,
+			].join("\n"),
+		);
+	}
+
 	// ── Today's date ────────────────────────────────────────────────────────
 	parts.push(`\n**Current date/time:** ${new Date().toISOString()}`);
 
 	return {
 		system: parts.join("\n\n"),
 		allowedLayers: expanded,
+		subagentId: subagent.id,
 	};
 }
 
@@ -233,18 +315,26 @@ export const buildSystemPromptQuery = internalQuery({
 		permissions: v.array(v.string()),
 		modelTier: v.union(v.literal("small"), v.literal("standard"), v.literal("premium")),
 		routeContext: v.optional(
-			v.object({
-				entityType: v.string(),
-				entityId: v.string(),
-				personCode: v.optional(v.string()),
-				dealCode: v.optional(v.string()),
-				name: v.optional(v.string()),
-				aiContextSummary: v.optional(v.string()),
-				aiContextKeyFacts: v.optional(v.array(v.string())),
-			}),
+			v.union(
+				v.null(),
+				v.object({
+					entityType: v.string(),
+					entityId: v.string(),
+					personCode: v.optional(v.string()),
+					dealCode: v.optional(v.string()),
+					name: v.optional(v.string()),
+					aiContextSummary: v.optional(v.string()),
+					aiContextKeyFacts: v.optional(v.array(v.string())),
+				}),
+			),
 		),
 		autoContextLoad: v.optional(v.boolean()),
 		expandedLayers: v.optional(v.array(v.string())),
+		// Week 2.4 — subagent classification result from router.ts.
+		subagentId: v.optional(v.string()),
+		// Week 3.2 — typed conversational state. Free-shape so any
+		// (snake_case key, JSON-serialisable value) pair fits.
+		contextBag: v.optional(v.any()),
 	},
 	handler: async (ctx, args) => {
 		return buildSystemPrompt(ctx, {
@@ -255,6 +345,8 @@ export const buildSystemPromptQuery = internalQuery({
 			routeContext: args.routeContext ?? null,
 			autoContextLoad: args.autoContextLoad ?? true,
 			expandedLayers: args.expandedLayers ?? [],
+			subagentId: args.subagentId as SubagentId | undefined,
+			contextBag: (args.contextBag ?? null) as Record<string, unknown> | null,
 		});
 	},
 });

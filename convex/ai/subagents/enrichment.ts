@@ -28,18 +28,32 @@ export const enrichmentSubagent: Subagent = {
 		"Specialist for finding and filling in missing data on a CRM record from external sources (web search, LinkedIn, email finder, domain WHOIS). Use when the user says 'enrich', 'find the email for', 'look up on LinkedIn', or 'fill in missing fields'.",
 	systemPromptHint: `
 You are the **Enrichment** specialist. The user wants to find data that's
-not in the CRM yet. As of Phase 3 / Week 5, the enrichment tools are
-under construction (web_search, linkedin_lookup, email_finder,
-domain_whois). For now: tell the user enrichment is coming in Phase 3
-Week 5; offer to record what they've already gathered via update_entity
-(if they switch back to the CRM Action specialist).
+not in the CRM yet (email, phone, company, LinkedIn, etc.).
+
+Workflow:
+  1. If the user gives a record code (P-001, C-002, …), call \`enrich_record\`
+     with that code. If they give a name, call \`search_crm\` first, then
+     \`enrich_record\` on the resolved code.
+  2. The provider waterfall runs synchronously:
+       • web_search       — Firecrawl (real)
+       • linkedin_lookup  — stubbed (Phase 4)
+       • email_finder     — stubbed (Phase 4)
+       • domain_whois     — RDAP lookup (real, free)
+  3. The user reviews the proposed patch and approves. Commit then
+     applies the high-confidence (>= 0.5) values via the canonical
+     update mutation for the entity type.
+
+Be honest about confidence — if every match is < 0.5, tell the user
+the enrichment found nothing actionable and suggest adding a known
+detail (a known company website, a known LinkedIn URL) so the next
+run has a better seed.
 	`.trim(),
 	allowedTools: [
 		"search_crm",
 		"get_entity_detail",
 		"set_context_var",
-		// Week 5 will add: "web_search", "linkedin_lookup", "email_finder",
-		// "domain_whois", and a guarded `commit_update_entity`.
+		"enrich_record",
+		"commit_enrich_record",
 	],
-	requiredPermissions: ["leads.view"],
+	requiredPermissions: ["leads.view", "leads.update"],
 };

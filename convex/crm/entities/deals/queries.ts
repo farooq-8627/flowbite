@@ -3,13 +3,13 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import {
 	orgQuery,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { requireRole } from "../../../_shared/permissions";
 import {
 	getRequiredFieldsForStage,
@@ -113,10 +113,7 @@ export const getById = orgQuery({
 	},
 });
 
-async function getByDealCodeImpl(
-	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; dealCode: string },
-) {
+async function getByDealCodeImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; dealCode: string }) {
 	return ctx.db
 		.query("deals")
 		.withIndex("by_org_and_dealCode", (q) =>
@@ -168,9 +165,7 @@ async function searchDealsImpl(
 	for (const r of rows) {
 		if (r.deletedAt !== undefined) continue;
 		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
-		const haystack = [r.title, r.dealCode ?? "", r.personCode ?? ""]
-			.join(" ")
-			.toLowerCase();
+		const haystack = [r.title, r.dealCode ?? "", r.personCode ?? ""].join(" ").toLowerCase();
 		if (haystack.includes(q)) matches.push(r);
 		if (matches.length >= cap) break;
 	}

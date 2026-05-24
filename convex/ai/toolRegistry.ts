@@ -97,6 +97,16 @@ export type ToolDef = {
 	 */
 	runbook?: ToolRunbook;
 	/**
+	 * P1.4 — structured tool description following Anthropic's "Writing
+	 * effective tools for AI agents" (Sep 2025) guidance. When present,
+	 * `description` is auto-built from this via {@link buildToolDescription}
+	 * (single source of truth). Tools without `instruction` keep their
+	 * free-form `description` unchanged (zero-cost migration).
+	 *
+	 * See `PHASE-3-AI-AUDIT.md §5 Phase 4 Part 1` row P1.4.
+	 */
+	instruction?: ToolInstruction;
+	/**
 	 * Optional working example of valid args. Surfaced to the model when
 	 * input validation fails so it can self-correct on the next step
 	 * instead of retrying with the same args. See
@@ -111,6 +121,94 @@ export type ToolDef = {
 	// biome-ignore lint: intentional any for tool execute
 	execute: (input: any) => Promise<unknown>;
 };
+
+// ─── ToolInstruction (P1.4) ─────────────────────────────────────────────
+//
+// Anthropic recommends structuring tool descriptions with explicit
+// when/when-not/preflight/example slots — small models hallucinate
+// dramatically less when descriptions follow a predictable shape.
+//
+// `instruction` lives ALONGSIDE `description`. When set, the registry
+// rebuilds `description` via `buildToolDescription(instruction)` so the
+// model still sees a flat description string (the AI SDK schema
+// requires it) — but the structure is enforced + greppable + testable.
+//
+// Backwards compat: `instruction` is optional. Tools that haven't
+// migrated keep their bespoke description.
+
+export type ToolInstructionExample = {
+	description: string;
+	args: Record<string, unknown>;
+	whyBad?: string;
+};
+
+export type ToolInstruction = {
+	/** "Use when the user asks to add a new sales prospect." */
+	whenToCall: string;
+	/** "Don't use to convert a lead → contact (use convert_lead)." */
+	whenNotToCall?: string;
+	/** Read-only tools the model SHOULD call first. */
+	preflight?: string[];
+	/** What to ask the user via ask_user_input when unclear. */
+	requiredClarifications?: string[];
+	/** Synonyms the user might use ("prospect", "potential customer"). */
+	synonyms?: string[];
+	/** Multishot example of a valid call. */
+	goodExample?: ToolInstructionExample;
+	/** Multishot anti-pattern with rationale. */
+	badExample?: ToolInstructionExample;
+};
+
+/**
+ * Build the model-facing description string from a structured
+ * {@link ToolInstruction}. Public so tool authors can preview the
+ * generated string while migrating.
+ *
+ * Deterministic ordering: when, when-not, preflight, clarifications,
+ * synonyms, good example, bad example. The same order every time so
+ * caching layers see a stable string.
+ */
+export function buildToolDescription(instr: ToolInstruction): string {
+	const lines: string[] = [];
+	lines.push(instr.whenToCall.trim());
+	if (instr.whenNotToCall) {
+		lines.push(`\nDo NOT call when: ${instr.whenNotToCall.trim()}`);
+	}
+	if (instr.preflight && instr.preflight.length > 0) {
+		lines.push(
+			`\nPreflight (call FIRST in the same turn): ${instr.preflight.map((p) => `\`${p}\``).join(", ")}.`,
+		);
+	}
+	if (instr.requiredClarifications && instr.requiredClarifications.length > 0) {
+		lines.push(
+			`\nIf the user hasn't supplied any of: ${instr.requiredClarifications
+				.map((c) => `\`${c}\``)
+				.join(", ")} — call \`ask_user_input\` first. Never guess these.`,
+		);
+	}
+	if (instr.synonyms && instr.synonyms.length > 0) {
+		lines.push(`\nSynonyms users may use: ${instr.synonyms.map((s) => `"${s}"`).join(", ")}.`);
+	}
+	if (instr.goodExample) {
+		lines.push(
+			`\nGood example: ${instr.goodExample.description}\n\`\`\`json\n${JSON.stringify(
+				instr.goodExample.args,
+				null,
+				2,
+			)}\n\`\`\``,
+		);
+	}
+	if (instr.badExample) {
+		lines.push(
+			`\nBad example (do NOT do this): ${instr.badExample.description}\n\`\`\`json\n${JSON.stringify(
+				instr.badExample.args,
+				null,
+				2,
+			)}\n\`\`\`${instr.badExample.whyBad ? `\nWhy bad: ${instr.badExample.whyBad}` : ""}`,
+		);
+	}
+	return lines.join("\n").trim();
+}
 
 // ─── Per-request context for meta-tools ──────────────────────────────────────
 //
@@ -190,7 +288,37 @@ const REGISTRY = new Map<string, ToolDef>();
 
 /** Register a tool definition. Called from each tool module at import time. */
 export function registerTool(def: ToolDef): void {
-	REGISTRY.set(def.name, def);
+	// P1.4 — when `instruction` is provided, the model-facing
+	// `description` is auto-built from the structured shape. The
+	// caller's free-form `description` is kept as a fallback only when
+	// `instruction` is absent.
+	const finalDef: ToolDef =
+		def.instruction !== undefined
+			? { ...def, description: buildToolDescription(def.instruction) }
+			: def;
+	REGISTRY.set(def.name, finalDef);
+}
+
+/**
+ * Read-through accessor for the original {@link ToolDef}. Required by
+ * `orchestrator/resume.ts` so the commit step can re-parse the propose
+ * payload through the commit tool's zod schema BEFORE invoking
+ * `execute()` — without this, propose-only fields (e.g.
+ * `create_lead.notes`) leak into the underlying mutation validator and
+ * surface to the user as the dreaded "An unexpected error occurred"
+ * generic. See `Future-Enhancements.md §C / 2026-05-24` for the
+ * incident write-up.
+ */
+export function getRegisteredTool(name: string): ToolDef | undefined {
+	return REGISTRY.get(name);
+}
+
+/**
+ * Names of every tool currently in the registry. Used by
+ * `twoStepSchemaAudit` to walk the propose/commit pairs at startup.
+ */
+export function getRegisteredToolNames(): string[] {
+	return Array.from(REGISTRY.keys());
 }
 
 // ─── expand_tools meta-tool ────────────────────────────────────────────────────
@@ -279,9 +407,7 @@ use list_entity_fields, list_pipelines, or list_my_permissions first.
 			name: t.name,
 			description: t.description.slice(0, 100),
 		}));
-		const totalInLayer = Array.from(REGISTRY.values()).filter(
-			(t) => t.layer === layer,
-		).length;
+		const totalInLayer = Array.from(REGISTRY.values()).filter((t) => t.layer === layer).length;
 		const hidden = totalInLayer - toolsInLayer.length;
 		return {
 			activated: layer,
@@ -440,10 +566,7 @@ REGISTRY.set("expand_tools", expandToolsDef);
  * `needsApproval` is treated as "approve to be safe" rather than
  * silently letting a write through.
  */
-export function resolveNeedsApproval(
-	toolName: string,
-	args: Record<string, unknown>,
-): boolean {
+export function resolveNeedsApproval(toolName: string, args: Record<string, unknown>): boolean {
 	const def = REGISTRY.get(toolName);
 	if (!def) return false; // unknown tool — let the SDK reject it
 

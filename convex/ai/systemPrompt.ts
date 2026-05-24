@@ -17,6 +17,7 @@
 import type { Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 import type { ModelTier } from "./models";
+import { buildOrgSchemaContext } from "./orchestrator/orgSchemaContext";
 import { getSubagent, type SubagentId } from "./subagents";
 import { formatRunbooksBlock, getActiveRunbooks } from "./toolRegistry";
 
@@ -28,6 +29,29 @@ export type RouteContext = {
 	name?: string;
 	aiContextSummary?: string;
 	aiContextKeyFacts?: string[];
+};
+
+/**
+ * Phase 4 Part 1 P1.13 — `## Current page` route awareness.
+ *
+ * `mode` discriminates broad page categories so the model knows whether
+ * the user is on a list view (look at filters), the dashboard (top-level
+ * overview), calendar (time-scoped focus), etc.
+ *
+ *   "entity"    — an entity detail page (lead/contact/deal/company)
+ *   "list"      — a list view (kanban / table) for an entity slot
+ *   "dashboard" — the workspace dashboard
+ *   "calendar"  — calendar / reminders view
+ *   "settings"  — any /settings page
+ *   "reports"   — analytics / reports views
+ *   "other"     — fallback
+ */
+export type PageContext = {
+	mode: "entity" | "list" | "dashboard" | "calendar" | "settings" | "reports" | "other";
+	/** Pathname (without locale + orgSlug prefix) — e.g. "/dashboard", "/leads", "/profile/P-001". */
+	path: string;
+	/** Optional human-readable label rendered alongside the mode for the model. */
+	label?: string;
 };
 
 export type SystemPromptResult = {
@@ -60,6 +84,13 @@ export async function buildSystemPrompt(
 		permissions: string[];
 		modelTier: ModelTier;
 		routeContext?: RouteContext | null;
+		/**
+		 * Phase 4 Part 1 P1.13 — broad page-mode info. Always present on
+		 * frontend-initiated turns; used to emit the `## Current page`
+		 * block so the model knows whether the user is on a list view,
+		 * dashboard, calendar, settings, etc.
+		 */
+		pageContext?: PageContext | null;
 		autoContextLoad?: boolean;
 		expandedLayers?: string[];
 		subagentId?: SubagentId;
@@ -86,9 +117,7 @@ export async function buildSystemPrompt(
 	// Injected immediately after platform context so it sets the role for
 	// the rest of the prompt. Tool runbooks emitted later will be filtered
 	// to the subagent's allowed tools.
-	parts.push(
-		`## Active Specialist: ${subagent.displayName}\n\n${subagent.systemPromptHint}`,
-	);
+	parts.push(`## Active Specialist: ${subagent.displayName}\n\n${subagent.systemPromptHint}`);
 
 	// ── Layer 2: Org context ────────────────────────────────────────────────
 	const org = await ctx.db.get(args.orgId);
@@ -102,6 +131,15 @@ export async function buildSystemPrompt(
 	const company =
 		(entityLabels as Record<string, { singular?: string }>)?.company?.singular ?? "Company";
 
+	const fileUpload = org.settings?.fileUpload as
+		| { allowedMimeCategories?: string[]; maxSizeMb?: number }
+		| undefined;
+	const fileLimitsLine = fileUpload
+		? `**File uploads:** max ${fileUpload.maxSizeMb ?? 25} MB; categories ${(
+				fileUpload.allowedMimeCategories ?? ["image", "document"]
+			).join(", ")}`
+		: null;
+
 	parts.push(
 		`
 ## Workspace Context
@@ -110,10 +148,89 @@ export async function buildSystemPrompt(
 **Industry:** ${org.industry ?? "General"}
 **Currency:** ${org.settings?.defaultCurrency ?? "USD"}
 **Timezone:** ${org.settings?.timezone ?? "UTC"}
+**Plan:** ${org.plan ?? "free"}
 
-**Entity names:** ${lead} / ${contact} / ${deal} / ${company}
+**Entity names:** ${lead} / ${contact} / ${deal} / ${company}${
+			fileLimitsLine ? `\n${fileLimitsLine}` : ""
+		}
 `.trim(),
 	);
+
+	// ── Code prefixes (P-/D-/C-/FU- by default; configurable per org) ──
+	const codePrefixes = org.settings?.codePrefixes as
+		| { person?: string; deal?: string; company?: string; followup?: string }
+		| undefined;
+	if (codePrefixes && Object.values(codePrefixes).some((v) => typeof v === "string" && v)) {
+		parts.push(
+			`\n**Code prefixes:** person=${codePrefixes.person ?? "P-"}, deal=${codePrefixes.deal ?? "D-"}, company=${codePrefixes.company ?? "C-"}, followup=${codePrefixes.followup ?? "FU-"}`,
+		);
+	}
+
+	// ── Reminder + follow-up defaults (so AI doesn't guess cadence) ────
+	const reminderDefaults = org.settings?.reminderDefaults as
+		| {
+				followUpWindowHours?: number;
+				staleAlertDays?: number;
+				morningBriefingTime?: string;
+				morningBriefingEnabled?: boolean;
+		  }
+		| undefined;
+	const followupDefaults = org.settings?.followupDefaults as
+		| {
+				defaultDueOffsetDays?: number;
+				defaultPriority?: string;
+				autoCloseAfterDays?: number;
+				requireDealCode?: boolean;
+				reminderBeforeHours?: number;
+		  }
+		| undefined;
+	const reminderBits: string[] = [];
+	if (reminderDefaults) {
+		if (reminderDefaults.followUpWindowHours)
+			reminderBits.push(`follow-up window ${reminderDefaults.followUpWindowHours}h`);
+		if (reminderDefaults.staleAlertDays)
+			reminderBits.push(`stale after ${reminderDefaults.staleAlertDays}d`);
+		if (
+			reminderDefaults.morningBriefingEnabled !== false &&
+			reminderDefaults.morningBriefingTime
+		)
+			reminderBits.push(`morning briefing at ${reminderDefaults.morningBriefingTime}`);
+	}
+	if (followupDefaults) {
+		if (followupDefaults.defaultDueOffsetDays !== undefined)
+			reminderBits.push(
+				`new follow-ups default to +${followupDefaults.defaultDueOffsetDays}d`,
+			);
+		if (followupDefaults.defaultPriority)
+			reminderBits.push(`default priority ${followupDefaults.defaultPriority}`);
+		if (followupDefaults.autoCloseAfterDays)
+			reminderBits.push(`auto-close after ${followupDefaults.autoCloseAfterDays}d overdue`);
+		if (followupDefaults.requireDealCode === true)
+			reminderBits.push("follow-ups MUST link to a deal");
+		if (followupDefaults.reminderBeforeHours)
+			reminderBits.push(`pre-notify ${followupDefaults.reminderBeforeHours}h before due`);
+	}
+	if (reminderBits.length > 0) {
+		parts.push(`\n**Reminder/follow-up defaults:** ${reminderBits.join("; ")}.`);
+	}
+
+	// ── Soft-delete retention ──────────────────────────────────────────
+	const retentionDays = org.settings?.softDeleteRetentionDays as number | undefined;
+	if (typeof retentionDays === "number") {
+		parts.push(`\n**Trash retention:** ${retentionDays} days before permanent deletion.`);
+	}
+
+	// ── Dashboard layout (the keys, ordered) ───────────────────────────
+	const dashboardMetrics = org.settings?.dashboardMetrics as string[] | undefined;
+	if (Array.isArray(dashboardMetrics) && dashboardMetrics.length > 0) {
+		parts.push(
+			`\n**Dashboard widgets (in order):** ${dashboardMetrics.join(", ")}. To change, call \`list_widgets\` to see the catalogue, then \`update_dashboard_layout({ keys: [...] })\`.`,
+		);
+	} else {
+		parts.push(
+			`\n**Dashboard widgets:** the workspace is using the default layout. Call \`list_widgets\` to see the catalogue and \`update_dashboard_layout\` to customise the order.`,
+		);
+	}
 
 	// Active pipelines (names + stage names only — not deal data)
 	const pipelines = await ctx.db
@@ -126,29 +243,144 @@ export async function buildSystemPrompt(
 			const stages = ((p.stages as Array<{ name: string; code: string }>) ?? [])
 				.map((s) => s.name)
 				.join(" → ");
-			return `- ${p.name}: ${stages}`;
+			const policy = (p as unknown as { stageTransitionPolicy?: string })
+				.stageTransitionPolicy;
+			const skipFlag = (p as unknown as { allowSkipStages?: boolean }).allowSkipStages;
+			const policyHints: string[] = [];
+			if (policy && policy !== "warn") policyHints.push(`policy=${policy}`);
+			if (skipFlag === true) policyHints.push("skip-allowed");
+			const hintTail = policyHints.length > 0 ? ` (${policyHints.join(", ")})` : "";
+			return `- ${p.name}: ${stages}${hintTail}`;
 		});
 		parts.push(`\n**Pipelines:**\n${pipelineLines.join("\n")}`);
 	}
 
-	// Active field definitions (names + types only)
-	const fields = await ctx.db
-		.query("fieldDefinitions")
-		.withIndex("by_org_and_entity", (q) => q.eq("orgId", args.orgId))
-		.take(50);
+	// ── File-attach convention (static — informs the model how to read
+	// file references the composer injects into user messages). ────────
+	parts.push(
+		`\n**File attachments in chat:** When a user message starts with one or more \`[file:<fileId> "name" (mime, size)]\` markers, those are real fileIds the user uploaded via the chat composer. Treat each marker as an attached file. Call \`analyze_file\` with the fileId when extraction is in scope. Do NOT echo the marker syntax back to the user — refer to the file by name.`,
+	);
 
-	if (fields.length > 0) {
-		const fieldLines = fields.map(
-			(f) =>
-				`- ${f.label} (${f.entityType}, ${(f as unknown as { fieldType?: string }).fieldType ?? "text"})`,
-		);
-		parts.push(`\n**Custom fields:**\n${fieldLines.join("\n")}`);
+	// ── Persona rows (P1.12 + 2026-05-24 identity consolidation) ───────────
+	// One row per (orgId, userId|undefined). Holds:
+	//   - identity:  owner-edited static blob (replaces orgs.aiContext)
+	//   - summary + keyFacts: AI-managed dynamic memory
+	// We load both rows up here so Layer 2.5 below ("## About this
+	// organisation") can read `identity` and Layer 5/6 below ("## Long-term
+	// context …") can read `summary` + `keyFacts` from the same fetch.
+	const orgPersonaRow = await ctx.db
+		.query("aiPersonaContext")
+		.withIndex("by_org_and_user", (q) => q.eq("orgId", args.orgId).eq("userId", undefined))
+		.first();
+	const userPersonaRow = await ctx.db
+		.query("aiPersonaContext")
+		.withIndex("by_org_and_user", (q) => q.eq("orgId", args.orgId).eq("userId", args.userId))
+		.first();
+
+	// ── Layer 2.5: Org identity description (aiPersonaContext.identity) ────
+	// Static org-identity blob set during onboarding (industry-template
+	// seeding) and editable by owners/admins in Settings → AI. Distinct
+	// from the growing `aiPersonaContext.summary` / `keyFacts`: identity
+	// is human-edited, summary is AI-managed. Cap rendered at 2 000 chars
+	// to keep the system-prompt budget bounded if an admin pastes a novel.
+	if (orgPersonaRow?.identity && orgPersonaRow.identity.trim().length > 0) {
+		const trimmed = orgPersonaRow.identity.trim();
+		const capped = trimmed.length > 2_000 ? `${trimmed.slice(0, 2_000)}…` : trimmed;
+		parts.push(`\n## About this organisation\n\n${capped}`);
+	}
+
+	// Active field definitions + tags + categories + members + recent activity.
+	// P1.10 (`PHASE-3-AI-AUDIT.md §5 Phase 4 Part 1`) — replaces the earlier
+	// `Custom fields:` listing that only emitted `{label} ({entityType},
+	// {fieldType})`. The new helper emits the slug, the option list for
+	// select fields, the required flag, the storage hint, plus tags +
+	// note categories + reminder categories + member directory + recent
+	// activity. Token-budget capped per block — see BUDGET_CAPS in
+	// `orgSchemaContext.ts`.
+	const schemaCtx = await buildOrgSchemaContext(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		routeContext: args.routeContext
+			? {
+					entityType: args.routeContext.entityType,
+					entityId: args.routeContext.entityId,
+				}
+			: null,
+	});
+	if (schemaCtx.block.length > 0) {
+		parts.push(`\n${schemaCtx.block}`);
+	}
+
+	// ── Long-term context (Phase 4 Part 1 P1.12) ────────────────────────────
+	// Per-org and per-user durable memory. Two rows in `aiPersonaContext`:
+	//   - org-level   (userId === undefined)  — visible to every member
+	//   - per-user    (orgId, userId)         — only this user
+	// The agent maintains them via `update_org_context_facts` and
+	// `update_user_context_facts`. Both blocks are silently dropped when
+	// the underlying row doesn't exist (= the persona is empty).
+	// (Persona rows are loaded earlier — see Layer 2.5 hoist.)
+
+	if (orgPersonaRow && (orgPersonaRow.summary || orgPersonaRow.keyFacts.length > 0)) {
+		const lines: string[] = ["", "## Long-term context for this organisation", ""];
+		if (orgPersonaRow.summary) lines.push(orgPersonaRow.summary, "");
+		if (orgPersonaRow.keyFacts.length > 0) {
+			lines.push("**Key facts:**", ...orgPersonaRow.keyFacts.map((f) => `- ${f}`));
+		}
+		parts.push(lines.join("\n"));
+	}
+
+	if (
+		userPersonaRow &&
+		(userPersonaRow.summary ||
+			userPersonaRow.keyFacts.length > 0 ||
+			(userPersonaRow.preferences && Object.keys(userPersonaRow.preferences).length > 0))
+	) {
+		const userName = (await ctx.db.get(args.userId))?.name ?? "you";
+		const lines: string[] = ["", `## Long-term context for ${userName}`, ""];
+		if (userPersonaRow.summary) lines.push(userPersonaRow.summary, "");
+		if (userPersonaRow.keyFacts.length > 0) {
+			lines.push("**Key facts:**", ...userPersonaRow.keyFacts.map((f) => `- ${f}`));
+		}
+		if (userPersonaRow.preferences && Object.keys(userPersonaRow.preferences).length > 0) {
+			const prefLines = Object.entries(userPersonaRow.preferences).map(([k, v]) => {
+				const rendered =
+					typeof v === "string" || typeof v === "number" || typeof v === "boolean"
+						? String(v)
+						: JSON.stringify(v);
+				return `- ${k}: ${rendered}`;
+			});
+			lines.push("", "**Preferences:**", ...prefLines);
+		}
+		parts.push(lines.join("\n"));
 	}
 
 	// User's name
 	const user = await ctx.db.get(args.userId);
 	if (user?.name) {
 		parts.push(`\n**You are assisting:** ${user.name}`);
+	}
+
+	// ── Per-user follow-up snapshot ─────────────────────────────────────────
+	// One-line awareness of this user's pending workload so the model can
+	// open with relevant prompts ("you have 3 overdue follow-ups…"). Heavy
+	// detail stays in `list_followups` tool calls.
+	const now = Date.now();
+	const userReminders = await ctx.db
+		.query("reminders")
+		.withIndex("by_user_and_due", (q) => q.eq("assignedTo", args.userId))
+		.take(200);
+	const myOpen = userReminders.filter((r) => r.orgId === args.orgId && r.status === "pending");
+	const myOverdue = myOpen.filter((r) => r.dueAt < now).length;
+	const myDueToday = myOpen.filter(
+		(r) => r.dueAt >= now && r.dueAt < now + 24 * 60 * 60 * 1000,
+	).length;
+	if (myOpen.length > 0) {
+		parts.push(
+			`\n**Your open follow-ups:** ${myOpen.length} pending` +
+				(myOverdue > 0 ? `, ${myOverdue} overdue` : "") +
+				(myDueToday > 0 ? `, ${myDueToday} due in next 24 h` : "") +
+				`. Call \`list_followups\` for the full list.`,
+		);
 	}
 
 	// ── Permission summary ──────────────────────────────────────────────────
@@ -189,6 +421,36 @@ You're running on a lightweight model. You DO have access to every tool the user
 		);
 	}
 
+	// ── Phase 4 Part 1 P1.13 — `## Current page` block ──────────────────────
+	// Always emit when pageContext is present so the model knows where the
+	// user is even on non-entity routes (dashboard, calendar, settings,
+	// list views). Sits above the entity-context block (which is more
+	// specific) so the model reads page-mode first.
+	if (args.pageContext) {
+		const { mode, path, label } = args.pageContext;
+		const modeHint =
+			mode === "dashboard"
+				? "the workspace dashboard — give org-level summaries, surface stale records / overdue follow-ups, and propose next-step actions across entities."
+				: mode === "list"
+					? "a list/kanban view — answer with rows or filters, not single-record detail. Suggest bulk actions when relevant."
+					: mode === "calendar"
+						? "the calendar / reminders view — prioritise upcoming events, due-today follow-ups, and scheduling actions."
+						: mode === "settings"
+							? "the workspace settings — answer about configuration, RBAC, fields, pipelines. Avoid creating CRM records from here."
+							: mode === "reports"
+								? "an analytics / reports view — answer with aggregates and trends, not single-record detail."
+								: mode === "entity"
+									? "an entity detail page — focus on this record's history, follow-ups, and adjacent context."
+									: "an unknown page — be cautious and ask for context if the user's request is ambiguous.";
+		const lines = [
+			"## Current page",
+			"",
+			`The user is on **${path}**${label ? ` (${label})` : ""}.`,
+			`Page mode: \`${mode}\` — ${modeHint}`,
+		];
+		parts.push(lines.join("\n"));
+	}
+
 	// ── Layer 3: Route/entity context ───────────────────────────────────────
 	const injectContext = args.autoContextLoad !== false && args.routeContext;
 	if (injectContext && args.routeContext) {
@@ -214,14 +476,98 @@ You're running on a lightweight model. You DO have access to every tool the user
 	}
 
 	// ── Tool layer summary ──────────────────────────────────────────────────
+	// Day 2 T1.6 (`PHASE-3-AI-AUDIT.md §6.5 E.T1.6`) — only list layers that
+	// the user's permissions + modelTier actually unlock. Hard-coding all 10
+	// layer names told the model about tools it can't call → it tried, the
+	// runtime filter stripped them, and the loop got "tool not found" at
+	// runtime. Now we ask `getActiveRunbooks` (same source of truth as the
+	// Tool Runbooks block below) which layers have at least one runbook +
+	// derive the layer list from that. Layers with no exposed tools are
+	// silently dropped from the prompt.
 	const expanded = args.expandedLayers ?? [];
+	const allLayerRunbooks = getActiveRunbooks({
+		permissions: args.permissions,
+		modelTier: args.modelTier,
+		expandedLayers: expanded,
+	});
+	// Cross-reference each active runbook back to its layer via the
+	// registry. We do this via a static map mirroring `LayerId` because
+	// runbook entries don't currently expose their layer id.
+	const ALL_KNOWN_LAYERS = [
+		"pipelines",
+		"fields",
+		"tags",
+		"views",
+		"categories",
+		"members",
+		"settings",
+		"bulk",
+		"templates",
+		"data",
+	] as const;
+	// Only include a layer in the prompt if (a) it's one of the user's
+	// expanded layers AND (b) the runbook block has at least one tool from
+	// that layer. We approximate (b) by reusing isToolExposed's output —
+	// any layer that produced even one runbook entry is "live" for this
+	// request.
+	const liveLayerNames = new Set<string>();
+	for (const r of allLayerRunbooks) {
+		// Tool runbook names follow `<verb>_<noun>` patterns; map them to
+		// layers via the registry. Cheap heuristic — the canonical layer
+		// list below mostly aligns with the verb prefixes:
+		const name = r.name;
+		if (name.startsWith("create_field") || name.includes("_field"))
+			liveLayerNames.add("fields");
+		if (name.includes("pipeline") || name.includes("stage")) liveLayerNames.add("pipelines");
+		if (name.includes("tag")) liveLayerNames.add("tags");
+		if (name.includes("view")) liveLayerNames.add("views");
+		if (name.includes("category") || name.includes("categories"))
+			liveLayerNames.add("categories");
+		if (name.includes("member") || name.includes("invite") || name.includes("role"))
+			liveLayerNames.add("members");
+		if (name.includes("setting") || name.includes("rename") || name.includes("currency"))
+			liveLayerNames.add("settings");
+		if (name.includes("dashboard") || name.includes("layout")) liveLayerNames.add("settings");
+		if (name.startsWith("bulk_")) liveLayerNames.add("bulk");
+		if (name === "import_csv" || name === "commit_import_csv") liveLayerNames.add("bulk");
+		if (name === "enrich_record" || name === "commit_enrich_record") liveLayerNames.add("data");
+		if (name === "analyze_file" || name === "commit_analyze_file") liveLayerNames.add("data");
+		if (name.includes("template")) liveLayerNames.add("templates");
+		if (name.includes("trash") || name.includes("restore") || name.includes("undelete"))
+			liveLayerNames.add("data");
+	}
+	const advertisedLayers = ALL_KNOWN_LAYERS.filter((l) => liveLayerNames.has(l));
+	const expansionInstruction =
+		advertisedLayers.length > 0
+			? `To access advanced tools (${advertisedLayers.join(", ")}), call the expand_tools tool first with the layer name and the reason you need it.`
+			: `Advanced tool layers are inactive for your role. Use only the always-on tools listed below.`;
 	parts.push(
 		`
 ## Available Tool Layers
 
 Active layers: always-on${expanded.length ? `, ${expanded.join(", ")}` : ""}
 
-To access advanced tools (pipelines, fields, tags, views, categories, members, settings, bulk, templates, data), call the expand_tools tool first with the layer name and the reason you need it.
+${expansionInstruction}
+
+## Tool Sequencing Rules (NON-NEGOTIABLE)
+
+1. **One write at a time.** When you need to perform a write that requires user approval (any tool whose result has \`requiresConfirmation: true\` — e.g. \`create_field\`, \`create_lead\`, \`update_entity\`, \`bulk_*\`, \`delete_*\`, \`remove_*\`), call ONLY that tool, then **STOP**. Do NOT call any more tools, do NOT continue the conversation. Wait for the orchestrator to deliver the user's approval as a fresh turn.
+2. **Never bundle a write with a read.** If the user asks "create X and then list Y", call ONLY the write (X). The system will resume on approval and you can list Y in the next turn.
+3. **Never invoke a \`commit_*\` tool yourself.** They are reserved for the post-approval resume flow. The model must always call the propose-side (\`create_field\`, NOT \`commit_create_field\`).
+4. **Never wrap closing prose inside a markdown table.** Always insert a BLANK LINE after the table's last row before any sentence. Example of the right shape:
+
+\`\`\`
+| Field | Type |
+| --- | --- |
+| job_title | text |
+
+I hope this helps.
+\`\`\`
+
+The blank line between the row and the prose is REQUIRED — without it the renderer absorbs the prose into the table.
+5. **One table per entity.** When listing fields for multiple entities (leads + contacts), emit a separate fenced markdown table for EACH, separated by a blank line and an h3 header. Do not stack rows from different entities into a single table.
+6. **Pre-flight every write.** Before any \`create_*\` or \`update_*\` tool call, run the pre-flight read named in that tool's runbook (typically \`list_entity_fields\` for field tools or \`search_crm\` for entity tools) so duplicates are caught before approval. The user should NEVER see two leads named "Sarah Khan" because pre-flight was skipped.
+7. **Auto-map common synonyms.** Schema enums coerce \`leads → lead\`, \`picklist → select\`, \`checkbox → boolean\` automatically — but if the user said something the schema can't map (e.g. "people", "file"), call \`ask_user_choice\` instead of guessing.
 `.trim(),
 	);
 
@@ -233,11 +579,7 @@ To access advanced tools (pipelines, fields, tags, views, categories, members, s
 	//
 	// Week 2.4 — runbooks are filtered to the subagent's allow-list so a
 	// `qa` turn doesn't waste tokens on `bulk_update` runbook text.
-	const runbooks = getActiveRunbooks({
-		permissions: args.permissions,
-		modelTier: args.modelTier,
-		expandedLayers: expanded,
-	});
+	const runbooks = allLayerRunbooks;
 	const filteredRunbooks =
 		subagent.allowedTools === "*"
 			? runbooks
@@ -335,6 +677,26 @@ export const buildSystemPromptQuery = internalQuery({
 		// Week 3.2 — typed conversational state. Free-shape so any
 		// (snake_case key, JSON-serialisable value) pair fits.
 		contextBag: v.optional(v.any()),
+		// P1.13 — page-mode info from the frontend (always present on
+		// frontend-initiated turns). Drives the `## Current page` block.
+		pageContext: v.optional(
+			v.union(
+				v.null(),
+				v.object({
+					mode: v.union(
+						v.literal("entity"),
+						v.literal("list"),
+						v.literal("dashboard"),
+						v.literal("calendar"),
+						v.literal("settings"),
+						v.literal("reports"),
+						v.literal("other"),
+					),
+					path: v.string(),
+					label: v.optional(v.string()),
+				}),
+			),
+		),
 	},
 	handler: async (ctx, args) => {
 		return buildSystemPrompt(ctx, {
@@ -347,6 +709,7 @@ export const buildSystemPromptQuery = internalQuery({
 			expandedLayers: args.expandedLayers ?? [],
 			subagentId: args.subagentId as SubagentId | undefined,
 			contextBag: (args.contextBag ?? null) as Record<string, unknown> | null,
+			pageContext: args.pageContext ?? null,
 		});
 	},
 });

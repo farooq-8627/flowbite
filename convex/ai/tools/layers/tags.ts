@@ -2,6 +2,7 @@
  * convex/ai/tools/layers/tags.ts — Tag management tools.
  */
 import { z } from "zod";
+import { entityTypeEnum } from "../../../_shared/synonyms";
 import { registerTool } from "../../toolRegistry";
 import { propose, requirePermission, runTool, type ToolContext, toolMutation } from "../_shared";
 
@@ -27,7 +28,7 @@ registerTool({
 	schema: z.object({ name: z.string(), color: z.optional(z.string()) }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.manage");
 			const result = await toolMutation(getCtx(), "crm/shared/tags/mutations:create", {
 				orgId,
@@ -50,14 +51,17 @@ registerTool({
 	},
 	schema: z.object({
 		tagId: z.string(),
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityId: z.string(),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.attach");
-			await toolMutation(getCtx(), "crm/shared/tags/mutations:attachToEntity", { orgId, ...args });
+			await toolMutation(getCtx(), "crm/shared/tags/mutations:attachToEntity", {
+				orgId,
+				...args,
+			});
 			return { ok: true as const, data: args, display: `🏷️ Tag attached.` };
 		}),
 });
@@ -73,12 +77,12 @@ registerTool({
 	},
 	schema: z.object({
 		tagId: z.string(),
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityId: z.string(),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.attach");
 			await toolMutation(getCtx(), "crm/shared/tags/mutations:detachFromEntity", {
 				orgId,
@@ -118,7 +122,7 @@ registerTool({
 	schema: z.object({ tagId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "tags.manage");
 			await toolMutation(getCtx(), "crm/shared/tags/mutations:remove", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ Tag deleted.` };

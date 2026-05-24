@@ -45,7 +45,7 @@ Same data, two read shapes. The split exists because:
 | Schema additions | `convex/schema/identity.ts` | `org.settings.followupDefaults` block — all optional. |
 | Settings mutation validator | `convex/orgs/mutations.ts` | Extended `update` validator + deep-merge handling. |
 | OrgSettings TS type | `core/platform/settings/types.ts` | Added `followupDefaults` block. |
-| Settings UI | `core/platform/settings/components/groups/notes/FollowupsSection.tsx` | Form with `defaultDueOffsetDays`, `defaultPriority`, `autoCloseAfterDays` (0=disabled). |
+| Settings UI | `core/platform/settings/components/groups/crm/FollowupsSection.tsx` | Form with `defaultDueOffsetDays`, `defaultPriority`, `autoCloseAfterDays` (0=disabled). |
 | CRMGroup wiring | `core/platform/settings/components/groups/CRMGroup.tsx` | Passes `org` + `orgId` to FollowupsSection. |
 | Reserved slug | `convex/_shared/reservedSlugs.ts` | Added `followups`. |
 | Sidebar nav entry | `core/shell/shell/config/navigation.ts` | "Follow-ups" entry under Workspace, between Reminders and Notes. CalendarClock icon. |

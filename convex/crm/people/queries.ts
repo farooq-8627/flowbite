@@ -6,18 +6,11 @@
  * The frontend never needs to know which table — it just gets the person.
  */
 import { v } from "convex/values";
+import { orgQuery, requireOrgMember, requireOrgMemberByIds } from "../../_functions/authenticated";
 import type { Id } from "../../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../../_generated/server";
-import {
-	orgQuery,
-	requireOrgMember,
-	requireOrgMemberByIds,
-} from "../../_functions/authenticated";
 
-async function getByPersonCodeImpl(
-	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; personCode: string },
-) {
+async function getByPersonCodeImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; personCode: string }) {
 	// Check contacts first — converted person lives here
 	const contact = await ctx.db
 		.query("contacts")

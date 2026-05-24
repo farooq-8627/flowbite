@@ -38,12 +38,7 @@
 
 import type { ModelTier } from "../models";
 
-export type SubagentId =
-	| "crm_action"
-	| "qa"
-	| "enrichment"
-	| "csv_import"
-	| "settings";
+export type SubagentId = "crm_action" | "qa" | "enrichment" | "csv_import" | "settings";
 
 export type Subagent = {
 	id: SubagentId;

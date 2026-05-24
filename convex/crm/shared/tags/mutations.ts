@@ -2,14 +2,14 @@
  * Tags Mutations — convex/crm/shared/tags/mutations.ts
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import {
 	orgMutation,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -71,10 +71,7 @@ export const createForAI = internalMutation({
 	},
 });
 
-async function removeImpl(
-	ctx: MutationCtx,
-	args: { orgId: Id<"orgs">; tagId: Id<"tags"> },
-) {
+async function removeImpl(ctx: MutationCtx, args: { orgId: Id<"orgs">; tagId: Id<"tags"> }) {
 	const tag = await ctx.db.get(args.tagId);
 	if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
 

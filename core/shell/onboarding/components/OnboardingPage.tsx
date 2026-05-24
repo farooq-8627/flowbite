@@ -488,7 +488,11 @@ function IndustryStep({
 						type="submit"
 						disabled={!parentId || (!parent?.subNiches?.length && !teamSize) || loading}
 					>
-						{parent?.subNiches?.length ? "Choose variant →" : loading ? "Saving…" : "Continue"}
+						{parent?.subNiches?.length
+							? "Choose variant →"
+							: loading
+								? "Saving…"
+								: "Continue"}
 					</Button>
 				</div>
 			</form>

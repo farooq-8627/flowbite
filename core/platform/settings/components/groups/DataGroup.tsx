@@ -31,13 +31,7 @@ import { SettingsSection } from "../shared/SettingsSection";
 // Export (placeholder — real export job is coming)
 // ────────────────────────────────────────────────────────────────────────────
 
-function ExportSection({
-	orgId,
-	canExport,
-}: {
-	orgId: Id<"orgs">;
-	canExport: boolean;
-}) {
+function ExportSection({ orgId, canExport }: { orgId: Id<"orgs">; canExport: boolean }) {
 	const exportData = useAction(api.gdpr.actions.exportOrgData);
 	const [busy, setBusy] = useState(false);
 
@@ -46,9 +40,7 @@ function ExportSection({
 		setBusy(true);
 		try {
 			const r = await exportData({ orgId });
-			toast.success(
-				`Export ready (${(r.bytes / 1024).toFixed(1)} KB). Opening download…`,
-			);
+			toast.success(`Export ready (${(r.bytes / 1024).toFixed(1)} KB). Opening download…`);
 			window.location.href = r.downloadUrl;
 		} catch (err) {
 			toast.error(normalizeError(err, "Export failed"));
@@ -66,8 +58,8 @@ function ExportSection({
 			<div className="flex items-center justify-between gap-4">
 				<p className="text-sm text-muted-foreground">
 					The bundle includes leads, contacts, companies, deals, notes, reminders,
-					messages, tags, custom fields, pipelines, saved views, activity logs, and
-					member metadata.
+					messages, tags, custom fields, pipelines, saved views, activity logs, and member
+					metadata.
 				</p>
 				<Button
 					size="sm"
@@ -195,13 +187,7 @@ function daysFromNow(ts: number): string {
 	return `in ${days}d`;
 }
 
-function TrashSection({
-	orgId,
-	canRestore,
-}: {
-	orgId: Id<"orgs">;
-	canRestore: boolean;
-}) {
+function TrashSection({ orgId, canRestore }: { orgId: Id<"orgs">; canRestore: boolean }) {
 	const items = useQuery(api.trash.queries.list, { orgId });
 	const restore = useMutation(api.trash.mutations.restore);
 	const [pending, setPending] = useState<string | null>(null);
@@ -261,9 +247,7 @@ function TrashSection({
 											<Button
 												variant="outline"
 												size="sm"
-												onClick={() =>
-													handleRestore(it.id, it.entityType)
-												}
+												onClick={() => handleRestore(it.id, it.entityType)}
 												disabled={pending !== null}
 											>
 												<RotateCcw className="size-3.5" />
@@ -301,9 +285,8 @@ export function DataGroup({
 	const isOwner = permissions.includes("org.delete");
 
 	const cancelDeletion = useMutation(api.orgs.mutations.cancelOrgDeletion);
-	const deletionScheduledAt = (
-		org as unknown as { settings?: { deletionScheduledAt?: number } }
-	).settings?.deletionScheduledAt;
+	const deletionScheduledAt = (org as unknown as { settings?: { deletionScheduledAt?: number } })
+		.settings?.deletionScheduledAt;
 	const [cancelling, setCancelling] = useState(false);
 
 	const handleCancelDeletion = async () => {
@@ -363,9 +346,9 @@ export function DataGroup({
 						label="Delete workspace"
 						description={
 							<span>
-								Permanently remove <b>{org.name}</b> and all associated data after
-								a 24-hour grace window. You can cancel from this page anytime
-								before then.
+								Permanently remove <b>{org.name}</b> and all associated data after a
+								24-hour grace window. You can cancel from this page anytime before
+								then.
 							</span>
 						}
 						controlClassName="sm:min-w-auto"

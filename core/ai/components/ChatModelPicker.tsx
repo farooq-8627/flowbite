@@ -33,8 +33,13 @@ const MODEL_LABEL: Record<string, string> = {
 	"gpt-4o-mini": "GPT-4o mini",
 	"gpt-4o": "GPT-4o",
 	"o3-mini": "o3-mini",
-	"gemini-2.0-flash": "Gemini 2.0 Flash",
-	"gemini-2.0-pro": "Gemini 2.0 Pro",
+	// Day 1 T1.7 — Gemini family refresh. 2.0 entries removed (deprecated
+	// upstream); 2.5 + 3.x added. See PHASE-3-AI-AUDIT.md §6.5 E.T1.7.
+	"gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
+	"gemini-2.5-flash": "Gemini 2.5 Flash",
+	"gemini-2.5-pro": "Gemini 2.5 Pro",
+	"gemini-3.5-flash": "Gemini 3.5 Flash",
+	"gemini-3.1-pro-preview": "Gemini 3.1 Pro (Preview)",
 	"grok-3": "Grok 3",
 	"grok-3-mini": "Grok 3 mini",
 	"llama-3.3-70b": "Llama 3.3 70B (Groq)",
@@ -161,13 +166,20 @@ export function ChatModelPicker({ onModelChange }: Props) {
 							const badge = TIER_BADGE[info.tier];
 							return (
 								<SelectItem key={modelKey} value={modelKey} className="text-sm">
-									<div className="flex w-full items-center justify-between gap-3">
-										<span className="truncate">{modelLabel(modelKey)}</span>
-										<span
-											className={`shrink-0 text-[10px] font-medium uppercase tracking-wide ${badge.className}`}
-										>
-											{badge.label}
-										</span>
+									<div className="flex w-full flex-col gap-0.5">
+										<div className="flex w-full items-center justify-between gap-3">
+											<span className="truncate">{modelLabel(modelKey)}</span>
+											<span
+												className={`shrink-0 text-[10px] font-medium uppercase tracking-wide ${badge.className}`}
+											>
+												{badge.label}
+											</span>
+										</div>
+										{info.pickerNote && (
+											<span className="text-[10px] text-muted-foreground/80 leading-tight">
+												{info.pickerNote}
+											</span>
+										)}
 									</div>
 								</SelectItem>
 							);

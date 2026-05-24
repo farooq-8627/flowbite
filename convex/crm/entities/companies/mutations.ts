@@ -10,13 +10,13 @@
  *     kept as the "primary" assignee for back-compat.
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import {
 	orgMutation,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -133,15 +133,7 @@ async function updateImpl(
 		displayName: company.name,
 		before: company as unknown as Record<string, unknown>,
 		after: { ...company, ...patch } as unknown as Record<string, unknown>,
-		fields: [
-			"name",
-			"industry",
-			"website",
-			"size",
-			"assignedTo",
-			"assignees",
-			"personCodes",
-		],
+		fields: ["name", "industry", "website", "size", "assignedTo", "assignees", "personCodes"],
 	});
 }
 

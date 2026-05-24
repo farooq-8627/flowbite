@@ -6,14 +6,14 @@
  * are PASSED to contact — never regenerated.
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import {
 	orgMutation,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -270,6 +270,95 @@ export const updateForAI = internalMutation({
 	},
 });
 
+async function convertToContactImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		leadId: Id<"leads">;
+		companyId?: Id<"companies">;
+	},
+): Promise<{ contactId: Id<"contacts">; personCode: string }> {
+	const lead = await ctx.db.get(args.leadId);
+	if (!lead || lead.orgId !== args.orgId || lead.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if (lead.status === "converted") {
+		throw new ConvexError({
+			code: "ALREADY_CONVERTED",
+			message: "Lead is already converted",
+		});
+	}
+
+	const now = Date.now();
+
+	// personCode and aiContext PASSED from lead — never regenerated
+	const contactId = await ctx.db.insert("contacts", {
+		orgId: args.orgId,
+		personCode: lead.personCode,
+		displayName: lead.displayName,
+		email: lead.email,
+		phone: lead.phone,
+		normalizedPhone: lead.normalizedPhone,
+		leadId: args.leadId,
+		companyId: args.companyId,
+		assignedTo: lead.assignedTo,
+		aiContext: lead.aiContext,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	// Propagate tags lead → contact so users don't lose labels on convert.
+	// Bounded at 200 — typical lead has 0–10 tags; 200 is generous.
+	const leadTagLinks = await ctx.db
+		.query("entityTags")
+		.withIndex("by_entity", (q) =>
+			q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.leadId),
+		)
+		.take(200);
+	await Promise.all(
+		leadTagLinks.map((link) =>
+			ctx.db.insert("entityTags", {
+				orgId: args.orgId,
+				tagId: link.tagId,
+				entityType: "contact",
+				entityId: contactId,
+				createdAt: now,
+			}),
+		),
+	);
+
+	await ctx.db.patch(args.leadId, {
+		status: "converted",
+		convertedAt: now,
+		contactId,
+		updatedAt: now,
+	});
+
+	// Counter rebalance — lead leaves "open" pool, contact joins "active".
+	await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+	await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "converted",
+		entityType: "lead",
+		entityId: args.leadId,
+		personCode: lead.personCode,
+		description: `Lead converted: ${lead.displayName}`,
+	});
+
+	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+		orgId: args.orgId,
+		entityType: "contact",
+		entityId: contactId,
+		personCode: lead.personCode,
+	});
+
+	return { contactId, personCode: lead.personCode };
+}
+
 export const convertToContact = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -279,85 +368,25 @@ export const convertToContact = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.convert");
+		return convertToContactImpl(ctx, { ...args, userId });
+	},
+});
 
-		const lead = await ctx.db.get(args.leadId);
-		if (!lead || lead.orgId !== args.orgId || lead.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-		if (lead.status === "converted") {
-			throw new ConvexError({
-				code: "ALREADY_CONVERTED",
-				message: "Lead is already converted",
-			});
-		}
-
-		const now = Date.now();
-
-		// personCode and aiContext PASSED from lead — never regenerated
-		const contactId = await ctx.db.insert("contacts", {
-			orgId: args.orgId,
-			personCode: lead.personCode,
-			displayName: lead.displayName,
-			email: lead.email,
-			phone: lead.phone,
-			normalizedPhone: lead.normalizedPhone,
-			leadId: args.leadId,
-			companyId: args.companyId,
-			assignedTo: lead.assignedTo,
-			aiContext: lead.aiContext,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		// Propagate tags lead → contact so users don't lose labels on convert.
-		// Bounded at 200 — typical lead has 0–10 tags; 200 is generous.
-		const leadTagLinks = await ctx.db
-			.query("entityTags")
-			.withIndex("by_entity", (q) =>
-				q.eq("orgId", args.orgId).eq("entityType", "lead").eq("entityId", args.leadId),
-			)
-			.take(200);
-		await Promise.all(
-			leadTagLinks.map((link) =>
-				ctx.db.insert("entityTags", {
-					orgId: args.orgId,
-					tagId: link.tagId,
-					entityType: "contact",
-					entityId: contactId,
-					createdAt: now,
-				}),
-			),
-		);
-
-		await ctx.db.patch(args.leadId, {
-			status: "converted",
-			convertedAt: now,
-			contactId,
-			updatedAt: now,
-		});
-
-		// Counter rebalance — lead leaves "open" pool, contact joins "active".
-		await applyOrgStat(ctx, args.orgId, "leads.open", -1);
-		await applyOrgStat(ctx, args.orgId, "contacts.active", +1);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "converted",
-			entityType: "lead",
-			entityId: args.leadId,
-			personCode: lead.personCode,
-			description: `Lead converted: ${lead.displayName}`,
-		});
-
-		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId,
-			entityType: "contact",
-			entityId: contactId,
-			personCode: lead.personCode,
-		});
-
-		return { contactId, personCode: lead.personCode };
+/**
+ * AI-callable internal twin. See AGENTS.md "AI tools call *ForAI internal
+ * twins" rule for the auth-bridge rationale.
+ */
+export const convertToContactForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		leadId: v.id("leads"),
+		companyId: v.optional(v.id("companies")),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.convert");
+		return convertToContactImpl(ctx, args);
 	},
 });
 
@@ -403,5 +432,239 @@ export const softDelete = orgMutation({
 			personCode: lead.personCode,
 			description: `Lead deleted: ${lead.displayName}`,
 		});
+	},
+});
+
+// ─── Week 4 — Bulk insert from CSV import (privileged commit) ────────────────
+//
+// Privileged commit step in the dual-LLM CSV pipeline
+// (`PHASE-3-AI-AUDIT.md §6 Week 4 row 4.4` & §7).
+//
+// The QUARANTINED parser (`convex/ai/quarantined/csvParser.ts`) populates
+// `csvImports.previewRows` with already-validated, already-deduped rows.
+// The user reviews the preview UI and approves; the AI tool
+// `commit_csv_import` then calls `bulkInsertFromCsvImpl` here. This is
+// the ONLY place CSV-derived data turns into real `leads` rows. By the
+// time we get here:
+//   - dedupDecision per row is the user's final answer.
+//   - validationError is "" or absent — rows with errors are excluded
+//     by the caller.
+//   - idemKey is stable across retries.
+//
+// We re-validate the dedup decisions one more time at write-time because
+// the world might have moved between parse and commit (a teammate
+// inserted the same email five minutes ago).
+
+type CsvImportRow = {
+	idemKey: string;
+	fields: Record<string, string | null>;
+	dedupDecision: "insert" | "merge" | "skip";
+	dedupTargetCode?: string;
+	validationError?: string;
+};
+
+const csvRowValidator = v.object({
+	idemKey: v.string(),
+	fields: v.record(v.string(), v.union(v.string(), v.null())),
+	dedupDecision: v.union(v.literal("insert"), v.literal("merge"), v.literal("skip")),
+	dedupTargetCode: v.optional(v.string()),
+	validationError: v.optional(v.string()),
+});
+
+const BULK_INSERT_BATCH = 100;
+
+async function bulkInsertFromCsvImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		csvImportId: Id<"csvImports">;
+		rows: CsvImportRow[];
+	},
+): Promise<{
+	inserted: number;
+	merged: number;
+	skipped: number;
+	failedRows: Array<{ idemKey: string; error: string }>;
+}> {
+	// Bulk-class rate limit — `RATE_LIMITS.bulk` = 5 imports / minute / user-org.
+	await enforceRateLimit(ctx, {
+		scope: "leads.bulkInsertFromCsv",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.bulk,
+		orgId: args.orgId,
+	});
+
+	const importRow = await ctx.db.get(args.csvImportId);
+	if (!importRow || importRow.orgId !== args.orgId) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if (importRow.status === "completed") {
+		// Idempotent — return the already-recorded summary instead of
+		// double-inserting.
+		return (
+			importRow.result ?? {
+				inserted: 0,
+				merged: 0,
+				skipped: 0,
+				failedRows: [],
+			}
+		);
+	}
+
+	let inserted = 0;
+	let merged = 0;
+	let skipped = 0;
+	const failedRows: Array<{ idemKey: string; error: string }> = [];
+
+	// Walk rows in batches of 100. Each iteration is a single
+	// `ctx.db.insert` round-trip; Convex enforces a per-mutation document
+	// touch budget, so 100 inserts per call is a safe cap.
+	for (let i = 0; i < args.rows.length; i += BULK_INSERT_BATCH) {
+		const batch = args.rows.slice(i, i + BULK_INSERT_BATCH);
+		for (const row of batch) {
+			if (row.validationError) {
+				failedRows.push({ idemKey: row.idemKey, error: row.validationError });
+				continue;
+			}
+			if (row.dedupDecision === "skip") {
+				skipped++;
+				continue;
+			}
+
+			const displayName = (row.fields.displayName ?? "").trim();
+			const email = row.fields.email ?? undefined;
+			const phone = row.fields.phone ?? undefined;
+			const source = row.fields.source ?? "csv-import";
+
+			if (!displayName) {
+				failedRows.push({
+					idemKey: row.idemKey,
+					error: "Missing displayName at commit time.",
+				});
+				continue;
+			}
+
+			// Re-validate email collision at write-time. If a teammate
+			// inserted the same email between parse and commit, we
+			// downgrade insert → skip rather than throwing.
+			if (email) {
+				const liveCollision = await ctx.db
+					.query("leads")
+					.withIndex("by_org_and_email", (q) =>
+						q.eq("orgId", args.orgId).eq("email", email),
+					)
+					.first();
+				if (liveCollision && !liveCollision.deletedAt && !liveCollision.convertedAt) {
+					skipped++;
+					continue;
+				}
+			}
+
+			if (row.dedupDecision === "merge") {
+				// Merge: locate the existing lead by personCode and patch
+				// missing fields (phone/email/source) — never overwrite a
+				// non-empty field. If the target was deleted/converted,
+				// fall through to insert instead.
+				const target = row.dedupTargetCode
+					? await ctx.db
+							.query("leads")
+							.withIndex("by_org_and_personCode", (q) =>
+								q.eq("orgId", args.orgId).eq("personCode", row.dedupTargetCode!),
+							)
+							.first()
+					: null;
+				if (target && !target.deletedAt && !target.convertedAt) {
+					const patch: Record<string, unknown> = {};
+					if (!target.email && email) patch.email = email;
+					if (!target.phone && phone) {
+						patch.phone = phone;
+						patch.normalizedPhone = normalizePhone(phone);
+					}
+					if (Object.keys(patch).length > 0) {
+						await ctx.db.patch(target._id, {
+							...patch,
+							updatedAt: Date.now(),
+						});
+					}
+					merged++;
+					continue;
+				}
+				// Fall through to insert if target is gone.
+			}
+
+			try {
+				await createImpl(ctx, {
+					orgId: args.orgId,
+					userId: args.userId,
+					displayName,
+					email,
+					phone,
+					source,
+					aiContext: row.fields.notes
+						? { rawNotes: row.fields.notes ?? undefined }
+						: undefined,
+				});
+				inserted++;
+			} catch (err) {
+				const msg =
+					err instanceof ConvexError
+						? ((err.data as { message?: string })?.message ?? "Insert failed")
+						: err instanceof Error
+							? err.message
+							: "Insert failed";
+				failedRows.push({ idemKey: row.idemKey, error: msg });
+			}
+		}
+	}
+
+	// Log the bulk action ONCE (not per-row — would flood the activity log).
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "csv_imported",
+		entityType: "lead",
+		entityId: args.csvImportId as unknown as Id<"leads">, // CSV import id — dedicated activity row
+		description: `CSV import: ${inserted} inserted, ${merged} merged, ${skipped} skipped, ${failedRows.length} failed`,
+	});
+
+	// Mark the csvImports row completed.
+	await ctx.db.patch(args.csvImportId, {
+		status: "completed",
+		result: { inserted, merged, skipped, failedRows },
+		updatedAt: Date.now(),
+	});
+
+	return { inserted, merged, skipped, failedRows };
+}
+
+export const bulkInsertFromCsvImport = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		csvImportId: v.id("csvImports"),
+		rows: v.array(csvRowValidator),
+	},
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "leads.create");
+		return bulkInsertFromCsvImpl(ctx, { ...args, userId });
+	},
+});
+
+/**
+ * AI-callable internal twin — see `convex/ai/tools/_shared.ts` for the
+ * Option B auth-bridge rule.
+ */
+export const bulkInsertFromCsvImportForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		csvImportId: v.id("csvImports"),
+		rows: v.array(csvRowValidator),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.create");
+		return bulkInsertFromCsvImpl(ctx, args);
 	},
 });

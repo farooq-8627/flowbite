@@ -4,6 +4,8 @@ import { useQuery } from "convex/react";
 import { Sparkles } from "lucide-react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
+import { AISuggestionsPanel } from "@/core/ai/components/AISuggestionsPanel";
+import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { MessagesPanel } from "@/core/comms/messages/components/MessagesPanel";
 import { NotesPanel } from "@/core/comms/notes/components/NotesPanel";
 import { EntityTimeline } from "@/core/comms/timeline/components/EntityTimeline";
@@ -77,6 +79,7 @@ function OverviewGroup({ personCode }: { personCode: string }) {
 		orgId ? { orgId, personCode } : "skip",
 	);
 	const ai = (person?.entity as Doc<"leads"> | Doc<"contacts"> | undefined)?.aiContext;
+	const personType = person?.type;
 
 	return (
 		<div className="grid gap-4">
@@ -88,6 +91,18 @@ function OverviewGroup({ personCode }: { personCode: string }) {
 				keyFacts={ai?.keyFacts}
 				lastUpdatedAt={ai?.lastUpdatedAt}
 			/>
+
+			{/* P1.14 — Proactive AI suggestions scoped to this record (lead /
+			    contact). Hidden when there are zero suggestions. */}
+			{orgId && personType ? (
+				<AISuggestionsPanel
+					orgId={orgId}
+					scope="entity"
+					entityType={personType}
+					entityCode={personCode}
+					onTakeAction={sendChatPrefill}
+				/>
+			) : null}
 
 			<ProfileSection
 				id="overview.card"

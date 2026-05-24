@@ -47,7 +47,7 @@ The two modules SHARE the persistence layer:
 | `org.settings.followupDefaults.defaultPriority` | "normal" | Default priority chip on a new follow-up. |
 | `org.settings.followupDefaults.autoCloseAfterDays` | undefined (off) | Phase B: auto-mark a follow-up completed if it sits past-due for N days. |
 
-Settings UI: `core/platform/settings/components/groups/notes/FollowupsSection.tsx`
+Settings UI: `core/platform/settings/components/groups/crm/FollowupsSection.tsx`
 (rendered under Settings → CRM → Follow-ups).
 
 ## Layers

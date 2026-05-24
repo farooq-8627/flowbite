@@ -49,17 +49,8 @@ function StatusBadge({ status }: { status: string | undefined }) {
 	);
 }
 
-function UsageBar({
-	label,
-	used,
-	limit,
-}: {
-	label: string;
-	used: number;
-	limit: number;
-}) {
-	const percent =
-		limit === -1 ? 0 : Math.min(100, Math.round((used / Math.max(limit, 1)) * 100));
+function UsageBar({ label, used, limit }: { label: string; used: number; limit: number }) {
+	const percent = limit === -1 ? 0 : Math.min(100, Math.round((used / Math.max(limit, 1)) * 100));
 	return (
 		<SettingsRow label={label}>
 			<div className="flex flex-col gap-1.5">
@@ -77,14 +68,9 @@ function UsageBar({
 	);
 }
 
-export function BillingGroup({
-	org: _org,
-	orgId,
-}: {
-	org: OrgSettings;
-	orgId: Id<"orgs">;
-}) {
+export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const plan = useQuery(api.billing.queries.getCurrentPlan, { orgId });
+	const usage = useQuery(api.ai.queries.telemetry.getOrgUsage, { orgId, range: "30d" });
 	const checkout = useAction(api.billing.actions.createCheckoutUrl);
 	const [busyTier, setBusyTier] = useState<string | null>(null);
 
@@ -102,11 +88,7 @@ export function BillingGroup({
 	if (!plan) {
 		return (
 			<div className="grid gap-6">
-				<SettingsSection
-					id="billing.plan"
-					title="Current Plan"
-					description="Loading…"
-				>
+				<SettingsSection id="billing.plan" title="Current Plan" description="Loading…">
 					<div className="py-6 text-center text-sm text-muted-foreground">
 						<Loader2 className="mx-auto size-4 animate-spin" />
 					</div>
@@ -150,10 +132,7 @@ export function BillingGroup({
 					</span>
 				</SettingsRow>
 				{periodEnd && (
-					<SettingsRow
-						label="Current period ends"
-						controlClassName="sm:min-w-auto"
-					>
+					<SettingsRow label="Current period ends" controlClassName="sm:min-w-auto">
 						<span className="text-sm text-muted-foreground">
 							{new Date(periodEnd).toLocaleDateString(undefined, {
 								year: "numeric",
@@ -209,7 +188,11 @@ export function BillingGroup({
 					used={0}
 					limit={plan.limits.maxCustomFieldsPerEntityType}
 				/>
-				<UsageBar label="AI tokens / mo" used={0} limit={plan.limits.aiTokensPerMonth} />
+				<UsageBar
+					label="AI tokens / mo"
+					used={usage?.usedThisMonth.totalTokens ?? 0}
+					limit={plan.limits.aiTokensPerMonth}
+				/>
 			</SettingsSection>
 
 			<SettingsSection

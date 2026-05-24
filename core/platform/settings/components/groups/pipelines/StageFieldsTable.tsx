@@ -65,8 +65,8 @@ import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
-import { FIELD_TYPES, parseOptions } from "./CreateFieldDialog";
-import { SortableFieldsTable } from "./SortableFieldsTable";
+import { FIELD_TYPES, parseOptions } from "../modules/CreateFieldDialog";
+import { SortableFieldsTable } from "../modules/SortableFieldsTable";
 import { StageScopedEditFieldDialog } from "./StageScopedEditFieldDialog";
 
 type FieldDef = Doc<"fieldDefinitions">;

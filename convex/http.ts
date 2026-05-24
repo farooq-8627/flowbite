@@ -7,8 +7,8 @@
  */
 
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
 
 const http = httpRouter();
@@ -59,10 +59,7 @@ const lemonSqueezyWebhook = httpAction(async (ctx, request) => {
 	let mismatch = expected.length !== signatureHex.length;
 	const len = Math.max(expected.length, signatureHex.length);
 	for (let i = 0; i < len; i += 1) {
-		if (
-			expected.charCodeAt(i) !==
-			signatureHex.charCodeAt(i % signatureHex.length || 1)
-		) {
+		if (expected.charCodeAt(i) !== signatureHex.charCodeAt(i % signatureHex.length || 1)) {
 			mismatch = true;
 		}
 	}

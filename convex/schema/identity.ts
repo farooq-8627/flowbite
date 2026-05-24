@@ -46,11 +46,10 @@ export const users = defineTable({
 				),
 			),
 			// Phase 3B — AI preferences
-			aiDefaultModel: v.optional(v.string()),        // "claude-sonnet-4-5"
-			aiDefaultProvider: v.optional(v.string()),     // "anthropic"
-			aiAutoContextLoad: v.optional(v.boolean()),    // default true
-			aiBriefingEnabled: v.optional(v.boolean()),    // default true
-			aiContextCardCollapsed: v.optional(v.boolean()), // UI state
+			aiDefaultModel: v.optional(v.string()), // "claude-sonnet-4-5"
+			aiDefaultProvider: v.optional(v.string()), // "anthropic"
+			aiAutoContextLoad: v.optional(v.boolean()), // default true
+			aiBriefingEnabled: v.optional(v.boolean()), // default true
 			aiPanelOpenByDefault: v.optional(v.boolean()), // default false mobile, true desktop
 		}),
 	),
@@ -71,9 +70,6 @@ export const orgs = defineTable({
 		v.literal("pro"),
 		v.literal("enterprise"),
 	),
-	stripeCustomerId: v.optional(v.string()),
-	stripeSubscriptionId: v.optional(v.string()),
-	aiContext: v.optional(v.string()),
 	industry: v.optional(v.string()),
 	teamSize: v.optional(v.string()),
 	onboardingStep: v.optional(v.number()),
@@ -275,10 +271,6 @@ export const orgs = defineTable({
 	/**
 	 * Phase 3A — LemonSqueezy billing.
 	 *
-	 * Replaces the legacy stripe* fields. Stripe fields are kept on the
-	 * schema (above) for backwards-compat with any existing dev rows but
-	 * new code never reads or writes them.
-	 *
 	 * Subscription status mirrors LemonSqueezy's documented values:
 	 *   on_trial | active | paused | past_due | unpaid | cancelled | expired
 	 */
@@ -301,7 +293,6 @@ export const orgs = defineTable({
 	...softDelete,
 })
 	.index("by_slug", ["slug"])
-	.index("by_stripeCustomerId", ["stripeCustomerId"])
 	.index("by_lemonSqueezyCustomerId", ["lemonSqueezyCustomerId"])
 	.index("by_lemonSqueezySubscriptionId", ["lemonSqueezySubscriptionId"]);
 

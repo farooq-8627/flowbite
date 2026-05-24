@@ -418,7 +418,7 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 						highlightEpoch={flashEpoch}
 						groupBy={groupBy}
 						resolveReplacementLabel={resolveReplacementLabel}
-						prefetchedTags={tagsByEntityId[item.id]}
+						prefetchedTags={tagsByEntityId[item.id] ?? []}
 					/>
 				)}
 				onCardMove={handleCardMove}

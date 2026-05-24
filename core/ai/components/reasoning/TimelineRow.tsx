@@ -27,8 +27,12 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "../../types";
 import { CodeBlock } from "../code/CodeBlock";
-import { ToolResultRenderer } from "../results/ToolResultRenderer";
+import type { ChatToolErrorEnvelope } from "../results/ChatToolError";
+import { ChatToolError } from "../results/ChatToolError";
 import type { ToolDisplay } from "../results/ToolResultRenderer";
+import { ToolResultRenderer } from "../results/ToolResultRenderer";
+import type { ToolSummary } from "../results/ToolSummaryCard";
+import { ToolSummaryCard } from "../results/ToolSummaryCard";
 import { getRowTitle } from "./timelineTitles";
 
 interface Props {
@@ -57,19 +61,88 @@ function extractToolDisplay(output: unknown): ToolDisplay | string | undefined {
 }
 
 /**
+ * P1.9 — pull the rich `summary` envelope out of the tool's output. Tools
+ * that return `summary: ToolSummary` get a structured headline + table +
+ * suggested-next chip rendering above the live entity card.
+ *
+ * Lookup mirrors {@link extractToolDisplay} — supports both top-level and
+ * nested-under-`data` shapes.
+ */
+function extractToolSummary(output: unknown): ToolSummary | undefined {
+	if (output === null || output === undefined) return undefined;
+	if (typeof output !== "object") return undefined;
+	const o = output as Record<string, unknown>;
+	const top = o.summary;
+	if (top && typeof top === "object" && typeof (top as ToolSummary).headline === "string") {
+		return top as ToolSummary;
+	}
+	const d = o.data as Record<string, unknown> | undefined;
+	if (
+		d?.summary &&
+		typeof d.summary === "object" &&
+		typeof (d.summary as ToolSummary).headline === "string"
+	) {
+		return d.summary as ToolSummary;
+	}
+	return undefined;
+}
+
+/**
  * Pull a one-line error message out of the tool's output. Tool-error
  * paths typically write `{ error: <string> }` or `{ ok: false, error }`.
+ *
+ * If the orchestrator (streamLoop / resume) attached a `friendlyMarkdown`
+ * block, we surface THAT instead of the raw `error` string — same UX as
+ * the assistant-body friendly error rendering. Falls through to raw
+ * error or zod-formatter hint.
  */
 function extractError(output: unknown): string | null {
 	if (!output || typeof output !== "object") return null;
 	const o = output as Record<string, unknown>;
+	if (typeof o.friendlyMarkdown === "string") return o.friendlyMarkdown;
 	if (typeof o.error === "string") return o.error;
 	// Zod-formatter shape.
 	if (typeof o.hint === "string" && o.code === "TOOL_INPUT_VALIDATION") return o.hint;
 	return null;
 }
 
+/**
+ * P1.11 — pull the multi-tier `friendlyError` envelope out of the tool's
+ * output. When present, the timeline row renders <ChatToolError> with
+ * the headline always-visible plus collapsibles for details / manual
+ * steps and clickable recovery chips.
+ */
+function extractFriendlyError(output: unknown): ChatToolErrorEnvelope | undefined {
+	if (!output || typeof output !== "object") return undefined;
+	const o = output as Record<string, unknown>;
+	const env =
+		(o.friendlyError as ChatToolErrorEnvelope | undefined) ??
+		((o.data as Record<string, unknown> | undefined)?.friendlyError as
+			| ChatToolErrorEnvelope
+			| undefined);
+	if (!env || typeof env !== "object") return undefined;
+	if (typeof env.summary !== "string" || env.summary.length === 0) return undefined;
+	return env;
+}
+
+/** P1.11 — pull the engineer-facing raw error string for the View raw expander. */
+function extractRawError(output: unknown): string | undefined {
+	if (!output || typeof output !== "object") return undefined;
+	const o = output as Record<string, unknown>;
+	const v =
+		(o.rawError as string | undefined) ??
+		((o.data as Record<string, unknown> | undefined)?.rawError as string | undefined);
+	return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
 export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
+	// Default COLLAPSED — clicking the row title reveals the rich block
+	// or raw JSON. Keeps the timeline compact by default; the user opens
+	// only the rows they care about.
+	// NOTE: Hook MUST be called before any conditional return below to
+	// honour the Rules of Hooks (`useHookAtTopLevel`).
+	const [expanded, setExpanded] = useState(false);
+
 	const toolCalls = toolMessage.toolCalls as Array<{
 		name: string;
 		status: "started" | "completed" | "failed";
@@ -85,7 +158,10 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 
 	const { title, meta } = getRowTitle(tc.name, tc.input, tc.output);
 	const display = extractToolDisplay(tc.output);
+	const summary = !isInProgress && !isError ? extractToolSummary(tc.output) : undefined;
 	const errorText = isError ? extractError(tc.output) : null;
+	const friendlyError = isError ? extractFriendlyError(tc.output) : undefined;
+	const rawErrorString = isError ? extractRawError(tc.output) : undefined;
 	const hasRichBlock =
 		!isInProgress &&
 		!isError &&
@@ -96,6 +172,18 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 		typeof display === "object" &&
 		display !== null &&
 		(display as ToolDisplay).kind !== "text";
+
+	// P1.9 — When summary.cardFields is provided AND the structured
+	// display is an entity card, splice the override in so the live
+	// EntityCard surfaces every field that was just set, not the
+	// hardcoded default 5. We mutate a shallow copy here, never the
+	// stored payload.
+	const displayWithCardFields: ToolDisplay | string | undefined = (() => {
+		if (!summary?.cardFields || summary.cardFields.length === 0) return display;
+		if (typeof display !== "object" || display === null) return display;
+		if ((display as ToolDisplay).kind !== "entity") return display;
+		return { ...(display as ToolDisplay), cardFields: summary.cardFields } as never;
+	})();
 
 	// Raw-data fallback. When the tool returned data but didn't supply a
 	// structured display kind (so `hasStructuredKind === false`), we still
@@ -127,12 +215,7 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 		}
 	})();
 
-	const hasExpandableContent = hasStructuredKind || !!rawData || !!errorText;
-
-	// Default COLLAPSED — clicking the row title reveals the rich block
-	// or raw JSON. Keeps the timeline compact by default; the user opens
-	// only the rows they care about.
-	const [expanded, setExpanded] = useState(false);
+	const hasExpandableContent = hasStructuredKind || !!rawData || (!!errorText && !friendlyError);
 
 	const Icon = isInProgress ? Loader2 : isError ? XCircle : CheckCircle2;
 
@@ -206,25 +289,52 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 				)}
 			</button>
 
+			{/* P1.9 — rich tool-result summary (always visible when the
+			    tool returned a `summary` envelope). Sits ABOVE the
+			    collapsible structured display so the user sees the
+			    headline + table + suggested-next chips immediately
+			    without expanding. */}
+			{summary && (
+				<div className="mt-1.5 mb-1.5 w-full max-w-full min-w-0">
+					<ToolSummaryCard summary={summary} />
+				</div>
+			)}
+
+			{/* P1.11 — multi-tier friendly tool error. Always visible
+			    when the tool failed and the orchestrator attached a
+			    structured envelope. Renders the headline + collapsibles
+			    for details / manualSteps and recovery chips. The legacy
+			    flat errorText fallback below stays for tool errors that
+			    didn't go through `friendlyToolError` (e.g. very old
+			    persisted errors). */}
+			{isError && friendlyError && (
+				<div className="mt-1.5 mb-1.5 w-full max-w-full min-w-0">
+					<ChatToolError envelope={friendlyError} rawError={rawErrorString} />
+				</div>
+			)}
+
 			{/* Inline rich block — embedded under the title row. The
 			    `ms-0` keeps the rich block aligned to the title text,
 			    not indented further; the rail is on the OUTSIDE of the
 			    container so the block doesn't push the rail. */}
 			{expanded && hasRichBlock && hasStructuredKind && (
-				<div className="mt-1.5 mb-0.5 max-w-full min-w-0 rounded-[var(--radius)] border border-border/60 bg-background overflow-hidden">
-					<ToolResultRenderer display={display as ToolDisplay} orgId={orgId} />
+				<div className="mt-1.5 mb-0.5 w-full max-w-full min-w-0 rounded-[var(--radius)] border border-border/60 bg-background overflow-hidden">
+					<ToolResultRenderer
+						display={displayWithCardFields as ToolDisplay}
+						orgId={orgId}
+					/>
 				</div>
 			)}
 
 			{/* Raw-data fallback for tools without a structured display. */}
 			{expanded && !hasStructuredKind && rawData && (
-				<div className="mt-1.5 mb-0.5">
+				<div className="mt-1.5 mb-0.5 w-full max-w-full min-w-0">
 					<CodeBlock code={rawData} label="result" maxHeight={240} />
 				</div>
 			)}
 
-			{expanded && errorText && (
-				<div className="mt-1.5 mb-0.5">
+			{expanded && errorText && !friendlyError && (
+				<div className="mt-1.5 mb-0.5 w-full max-w-full min-w-0">
 					<CodeBlock code={errorText} label="error" maxHeight={140} />
 				</div>
 			)}
@@ -244,10 +354,7 @@ export function PendingTimelineRow({ toolName }: { toolName: string }) {
 	const { title } = getRowTitle(toolName, {}, {});
 	return (
 		<div className="relative ps-6 pb-2">
-			<span
-				aria-hidden
-				className="absolute start-[10px] top-5 bottom-0 w-px bg-border"
-			/>
+			<span aria-hidden className="absolute start-[10px] top-5 bottom-0 w-px bg-border" />
 			<span
 				aria-hidden
 				className="absolute start-[6px] top-1 size-[10px] rounded-full ring-2 ring-background bg-primary/60 animate-pulse"

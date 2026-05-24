@@ -24,6 +24,7 @@ import {
 } from "../../../_functions/authenticated";
 import type { Doc, Id } from "../../../_generated/dataModel";
 import { internalMutation, type MutationCtx, type QueryCtx } from "../../../_generated/server";
+import { resolveCodeToRecordForAI } from "../../../_shared/aiEntityPatch";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -122,10 +123,7 @@ async function createImpl(
 			userId: assigneeId,
 			type: "note.added",
 			title: "New note on your record",
-			body:
-				trimmedContent.length > 120
-					? `${trimmedContent.slice(0, 117)}…`
-					: trimmedContent,
+			body: trimmedContent.length > 120 ? `${trimmedContent.slice(0, 117)}…` : trimmedContent,
 			entityType: args.entityType,
 			entityId: args.entityId,
 			metadata: { noteId, personCode: args.personCode ?? "" },
@@ -155,13 +153,26 @@ export const create = orgMutation({
 	},
 });
 
-/** AI-callable internal twin. */
+/**
+ * AI-callable internal twin.
+ *
+ * Accepts either `entityId` (the row's _id, what the public mutation uses)
+ * OR `entityCode` (P-XXX / D-XXX / etc., what AI tools naturally have).
+ * If `entityCode` is provided, we resolve it to `entityId` internally so
+ * tool authors don't need to chain a resolver in front of every note write.
+ *
+ * Bug 2026-05-24: prior version required `entityId` only — every AI tool
+ * that called this with `entityCode` (add_note, commit_create_lead's note
+ * attach, etc.) hit `ArgumentValidationError: missing required field
+ * entityId`. The note silently failed without bubbling to the user.
+ */
 export const createForAI = internalMutation({
 	args: {
 		orgId: v.id("orgs"),
 		userId: v.id("users"),
 		entityType: v.string(),
-		entityId: v.string(),
+		entityId: v.optional(v.string()),
+		entityCode: v.optional(v.string()),
 		personCode: v.optional(v.string()),
 		title: v.optional(v.string()),
 		content: v.string(),
@@ -172,7 +183,62 @@ export const createForAI = internalMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "notes.create");
-		return createImpl(ctx, args);
+
+		// Resolve entityCode → entityId when the caller didn't supply id.
+		let entityId = args.entityId;
+		let personCode = args.personCode;
+		if (!entityId) {
+			if (!args.entityCode) {
+				throw new ConvexError({
+					code: "INVALID_ARGS",
+					message: "Either entityId or entityCode must be provided.",
+				});
+			}
+			if (
+				args.entityType !== "lead" &&
+				args.entityType !== "contact" &&
+				args.entityType !== "deal" &&
+				args.entityType !== "company"
+			) {
+				throw new ConvexError({
+					code: "INVALID_ARGS",
+					message: `entityCode lookup is only supported for lead/contact/deal/company. Pass entityId for ${args.entityType}.`,
+				});
+			}
+			const aiType = args.entityType as "lead" | "contact" | "deal" | "company";
+			const resolved = await resolveCodeToRecordForAI(ctx, {
+				orgId: args.orgId,
+				entityType: aiType,
+				code: args.entityCode,
+			});
+			if (!resolved) {
+				throw new ConvexError({
+					code: "NOT_FOUND",
+					message: `No ${args.entityType} found with code ${args.entityCode}.`,
+				});
+			}
+			entityId = resolved.row._id;
+			// Auto-populate personCode for lead/contact when caller didn't pass one.
+			if (
+				!personCode &&
+				(aiType === "lead" || aiType === "contact") &&
+				typeof resolved.canonicalCode === "string"
+			) {
+				personCode = resolved.canonicalCode;
+			}
+		}
+
+		const { entityCode: _ec, entityId: _ei, personCode: _pc, userId: _uid, ...rest } = args;
+		void _ec;
+		void _ei;
+		void _pc;
+		void _uid;
+		return createImpl(ctx, {
+			...rest,
+			entityId,
+			personCode,
+			userId: args.userId,
+		});
 	},
 });
 

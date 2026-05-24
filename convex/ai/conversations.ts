@@ -176,6 +176,31 @@ export const setDefaultModel = orgMutation({
 	},
 });
 
+/**
+ * Internal-only title patch used by the auto-title action
+ * (`convex/ai/titleGeneration.ts:autoTitle`). Only updates if the title is
+ * currently empty / "Untitled conversation" — never clobbers a user-set rename.
+ */
+export const setAutoTitleInternal = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		conversationId: v.id("aiConversations"),
+		title: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const conv = await ctx.db.get(args.conversationId);
+		if (!conv || conv.orgId !== args.orgId) return { ok: false as const };
+		// Don't clobber a user-set title.
+		const current = (conv.title ?? "").trim();
+		if (current && current !== "Untitled conversation") {
+			return { ok: false as const, reason: "already_titled" as const };
+		}
+		const next = args.title.trim().slice(0, 80);
+		if (!next) return { ok: false as const };
+		await ctx.db.patch(args.conversationId, { title: next, updatedAt: Date.now() });
+		return { ok: true as const };
+	},
+});
 
 // ─── Week 3.2 — contextBag (Salesforce L4 variables) ─────────────────────────
 //

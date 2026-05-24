@@ -27,6 +27,8 @@ import { useQuery } from "convex/react";
 import { useMemo } from "react";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
+import { AISuggestionsPanel } from "@/core/ai/components/AISuggestionsPanel";
+import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
 import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineActivityWidget";
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
@@ -107,6 +109,10 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					mockDataSeededAt={settings?.mockDataSeededAt}
 					mockDataDismissedAt={settings?.mockDataDismissedAt}
 				/>
+
+				{/* P1.14 — Proactive AI suggestions. Pure heuristic, no model call.
+				    Hidden when there are zero suggestions (no panel = no noise). */}
+				<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
 
 				{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
 				    Daily on the left (per-user), Weekly on the right (org-wide).

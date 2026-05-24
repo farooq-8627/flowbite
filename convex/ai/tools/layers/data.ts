@@ -2,8 +2,10 @@
  * convex/ai/tools/layers/data.ts — Trash and restore tools.
  */
 import { z } from "zod";
+import { entityTypeEnum } from "../../../_shared/synonyms";
 import { registerTool } from "../../toolRegistry";
 import {
+	coerceInt,
 	propose,
 	requirePermission,
 	runTool,
@@ -33,12 +35,12 @@ registerTool({
 		suggestNext: "restore_entity",
 	},
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
-		limit: z.number().min(1).max(50).default(20),
+		entityType: entityTypeEnum(),
+		limit: coerceInt((n) => n.min(1).max(50).default(20).catch(50)),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "data.viewTrash");
 			const result = await toolQuery(getCtx(), "trash/queries:list", { orgId, ...args });
 			return { ok: true as const, data: result };
@@ -57,7 +59,7 @@ registerTool({
 			"Tell the user they need data.restore permission. Suggest contacting an admin.",
 	},
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityId: z.string(),
 		name: z.string().describe("For preview"),
 	}),
@@ -81,12 +83,12 @@ registerTool({
 	confirmation: "none",
 	description: "Internal: commit restore.",
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityId: z.string(),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "data.restore");
 			await toolMutation(getCtx(), "trash/mutations:restore", { orgId, ...args });
 			return {

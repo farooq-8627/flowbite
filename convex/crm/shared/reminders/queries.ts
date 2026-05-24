@@ -3,7 +3,13 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 
 export const listForPerson = orgQuery({
@@ -202,6 +208,26 @@ export const getById = orgQuery({
  *
  * Used by `FollowUpsView` (org-wide) and the dashboard's Follow-ups card.
  */
+async function listFollowupsForOrgImpl(
+	ctx: QueryCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		permissions: string[];
+		status?: "pending" | "completed";
+	},
+) {
+	const canSeeAll = hasPermission(args.permissions, "reminders.manage");
+	const rows = await ctx.db
+		.query("reminders")
+		.withIndex("by_org_and_source_and_due", (q) =>
+			q.eq("orgId", args.orgId).eq("source", "followup"),
+		)
+		.collect();
+	const filtered = canSeeAll ? rows : rows.filter((r) => r.assignedTo === args.userId);
+	return args.status ? filtered.filter((r) => r.status === args.status) : filtered;
+}
+
 export const listFollowupsForOrg = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
@@ -211,18 +237,34 @@ export const listFollowupsForOrg = orgQuery({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "reminders.view");
+		return listFollowupsForOrgImpl(ctx, {
+			orgId: args.orgId,
+			userId,
+			permissions: member.permissions,
+			status: args.status,
+		});
+	},
+});
 
-		const canSeeAll = hasPermission(member.permissions, "reminders.manage");
-
-		const rows = await ctx.db
-			.query("reminders")
-			.withIndex("by_org_and_source_and_due", (q) =>
-				q.eq("orgId", args.orgId).eq("source", "followup"),
-			)
-			.collect();
-
-		const filtered = canSeeAll ? rows : rows.filter((r) => r.assignedTo === userId);
-		return args.status ? filtered.filter((r) => r.status === args.status) : filtered;
+/**
+ * AI-callable internal twin of `listFollowupsForOrg`.
+ * See `convex/ai/tools/_shared.ts` for why this exists.
+ */
+export const listFollowupsForOrgForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		status: v.optional(v.union(v.literal("pending"), v.literal("completed"))),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "reminders.view");
+		return listFollowupsForOrgImpl(ctx, {
+			orgId: args.orgId,
+			userId: args.userId,
+			permissions: member.permissions,
+			status: args.status,
+		});
 	},
 });
 
@@ -233,20 +275,41 @@ export const listFollowupsForOrg = orgQuery({
  * memory — per-person follow-up volume is small so a secondary in-memory
  * filter is cheaper than a 2-key compound index for this case.
  */
+async function listFollowupsForPersonImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; personCode: string },
+) {
+	const rows = await ctx.db
+		.query("reminders")
+		.withIndex("by_org_and_person", (q) =>
+			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+		)
+		.collect();
+	return rows.filter((r) => r.source === "followup");
+}
+
 export const listFollowupsForPerson = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "reminders.view");
+		return listFollowupsForPersonImpl(ctx, args);
+	},
+});
 
-		const rows = await ctx.db
-			.query("reminders")
-			.withIndex("by_org_and_person", (q) =>
-				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
-			)
-			.collect();
-
-		return rows.filter((r) => r.source === "followup");
+/**
+ * AI-callable internal twin of `listFollowupsForPerson`.
+ */
+export const listFollowupsForPersonForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "reminders.view");
+		return listFollowupsForPersonImpl(ctx, { orgId: args.orgId, personCode: args.personCode });
 	},
 });
 

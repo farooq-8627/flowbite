@@ -30,21 +30,49 @@ import { cn } from "@/lib/utils";
 
 const SLOT_TO_QUERY_PATH: Record<
 	"lead" | "contact" | "deal" | "company",
-	{ getById: string; entityLabel: string }
+	{ getById: string; entityLabel: string; idArg: string }
 > = {
-	lead: { getById: "crm.entities.leads.queries.getById", entityLabel: "Lead" },
-	contact: { getById: "crm.entities.contacts.queries.getById", entityLabel: "Contact" },
-	deal: { getById: "crm.entities.deals.queries.getById", entityLabel: "Deal" },
-	company: { getById: "crm.entities.companies.queries.getById", entityLabel: "Company" },
+	lead: {
+		getById: "crm.entities.leads.queries.getById",
+		entityLabel: "Lead",
+		idArg: "leadId",
+	},
+	contact: {
+		getById: "crm.entities.contacts.queries.getById",
+		entityLabel: "Contact",
+		idArg: "contactId",
+	},
+	deal: {
+		getById: "crm.entities.deals.queries.getById",
+		entityLabel: "Deal",
+		idArg: "dealId",
+	},
+	company: {
+		getById: "crm.entities.companies.queries.getById",
+		entityLabel: "Company",
+		idArg: "companyId",
+	},
 };
 
 type EntityResultCardProps = {
 	entityType: "lead" | "contact" | "deal" | "company";
 	entityId: string;
 	orgId: string;
+	/**
+	 * P1.9 — when set, overrides the hardcoded default cardFields below.
+	 * Tools that return a {@link ToolSummary} with an explicit
+	 * `cardFields` list pass it through so the card surfaces every field
+	 * that was just set, not just the universal default 5.
+	 */
+	cardFields?: string[];
 };
 
-export function EntityResultCard({ entityType, entityId, orgId }: EntityResultCardProps) {
+export function EntityResultCard({
+	entityType,
+	entityId,
+	orgId,
+	cardFields: cardFieldsProp,
+}: EntityResultCardProps) {
 	const cfg = SLOT_TO_QUERY_PATH[entityType];
 
 	// Walk the dotted path on `anyApi` so the typed `api` doesn't need to
@@ -60,7 +88,12 @@ export function EntityResultCard({ entityType, entityId, orgId }: EntityResultCa
 	const entity = useQuery(
 		queryRef as Parameters<typeof useQuery>[0],
 		entityId && orgId
-			? ({ id: entityId, orgId } as Record<string, unknown>)
+			? // Each entity's getById validator uses a different ID arg name
+				// (leadId / contactId / dealId / companyId). Bug 2026-05-24:
+				// previously passed `id` for all, which the validator rejected
+				// with "missing required field leadId" on every chat-rendered
+				// result card.
+				({ [cfg.idArg]: entityId, orgId } as Record<string, unknown>)
 			: ("skip" as never),
 	) as Record<string, unknown> | null | undefined;
 
@@ -84,13 +117,15 @@ export function EntityResultCard({ entityType, entityId, orgId }: EntityResultCa
 
 	// Pick a sensible default cardFields set per slot — chat doesn't have
 	// access to the user's per-view settings so we surface the most-useful
-	// 3-4 fields universally.
+	// 3-4 fields universally. P1.9 — when the calling tool supplies an
+	// explicit `cardFields` (via ToolSummary), respect that instead.
 	const cardFields =
-		entityType === "deal"
+		cardFieldsProp ??
+		(entityType === "deal"
 			? ["title", "personCode", "dealCode", "assignedTo", "tags"]
 			: entityType === "company"
 				? ["name", "companyCode", "industry", "tags"]
-				: ["displayName", "email", "personCode", "tags", "assignedTo"];
+				: ["displayName", "email", "personCode", "tags", "assignedTo"]);
 
 	return (
 		<EntityCard

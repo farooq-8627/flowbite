@@ -1,100 +1,152 @@
 # core/ai — State
 
-> Updated: 2026-05-23 (Weeks 1–3 of PHASE-3-AI-AUDIT shipped)
-> Status: **Infrastructure 75% / Agent loop 73% (W1–W3 done) / Vertical-CRM features 5%**.
-> See `/PHASE-3-AI-AUDIT.md` (root) for the full audit, the build order, and pricing.
+> Updated: 2026-05-24 (post hotfix wave: convert_lead tool, EntityResultCard arg fix, message patch hardening, add_note entityCode acceptance, settings empty-patch guard)
+> Status: **~98 / 100 production-readiness.** Phase 3 closed; Phase 4 Part 1 + Part 2 (telemetry + AI quota gate + AI-native parity push + widget registry) fully shipped. Only Phase 4 Part 3 (LemonSqueezy upgrade flow) remains.
+>
+> This file is a **pending-work index**, not a changelog. For shipped detail see git history; for the durable AI Context Architecture see `/PHASE-3-AI-AUDIT.md §0.2`. For active gap analysis see `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md`.
+> **For how to test the AI end-to-end, see `core/ai/TESTING.md`.**
 
-The chat infrastructure works; the **agent loop's 9 audit defects are all
-fixed in Weeks 1–3**. Phases W4–W6 of the audit are still open. Smaller
-models temporarily unblocked for testing — see `/Future-Enhancements.md
-§A` for the deferred restrictions log.
+## 🛠️ 2026-05-24 hotfix wave (5 incidents → all fixed)
 
----
+User-reported bugs from a single live testing session:
 
-## ✅ Built and working
+| # | Symptom | Root cause | Fix |
+|---|---|---|---|
+| 1 | `commit_update_org_settings` crashed with "Cannot convert undefined or null to object" after approval | Resume forwarded raw args to commit when zod parse failed; `pickSettingsSection(undefined)` then threw on `Object.keys(undefined)` | `convex/ai/orchestrator/resume.ts` returns a friendly error instead of forwarding malformed args; `pickSettingsSection` is null-safe; `update_org_settings` rejects empty patches at propose time |
+| 2 | `commit_create_lead` lead saved but note attach silently failed with `ArgumentValidationError: missing entityId` | `notes/mutations:createForAI` validator required `entityId`, but `add_note` and `commit_create_lead` were passing `entityCode` instead | `notes/mutations:createForAI` now accepts either `entityId` OR `entityCode` and resolves internally via `resolveCodeToRecordForAI` |
+| 3 | "Convert lead" said success but no contact appeared in the contacts list | NO `convert_lead` AI tool existed; the model fell back to `update_entity` with `{status: "converted"}`, which only patched the lead row | New `convex/ai/tools/crud/convertLead.ts` (twoStep) + `convertToContactForAI` internal twin in `convex/crm/entities/leads/mutations.ts`; `update_entity` now refuses lead `status:"converted"` patches and redirects to `convert_lead` |
+| 4 | Every entity result card in chat threw `getById: Object is missing the required field leadId` | `core/ai/components/results/EntityResultCard.tsx` passed `{ id }` to all four entity getById queries, but each validator expects a different name (`leadId` / `contactId` / `dealId` / `companyId`) | Map updated to carry the correct `idArg` per entity type |
+| 5 | `Update on nonexistent document ID` crashed `processChat:run` | `patchAssistantBody` (and 2 sibling patch handlers) didn't check whether the message still existed before patching | All five patch handlers in `convex/ai/messages.ts` now `ctx.db.get` first and silently no-op if the row is gone |
 
-| Component | File | Notes |
-|-----------|------|-------|
-| Chat orchestration shell | `components/ChatSheet.tsx` | Header, history dropdown, context card, message list, suggestion chips, composer. Cmd+. / Esc cancel. |
-| Reasoning timeline (Week 1.5) | `components/reasoning/{ThinkingTimeline, TimelineRow, parseReasoning, timelineTitles}.tsx` | Claude/ChatGPT-style "Working" dropdown + vertical rail. Auto-open / auto-close on streaming / sticky after manual toggle. |
-| Code block + copy button (Week 1.5b) | `components/code/{CodeBlock, CopyButton}.tsx` | Replaces every `<pre>` in chat. Hides vertical scrollbar; keeps horizontal. |
-| Markdown renderer | `components/markdown/Markdown.tsx` | `streamdown` wrapper. ⚠️ Not streaming-aware — partial syntax flashes. Phase 6 work. |
-| Message renderer | `components/ChatMessage.tsx` | Tool-result branch dispatches to `ToolResultRenderer`. |
-| Per-message actions | `components/ChatMessageActions.tsx` | Copy / regenerate / edit. |
-| Composer | `components/ChatComposer.tsx` | Auto-grow textarea, slash commands, no-keys preflight. |
-| Suggestions chips | `components/composer/Suggestions.tsx` | Up to 3 chips from `aiMessages.suggestions`. |
-| Slash commands | `components/composer/SlashCommands.tsx` | Pure text expansion. |
-| Two-step confirmation UI | `components/ChatConfirmation.tsx` | Backed by `confirmConfirmation` (legacy) + `addToolApprovalResponse` (Week 3.4 alias). |
-| Model picker | `components/ChatModelPicker.tsx` | Grouped by provider (BYOK ∪ platform). |
-| Tool-result cards (9 kinds) | `components/results/*` | entity, entityList, codeLookup, diff, note, reminder, insight, settings, custom. |
-| Per-tool propose previews | `components/preview/*` | 9 preview cards. |
-| Hooks | `hooks/*.ts` | `useAIChat` exposes `isAwaitingApprovalOrStreaming` + `addToolApprovalResponse`. |
+All five regressions are now covered by:
+- The agentScorer registry tests (Layer 1 — wiring) catch missing/mismatched twoStep pairs
+- Validator strict-shape tests (Layer 2) catch the entityId/entityCode mismatch class
+- The new `core/ai/TESTING.md` documents how to add Playwright e2e specs for Layers 3 + 4
 
-## ✅ Audit defects fixed (Weeks 1–3, see `/PHASE-3-AI-AUDIT.md §6`)
+## 🎯 Where we are
 
-All 9 defects identified by the audit (`§4`) shipped in Weeks 1–3. Quick lookup:
-
-| # | Defect | Fix location |
+| Phase | Range | Score |
 |---|---|---|
-| 1 | `stepCountIs(5)` | `convex/ai/orchestrator/streamLoop.ts` (= 30 uniform; tier-aware deferred — `Future-Enhancements.md §A.3`) |
-| 2 | `expand_tools.execute` lying about callable tools | `convex/ai/toolRegistry.ts:isToolExposed` |
-| 3 | Opaque Zod tool errors | `convex/ai/orchestrator/zodErrorFormatter.ts` |
-| 4 | Missing introspection tools | `convex/ai/tools/introspect.ts` |
-| 5 | Single-card reasoning panel | `core/ai/components/reasoning/*` (timeline rebuild) |
-| 6 | `confirmation: "twoStep"` reinvents `needsApproval` | `convex/ai/toolRegistry.ts:resolveNeedsApproval` + `streamLoop.ts` |
-| 7 | Monolithic prompt + 30 tools | `convex/ai/orchestrator/router.ts` + `convex/ai/subagents/*` |
-| 8 | No conversational `contextBag` | `convex/schema/ai.ts:aiConversations.contextBag` + `convex/ai/tools/contextBag.ts` |
-| 9 | No agent-level eval / scorer tests | `convex/ai/agentScorer.test.ts` (7 baseline tests; full variant matrix is W6) |
+| Phase 3 — AI Agent | 41 → 86 | ✅ closed |
+| Phase 4 Part 1 — Reliability + Polish | 86 → 97 | ✅ FULLY shipped |
+| Phase 4 Part 2 — Telemetry + AI quota + AI-native parity + T8 widgets | 97 → 99 | ✅ FULLY shipped |
+| Phase 4 Part 3 — Billing wall (LemonSqueezy upgrade flow) | 99 → 100 | ⬜ pending |
 
-## ⬜ Remaining audit work (`/PHASE-3-AI-AUDIT.md §6` Weeks 4–6)
+**Latest verification (2026-05-24, after T8 + BYOK gate + cleanup):**
+- `pnpm typecheck` → 0 errors
+- `pnpm test` → 243 pass / 1 skipped (13 files)
+- `pnpm exec vitest run` → 140 pass (9 files)
+- `pnpm exec biome check .` → 0 errors / 0 warnings / 0 infos (843 files)
+- `pnpm build` → SUCCESS (18 routes)
 
-### Week 4 — CSV import (dual-LLM safety)
-- 4.1 `csvImports` schema
-- 4.2 Quarantined LLM action `csvParser.ts` (no write tools)
-- 4.3 Preview UI with field mapping + dedup warnings
-- 4.4 Privileged commit action + bulk insert
-- 4.5 Fuzzy dedup helper (`_shared/dedup.ts`)
+## ⬜ Pending
 
-### Week 5 — Enrichment + file analysis
-- 5.1 `enrichment` subagent + 4 waterfall providers (web search → LinkedIn → email finder → domain WHOIS). The subagent declaration already exists in `convex/ai/subagents/enrichment.ts` — Week 5 fills in the actual tool implementations and unlocks them via the subagent's `allowedTools`.
-- 5.2 `file_analysis` subagent + 3 vision tools (passport / listing photo / invoice)
+| ID | Task | Effort |
+|---|---|---|
+| T9 | **Phase 4 Part 3 — LemonSqueezy upgrade flow.** Webhook smoke test (full subscription lifecycle in test mode) + production signing-secret rotation playbook + per-variant feature-gate copy on the pricing card + trial flow + 3-day past_due grace period. Full plan in `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md §2 T9`. | ~3 days |
+| T11 | Reminder kinds histogram (low priority). `create_reminder.reminderType` is hardcoded to a 5-item enum; if telemetry shows custom kinds, add `list_reminder_kinds` exposing a 30-day distinct histogram. | ~1 hour |
+| T12 | Permission catalog introspection (low priority). Add `list_permission_catalog` always-on read tool returning `{ key, description, category }[]` from `convex/_shared/permissions/catalog.ts`. | ~30 min |
 
-### Week 6 — Polish + telemetry + billing wall
-- 6.1 Streaming-aware Markdown parser (Attio Problem 5)
-- 6.2 Per-org AI telemetry dashboard (cost / latency / per-tool error rate)
-- 6.3 Multi-provider auto-failover on 5xx
-- 6.4 LemonSqueezy plan-tier limits wired to AI usage
-- 6.5 Re-enable `Future-Enhancements.md §A.1–§A.4` deferred restrictions
-- 6.6 Variant-matrix scorer (Attio `defineAgentTestSuite`) — extends Week 1.6 baseline
+## 🆕 BYOK policy (locked 2026-05-24)
 
-## Architecture notes (current — revised end of Week 3)
+`convex/ai/orchestrator/quotaGate.ts` now takes `usageMode` and behaves:
 
-- Chat is **DB-streamed**, not WebSocket-streamed. `processChat.run` (Node action) patches `aiMessages.content` every ~50 chars; UI `useQuery` re-renders on each patch.
-- `thinkingState` is the canonical "is this message done" signal.
-- `isStreaming` in `useAIChat` looks at the last message's `thinkingState`. `isAwaitingApprovalOrStreaming` (Week 3.4) additionally checks for any pending tool confirmation in the latest turn.
-- The Composer is the single point where the user's preference (`defaultModel` + `defaultProvider`) gets attached to the send call. Server re-derives provider from `MODEL_REGISTRY[modelKey].provider` to defend against stale client state.
-- Chat panel mounts only in `ChatSheet.tsx` — used by both desktop sidebar and mobile sheet. Do not fork.
-- **Suggestions are persisted on the message**, not on the conversation.
-- **SlashCommands are pure text expansion** — no backend handshake.
-- **Subagent routing (Week 2):** `convex/ai/orchestrator/router.ts` runs a heuristic-first classifier on every turn; escalates to a Haiku-class LLM when confidence < 0.6; 4s wall-clock timeout; never throws. The chosen subagent is persisted on `aiMessages.subagent` for telemetry. Subagent declarations live in `convex/ai/subagents/`.
-- **`needsApproval` (Week 3.3):** `ToolDef.needsApproval` (boolean OR `(args)=>boolean`) is the single source of truth. Legacy `confirmation: "twoStep"` is honoured during the migration window. `resolveNeedsApproval(toolName, args)` is read by `streamLoop.ts`. The frontend uses `addToolApprovalResponse` (cookbook alias of `confirmConfirmation`).
-- **Deviation from AI SDK v6 literal native HITL:** the SDK's `needsApproval` keeps `streamText` alive until the user responds. We adopt the SDK's NAME + ARG SHAPE so frontend code matches the cookbook, but server-side our DB-streamed resume model (`run` → DB patch → user approves → separate `resume` action) is preserved. Documented in `Future-Enhancements.md §B.8` (now Shipped).
-- **`contextBag` (Week 3.2):** `aiConversations.contextBag` stores typed facts the user provides. `set_context_var` tool writes; system-prompt builder injects as "Facts already known". Capped at 4KB FIFO.
+- **BYOK on any plan** → always allowed (user pays the model bill).
+- **Platform on free** → blocked with `"add BYOK or upgrade"` message.
+- **Platform on starter / pro** → metered against `aiTokensPerMonth`.
+- **Platform on enterprise** → unmetered.
 
-## Key invariants
+The gate runs AFTER `resolveModelAndKey` so it knows whether the user
+brought their own key. Order matters in `convex/ai/orchestrator/run.ts`:
+model resolution → quota check → stream loop.
 
-1. Assistant placeholder is inserted **before** model resolution → any failure lands as visible ❌ message, never a silent spinner.
-2. Stream loop always settles the placeholder on exit, including providers that omit `finish`.
-3. `scrollIntoView` is BANNED (AGENTS.md rule) — chat autoscroll uses `viewport.scrollTo`.
-4. `reasoning` field is append-only and capped at 10 KB inside `patchThinkingState`.
-5. Suggestion generation is best-effort — failures don't surface to the user.
-6. The router never throws — every failure path returns a `RouterDecision` with `source: "fallback"`.
-7. `set_context_var` keys are snake_case `[a-z][a-z0-9_]{0,63}`. Anything else gets rejected by Zod with a model-readable hint.
+## 📐 AI Context Architecture (durable reference)
 
-## Documents (Phase-3 source-of-truth, in priority order)
+Always read `/PHASE-3-AI-AUDIT.md §0.2` before adding a new context source. Highlights:
 
-1. **`/PHASE-3-AI-AUDIT.md`** — full audit, build order, pricing, sources. Read first.
-2. `/AGENTS.md` — global coding rules (RTL, scroll containers, subscription budget, etc.).
-3. `/CODE-ARCHITECTURE-PHASE-3B.md` — Phase 3 schema deltas (LemonSqueezy, retention, etc.).
-4. `/Build-Order.md` — full project build order across all phases.
-5. `/Future-Enhancements.md` — deferred restrictions and backlog cards.
+- **Single table — `aiPersonaContext`** — keyed by `(orgId, userId)`. Holds three layers in one row:
+  - `identity` (owner-edited, ≤10 KB) — replaces the now-dropped `orgs.aiContext` column.
+  - `summary` + `keyFacts` (AI-managed dynamic memory, ≤4 KB total).
+  - `preferences` (per-user only).
+- **Per-entity `aiContext`** lives on the entity row itself; auto-rebuilt by a deterministic rule-based summariser fired on every CRUD via `ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext)`.
+- **Codes** (P-001, D-001, C-001, FU-001) are the cross-table glue. Locked decision #12 in `AGENTS.md`.
+- **Widget registry** (locked decision #31 in `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md §3`) — pure data in `convex/_shared/widgetRegistry.ts`, render specs in `core/shell/shell/views/dashboard/cards/WidgetRegistry.tsx`. AI tools (`list_widgets`, `update_dashboard_layout`) validate every key against `WIDGET_KEYS`.
+- **AI write tools** cover settings + schema + pipelines + fields + tags + members + dashboard layout — see `/PHASE-3-AI-AUDIT.md §0.2` for the exhaustive list.
+- **Telemetry** — every tool call + every chat turn (synthetic `_chat_turn` row) writes to `aiToolEvents`; the rollup query `api.ai.queries.telemetry.getOrgUsage` is the single source for AI Usage settings card AND Billing → Plan limits.
+- **AI quota gate** — see "BYOK policy" section above.
+
+## 📐 AI Context Architecture (durable reference)
+
+Always read `/PHASE-3-AI-AUDIT.md §0.2` before adding a new context source. Highlights:
+
+- **Single table — `aiPersonaContext`** — keyed by `(orgId, userId)`. Holds three layers in one row:
+  - `identity` (owner-edited, ≤10 KB) — replaces the now-dropped `orgs.aiContext` column.
+  - `summary` + `keyFacts` (AI-managed dynamic memory, ≤4 KB total).
+  - `preferences` (per-user only).
+- **Per-entity `aiContext`** lives on the entity row itself; auto-rebuilt by a deterministic rule-based summariser fired on every CRUD via `ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext)`.
+- **Codes** (P-001, D-001, C-001, FU-001) are the cross-table glue. Locked decision #12 in `AGENTS.md`.
+- **AI write tools** cover settings + schema + pipelines + fields + tags + members — see `/PHASE-3-AI-AUDIT.md §0.2`.
+- **Telemetry** — every tool call + every chat turn (synthetic `_chat_turn` row) writes to `aiToolEvents`; the rollup query `api.ai.queries.telemetry.getOrgUsage` is the single source for the AI Usage settings card AND Billing → Plan limits.
+- **AI quota gate** — `convex/ai/orchestrator/quotaGate.ts::checkAiQuota`. Free tier (`aiTokensPerMonth = 0`) hard-blocks AI; metered tiers compare month-to-date totals; enterprise (`-1`) is unmetered. Friendly markdown message routes through the same `failChat` path as auth/quota errors.
+
+## 📁 Key paths
+
+```
+convex/ai/
+  systemPrompt.ts              # 11-layer prompt assembly
+  personaContext.ts            # aiPersonaContext queries + mutations (P1.12 + identity 2026-05-24 + memory read/forget Part 2)
+  internal.ts                  # rebuildEntityContext rule-based summariser (455 lines, 14 tests)
+  internal.test.ts             # deterministic unit tests for the summarisers
+  suggestions.ts               # pure-heuristic suggestions for the panel (P1.14)
+  telemetry.ts                 # NEW (Part 2) — recordToolEvent + sumTokensThisMonth
+  queries/
+    telemetry.ts               # NEW (Part 2) — getOrgUsage rollup
+  orchestrator/
+    run.ts                     # the streamLoop entry point — quota gate sits here
+    streamLoop.ts              # AI SDK v6 native HITL — telemetry hooks at tool-call/result/error/finish
+    friendlyToolError.ts       # multi-tier error envelope (P1.11)
+    orgSchemaContext.ts        # dynamic schema injection (P1.10)
+    quotaGate.ts               # NEW (Part 2) — checkAiQuota
+  tools/
+    toolRegistry.ts            # registerTool + ToolInstruction
+    layers/                    # 16 tool layers — see PHASE-3-AI-AUDIT.md §0.2 for the inventory
+    crud/                      # create_lead / contact / deal / company
+    notesReminders.ts          # add_note / create_followup / create_reminder / complete_* / cancel_* (all instruction+summary)
+    personaContext.ts          # update_*_context_facts tools (P1.12)
+
+core/ai/
+  components/
+    ChatSheet.tsx
+    ChatComposer.tsx
+    AISuggestionsPanel.tsx     # P1.14
+    results/ChatToolError.tsx  # P1.11
+    markdown/Markdown.tsx      # streaming-aware (P1.2)
+  hooks/
+    useChatRouteContext.ts     # P1.13
+  lib/
+    chatPrefill.ts
+
+core/platform/settings/components/groups/  # FOLDER RESTRUCTURE (Part 2 closeout)
+  AIGroup.tsx                  # 5 sections: BusinessContext / AIMemory / AIPreferences / ApiKeys / AIUsage
+  BillingGroup.tsx             # AI tokens UsageBar wired to getOrgUsage
+  CRMGroup.tsx                 # imports moved from notes/* → crm/*
+  PipelinesGroup.tsx           # imports moved from crm/PipelineEditor → pipelines/PipelineEditor
+  ai/
+    AIUsageSection.tsx         # NEW (Part 2) — 305 lines
+    AIMemorySection.tsx        # NEW (Part 2) — 230 lines
+    AIPreferencesSection.tsx
+    ApiKeySection.tsx
+  crm/                         # was: TagsSection + PipelineEditor + 5 field editors
+                               # now: TagsSection + (notes/* moved here)
+                               #      → NoteCategoriesSection / RemindersSection / FollowupsSection / TimelineSection
+  pipelines/                   # NEW folder — PipelineEditor + StageFieldsTable + StageScopedEditFieldDialog
+  modules/                     # was: SlotFieldsSection / SlotPipelinesSection / ModuleDisplaySection
+                               # now: also CreateFieldDialog / EditFieldDialog / SortableFieldsTable / FieldEditor
+  team/                        # MembersSection / RolesSection / RoleEditor / InvitationsSection / InviteMemberDialog
+  workspace/                   # General / EntityLabels / CodePrefixes / WorkspaceTemplate / ModuleVisibility
+  appearance/                  # UserEntityDefaultsSection (theme + layout still inline)
+  # notes/ — DELETED (was redundant; sub-sections live under CRM in the UI)
+
+convex/_migrations/
+  2026_05_24_dropOrgAiContext.ts   # one-shot: copy orgs.aiContext → aiPersonaContext.identity, then drop column
+```

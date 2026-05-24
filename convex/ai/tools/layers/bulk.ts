@@ -2,6 +2,7 @@
  * convex/ai/tools/layers/bulk.ts — Bulk operation tools (always two-step + premium).
  */
 import { z } from "zod";
+import { entityTypeEnum } from "../../../_shared/synonyms";
 import { registerTool } from "../../toolRegistry";
 import { propose, requirePermission, runTool, type ToolContext, toolMutation } from "../_shared";
 
@@ -45,7 +46,7 @@ registerTool({
 			"Tell the user they need <entity>.update permission. Suggest contacting an admin.",
 	},
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityIds: z.array(z.string()).min(1).max(200),
 		patch: z.record(z.string(), z.unknown()),
 	}),
@@ -75,13 +76,13 @@ registerTool({
 	confirmation: "none",
 	description: "Internal: commit bulk update. Runs serially to respect rate limits.",
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		entityIds: z.array(z.string()),
 		patch: z.record(z.string(), z.unknown()),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, ENTITY_UPDATE_PERM[args.entityType] ?? "leads.update");
 			const mutation = ENTITY_UPDATE_MUTATION[args.entityType];
 			let succeeded = 0;
@@ -149,7 +150,7 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "deals.close");
 			const mutation =
 				args.outcome === "won"

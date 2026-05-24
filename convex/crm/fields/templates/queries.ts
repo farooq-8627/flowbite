@@ -7,8 +7,8 @@
  * here (they're applied via the seeder, never read by the client).
  */
 import { v } from "convex/values";
-import { internalQuery } from "../../../_generated/server";
 import { authenticatedQuery } from "../../../_functions/authenticated";
+import { internalQuery } from "../../../_generated/server";
 import { listTemplates } from "./registry";
 
 export type IndustryTemplateSummary = {

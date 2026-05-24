@@ -355,10 +355,7 @@ async function moveToStageImpl(
 			const fieldValueRows = await ctx.db
 				.query("fieldValues")
 				.withIndex("by_entity", (q) =>
-					q
-						.eq("orgId", args.orgId)
-						.eq("entityType", "deal")
-						.eq("entityId", args.dealId),
+					q.eq("orgId", args.orgId).eq("entityType", "deal").eq("entityId", args.dealId),
 				)
 				.collect();
 			const valuesByName: Record<string, unknown> = {};
@@ -490,15 +487,9 @@ async function closeAsDoneImpl(
 	}
 
 	const pipeline = await ctx.db.get(deal.pipelineId);
-	const finalStage = pipeline?.stages.find(
-		(s) => s.isFinal && s.finalType === args.finalType,
-	);
+	const finalStage = pipeline?.stages.find((s) => s.isFinal && s.finalType === args.finalType);
 
-	if (
-		pipeline &&
-		args.finalType !== "negative" &&
-		pipeline.markDoneRequiresAllFields !== false
-	) {
+	if (pipeline && args.finalType !== "negative" && pipeline.markDoneRequiresAllFields !== false) {
 		const fieldValueRows = await ctx.db
 			.query("fieldValues")
 			.withIndex("by_entity", (q) =>
@@ -871,9 +862,7 @@ async function markAsLostImpl(
 		description: `Deal lost: ${deal.title}`,
 		metadata: {
 			dealCode: deal.dealCode,
-			...(negativeFinal
-				? { toStageId: negativeFinal.id, toCode: negativeFinal.code }
-				: {}),
+			...(negativeFinal ? { toStageId: negativeFinal.id, toCode: negativeFinal.code } : {}),
 			...(args.outcomeReason ? { outcomeReason: args.outcomeReason } : {}),
 		},
 	});

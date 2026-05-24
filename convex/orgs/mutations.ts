@@ -763,7 +763,6 @@ const orgUpdateArgs = {
 			deletionScheduledAt: v.optional(v.number()),
 		}),
 	),
-	aiContext: v.optional(v.string()),
 };
 
 async function updateImpl(
@@ -786,10 +785,7 @@ async function updateImpl(
 
 	if (directUpdates.entityLabels) {
 		for (const [, label] of Object.entries(directUpdates.entityLabels) as Array<
-			[
-				string,
-				{ slug?: string } | undefined,
-			]
+			[string, { slug?: string } | undefined]
 		>) {
 			if (label?.slug && RESERVED_SLUGS.has(label.slug.toLowerCase())) {
 				throw new ConvexError(
@@ -1218,14 +1214,16 @@ export const cascadeDeleteOrgIfDue = internalMutation({
 			// each index name pattern; Convex throws on unknown indexes,
 			// so the try/catch isolates per-table failures.
 			try {
-				const rows = await (ctx.db as unknown as {
-					query: (t: string) => {
-						withIndex: (
-							n: string,
-							b: (q: { eq: (k: string, v: unknown) => unknown }) => unknown,
-						) => { collect: () => Promise<Array<{ _id: string }>> };
-					};
-				})
+				const rows = await (
+					ctx.db as unknown as {
+						query: (t: string) => {
+							withIndex: (
+								n: string,
+								b: (q: { eq: (k: string, v: unknown) => unknown }) => unknown,
+							) => { collect: () => Promise<Array<{ _id: string }>> };
+						};
+					}
+				)
 					.query(table)
 					.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
 					.collect();

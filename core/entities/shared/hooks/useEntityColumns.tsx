@@ -94,9 +94,21 @@ export function useEntityColumns<TRow extends EntityRow>(
 			size: 32,
 		});
 
+		// Defensive dedupe by `field.name`. The server enforces
+		// `(orgId, entityType, name)` uniqueness in
+		// `fieldDefinitions.createImpl` (2026-05-24 fix), but a stale row
+		// from before that landed could still produce two field defs with
+		// the same name and crash the table with a duplicate-React-key
+		// warning. First-write-wins keeps the table behaviour stable until
+		// the dedupe migration completes.
+		const seenFieldNames = new Set<string>();
+		seenFieldNames.add("select");
+
 		// One column per visible table field
 		for (const field of tableFields) {
 			if (hiddenColumnIds?.has(field.name)) continue;
+			if (seenFieldNames.has(field.name)) continue;
+			seenFieldNames.add(field.name);
 			const renderer = getCellRenderer(field);
 			// Use accessorFn (not accessorKey) so TanStack reads the value from
 			// the right place regardless of where it's stored. Custom fields
@@ -123,7 +135,7 @@ export function useEntityColumns<TRow extends EntityRow>(
 					const r = row.original as EntityRow;
 					const customValues = customValuesByEntityId?.[r.id];
 					const prefetchedTags =
-						field.kind === "tags" ? tagsByEntityId?.[r.id] : undefined;
+						field.kind === "tags" ? (tagsByEntityId?.[r.id] ?? []) : undefined;
 					const prefetchedCompany =
 						field.kind === "company-ref" && companiesByPersonCode
 							? (companiesByPersonCode[r.personCode as string] ?? null)

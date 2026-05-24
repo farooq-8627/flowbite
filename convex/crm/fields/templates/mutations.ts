@@ -19,7 +19,7 @@
  *   11. Tags
  *   12. Saved views
  *   13. Custom roles
- *   14. AI persona (org.aiContext, only if currently unset)
+ *   14. AI persona (aiPersonaContext.identity for org-level row, only if currently unset)
  *   15. org.industry pin (records which template was applied)
  *
  * Callers:
@@ -350,7 +350,6 @@ async function patchOrgSettings(
 		settings: typeof newSettings;
 		entityLabels?: typeof org.entityLabels;
 		industry: string;
-		aiContext?: string;
 		updatedAt: number;
 	} = {
 		settings: newSettings,
@@ -365,12 +364,38 @@ async function patchOrgSettings(
 		};
 	}
 
-	// Only set aiContext if currently unset — never overwrite owner edits.
-	if (args.aiPersona && !org.aiContext) {
-		patch.aiContext = args.aiPersona;
-	}
-
 	await ctx.db.patch(orgId, patch);
+
+	// Seed the AI identity blob into aiPersonaContext (org-level row)
+	// — but only if no row exists yet, so we never overwrite owner edits.
+	// Replaces the previous direct write to `orgs.aiContext` (dropped 2026-05-24).
+	if (args.aiPersona && args.aiPersona.trim().length > 0) {
+		const existing = await ctx.db
+			.query("aiPersonaContext")
+			.withIndex("by_org_and_user", (q) => q.eq("orgId", orgId).eq("userId", undefined))
+			.first();
+		const trimmed = args.aiPersona.trim();
+		if (!existing) {
+			await ctx.db.insert("aiPersonaContext", {
+				orgId,
+				userId: undefined,
+				identity: trimmed,
+				summary: "",
+				keyFacts: [],
+				preferences: undefined,
+				byteCount: 0,
+				lastUpdatedAt: now,
+				createdAt: now,
+				updatedAt: now,
+			});
+		} else if (!existing.identity || existing.identity.trim().length === 0) {
+			await ctx.db.patch(existing._id, {
+				identity: trimmed,
+				lastUpdatedAt: now,
+				updatedAt: now,
+			});
+		}
+	}
 }
 
 /** Insert sticky-note categories, deduping on (orgId, name). */

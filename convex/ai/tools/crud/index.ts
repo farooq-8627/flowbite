@@ -17,6 +17,8 @@ import "./createLead";
 import "./createContact";
 import "./createCompany";
 import "./createDeal";
+import "./convertLead";
+import "./revertContact";
 
 // Re-export context setter under both new and legacy names.
 export { setCreateEntitiesContext, setCrudContext } from "./_context";

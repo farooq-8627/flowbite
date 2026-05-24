@@ -43,7 +43,12 @@ const isProd = process.env.NODE_ENV === "production";
 function getConvexHosts(): { http: string; ws: string; site: string } {
 	// During build the env may be unset (CI smoke), fall back to wildcard.
 	const url = process.env.NEXT_PUBLIC_CONVEX_URL;
-	if (!url) return { http: "https://*.convex.cloud", ws: "wss://*.convex.cloud", site: "https://*.convex.site" };
+	if (!url)
+		return {
+			http: "https://*.convex.cloud",
+			ws: "wss://*.convex.cloud",
+			site: "https://*.convex.site",
+		};
 	const hostname = new URL(url).hostname; // e.g. modest-fox-123.convex.cloud
 	const stem = hostname.replace(/\.convex\.cloud$/, "");
 	return {
@@ -58,12 +63,7 @@ const convex = getConvexHosts();
 
 const cspDirectives: Record<string, string[]> = {
 	"default-src": ["'self'"],
-	"script-src": [
-		"'self'",
-		"'unsafe-inline'",
-		"'unsafe-eval'",
-		"https://us-assets.i.posthog.com",
-	],
+	"script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://us-assets.i.posthog.com"],
 	"style-src": ["'self'", "'unsafe-inline'"],
 	"img-src": ["'self'", "data:", "blob:", "https:"],
 	"font-src": ["'self'", "data:"],
@@ -106,7 +106,7 @@ const securityHeaders = [
 			"microphone=()",
 			"geolocation=()",
 			"interest-cohort=()",
-			"payment=(self \"https://app.lemonsqueezy.com\")",
+			'payment=(self "https://app.lemonsqueezy.com")',
 		].join(", "),
 	},
 	{

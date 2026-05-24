@@ -55,7 +55,7 @@ registerTool({
 	schema: z.object({ email: z.string(), roleId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "members.invite");
 			const result = await toolMutation(getCtx(), "invitations/mutations:create", {
 				orgId,
@@ -98,7 +98,7 @@ registerTool({
 	schema: z.object({ invitationId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "members.cancelInvitation");
 			await toolMutation(getCtx(), "invitations/mutations:cancel", { orgId, ...args });
 			return { ok: true as const, data: args, display: `✅ Invitation cancelled.` };
@@ -151,7 +151,7 @@ registerTool({
 	schema: z.object({ userId: z.string(), newRoleId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions, userId: callingUser } = getCtx();
+			const { orgId, permissions, userId: callingUser } = getCtx();
 			requirePermission(permissions, "members.changeRole");
 			if (args.userId === callingUser) {
 				return { ok: false as const, error: "AI cannot change your own role." };
@@ -200,7 +200,7 @@ registerTool({
 	schema: z.object({ userId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions, userId: callingUser } = getCtx();
+			const { orgId, permissions, userId: callingUser } = getCtx();
 			requirePermission(permissions, "members.remove");
 			if (args.userId === callingUser) {
 				return { ok: false as const, error: "AI cannot remove you." };

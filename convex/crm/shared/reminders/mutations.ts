@@ -13,13 +13,13 @@
  * Every mutation logs activity.
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import {
 	orgMutation,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
@@ -507,5 +507,113 @@ export const createFollowupForAI = internalMutation({
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "reminders.create");
 		return createFollowupImpl(ctx, args);
+	},
+});
+
+// ─── By-code resolvers (P1.5) ────────────────────────────────────────────────
+//
+// PHASE-3-AI-AUDIT.md §6 audit row 4. Users see follow-ups by their public
+// `followUpCode` ("FU-003") but the public `complete` / `update` / `remove`
+// mutations only accept the internal `reminderId`. The AI was therefore
+// stuck — when a user said "Cancel FU-003", the model had nothing to call.
+//
+// The two mutations below resolve the code → reminder, then call the
+// existing `completeImpl` / `ctx.db.delete` paths. Auth is the same as the
+// public twins (assignee OR `reminders.manage`).
+
+async function lookupReminderByFollowUpCode(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; followUpCode: string },
+) {
+	return ctx.db
+		.query("reminders")
+		.withIndex("by_org_and_followUpCode", (q) =>
+			q.eq("orgId", args.orgId).eq("followUpCode", args.followUpCode),
+		)
+		.first();
+}
+
+export const completeByFollowUpCodeForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		followUpCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+
+		const reminder = await lookupReminderByFollowUpCode(ctx, {
+			orgId: args.orgId,
+			followUpCode: args.followUpCode,
+		});
+		if (!reminder) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: `No follow-up found with code ${args.followUpCode}.`,
+			});
+		}
+		if (reminder.status === "completed") {
+			return {
+				followUpCode: reminder.followUpCode,
+				reminderId: reminder._id,
+				alreadyCompleted: true,
+			};
+		}
+		await completeImpl(ctx, {
+			orgId: args.orgId,
+			userId: args.userId,
+			member,
+			reminderId: reminder._id,
+		});
+		return {
+			followUpCode: reminder.followUpCode,
+			reminderId: reminder._id,
+			alreadyCompleted: false,
+		};
+	},
+});
+
+export const cancelByFollowUpCodeForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		followUpCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+
+		const reminder = await lookupReminderByFollowUpCode(ctx, {
+			orgId: args.orgId,
+			followUpCode: args.followUpCode,
+		});
+		if (!reminder) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: `No follow-up found with code ${args.followUpCode}.`,
+			});
+		}
+		if (!canActOnReminder(member, args.userId, reminder.assignedTo)) {
+			throw new ConvexError(ERRORS.FORBIDDEN);
+		}
+		await enforceRateLimit(ctx, {
+			scope: "reminders.write",
+			key: `${args.userId}:${args.orgId}`,
+			...RATE_LIMITS.write,
+		});
+
+		await ctx.db.delete(reminder._id);
+
+		await logActivity(ctx, {
+			orgId: args.orgId,
+			userId: args.userId,
+			action: "reminder_deleted",
+			entityType: reminder.entityType,
+			entityId: reminder.entityId,
+			personCode: reminder.personCode,
+			description: `Follow-up cancelled: ${reminder.title}`,
+			metadata: { followUpCode: reminder.followUpCode, reminderId: reminder._id },
+		});
+
+		return { followUpCode: reminder.followUpCode, reminderId: reminder._id };
 	},
 });

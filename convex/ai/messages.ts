@@ -73,6 +73,23 @@ export const sendMessage = orgMutation({
 				aiContextKeyFacts: v.optional(v.array(v.string())),
 			}),
 		),
+		// P1.13 — broad page-mode info from the frontend, used by the
+		// `## Current page` block in the system prompt.
+		pageContext: v.optional(
+			v.object({
+				mode: v.union(
+					v.literal("entity"),
+					v.literal("list"),
+					v.literal("dashboard"),
+					v.literal("calendar"),
+					v.literal("settings"),
+					v.literal("reports"),
+					v.literal("other"),
+				),
+				path: v.string(),
+				label: v.optional(v.string()),
+			}),
+		),
 		expandedLayers: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
@@ -132,6 +149,7 @@ export const sendMessage = orgMutation({
 			model: args.model,
 			provider: args.provider,
 			routeContext: args.routeContext,
+			pageContext: args.pageContext,
 			expandedLayers: args.expandedLayers ?? [],
 		});
 
@@ -275,9 +293,7 @@ export function lastAssistantMessageIsCompleteWithApprovalResponses(
 	// Any tool message after the last user turn that's still pending → not complete.
 	const lastUserIdx = messages.map((m) => m.role).lastIndexOf("user");
 	const tail = lastUserIdx === -1 ? messages : messages.slice(lastUserIdx + 1);
-	const stillPending = tail.some(
-		(m) => m.role === "tool" && m.confirmationState === "pending",
-	);
+	const stillPending = tail.some((m) => m.role === "tool" && m.confirmationState === "pending");
 	return !stillPending;
 }
 
@@ -586,6 +602,19 @@ export const patchAssistantBody = internalMutation({
 		reasoning: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
+		// Defensive: the message may have been deleted between scheduling
+		// and execution (user cancelled the chat, conversation purged,
+		// etc.). Bug 2026-05-24: previously crashed processChat:run with
+		// "Update on nonexistent document ID" — silent return is the
+		// correct behaviour; the placeholder is gone, there's nothing to
+		// patch.
+		const existing = await ctx.db.get(args.messageId);
+		if (!existing) {
+			console.warn(
+				`[patchAssistantBody] skipped: message ${args.messageId} no longer exists`,
+			);
+			return;
+		}
 		await ctx.db.patch(args.messageId, {
 			content: args.content,
 			...(args.model ? { model: args.model } : {}),
@@ -722,6 +751,8 @@ export const setConfirmationPending = internalMutation({
 		payload: v.any(),
 	},
 	handler: async (ctx, args) => {
+		const existing = await ctx.db.get(args.messageId);
+		if (!existing) return;
 		await ctx.db.patch(args.messageId, {
 			confirmationState: "pending",
 			confirmationPayload: args.payload,
@@ -743,6 +774,8 @@ export const patchSuggestions = internalMutation({
 		suggestions: v.array(v.string()),
 	},
 	handler: async (ctx, args) => {
+		const existing = await ctx.db.get(args.messageId);
+		if (!existing) return;
 		await ctx.db.patch(args.messageId, {
 			suggestions: args.suggestions.slice(0, 3),
 		});

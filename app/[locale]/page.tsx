@@ -68,7 +68,7 @@ export default function Home() {
 	}
 
 	// ── Step 5: profile deleted / no org / onboarding incomplete ──────
-	if (!currentUser || !currentUser.onboardingCompleted || myOrgs.length === 0) {
+	if (!currentUser?.onboardingCompleted || myOrgs.length === 0) {
 		redirect("/onboarding");
 	}
 

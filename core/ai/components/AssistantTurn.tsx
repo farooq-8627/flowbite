@@ -29,10 +29,7 @@ import type { AIMessage } from "../types";
 import { ChatConfirmation } from "./ChatConfirmation";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { Markdown } from "./markdown/Markdown";
-import {
-	ThinkingTimeline,
-	type ThinkingState,
-} from "./reasoning/ThinkingTimeline";
+import { type ThinkingState, ThinkingTimeline } from "./reasoning/ThinkingTimeline";
 
 interface Props {
 	assistant: AIMessage;
@@ -62,8 +59,7 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 		thinkingState === "thinking" ||
 		thinkingState === "calling_tool" ||
 		thinkingState === "streaming";
-	const hasContent =
-		typeof assistant.content === "string" && assistant.content.trim().length > 0;
+	const hasContent = typeof assistant.content === "string" && assistant.content.trim().length > 0;
 	const wasCancelled = !!assistant.aborted;
 
 	// Pending two-step confirmations are rendered as a separate full card
@@ -79,15 +75,17 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 	);
 
 	return (
-		<div className="group flex flex-col gap-1.5 px-4 py-2">
-			{/* Header row: avatar + author + model */}
-			<div className="flex items-center gap-2">
+		<div className="group flex flex-col gap-1.5 px-3 py-2 items-end min-w-0">
+			{/* Header row: avatar + author + model — right-aligned to match
+			    the assistant bubble. The avatar moves to the END (right in
+			    LTR / left in RTL — `flex-row-reverse` handles both). */}
+			<div className="flex flex-row-reverse items-center gap-2 min-w-0">
 				<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
 					<Bot className="size-3.5 text-primary" />
 				</div>
 				<span className="text-xs font-semibold">AI Assistant</span>
 				{assistant.model && !isLive && (
-					<span className="text-[10px] text-muted-foreground/70">
+					<span className="text-[10px] text-muted-foreground/70 truncate">
 						· {assistant.model}
 						{assistant.usageMode === "byok" ? " · 🔑" : ""}
 					</span>
@@ -99,7 +97,11 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 				)}
 			</div>
 
-			<div className="ms-9 min-w-0">
+			{/* Body — fills the entire message column (after the parent's
+			    `px-3` outer padding). Width-clamped via `w-full min-w-0`
+			    (the ScrollArea viewport fix in globals.css ensures the
+			    parent column can't grow past the panel). */}
+			<div className="w-full min-w-0">
 				{/* Thinking timeline (single working dropdown w/ rail) */}
 				<ThinkingTimeline
 					state={thinkingState}
@@ -126,23 +128,17 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 					<span className="text-muted-foreground italic text-xs">
 						Preparing response…
 					</span>
-				) : pendingConfirmation ? (
-					// While a confirmation is pending the assistant body is
-					// expected to be empty — render nothing rather than the
-					// "Empty message" placeholder.
-					null
-				) : (
+				) : pendingConfirmation ? // While a confirmation is pending the assistant body is
+				// expected to be empty — render nothing rather than the
+				// "Empty message" placeholder.
+				null : (
 					<span className="text-muted-foreground italic text-xs">Empty message</span>
 				)}
 
 				{/* Footer: actions on the LEFT (hover), timestamp on the RIGHT (always) */}
 				{!isLive && hasContent && (
 					<div className="mt-1 flex items-center justify-between gap-2">
-						<ChatMessageActions
-							message={assistant}
-							orgId={orgId}
-							isLast={isLast}
-						/>
+						<ChatMessageActions message={assistant} orgId={orgId} isLast={isLast} />
 						<TimestampLabel ts={assistant.createdAt} />
 					</div>
 				)}

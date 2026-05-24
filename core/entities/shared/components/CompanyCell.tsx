@@ -73,9 +73,14 @@ export function CompanyCell({
 		api.crm.entities.companies.queries.getByPersonCode,
 		orgId && personCode && prefetchedCompany === undefined ? { orgId, personCode } : "skip",
 	);
+	// Picker list — only needed when the popover is OPEN. Without this gate,
+	// every CompanyCell on a board / table mounts its own subscription on
+	// first render, producing the 200-300 calls/min storm seen in the
+	// deployment dashboard 2026-05-24. With it: zero subscriptions until
+	// the user actually clicks the + button to attach a company.
 	const allCompanies = useQuery(
 		api.crm.entities.companies.queries.list,
-		orgId ? { orgId } : "skip",
+		orgId && open ? { orgId } : "skip",
 	);
 
 	// Resolve company from prefetched or query result.

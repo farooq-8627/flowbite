@@ -55,7 +55,7 @@ export const ResendOTPPasswordReset = Email({
 		// Embed the OTP code prominently — the template was originally
 		// built for link-flow; this swap makes the code the focus.
 		const otpHtml = html.replace(
-			'<a href="' + token,
+			`<a href="${token}`,
 			`<div style="font-size:28px;font-weight:700;letter-spacing:0.15em;background:#f1f5f9;padding:14px 18px;border-radius:8px;text-align:center;margin:0 0 12px 0;">${token}</div><a hidden="" href="`,
 		);
 		const otpText = `Your password reset code: ${token}\n\n${text}`;

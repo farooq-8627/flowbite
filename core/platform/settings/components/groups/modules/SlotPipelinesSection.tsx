@@ -19,7 +19,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { usePipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { SettingsSection } from "../../shared/SettingsSection";
-import { PipelineEditor } from "../crm/PipelineEditor";
+import { PipelineEditor } from "../pipelines/PipelineEditor";
 
 const SLOT_TO_ENTITY_TYPE: Partial<Record<EntitySlot, "deal">> = {
 	deal: "deal",

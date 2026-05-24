@@ -16,7 +16,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import type { EntitySlot } from "@/core/entities/shared/types";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { SettingsSection } from "../../shared/SettingsSection";
-import { FieldEditor } from "../crm/FieldEditor";
+import { FieldEditor } from "./FieldEditor";
 
 interface Props {
 	slot: EntitySlot;

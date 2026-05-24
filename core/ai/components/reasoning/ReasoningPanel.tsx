@@ -83,7 +83,10 @@ export function ReasoningPanel({ state, activeTool, reasoning }: Props) {
 
 		// Reset override at the start of a fresh turn — i.e. when we leave
 		// a terminal state and re-enter a working state.
-		if ((prev === "done" || prev === "error") && (curr === "thinking" || curr === "calling_tool")) {
+		if (
+			(prev === "done" || prev === "error") &&
+			(curr === "thinking" || curr === "calling_tool")
+		) {
 			userOverrideRef.current = false;
 		}
 
@@ -186,7 +189,8 @@ export function ReasoningPanel({ state, activeTool, reasoning }: Props) {
 					<div className="max-h-[60vh] overflow-y-auto p-2 flex flex-col gap-1.5">
 						{steps.map((step, i) => (
 							<ReasoningStepCard
-								key={`${step.kind}-${i}-${step.kind === "tool-call" ? step.toolName : step.text.slice(0, 16)}`}
+								// biome-ignore lint/suspicious/noArrayIndexKey: append-only reasoning log; items never reorder
+								key={`${step.kind}-${i}`}
 								step={step}
 							/>
 						))}

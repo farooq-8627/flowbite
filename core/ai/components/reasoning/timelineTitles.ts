@@ -37,7 +37,16 @@ const RESOLVERS: Record<string, Resolver> = {
 	// ── Always-on read tools ─────────────────────────────────────────
 	search_crm: (input, output) => {
 		const q = s((input as { query?: unknown })?.query);
-		const o = (output as { data?: { leads?: unknown[]; contacts?: unknown[]; deals?: unknown[]; companies?: unknown[] } })?.data;
+		const o = (
+			output as {
+				data?: {
+					leads?: unknown[];
+					contacts?: unknown[];
+					deals?: unknown[];
+					companies?: unknown[];
+				};
+			}
+		)?.data;
 		const total =
 			arrLen(o?.leads) + arrLen(o?.contacts) + arrLen(o?.deals) + arrLen(o?.companies);
 		return {
@@ -74,7 +83,9 @@ const RESOLVERS: Record<string, Resolver> = {
 		return {
 			title: "List pipelines",
 			meta:
-				typeof count === "number" ? `${count} pipeline${count === 1 ? "" : "s"}` : undefined,
+				typeof count === "number"
+					? `${count} pipeline${count === 1 ? "" : "s"}`
+					: undefined,
 		};
 	},
 	list_my_permissions: (_input, output) => {
@@ -89,9 +100,7 @@ const RESOLVERS: Record<string, Resolver> = {
 		return {
 			title: "List active layers",
 			meta:
-				expanded && expanded.length > 0
-					? `${expanded.length} expanded`
-					: "always-on only",
+				expanded && expanded.length > 0 ? `${expanded.length} expanded` : "always-on only",
 		};
 	},
 
@@ -172,11 +181,7 @@ const RESOLVERS: Record<string, Resolver> = {
  * Resolve a friendly title (and optional metadata) for one tool-call row.
  * Falls back to a prettified version of the tool name.
  */
-export function getRowTitle(
-	toolName: string,
-	input: unknown,
-	output: unknown,
-): RowTitle {
+export function getRowTitle(toolName: string, input: unknown, output: unknown): RowTitle {
 	const resolver = RESOLVERS[toolName];
 	if (resolver) return resolver(input, output);
 	return { title: prettify(toolName) };

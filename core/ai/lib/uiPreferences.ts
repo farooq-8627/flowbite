@@ -63,7 +63,7 @@ export function usePersistedBoolean(
 		// We deliberately do NOT include `fallback` in deps — fallback only
 		// matters on first read.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [key]);
+	}, [key, fallback]);
 
 	const update = useCallback(
 		(next: boolean | ((prev: boolean) => boolean)) => {

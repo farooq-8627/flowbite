@@ -88,29 +88,25 @@ Key rules:
 				.describe("Value to remember. Omit when delete=true."),
 			delete: z.boolean().optional().describe("Pass true to remove the key."),
 		})
-		.refine(
-			(v) => (v.delete === true ? true : v.value !== undefined),
-			{ message: "value is required unless delete=true." },
-		),
+		.refine((v) => (v.delete === true ? true : v.value !== undefined), {
+			message: "value is required unless delete=true.",
+		}),
 	execute: async ({ key, value, delete: del }) => {
 		return runTool(async () => {
-			const { ctx, orgId, conversationId } = getCtx();
-			const result = (await toolMutation(getCtx(), "ai/conversations:patchContextBag",
-				{
-					orgId,
-					conversationId,
-					key,
-					value: del ? undefined : value,
-					delete: del === true,
-				},)) as { ok: true; key: string; deleted: boolean };
+			const { orgId, conversationId } = getCtx();
+			const result = (await toolMutation(getCtx(), "ai/conversations:patchContextBag", {
+				orgId,
+				conversationId,
+				key,
+				value: del ? undefined : value,
+				delete: del === true,
+			})) as { ok: true; key: string; deleted: boolean };
 			return {
 				ok: true as const,
 				data: result,
 				display: {
 					kind: "text" as const,
-					text: del
-						? `Forgot ${key}.`
-						: `Remembered ${key}.`,
+					text: del ? `Forgot ${key}.` : `Remembered ${key}.`,
 				},
 			};
 		});

@@ -77,9 +77,9 @@ export const rateLimits = defineTable({
  * Only super_admin can write. Platform_owner edits from admin UI.
  */
 export const platformContext = defineTable({
-	key: v.string(),              // "main" — only one record
-	version: v.string(),          // "v1.0.0" — track changes
-	content: v.string(),          // Markdown injected into every system prompt
+	key: v.string(), // "main" — only one record
+	version: v.string(), // "v1.0.0" — track changes
+	content: v.string(), // Markdown injected into every system prompt
 	rules: v.optional(v.array(v.string())), // Explicit AI dos and don'ts
 	updatedBy: v.id("users"),
 	...timestamps,

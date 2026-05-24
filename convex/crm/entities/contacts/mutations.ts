@@ -317,61 +317,90 @@ export const softDelete = orgMutation({
  * Requires `leads.convert` — same permission that did the conversion. If the
  * contact has no `leadId` (created directly, not via conversion), this throws.
  */
+async function revertToLeadImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; contactId: Id<"contacts"> },
+): Promise<{ leadId: Id<"leads">; personCode: string; displayName: string }> {
+	const contact = await ctx.db.get(args.contactId);
+	if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if (!contact.leadId) {
+		throw new ConvexError({
+			code: "NO_ORIGIN_LEAD",
+			message:
+				"This contact was not created from a lead and cannot be reverted. Delete instead.",
+		});
+	}
+
+	const lead = await ctx.db.get(contact.leadId);
+	if (!lead || lead.orgId !== args.orgId) {
+		throw new ConvexError({
+			code: "LEAD_NOT_FOUND",
+			message: "Original lead no longer exists. Delete the contact instead.",
+		});
+	}
+
+	const now = Date.now();
+	// Flip the lead back to its working state. Clear convertedAt so the
+	// lead's list/board row stops showing the "converted" status and the
+	// standard workflow (edit, re-convert, etc.) becomes available again.
+	await ctx.db.patch(contact.leadId, {
+		status: "new",
+		convertedAt: undefined,
+		deletedAt: undefined,
+		updatedAt: now,
+	});
+	// Soft-delete the contact.
+	await ctx.db.patch(args.contactId, { deletedAt: now, updatedAt: now });
+
+	// Counter rebalance: contact leaves "active", lead returns to "open".
+	if (!contact.deletedAt) {
+		await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+	}
+	await applyOrgStat(ctx, args.orgId, "leads.open", +1);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reverted",
+		entityType: "contact",
+		entityId: args.contactId,
+		personCode: contact.personCode,
+		description: `Contact reverted to lead: ${contact.displayName}`,
+	});
+
+	return {
+		leadId: contact.leadId as Id<"leads">,
+		personCode: contact.personCode,
+		displayName: contact.displayName,
+	};
+}
+
 export const revertToLead = orgMutation({
 	args: { orgId: v.id("orgs"), contactId: v.id("contacts") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.convert");
+		return revertToLeadImpl(ctx, { ...args, userId });
+	},
+});
 
-		const contact = await ctx.db.get(args.contactId);
-		if (!contact || contact.orgId !== args.orgId || contact.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-		if (!contact.leadId) {
-			throw new ConvexError({
-				code: "NO_ORIGIN_LEAD",
-				message:
-					"This contact was not created from a lead and cannot be reverted. Delete instead.",
-			});
-		}
-
-		const lead = await ctx.db.get(contact.leadId);
-		if (!lead || lead.orgId !== args.orgId) {
-			throw new ConvexError({
-				code: "LEAD_NOT_FOUND",
-				message: "Original lead no longer exists. Delete the contact instead.",
-			});
-		}
-
-		const now = Date.now();
-		// Flip the lead back to its working state. Clear convertedAt so the
-		// lead's list/board row stops showing the "converted" status and the
-		// standard workflow (edit, re-convert, etc.) becomes available again.
-		await ctx.db.patch(contact.leadId, {
-			status: "new",
-			convertedAt: undefined,
-			deletedAt: undefined,
-			updatedAt: now,
-		});
-		// Soft-delete the contact.
-		await ctx.db.patch(args.contactId, { deletedAt: now, updatedAt: now });
-
-		// Counter rebalance: contact leaves "active", lead returns to "open".
-		if (!contact.deletedAt) {
-			await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
-		}
-		await applyOrgStat(ctx, args.orgId, "leads.open", +1);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "reverted",
-			entityType: "contact",
-			entityId: args.contactId,
-			personCode: contact.personCode,
-			description: `Contact reverted to lead: ${contact.displayName}`,
-		});
-
-		return { leadId: contact.leadId as Id<"leads"> };
+/**
+ * AI-callable internal twin — see `convex/ai/tools/_shared.ts` for the
+ * Option B auth-bridge rule. Wraps `revertToLeadImpl` with `userId` arg
+ * validated via `requireOrgMemberByIds` (scheduled actions can't read
+ * `getAuthUserId`, so the orchestrator passes the trusted userId).
+ */
+export const revertToLeadForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		contactId: v.id("contacts"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.convert");
+		return revertToLeadImpl(ctx, args);
 	},
 });

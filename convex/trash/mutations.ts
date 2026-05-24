@@ -8,11 +8,8 @@
  */
 
 import { ConvexError, v } from "convex/values";
+import { orgMutation, requireOrgMemberByIds } from "../_functions/authenticated";
 import type { Id } from "../_generated/dataModel";
-import {
-	orgMutation,
-	requireOrgMemberByIds,
-} from "../_functions/authenticated";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 import { applyOrgStat } from "../_shared/orgStats";

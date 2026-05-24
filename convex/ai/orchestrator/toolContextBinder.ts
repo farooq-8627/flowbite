@@ -15,13 +15,16 @@
 import type { ToolContext } from "../tools/_shared";
 import { setContextBagToolContext } from "../tools/contextBag";
 import { setCreateEntitiesContext } from "../tools/crud";
-import { setIntrospectContext } from "../tools/introspect";
 import { setAskChoiceContext } from "../tools/interaction/askChoice";
 import { setAskInputContext } from "../tools/interaction/askInput";
+import { setIntrospectContext } from "../tools/introspect";
 import { setBulkContext } from "../tools/layers/bulk";
 import { setCategoriesContext } from "../tools/layers/categories";
+import { setCsvImportContext } from "../tools/layers/csvImport";
 import { setDataContext } from "../tools/layers/data";
+import { setEnrichmentContext } from "../tools/layers/enrichment";
 import { setFieldsContext } from "../tools/layers/fields";
+import { setFileAnalysisContext } from "../tools/layers/fileAnalysis";
 import { setMembersContext } from "../tools/layers/members";
 import { setPipelinesContext } from "../tools/layers/pipelines";
 import { setSettingsContext } from "../tools/layers/settings";
@@ -29,8 +32,10 @@ import { setTagsContext } from "../tools/layers/tags";
 import { setTemplatesContext } from "../tools/layers/templates";
 import { setViewsContext } from "../tools/layers/views";
 import { setNotesRemindersContext } from "../tools/notesReminders";
+import { setPersonaContextToolContext } from "../tools/personaContext";
 import { setSearchToolContext } from "../tools/search";
 import { setUpdateEntityContext } from "../tools/updateEntity";
+import { setWebSearchToolContext } from "../tools/webSearch";
 
 /**
  * Bind a ToolContext to every tool module so their `execute` functions
@@ -47,6 +52,7 @@ export function bindAllToolContexts(toolCtx: ToolContext): void {
 	setSearchToolContext(toolCtx);
 	setIntrospectContext(toolCtx);
 	setContextBagToolContext(toolCtx);
+	setPersonaContextToolContext(toolCtx);
 	setCreateEntitiesContext(toolCtx);
 	setUpdateEntityContext(toolCtx);
 	setNotesRemindersContext(toolCtx);
@@ -59,7 +65,11 @@ export function bindAllToolContexts(toolCtx: ToolContext): void {
 	setMembersContext(toolCtx);
 	setSettingsContext(toolCtx);
 	setBulkContext(toolCtx);
+	setCsvImportContext(toolCtx);
+	setEnrichmentContext(toolCtx);
+	setFileAnalysisContext(toolCtx);
 	setTemplatesContext(toolCtx);
 	setDataContext(toolCtx);
 	setFieldsContext(toolCtx);
+	setWebSearchToolContext(toolCtx);
 }

@@ -362,6 +362,24 @@ export function getSettingsSections(
 			description: "AI message consumption against your plan limit.",
 			keywords: ["limit", "plan", "tokens", "messages", "quota", "consumption"],
 		},
+		{
+			id: "ai.memory",
+			groupId: "ai",
+			label: "AI Memory",
+			description:
+				"What the AI has learned and remembers about your workspace and you across conversations.",
+			keywords: [
+				"memory",
+				"facts",
+				"keyfacts",
+				"summary",
+				"learned",
+				"remember",
+				"forget",
+				"persona",
+				"context",
+			],
+		},
 
 		// ── Appearance ────────────────────────────────────────────────────────
 		{

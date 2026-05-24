@@ -11,11 +11,10 @@
  * the daily cron permanently removes a row. Defaults to 30 when unset.
  */
 
-import { v } from "convex/values";
-import { ConvexError } from "convex/values";
+import { ConvexError, v } from "convex/values";
+import { orgQuery } from "../_functions/authenticated";
 import type { Id } from "../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../_generated/server";
-import { orgQuery } from "../_functions/authenticated";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions";
 import { getOrgMember } from "../orgs/helpers";

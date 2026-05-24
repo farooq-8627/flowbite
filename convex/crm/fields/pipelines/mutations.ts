@@ -16,13 +16,13 @@
  * and writes through `ctx.db.patch` to keep stage `id`s stable.
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import {
 	orgMutation,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { getPlanLimits, isWithinLimit, type PlanTier } from "../../../_platform/limits";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
@@ -145,10 +145,7 @@ async function createImpl(
 		const existingDefault = await ctx.db
 			.query("pipelines")
 			.withIndex("by_org_and_entity_and_default", (q) =>
-				q
-					.eq("orgId", args.orgId)
-					.eq("entityType", args.entityType)
-					.eq("isDefault", true),
+				q.eq("orgId", args.orgId).eq("entityType", args.entityType).eq("isDefault", true),
 			)
 			.first();
 		if (existingDefault) {

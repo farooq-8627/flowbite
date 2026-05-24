@@ -100,8 +100,7 @@ export async function seedMockEntities(
 		.collect();
 	const catNameToId = new Map<string, Id<"noteCategories">>();
 	for (const c of cats) catNameToId.set(c.name.toLowerCase(), c._id);
-	const defaultCategoryId =
-		cats.find((c) => c.isDefault && !c.isArchived)?._id ?? cats[0]?._id;
+	const defaultCategoryId = cats.find((c) => c.isDefault && !c.isArchived)?._id ?? cats[0]?._id;
 
 	let inserted = 0;
 
@@ -218,9 +217,7 @@ export async function seedMockEntities(
 				? contactDisplayNameToCode.get(seed.contactDisplayName)
 				: undefined;
 			const companyId = seed.companyKey ? companyKeyToId.get(seed.companyKey) : undefined;
-			const companyCode = seed.companyKey
-				? companyKeyToCode.get(seed.companyKey)
-				: undefined;
+			const companyCode = seed.companyKey ? companyKeyToCode.get(seed.companyKey) : undefined;
 
 			const id = await ctx.db.insert("deals", {
 				orgId,

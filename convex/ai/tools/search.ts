@@ -7,8 +7,9 @@
  *   get_dashboard_summary — stats overview for the org
  */
 import { z } from "zod";
+import { entityTypeEnum } from "../../_shared/synonyms";
 import { registerTool } from "../toolRegistry";
-import { requirePermission, runTool, type ToolContext, toolQuery } from "./_shared";
+import { coerceInt, requirePermission, runTool, type ToolContext, toolQuery } from "./_shared";
 
 let _toolCtx: ToolContext | null = null;
 export function setSearchToolContext(ctx: ToolContext): void {
@@ -24,11 +25,25 @@ registerTool({
 	layer: "always",
 	permission: null,
 	confirmation: "none",
-	description: `
-Search across CRM records (leads, contacts, deals, companies).
-Always search before creating to avoid duplicates.
-Returns up to 10 matching records with key fields.
-  `.trim(),
+	description:
+		"Full-text search across leads, contacts, deals, and companies. Always run before creating to avoid duplicates.",
+	instruction: {
+		whenToCall:
+			"PRE-FLIGHT for every create_* tool. Also use whenever the user mentions a person/company by NAME (not by code) — resolve to a personCode/companyCode before calling any code-keyed tool.",
+		whenNotToCall:
+			"the user just gave a code (P-001 / D-001 / C-001) — call get_entity_detail instead.",
+		requiredClarifications: ["query"],
+		synonyms: ["find", "look up", "search", "is X in the CRM"],
+		goodExample: {
+			description: "User: 'Do we have Sarah Khan?'",
+			args: { query: "Sarah Khan", entityType: "all", limit: 10 },
+		},
+		badExample: {
+			description: "User: 'Show me P-001.'",
+			args: { query: "P-001", entityType: "all" },
+			whyBad: "That's a code lookup, not a search. Use get_entity_detail for codes.",
+		},
+	},
 	runbook: {
 		onSuccess:
 			"Render the result list (already a live entity-list card). If exactly one match: confirm in one short sentence. If 2-8 matches and the next action depends on knowing which: call ask_user_choice.",
@@ -39,12 +54,40 @@ Returns up to 10 matching records with key fields.
 	},
 	schema: z.object({
 		query: z.string().describe("Search term — name, email, company, deal title, etc."),
-		entityType: z.enum(["lead", "contact", "deal", "company", "all"]).default("all"),
-		limit: z.number().min(1).max(20).default(10),
+		// Day 2 T1.4 — synonym preprocess: "leads"→"lead", etc. "all" stays
+		// canonical. Implemented inline because `entityTypeEnum()` doesn't
+		// include "all".
+		entityType: z
+			.preprocess(
+				(v) => {
+					if (typeof v !== "string") return v;
+					const k = v.trim().toLowerCase();
+					if (k === "all" || k === "*" || k === "any") return "all";
+					const map: Record<string, string> = {
+						leads: "lead",
+						contacts: "contact",
+						deals: "deal",
+						opportunities: "deal",
+						companies: "company",
+						accounts: "company",
+					};
+					return map[k] ?? k;
+				},
+				z.enum(["lead", "contact", "deal", "company", "all"]),
+			)
+			.default("all"),
+		// Smaller open models (NVIDIA NIM Llama-3.3, OpenRouter free Llama,
+		// Mistral Small) routinely emit `limit: "100"` (string instead of
+		// number) AND ignore the documented max. `coerceInt` converts
+		// strings → numbers before validation; `.catch(...)` clamps any
+		// out-of-range / NaN value to the design max instead of failing
+		// the whole tool call. Production logs 2026-05-24 show this
+		// firing every search on Llama-class models.
+		limit: coerceInt((n) => n.min(1).max(20).default(10).catch(20)),
 	}),
 	execute: async ({ query, entityType, limit }) => {
 		return runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			const results: Record<string, unknown[]> = {};
 			const q = query.toLowerCase().trim();
 
@@ -64,12 +107,16 @@ Returns up to 10 matching records with key fields.
 				(entityType === "contact" || entityType === "all") &&
 				permissions.includes("contacts.view")
 			) {
-				const r = await toolQuery(getCtx(), "crm/entities/contacts/queries:searchContacts", {
-					orgId,
-					query: q,
-					limit,
-					excludeFromAI: false,
-				}).catch(() => []);
+				const r = await toolQuery(
+					getCtx(),
+					"crm/entities/contacts/queries:searchContacts",
+					{
+						orgId,
+						query: q,
+						limit,
+						excludeFromAI: false,
+					},
+				).catch(() => []);
 				results.contacts = r as unknown[];
 			}
 			if (
@@ -88,12 +135,16 @@ Returns up to 10 matching records with key fields.
 				(entityType === "company" || entityType === "all") &&
 				permissions.includes("companies.view")
 			) {
-				const r = await toolQuery(getCtx(), "crm/entities/companies/queries:searchCompanies", {
-					orgId,
-					query: q,
-					limit,
-					excludeFromAI: false,
-				}).catch(() => []);
+				const r = await toolQuery(
+					getCtx(),
+					"crm/entities/companies/queries:searchCompanies",
+					{
+						orgId,
+						query: q,
+						limit,
+						excludeFromAI: false,
+					},
+				).catch(() => []);
 				results.companies = r as unknown[];
 			}
 
@@ -159,14 +210,14 @@ Returns all fields, recent notes, linked records, and AI context summary.
 			"Tell the user they need <entity>.view permission. Suggest contacting an admin.",
 	},
 	schema: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		code: z
 			.string()
 			.describe("Entity code: personCode (P-XXX), dealCode (D-XXX), or companyCode (C-XXX)."),
 	}),
 	execute: async ({ entityType, code }) => {
 		return runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			const permMap: Record<string, string> = {
 				lead: "leads.view",
 				contact: "contacts.view",
@@ -187,10 +238,14 @@ Returns all fields, recent notes, linked records, and AI context summary.
 					dealCode: code,
 				}).catch(() => null)) as { excludeFromAI?: boolean } | null;
 			} else if (entityType === "company") {
-				record = (await toolQuery(getCtx(), "crm/entities/companies/queries:getByCompanyCode", {
-					orgId,
-					companyCode: code,
-				}).catch(() => null)) as { excludeFromAI?: boolean } | null;
+				record = (await toolQuery(
+					getCtx(),
+					"crm/entities/companies/queries:getByCompanyCode",
+					{
+						orgId,
+						companyCode: code,
+					},
+				).catch(() => null)) as { excludeFromAI?: boolean } | null;
 			}
 
 			if (!record)
@@ -244,7 +299,7 @@ Use this to answer "how are we doing?" or "what should I focus on today?"
 	schema: z.object({}),
 	execute: async () => {
 		return runTool(async () => {
-			const { ctx, orgId } = getCtx();
+			const { orgId } = getCtx();
 			const stats = await toolQuery(getCtx(), "orgs/queries:getDashboardStats", { orgId });
 			return { ok: true as const, data: stats };
 		});

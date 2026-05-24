@@ -3,17 +3,17 @@
 @import "shadcn/tailwind.css";
 @import "react-phone-number-input/style.css";
 
-/* Streamdown utility classes (AI markdown renderer) — Tailwind needs to scan
-   the package's compiled JS for the classes it uses at runtime. Path is
-   relative from this CSS file (app/[locale]/globals.css → root node_modules). */
-@source "../../node_modules/streamdown/dist/*.js";
-
 /* Theme presets — loaded via data-theme-preset attribute on <html> */
 @import "../../styles/presets/default.css";
 @import "../../styles/presets/tangerine.css";
 @import "../../styles/presets/brutalist.css";
 @import "../../styles/presets/soft-pop.css";
 @import "../../styles/presets/orbitly.css";
+
+/* Streamdown utility classes (AI markdown renderer) — Tailwind needs to scan
+   the package's compiled JS for the classes it uses at runtime. Path is
+   relative from this CSS file (app/[locale]/globals.css → root node_modules). */
+@source "../../node_modules/streamdown/dist/*.js";
 
 /* Disable transitions during theme changes to prevent flash */
 .disable-transitions,
@@ -337,7 +337,6 @@ html[data-font="source-code-pro"] body {
 	z-index: 1;
 }
 
-
 /* ──────────────────────────────────────────────────────────────────────
    AI chat scrollbar policy (PHASE-3-AI-AUDIT.md §6 Week 1 spec 1.5b/c)
 
@@ -350,18 +349,57 @@ html[data-font="source-code-pro"] body {
      keep the horizontal one visible (the user needs the affordance to
      know they can scroll right when a long line overflows).
    ────────────────────────────────────────────────────────────────────── */
+.chat-sheet-wrapper,
+.chat-sheet-wrapper *,
 .chat-sheet-wrapper [data-slot="scroll-area-viewport"],
 .reasoning-panel-body {
 	scrollbar-width: none;
+	-ms-overflow-style: none;
 }
+.chat-sheet-wrapper::-webkit-scrollbar,
+.chat-sheet-wrapper *::-webkit-scrollbar,
 .chat-sheet-wrapper [data-slot="scroll-area-viewport"]::-webkit-scrollbar,
 .reasoning-panel-body::-webkit-scrollbar {
 	display: none;
+	width: 0;
+	height: 0;
 }
 /* Also hide the Radix custom scrollbar overlay inside the chat sheet so
-   we don't get a phantom track. */
-.chat-sheet-wrapper [data-slot="scroll-area-scrollbar"] {
+   we don't get a phantom track / thumb on the right edge. */
+.chat-sheet-wrapper [data-slot="scroll-area-scrollbar"],
+.chat-sheet-wrapper [data-slot="scroll-area-thumb"],
+.chat-sheet-wrapper [data-slot="scroll-area-corner"] {
 	display: none !important;
+	width: 0 !important;
+	background: transparent !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   ROOT-CAUSE FIX for "code block widens the chat panel" (2026-05-24).
+
+   Radix `<ScrollAreaPrimitive.Viewport>` auto-wraps its children in
+   a `<div style="display:table; min-width:100%">`. `display:table`
+   shrink-wraps to the **content's intrinsic width** — so a `<pre>`
+   with `whitespace: pre` and a long line establishes a content width
+   wider than the panel, and the table grows to match. The viewport
+   is `overflow:scroll` so it would normally scroll, but because the
+   inner table also grows the rest of the message column (including
+   the assistant turn body) gets stretched, painting code blocks
+   past the chat panel's right edge.
+
+   Fix: inside `.chat-sheet-wrapper` only, swap the Radix wrapper's
+   `display:table` for `display:block` and pin its width to 100%.
+   This makes the column shrink-to-parent, so any wide child must
+   either be `max-w-full` (and so visually clamp) or `overflow-x-auto`
+   (and so scroll inside its own box) — exactly what we want.
+
+   Scope: limited to `.chat-sheet-wrapper`, so other ScrollArea
+   instances in the app keep Radix's default behaviour.
+   ────────────────────────────────────────────────────────────────────── */
+.chat-sheet-wrapper [data-slot="scroll-area-viewport"] > div {
+	display: block !important;
+	width: 100% !important;
+	min-width: 0 !important;
 }
 
 .code-block-body {

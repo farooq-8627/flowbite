@@ -41,7 +41,7 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { FILE_CATEGORIES } from "@/core/data-io/files/file-categories";
 import { normalizeError } from "@/lib/normalizeError";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
-import { parseOptions } from "./CreateFieldDialog";
+import { parseOptions } from "../modules/CreateFieldDialog";
 
 type FieldDef = Doc<"fieldDefinitions">;
 type Pipeline = Doc<"pipelines">;

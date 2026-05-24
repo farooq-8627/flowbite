@@ -1,42 +1,43 @@
 "use client";
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { z } from "zod/v4";
-import { Badge } from "@/components/ui/badge";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
-import type { OrgSettings } from "../../types";
-import { AIPreferencesSection } from "./ai/AIPreferencesSection";
-import { ApiKeySection } from "./ai/ApiKeySection";
-import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
+import { AIMemorySection } from "./ai/AIMemorySection";
+import { AIPreferencesSection } from "./ai/AIPreferencesSection";
+import { AIUsageSection } from "./ai/AIUsageSection";
+import { ApiKeySection } from "./ai/ApiKeySection";
 
 // ────────────────────────────────────────────────────────────────────────────
-// Business Context
+// Business Context — owner-edited static identity blob.
+// Stored on aiPersonaContext (org-level row) since 2026-05-24; previously
+// on the now-dropped `orgs.aiContext` column.
 // ────────────────────────────────────────────────────────────────────────────
 
 const AI_CONTEXT_MAX = 10_000;
 
 const aiContextSchema = z.object({
-	aiContext: z.string().max(AI_CONTEXT_MAX, `Max ${AI_CONTEXT_MAX.toLocaleString()} characters`),
+	identity: z.string().max(AI_CONTEXT_MAX, `Max ${AI_CONTEXT_MAX.toLocaleString()} characters`),
 });
 
-function BusinessContextSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
-	const update = useMutation(api.orgs.mutations.update);
+function BusinessContextSection({ orgId }: { orgId: Id<"orgs"> }) {
+	const data = useQuery(api.ai.personaContext.getOrgIdentity, { orgId });
+	const setIdentity = useMutation(api.ai.personaContext.setOrgIdentity);
 	const { form, isSubmitting, isDirty, handleSubmit } = useSettingsForm({
 		schema: aiContextSchema,
-		values: { aiContext: org.aiContext ?? "" },
-		onSubmit: async (data) => {
-			await update({ orgId, aiContext: data.aiContext });
+		values: { identity: data?.identity ?? "" },
+		onSubmit: async (formData) => {
+			await setIdentity({ orgId, identity: formData.identity });
 		},
 	});
 
-	const value = form.watch("aiContext") ?? "";
+	const value = form.watch("identity") ?? "";
 	const count = value.length;
 	const percent = (count / AI_CONTEXT_MAX) * 100;
 
@@ -50,7 +51,7 @@ function BusinessContextSection({ org, orgId }: { org: OrgSettings; orgId: Id<"o
 				<form onSubmit={handleSubmit}>
 					<FormField
 						control={form.control}
-						name="aiContext"
+						name="identity"
 						render={({ field }) => (
 							<FormItem className="py-4">
 								<FormControl>
@@ -91,64 +92,17 @@ function BusinessContextSection({ org, orgId }: { org: OrgSettings; orgId: Id<"o
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Usage (read-only, placeholder pending real usage backend)
-// ────────────────────────────────────────────────────────────────────────────
-
-function UsageSection({ org }: { org: OrgSettings }) {
-	// Plan-based limits — mirror the logic you'd use in billing.
-	const planLimits: Record<string, number> = {
-		free: 100,
-		starter: 500,
-		pro: 2_000,
-		business: 10_000,
-	};
-	const limit = planLimits[org.plan] ?? 500;
-	// NOTE: Replace with real usage query when AI usage tracking ships.
-	const used = 0;
-	const percent = (used / limit) * 100;
-
-	return (
-		<SettingsSection
-			id="ai.usage"
-			title="AI Usage"
-			description="AI messages consumed this billing period."
-			action={
-				<Badge variant="secondary" className="capitalize">
-					{org.plan} plan
-				</Badge>
-			}
-		>
-			<SettingsRow
-				label="Messages this month"
-				description="Resets at the start of each billing cycle."
-			>
-				<div className="flex flex-col gap-1.5">
-					<div className="flex items-center justify-end gap-2">
-						<span className="text-sm font-medium tabular-nums">
-							{used.toLocaleString()}
-						</span>
-						<span className="text-sm text-muted-foreground">
-							/ {limit.toLocaleString()}
-						</span>
-					</div>
-					<Progress value={percent} className="w-full" />
-				</div>
-			</SettingsRow>
-		</SettingsSection>
-	);
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // Export
 // ────────────────────────────────────────────────────────────────────────────
 
-export function AIGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
+export function AIGroup({ orgId }: { orgId: Id<"orgs"> }) {
 	return (
 		<div className="grid gap-6">
-			<BusinessContextSection org={org} orgId={orgId} />
+			<BusinessContextSection orgId={orgId} />
+			<AIMemorySection orgId={orgId} />
 			<AIPreferencesSection />
 			<ApiKeySection orgId={orgId} />
-			<UsageSection org={org} />
+			<AIUsageSection orgId={orgId} />
 		</div>
 	);
 }

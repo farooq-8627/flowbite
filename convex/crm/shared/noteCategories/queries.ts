@@ -10,8 +10,32 @@
  */
 
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { hasPermission } from "../../../_shared/permissions";
+
+async function listForOrgImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; permissions: string[]; includeArchived?: boolean },
+) {
+	if (
+		!hasPermission(args.permissions, "notes.categories.view") &&
+		!hasPermission(args.permissions, "notes.view")
+	) {
+		return [];
+	}
+	const rows = await ctx.db
+		.query("noteCategories")
+		.withIndex("by_org_and_position", (q) => q.eq("orgId", args.orgId))
+		.collect();
+	const filtered = args.includeArchived ? rows : rows.filter((r) => !r.isArchived);
+	return filtered.sort((a, b) => a.position - b.position);
+}
 
 export const listForOrg = orgQuery({
 	args: {
@@ -20,23 +44,28 @@ export const listForOrg = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		// `notes.categories.view` is broad (everyone sees colours). If a role
-		// somehow lacks it, allow `notes.view` as a fallback so reading a note
-		// can still resolve its category.
-		if (
-			!hasPermission(member.permissions, "notes.categories.view") &&
-			!hasPermission(member.permissions, "notes.view")
-		) {
-			return [];
-		}
+		return listForOrgImpl(ctx, {
+			orgId: args.orgId,
+			permissions: member.permissions,
+			includeArchived: args.includeArchived,
+		});
+	},
+});
 
-		const rows = await ctx.db
-			.query("noteCategories")
-			.withIndex("by_org_and_position", (q) => q.eq("orgId", args.orgId))
-			.collect();
-
-		const filtered = args.includeArchived ? rows : rows.filter((r) => !r.isArchived);
-		return filtered.sort((a, b) => a.position - b.position);
+/** AI-callable internal twin. */
+export const listForOrgForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		includeArchived: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return listForOrgImpl(ctx, {
+			orgId: args.orgId,
+			permissions: member.permissions,
+			includeArchived: args.includeArchived,
+		});
 	},
 });
 

@@ -75,3 +75,23 @@ Card / shell sizing pass:
 - `RolesSection` table wrapper has `-mx-2 ... overflow-x-auto px-2` on phones so the table scrolls horizontally _within its card_ instead of inflating the card. Description column truncates to `line-clamp-2 max-w-[20rem]`.
 - `ShellLayout`'s `<main>` keeps `overflow-x-hidden` to prevent horizontal page-level scroll, but the inner `<div>` now adds mobile padding (`px-3 pb-6 pt-1`) so cards don't kiss the viewport edges and the spacing between sections is tighter on small screens (`space-y-4 sm:space-y-6`).
 
+
+
+## Update — 2026-05-24 — Settings folder restructure to match UI groups + AI sections rebuilt
+
+The settings folder structure now matches the UI tree 1:1 — finding the file behind a UI element is a single guess.
+
+Moves:
+
+- `groups/notes/{NoteCategoriesSection,RemindersSection,FollowupsSection,TimelineSection}` → `groups/crm/*`. The `groups/notes/` folder is deleted. These were always rendered inside the CRM tab; living in their own folder created a confusing mismatch between the UI taxonomy and disk.
+- `groups/crm/{PipelineEditor,StageFieldsTable,StageScopedEditFieldDialog}` → `groups/pipelines/*` (new folder). These belong to the **Pipelines** settings group, not CRM.
+- `groups/crm/{CreateFieldDialog,EditFieldDialog,SortableFieldsTable,FieldEditor}` → `groups/modules/*`. These are per-entity field-definition editors — they're consumed by `groups/modules/SlotFieldsSection.tsx` which now imports them as siblings.
+
+Imports updated atomically: 6 files re-pointed (CRMGroup, PipelinesGroup, SlotFieldsSection, SlotPipelinesSection, StageFieldsTable, StageScopedEditFieldDialog) + 2 stale doc paths fixed (followups STATE.md + MODULE.md).
+
+AI section rebuilt under the same restructure:
+
+- New **AI Memory** section (`groups/ai/AIMemorySection.tsx`) — read-only summary + keyFacts the agent has learned about the workspace + the user; per-scope "Forget all" with a confirm dialog. Workspace forget gated on `org.manage`; user forget always-on. Identity blob is preserved (called out in copy).
+- New **AI Usage** section (`groups/ai/AIUsageSection.tsx`) — replaces the prior 0/0 placeholder. Plan-limit gauge with red flash at 100%, range tabs (7d/30d/90d), 4-stat strip (chat turns / tool calls / cost / error rate), daily token sparkline, top-5 tools + top-5 models tables. All driven by the new `api.ai.queries.telemetry.getOrgUsage` rollup.
+- **Billing → Plan limits** AI tokens UsageBar wired to the same query — one source of truth across both surfaces.
+- AI subnav (`config/settings-nav.ts`) expanded to **Business Context / Memory / Usage** (dropped the never-implemented "AI Features" toggle).

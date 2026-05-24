@@ -89,6 +89,96 @@ Before considering a deferral "done":
 
 Deferred restrictions don't surface until the day they bite. By then the original context is gone, the agent who wrote the comment is two sessions back, and the only signal is "production is on fire." Capturing the rationale at the moment of deferral pays back 10× when it's time to re-enable. Chat history is NOT durable; this file is.
 
+## RULE: Doc cleanup at every commit — summarise shipped, keep pending in full (NON-NEGOTIABLE)
+
+> Tracking docs (`PHASE-*.md` audits, `STATE.md` files, `todos.md`,
+> `Future-Enhancements.md`) are **planning surfaces**, not changelogs. They
+> exist to tell the next session what to do next. They are NOT a record of
+> what was done. Without an active cleanup rule they grow into wall-of-text
+> archives that hide the actually-pending work and force users to ask "what's
+> left?" every session. This rule fixes that automatically.
+
+### The contract — two layers of granularity
+
+| Granularity | Trigger | What stays in the doc |
+|---|---|---|
+| **Task-level cleanup** (during a phase) | Every time you complete one or more tasks inside an in-progress phase | Each completed task collapses to a **one-line ✅ summary** (verb + outcome + file refs). Pending tasks keep full context. |
+| **Phase-level rollup** | When a phase fully ships (all its tasks done) | The whole phase collapses to a **single shipped paragraph** with the date. Per-task summaries from inside the phase are deleted. |
+
+You always summarise UP. Per-task summaries roll up into per-phase paragraphs, which roll up into a single line in the parent index when the parent ships.
+
+### Required reductions when a task ships
+
+When you mark a task ✅, in the SAME edit:
+
+1. **Replace the task's full description** with a one-line summary in the format:
+   `✅ <T-id> — <imperative verb> <what changed> <key file or two>. <one-sentence outcome>.`
+   Example: `✅ T1.1 — Hide propose() JSON in streamLoop.ts via wrapToolsForApprovalSanitisation. Model never sees raw confirmation payload.`
+2. **Delete its sub-bullets, code excerpts, file diffs, screenshots-of-issues** — they belong in git history, not in the planning doc.
+3. **Keep cross-references** when another pending task depends on the shipped one ("see T1.1 for sanitisation pattern").
+4. **Never delete the task's verification line** if the verification is referenced elsewhere (tests still failing means the task isn't truly shipped).
+
+### Required preservation — what NEVER gets summarised away (until parent phase fully ships)
+
+The following stay in **full text** in the doc until the **whole phase containing them** has shipped:
+
+| Content | Why it stays |
+|---|---|
+| **Pending task descriptions, sub-bullets, file paths, code sketches, schemas** | Next session needs the full context to execute without re-asking |
+| **Avoid-lists / DON'T-do lists** | These are guardrails; collapsing loses the rationale |
+| **Production-platform / industry findings** (e.g. PHASE-3-AI-AUDIT §2: Anthropic, AI SDK, Attio, Salesforce, HubSpot, Clay, OWASP, Inngest) | These ARE the design rationale for every pending task; never summarise away while any related task is pending |
+| **Architecture diagrams** | Cheap to keep, expensive to recreate |
+| **Audit-defect tables with cross-refs to fixes** | Anchoring data — keep the rows, just flip the status column |
+| **Sequence / dependency diagrams** | Same — cheap to keep, hard to recreate |
+| **Verification protocols + manual flow tests** | Until the phase is fully verified |
+| **Pricing / valuation analyses tied to a phase's output** | Until the phase ships AND the valuation is re-evaluated |
+
+If you're unsure whether something counts as "durable context," default to **keep it**. The cost of keeping a 200-token block is negligible; the cost of losing the rationale next session is a re-audit.
+
+### Status flips, NOT deletions, for findings tables
+
+When an industry-pattern finding is implemented (e.g. "Anthropic's `stepCountIs(20)` default" → we ship `stepCountIs(30)`), do NOT delete the finding. **Add a Status column** with values:
+
+- `✅ Implemented — <one-line where + when>` (e.g. `✅ Implemented — Week 1.1, streamLoop.ts`)
+- `🟡 Partial — <what's covered, what's missing>` (e.g. `🟡 Partial — needsApproval shape adopted W3.3; full-native streamText-paused HITL still pending — see Future-Enhancements.md §B.8`)
+- `⬜ Pending — <which task / week ships it>` (e.g. `⬜ Pending — Week 4 §6 row 4.2 (quarantined LLM action)`)
+- `❌ Won't ship — <why + which decision row>` (e.g. `❌ Won't ship — see locked decision #N in AGENTS.md`)
+
+The finding text itself stays verbatim. Only the Status column changes over time.
+
+### Phase-level rollup template
+
+When EVERY task in a phase ships, replace the phase's whole section with one paragraph:
+
+```markdown
+### ✅ Week 3 — Migrate to AI SDK v6 native HITL + add `contextBag` — SHIPPED 2026-05-23
+
+`needsApproval` field on `ToolDef` honoured alongside legacy `confirmation:"twoStep"` via `resolveNeedsApproval`; `aiConversations.contextBag` schema + migration; `set_context_var` synthetic tool; "Facts already known" injected into prompt; frontend `addToolApprovalResponse` mutation alias matches AI SDK v6 cookbook surface. See `convex/ai/orchestrator/streamLoop.ts`, `convex/ai/tools/contextBag.ts`. Score 41 → 73.
+```
+
+Inside-phase per-task ✅ lines (`✅ T3.1 …`) get deleted at this point. The git history still has them.
+
+### When you do the cleanup
+
+1. **In the same edit** that flips a task's status to ✅. Don't queue it for "later" — it'll never happen.
+2. **Before** writing your reply summary to the user. The doc is the source of truth; your chat reply is a reflection of the doc.
+3. **Pre-flight every session**: scan the docs you're about to touch and check for completed-but-not-summarised tasks. Apply the rule retroactively if you find them.
+
+### What you MUST do every time you ship work that touches a tracking doc
+
+Workflow checklist (run mentally before ending a message that included a doc edit):
+
+- [ ] Did I flip every shipped task's status to ✅ AND collapse it to a one-liner?
+- [ ] Did I keep every pending task's full context (sub-bullets, file paths, code sketches)?
+- [ ] Did I keep every audit-finding row, just flipping the Status column to Implemented / Partial / Pending?
+- [ ] Did I keep avoid-lists, sequence diagrams, verification protocols verbatim?
+- [ ] If a whole phase shipped, did I roll up its per-task lines into one paragraph?
+- [ ] Did I update **every tracking doc** the change touches (typically: phase audit + module STATE.md + global todos.md)?
+
+### Why this rule exists
+
+Without it, every doc grows monotonically. After 5 phases the user can't tell what's pending without scrolling 600 lines. Then they have to ask "what's left?" — which is the exact question this rule eliminates. Cheap to enforce per-message; expensive to retrofit at month 6.
+
 ## RULE: RTL-safe Tailwind classes only
 
 This app supports Arabic (RTL) and English (LTR). **Never use directional CSS classes.**
@@ -133,6 +223,103 @@ Never hardcode the app name, description, URL, or platform prefix in user-visibl
 ## RULE: Convex env vars for backend secrets
 
 For Convex functions (not Next.js), use `process.env.VARIABLE_NAME` directly — Convex reads from the Convex dashboard environment variables, not `.env.local`. Never hardcode platform names or prefixes in Convex functions.
+
+## RULE: AI tools call `*ForAI` internal twins, NEVER public `orgQuery`/`orgMutation` (NON-NEGOTIABLE)
+
+> **Why this is a rule, not a guideline.** AI tools execute inside
+> `processChat.run`, an `internalAction` that Convex schedules via
+> `ctx.scheduler.runAfter`. **Per the Convex docs, scheduled actions do
+> NOT propagate auth identity:**
+>
+> > *"The auth is not propagated from the scheduling to the scheduled
+> > function. If you want to authenticate or check authorization, you'll
+> > have to pass the requisite user information in as a parameter."*
+> > — [docs.convex.dev/scheduling/scheduled-functions#auth](https://docs.convex.dev/scheduling/scheduled-functions#auth)
+>
+> If a tool calls a public `orgQuery` / `orgMutation` directly via
+> `ctx.runMutation(api.foo.bar.create, …)`, `getAuthUserId(ctx)` returns
+> `null` inside that handler and `requireOrgMember()` throws
+> `UNAUTHORIZED`. The AI loop then ping-pongs on the error and either
+> hangs ("Preparing response…") or gives up with an empty body. This is
+> the systemic root cause we hit on 2026-05-24.
+
+### The Option B pattern — every AI-callable handler has an internal twin
+
+For every public `orgQuery` / `orgMutation` an AI tool needs to call,
+the same file MUST also export an internal `*ForAI` twin sitting next
+to it. The twin:
+
+1. Is declared with `internalQuery` / `internalMutation` so it can never be hit from the client.
+2. Takes `userId: v.id("users")` as an explicit arg.
+3. Validates membership via `requireOrgMemberByIds(ctx, orgId, userId)` — never `getAuthUserId(ctx)`.
+4. Calls the **same `*Impl` body** the public version calls. Zero divergence over time.
+
+```ts
+// convex/crm/x/mutations.ts
+
+// 1. Extract the body into a private *Impl helper that takes a MutationCtx.
+async function createImpl(ctx: MutationCtx, args: { orgId: Id<"orgs">; … }) { … }
+
+// 2. Public version — auth from session.
+export const create = orgMutation({
+  args: { orgId: v.id("orgs"), … },
+  handler: async (ctx, args) => {
+    const { member } = await requireOrgMember(ctx, args.orgId);
+    requireRole(member.permissions, "x.manage");
+    return createImpl(ctx, args);
+  },
+});
+
+// 3. AI-callable internal twin — auth from a trusted userId arg.
+export const createForAI = internalMutation({
+  args: { orgId: v.id("orgs"), userId: v.id("users"), … },
+  handler: async (ctx, args) => {
+    const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+    requireRole(member.permissions, "x.manage");
+    const { userId: _u, ...rest } = args;
+    return createImpl(ctx, rest);
+  },
+});
+```
+
+### How the helper rewrites paths automatically
+
+Tools call `toolMutation(tc, "crm/x/mutations:create", args)` from
+`convex/ai/tools/_shared.ts`. The helper:
+
+1. Rewrites the path to `crm/x/mutations:createForAI`.
+2. Injects the trusted `userId` from the orchestrator's `ToolContext`.
+3. Skips both transforms for `ai/*` paths — those are already internal-only.
+
+So tool authors **always write the public path string** — they never
+spell out `…ForAI`. If the twin doesn't exist, runtime fails with
+"function not found", which is loud, fast, and easy to debug.
+
+### What you MUST do when writing a new AI tool
+
+- [ ] Confirm the public handler exists.
+- [ ] If the tool calls a public `orgQuery`/`orgMutation`, **add the `*ForAI` twin in the same change** — do not ship the tool without it.
+- [ ] Extract the shared body into an `*Impl` helper if not already done. Keep public + ForAI signatures aligned.
+- [ ] Use `requireOrgMemberByIds(ctx, args.orgId, args.userId)` in the twin — never `getAuthUserId`.
+- [ ] Call from the tool via `toolMutation(getCtx(), "module:export", args)` — pass the public path; the helper appends `ForAI` automatically.
+- [ ] Never accept `userId` as an arg on a public mutation. The twin is the ONLY place `userId` is an arg.
+- [ ] If the call goes to `convex/ai/*`, do NOT add a twin — the helper passes those through unchanged because they're already internal-only.
+
+### Verification
+
+`pnpm typecheck` catches a missing twin only when the path is statically
+typed. Most tools use the loose-string overload, so the failure mode is
+runtime "function not found". The agent scorer test
+(`convex/ai/agentScorer.test.ts`) exercises the full tool layer end-to-end
+and is the right place to add coverage when adding a new high-risk tool.
+
+### Why we use a runtime path rewrite instead of generated code
+
+Public + AI paths are stable shapes — the helper just appends the
+`ForAI` suffix. Doing it at runtime keeps tool authors writing the
+familiar public path strings (matches every tool migration guide we
+have linked off `core/ai/MODULE.md`) and means **forgetting the twin
+fails fast** instead of silently calling the wrong handler.
 
 ## RULE: Convex schema/data changes — migrate IN THE SAME MESSAGE, never defer
 

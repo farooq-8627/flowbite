@@ -10,6 +10,17 @@ import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import type { RouteEntityContext } from "../types";
 
 /**
+ * Phase 4 Part 1 P1.13 — broad page-mode context. Always present on
+ * frontend-initiated turns; used by the backend system prompt's
+ * `## Current page` block. See `useChatRouteContext`.
+ */
+export type ChatPageContext = {
+	mode: "entity" | "list" | "dashboard" | "calendar" | "settings" | "reports" | "other";
+	path: string;
+	label?: string;
+};
+
+/**
  * Week 3.4 — AI SDK v6 cookbook helper
  * (`lastAssistantMessageIsCompleteWithApprovalResponses`). Mirrors the
  * SDK's frontend helper so component code reads identically to the
@@ -34,15 +45,14 @@ function isLastAssistantTurnComplete(
 	if (ts !== "done" && ts !== "error") return false;
 	const lastUserIdx = messages.map((m) => m.role).lastIndexOf("user");
 	const tail = lastUserIdx === -1 ? messages : messages.slice(lastUserIdx + 1);
-	const stillPending = tail.some(
-		(m) => m.role === "tool" && m.confirmationState === "pending",
-	);
+	const stillPending = tail.some((m) => m.role === "tool" && m.confirmationState === "pending");
 	return !stillPending;
 }
 
 export function useAIChat(args: {
 	conversationId: Id<"aiConversations"> | null;
 	routeContext: RouteEntityContext | null;
+	pageContext: ChatPageContext | null;
 	autoContextLoad: boolean;
 }) {
 	const { fullOrgEntry } = useCurrentOrg();
@@ -60,9 +70,7 @@ export function useAIChat(args: {
 	// Week 3.4 — alias matching AI SDK v6 cookbook surface. Frontend code
 	// should prefer this over `confirmConfirmation` going forward; the
 	// legacy mutation stays for the existing ChatConfirmation component.
-	const addToolApprovalResponse = useMutation(
-		anyApi.ai.messages.addToolApprovalResponse,
-	);
+	const addToolApprovalResponse = useMutation(anyApi.ai.messages.addToolApprovalResponse);
 	const createConversation = useMutation(anyApi.ai.conversations.create);
 	const renameConversation = useMutation(anyApi.ai.conversations.rename);
 	const archiveConversation = useMutation(anyApi.ai.conversations.archive);
@@ -128,6 +136,7 @@ export function useAIChat(args: {
 						aiContextKeyFacts: routeCtx.aiContextKeyFacts,
 					}
 				: undefined,
+			pageContext: args.pageContext ?? undefined,
 			expandedLayers: expandedLayers ?? [],
 		});
 	}

@@ -109,8 +109,72 @@ export function toolQuery(
 }
 
 export type ToolResult<T = unknown> =
-	| { ok: true; data: T; display?: string | ToolDisplay }
+	| { ok: true; data: T; display?: string | ToolDisplay; summary?: ToolSummary }
 	| { ok: false; error: string; code?: string };
+
+// ─── ToolSummary — P1.9 (PHASE-3-AI-AUDIT.md §5 Phase 4 Part 1) ─────────────
+//
+// Rich result envelope rendered above the structured `display` card.
+// Designed to fix the 2026-05-24 user-reported "lead created with empty
+// values, just a green tick" bug — the cause was twofold:
+//
+//   1. EntityResultCard rendered a hardcoded 5-field card, hiding any
+//      custom field that was just set.
+//   2. The model's prose said "Done ✓" because the runbook only asked
+//      for "one sentence + the personCode."
+//
+// `ToolSummary` solves both:
+//
+//   - `headline` is the one-line bold answer ("Created lead L-014: Sarah Khan").
+//   - `table` is every field that was set, rendered as a 2-column grid.
+//   - `facts` are bullet observations ("Lead has been assigned to you").
+//   - `suggestedNext` are clickable chips with a pre-filled chat intent
+//     so the user can immediately continue ("Add a follow-up reminder").
+//   - `cardFields` overrides EntityResultCard.cardFields so the live
+//     entity card surfaces every field that was just set, not the
+//     default 5.
+//
+// Backwards compat: `summary` is optional. Tools that don't set it
+// keep working with `display` alone — the renderer just skips the
+// summary block.
+
+export type ToolSummaryRow = {
+	label: string;
+	value: string;
+	/**
+	 * Visual emphasis. `added` = newly set (green-ish), `changed` = was
+	 * different before (amber-ish), `unchanged` = no change (muted).
+	 * Default treated as `added`.
+	 */
+	emphasis?: "added" | "changed" | "unchanged";
+};
+
+export type ToolSummarySuggestion = {
+	/** Chip label rendered to the user. */
+	label: string;
+	/**
+	 * Plain-English text the chat composer pre-fills when the chip is
+	 * clicked. Example: "Schedule a follow-up call with L-014 next Monday".
+	 * Click → composer pre-fills → user can edit / send as-is.
+	 */
+	intent: string;
+};
+
+export type ToolSummary = {
+	/** One-line bold headline rendered above the entity card. */
+	headline: string;
+	/** Optional two-column field/value table. */
+	table?: ToolSummaryRow[];
+	/** Optional bullet observations. */
+	facts?: string[];
+	/** Clickable chips that prefill the chat composer. */
+	suggestedNext?: ToolSummarySuggestion[];
+	/**
+	 * Override EntityResultCard.cardFields so the live entity card shows
+	 * every field that was just set — not the hardcoded default 5.
+	 */
+	cardFields?: string[];
+};
 
 // ─── ToolDisplay — Sprint 3 doctrine ─────────────────────────────────────────
 //
@@ -217,6 +281,22 @@ export function propose<T extends Record<string, unknown>>(
  * Wrap a tool handler so errors are caught and returned as ToolResult failures
  * rather than bubbling up as raw exceptions. Raw exceptions would be logged
  * by processChat but we want structured, user-friendly output.
+ *
+ * Three error shapes flow through here:
+ *
+ *  - `ConvexError` — explicit `throw new ConvexError({ code, message })` from
+ *    our own mutations / queries. We pass through `code` + `message` so the
+ *    chat-side `friendlyToolError` mapper can produce a code-aware message.
+ *
+ *  - Convex's argument-validation error (`ArgumentValidationError` or the
+ *    generic "Validator error: …" wrapper) — thrown when a tool forwards an
+ *    extra field its underlying mutation doesn't accept. We capture the
+ *    actual message so the friendly-error mapper can recognise it. The
+ *    stack trace stays in `console.error` and never reaches the model.
+ *
+ *  - Anything else (including plain `Error`) — we keep the message, capped
+ *    at 400 chars to avoid blowing the context, and tag it with a synthetic
+ *    code so downstream code can route it.
  */
 export async function runTool<T>(fn: () => Promise<ToolResult<T>>): Promise<ToolResult<T>> {
 	try {
@@ -229,11 +309,32 @@ export async function runTool<T>(fn: () => Promise<ToolResult<T>>): Promise<Tool
 				code: (err.data as { code?: string })?.code,
 			};
 		}
-		// Log unexpected errors — don't expose stack to AI/user
+		// Log unexpected errors for engineers — full stack stays here.
 		console.error("[AI tool error]", err);
+
+		// Echo the actual message back (capped) so the assistant can
+		// explain what went wrong instead of "An unexpected error occurred."
+		// We also tag a synthetic code to help the friendly-error mapper.
+		const raw =
+			err instanceof Error ? err.message : typeof err === "string" ? err : "Action failed.";
+		const message = raw.length > 400 ? `${raw.slice(0, 400)}…` : raw;
+
+		// Convex's argument validator throws plain Error instances; their
+		// messages typically include "ArgumentValidationError" or
+		// "Validator error". Tagging is best-effort — the friendly-error
+		// mapper also pattern-matches the message text.
+		const lower = message.toLowerCase();
+		const code =
+			lower.includes("argumentvalidationerror") ||
+			lower.includes("validator error") ||
+			lower.includes("does not match validator")
+				? "ARG_MISMATCH"
+				: undefined;
+
 		return {
 			ok: false,
-			error: "An unexpected error occurred. Please try again.",
+			error: message,
+			...(code ? { code } : {}),
 		};
 	}
 }
@@ -319,4 +420,35 @@ export function optionalNumber<T extends z.ZodTypeAny = z.ZodNumber>(
 ): z.ZodOptional<z.ZodTypeAny> {
 	const schema = (inner ?? z.number()) as z.ZodTypeAny;
 	return z.preprocess((v) => (isEmptyish(v) ? undefined : v), schema).optional() as never;
+}
+
+/**
+ * Coerces "stringly-typed" numbers from less-strict LLMs (NVIDIA NIM Llama,
+ * OpenRouter free Llama, Mistral Small) before delegating to a normal
+ * `z.number()` chain. The lone parameter is a builder closure so callers
+ * can still apply `.min()/.max()/.default()` etc. on the inner schema.
+ *
+ * Without this preprocessing, a model that sends `"100"` (string) for a
+ * `limit: number` field triggers an "expected number, received string"
+ * Zod retry loop. After this preprocessing, `"100"` becomes `100` and
+ * the inner constraint chain runs against the proper number.
+ *
+ * Drop-in replacement for `z.number()` inside a tool schema:
+ *
+ *   limit: coerceInt((n) => n.min(1).max(20).default(10)),
+ */
+export function coerceInt<T extends z.ZodTypeAny = z.ZodNumber>(
+	build?: (n: z.ZodNumber) => T,
+): z.ZodTypeAny {
+	const inner = build ? build(z.number()) : (z.number() as unknown as T);
+	return z.preprocess((v) => {
+		if (typeof v === "string") {
+			const trimmed = v.trim();
+			if (trimmed === "") return v;
+			const n = Number(trimmed);
+			return Number.isFinite(n) ? n : v;
+		}
+		if (typeof v === "boolean") return v ? 1 : 0;
+		return v;
+	}, inner) as z.ZodTypeAny;
 }

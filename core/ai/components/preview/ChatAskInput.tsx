@@ -120,8 +120,9 @@ export function ChatAskInput({ args, orgId, messageId, disabled }: Props) {
 								>
 									{f.label}
 									{required && (
-										<span aria-label="required" className="text-rose-500">
-											*
+										<span className="text-rose-500">
+											<span className="sr-only">required</span>
+											<span aria-hidden>*</span>
 										</span>
 									)}
 								</label>

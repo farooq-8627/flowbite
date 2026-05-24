@@ -206,15 +206,21 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 			subGroups: [
 				{
 					id: "ai.context",
-					label: "AI Context",
+					label: "Business Context",
 					icon: Brain,
 					description: "Business context fed to the AI assistant",
 				},
 				{
-					id: "ai.features",
-					label: "AI Features",
+					id: "ai.memory",
+					label: "Memory",
 					icon: Sparkles,
-					description: "Enable or disable AI-powered features",
+					description: "Dynamic facts the AI has learned and remembers",
+				},
+				{
+					id: "ai.usage",
+					label: "Usage",
+					icon: BarChart2,
+					description: "Tokens used this month + tool-call activity",
 				},
 			],
 		},

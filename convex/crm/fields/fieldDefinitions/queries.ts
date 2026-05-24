@@ -5,23 +5,20 @@
  * Per deep-plan.md Module 16: field types, groups, required, validation, tier limits.
  */
 import { v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import {
 	orgQuery,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 
 // ─── Shared body ──────────────────────────────────────────────────────────────
 //
 // Extracted so the public `listByEntity` and the AI-only `listByEntityForAI`
 // share one implementation. See `convex/ai/tools/_shared.ts` for why the
 // AI variant exists (scheduled internal actions lose auth identity).
-async function listByEntityImpl(
-	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; entityType: string },
-) {
+async function listByEntityImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; entityType: string }) {
 	const fields = await ctx.db
 		.query("fieldDefinitions")
 		.withIndex("by_org_and_entity", (q) =>

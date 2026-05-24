@@ -56,10 +56,10 @@ export function getSubagent(id: string | null | undefined): Subagent {
  * one of its `requiredPermissions`. Returns the actually-used subagent
  * + a flag indicating whether a demotion happened (for telemetry).
  */
-export function resolveSubagentForUser(args: {
-	requested: SubagentId;
-	permissions: string[];
-}): { subagent: Subagent; demoted: boolean } {
+export function resolveSubagentForUser(args: { requested: SubagentId; permissions: string[] }): {
+	subagent: Subagent;
+	demoted: boolean;
+} {
 	const sub = getSubagent(args.requested);
 	const missing = sub.requiredPermissions.filter((p) => !args.permissions.includes(p));
 	if (missing.length > 0) {
@@ -85,10 +85,7 @@ export function selectToolsForSubagent(
 	subagent: Subagent,
 ): Record<string, unknown> {
 	if (subagent.allowedTools === "*") return allTools;
-	const allow = new Set<string>([
-		...subagent.allowedTools,
-		...ALWAYS_INCLUDED_TOOLS,
-	]);
+	const allow = new Set<string>([...subagent.allowedTools, ...ALWAYS_INCLUDED_TOOLS]);
 	const result: Record<string, unknown> = {};
 	for (const [name, def] of Object.entries(allTools)) {
 		if (allow.has(name)) result[name] = def;

@@ -9,7 +9,13 @@
 
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
-import { aiContextValidator, aiExcluded, orgScoped, softDelete, timestamps } from "../_shared/validators";
+import {
+	aiContextValidator,
+	aiExcluded,
+	orgScoped,
+	softDelete,
+	timestamps,
+} from "../_shared/validators";
 
 export const leads = defineTable({
 	...orgScoped,

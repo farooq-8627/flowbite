@@ -28,18 +28,60 @@ import { v } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
 import type { OrgPlan } from "../modelRegistry";
+import { FALLBACK_SUBAGENT_ID, getSubagent, selectToolsForSubagent } from "../subagents";
 import {
-	FALLBACK_SUBAGENT_ID,
-	getSubagent,
-	selectToolsForSubagent,
-} from "../subagents";
-import { clearActiveRequestContext, getToolsForRequest } from "../toolRegistry";
+	clearActiveRequestContext,
+	getRegisteredToolNames,
+	getToolsForRequest,
+	type LayerId,
+} from "../toolRegistry";
 import type { ToolContext } from "../tools/_shared";
-import { resolveModelAndKey } from "./modelResolver";
+import { resolveFallbackChain, resolveModelAndKey } from "./modelResolver";
+import { checkAiQuota } from "./quotaGate";
 import { classifyRequest, type RouterDecision } from "./router";
 import { runStreamLoop } from "./streamLoop";
 import { generateSuggestions } from "./suggestionGenerator";
 import { bindAllToolContexts } from "./toolContextBinder";
+import { auditTwoStepSchemas, KNOWN_SAFE_MISMATCHES } from "./twoStepSchemaAudit";
+
+// ─── P1.6 — Dev-time twoStep schema-diff log ─────────────────────────────────
+//
+// Walks the registry once per Node worker on the first chat turn in a dev
+// environment and prints any propose/commit field-set mismatches that
+// AREN'T in the `KNOWN_SAFE_MISMATCHES` allow-list. Catches the kind of
+// regression that caused the 2026-05-24 incident (a propose-only field
+// silently leaking into the underlying mutation validator) the moment a
+// tool author lands it, instead of waiting for a user report.
+//
+// Hard-fail in CI is handled by `convex/ai/agentScorer.test.ts`. This is
+// the developer-facing equivalent: visible in `npx convex dev` logs.
+
+let _auditedTwoStepSchemas = false;
+function logTwoStepSchemaAuditOnce(): void {
+	if (_auditedTwoStepSchemas) return;
+	_auditedTwoStepSchemas = true;
+	const env = (process.env.CONVEX_DEPLOYMENT_NAME ?? "").toLowerCase();
+	const isDev = env.startsWith("dev:") || env.includes("local") || !env;
+	if (!isDev) return;
+	try {
+		const diffs = auditTwoStepSchemas(getRegisteredToolNames());
+		const surprises = diffs.filter(
+			(d) => d.verdict !== "ok" && KNOWN_SAFE_MISMATCHES[d.proposeName] === undefined,
+		);
+		if (surprises.length === 0) {
+			console.log(`[ai] twoStep schema audit: ${diffs.length} pairs — all clean.`);
+			return;
+		}
+		console.warn(`[ai] twoStep schema audit: ${surprises.length} unexpected mismatch(es):`);
+		for (const d of surprises) {
+			console.warn(
+				`  • ${d.proposeName} → ${d.commitName} (${d.verdict})\n      proposeOnly: [${d.proposeOnly.join(", ")}]\n      commitOnly:  [${d.commitOnly.join(", ")}]`,
+			);
+		}
+	} catch (err) {
+		console.warn("[ai] twoStep schema audit skipped:", err);
+	}
+}
 
 // Forward references using string-path pattern (resolved after convex dev codegen).
 // biome-ignore lint/suspicious/noExplicitAny: _ref/_anyArgs casts required for pre-codegen cross-module refs
@@ -107,9 +149,31 @@ export const run = internalAction({
 				aiContextKeyFacts: v.optional(v.array(v.string())),
 			}),
 		),
+		// P1.13 — broad page-mode info from the frontend.
+		pageContext: v.optional(
+			v.object({
+				mode: v.union(
+					v.literal("entity"),
+					v.literal("list"),
+					v.literal("dashboard"),
+					v.literal("calendar"),
+					v.literal("settings"),
+					v.literal("reports"),
+					v.literal("other"),
+				),
+				path: v.string(),
+				label: v.optional(v.string()),
+			}),
+		),
 		expandedLayers: v.array(v.string()),
 	},
 	handler: async (ctx, args) => {
+		// 0. Dev-only one-shot: audit twoStep tool schemas. Cheap to call
+		// every turn (idempotent + early-returns after first pass);
+		// catches NEW propose/commit mismatches the moment a tool author
+		// lands them instead of waiting for a user report. P1.6.
+		logTwoStepSchemaAuditOnce();
+
 		// 1. Auth + RBAC + quota
 		let memberInfo: { permissions: string[]; plan: OrgPlan; settings: Record<string, unknown> };
 		try {
@@ -144,6 +208,9 @@ export const run = internalAction({
 		};
 
 		// 4. Resolve model + BYOK
+		// Resolution happens BEFORE the quota gate so we know whether
+		// the user is on platform or BYOK — BYOK is unmetered on every
+		// plan, platform is blocked on free + metered on starter/pro.
 		let modelResult: Awaited<ReturnType<typeof resolveModelAndKey>>;
 		try {
 			modelResult = await resolveModelAndKey({
@@ -167,13 +234,36 @@ export const run = internalAction({
 			return;
 		}
 
+		// 4.5 — AI token quota gate (post-resolution).
+		// • BYOK → always allowed regardless of plan.
+		// • Platform on free → blocked with "add BYOK or upgrade" message.
+		// • Platform on starter / pro → metered against `aiTokensPerMonth`.
+		// • Platform on enterprise → unmetered.
+		try {
+			const quotaResult = await checkAiQuota({
+				ctx: ctx as never,
+				orgId: args.orgId,
+				plan: memberInfo.plan,
+				usageMode: modelResult.usageMode,
+			});
+			if (!quotaResult.allowed) {
+				await failChat(quotaResult.message);
+				return;
+			}
+		} catch (err) {
+			console.warn("[processChat] AI quota check failed; allowing turn:", err);
+		}
+
 		// 5. Build system prompt
 		// Step 4.5 — load the conversation so we can pass its contextBag
 		// (Week 3.2) AND the router can see the last assistant turn for
 		// classification context.
 		const conversation = (await ctx.runQuery(
 			_ref("ai/conversations:getInternal"),
-			_anyArgs({ orgId: args.orgId as string, conversationId: args.conversationId as string }),
+			_anyArgs({
+				orgId: args.orgId as string,
+				conversationId: args.conversationId as string,
+			}),
 		)) as { contextBag?: Record<string, unknown> } | null;
 		const contextBag = conversation?.contextBag ?? {};
 
@@ -200,9 +290,7 @@ export const run = internalAction({
 		// Week 2.2/2.3 — classify the request to a subagent. The router
 		// never throws; on any failure it returns the catch-all subagent.
 		const lastUserMessage = [...messageHistory].reverse().find((m) => m.role === "user");
-		const lastAssistant = [...messageHistory]
-			.reverse()
-			.find((m) => m.role === "assistant");
+		const lastAssistant = [...messageHistory].reverse().find((m) => m.role === "assistant");
 		let routerDecision: RouterDecision;
 		if (lastUserMessage) {
 			routerDecision = await classifyRequest({
@@ -233,6 +321,33 @@ export const run = internalAction({
 			})
 			.catch(() => {}); // non-fatal — telemetry only
 
+		// Architecture fix (2026-05-24) — `streamText` is invoked ONCE per
+		// turn with a frozen tools dict. If the model calls `expand_tools`
+		// mid-stream, the dict can't grow — the next call to a layer tool
+		// would hit "Model tried to call unavailable tool". To stop the
+		// loop, we expose every layer the user's permissions allow at turn
+		// start. The subagent's allow-list still narrows below.
+		//
+		// `expand_tools` is kept as a no-op-style hint so existing prompts
+		// and tests don't break — calling it just acknowledges the layer
+		// is already active. Token cost is bounded because runbooks are
+		// only emitted for tools the subagent allows (see systemPrompt.ts).
+		const ALL_LAYERS: LayerId[] = [
+			"pipelines",
+			"fields",
+			"tags",
+			"views",
+			"categories",
+			"members",
+			"settings",
+			"bulk",
+			"templates",
+			"data",
+		];
+		const requestedLayers = new Set<string>(args.expandedLayers ?? []);
+		for (const l of ALL_LAYERS) requestedLayers.add(l);
+		const effectiveExpandedLayers = Array.from(requestedLayers);
+
 		const promptResult = (await ctx.runQuery(
 			_ref("ai/systemPrompt:buildSystemPromptQuery"),
 			_anyArgs({
@@ -242,9 +357,10 @@ export const run = internalAction({
 				modelTier: modelResult.tier,
 				routeContext: args.routeContext,
 				autoContextLoad: prefs.aiAutoContextLoad !== false,
-				expandedLayers: args.expandedLayers,
+				expandedLayers: effectiveExpandedLayers,
 				subagentId: routerDecision.subagent.id,
 				contextBag,
+				pageContext: args.pageContext,
 			}),
 		)) as { system: string; allowedLayers: string[]; subagentId: string };
 
@@ -261,7 +377,7 @@ export const run = internalAction({
 		const allTools = getToolsForRequest({
 			permissions: memberInfo.permissions,
 			modelTier: modelResult.tier,
-			expandedLayers: args.expandedLayers,
+			expandedLayers: effectiveExpandedLayers,
 		});
 
 		// Week 2.3 — narrow to only the tools the chosen subagent allows.
@@ -277,18 +393,33 @@ export const run = internalAction({
 		// clear it after the stream finishes (success, cancellation, or
 		// error) so a subsequent run.ts invocation in the same Node worker
 		// doesn't read stale permissions/tier.
+		//
+		// P1.1 — multi-provider failover. `resolveFallbackChain` returns
+		// the user's primary model first plus up to 2 cross-family
+		// candidates with working keys. `runStreamLoop` tries each in
+		// order on transient errors (5xx, rate-limit, network) BEFORE
+		// any text streams; once tokens land, errors propagate.
+		const fallbackChain = await resolveFallbackChain({
+			ctx: ctx as never,
+			orgId: args.orgId,
+			userId: args.userId,
+			primary: modelResult,
+			plan: memberInfo.plan,
+		});
+
 		let result: Awaited<ReturnType<typeof runStreamLoop>>;
 		try {
 			result = await runStreamLoop({
 				ctx: ctx as never,
 				orgId: args.orgId as unknown as string,
+				userId: args.userId as unknown as string,
 				conversationId: args.conversationId as unknown as string,
 				assistantMsgId,
-				modelResult,
+				models: fallbackChain,
 				system: promptResult.system,
 				messageHistory,
 				tools,
-				expandedLayers: args.expandedLayers,
+				expandedLayers: effectiveExpandedLayers,
 			});
 		} catch (err) {
 			clearActiveRequestContext();
@@ -312,25 +443,52 @@ export const run = internalAction({
 		}
 		clearActiveRequestContext();
 
+		// P1.1 — Surface the failover chain to the user when one happened.
+		// The DB-streamed reasoning channel already received a "Trying X" line
+		// from inside the loop; here we add a permanent footer to the
+		// assistant body so it survives the patchAssistantBody settle below.
+		if (result.failedProviderAttempts.length > 0) {
+			const switched = `${result.usedModel.provider}/${result.usedModel.modelKey}`;
+			const reasons = result.failedProviderAttempts
+				.map((a) => `${a.provider}/${a.modelKey}`)
+				.join(", ");
+			console.log(`[run] failed providers: ${reasons} → succeeded with ${switched}`);
+		}
+
 		// 9. Cancellation short-circuit (cancelStream already settled the row)
 		if (result.cancelled) return;
 
 		// 10. If the stream ended without a "finish" chunk (provider quirk),
 		// settle the placeholder ourselves so the UI doesn't spin forever.
 		if (!result.sawFinish) {
-			const fallbackContent =
-				result.accumulatedText.trim().length > 0
-					? result.accumulatedText
-					: "❌ The AI response ended without producing any text. Please try again.";
+			const trimmed = result.accumulatedText.trim();
+			let fallbackContent: string;
+			if (trimmed.length > 0) {
+				fallbackContent = result.accumulatedText;
+			} else if (result.toolResultCount > 0) {
+				// Small open models (Llama-class) often call a tool, then
+				// emit a stream end without text. Don't fail the turn —
+				// the structured tool-result card already shows the data.
+				fallbackContent = "Done. See the result above.";
+			} else {
+				fallbackContent =
+					"❌ The AI response ended without producing any text. Please try again.";
+			}
 			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
 				messageId: assistantMsgId,
 				content: fallbackContent,
-				model: modelResult.modelKey,
-				provider: modelResult.provider,
-				usageMode: modelResult.usageMode,
+				// Reflect the model that ACTUALLY produced the text — this
+				// might be a fallback if the primary failed before any
+				// text-delta. P1.1.
+				model: result.usedModel.modelKey,
+				provider: result.usedModel.provider,
+				usageMode: result.usedModel.usageMode,
 				inputTokens: result.finalInputTokens,
 				outputTokens: result.finalOutputTokens,
-				thinkingState: result.accumulatedText.trim().length > 0 ? "done" : "error",
+				thinkingState:
+					result.accumulatedText.trim().length > 0 || result.toolResultCount > 0
+						? "done"
+						: "error",
 			});
 		}
 
@@ -341,7 +499,7 @@ export const run = internalAction({
 			action: "ai.chat",
 			entityType: "conversation",
 			entityId: args.conversationId as string,
-			description: `AI responded (${modelResult.modelKey}, ${result.finalInputTokens + result.finalOutputTokens} tokens)`,
+			description: `AI responded (${result.usedModel.modelKey}${result.failedProviderAttempts.length > 0 ? ` after ${result.failedProviderAttempts.length} fallback(s)` : ""}, ${result.finalInputTokens + result.finalOutputTokens} tokens)`,
 		});
 
 		// 11b. Sprint 5 — generate 2-3 follow-up prompt suggestions and
@@ -380,18 +538,23 @@ export const run = internalAction({
 				.catch(() => {}); // non-fatal
 		}
 
-		// 13. Auto-title on first reply
+		// 13. Auto-title on first reply (Week-6 doc-cleanup follow-up). The
+		// trigger gate used to be `process.env.AI_BRIEFING_MODEL`, which is
+		// the briefing-only feature flag — most deployments leave it unset
+		// and the auto-title silently never fired. Now we trigger on every
+		// first turn with a user message ≥10 chars; the action itself
+		// short-circuits if no provider key is configured.
 		if (messageHistory.length <= 1) {
 			const lastUserMsg = messageHistory.at(-1)?.content ?? "";
-			if (lastUserMsg.length > 10 && process.env.AI_BRIEFING_MODEL) {
+			if (lastUserMsg.length > 10) {
 				ctx.scheduler
 					?.runAfter?.(
-						5000,
-						_ref("ai/conversations:autoTitleInternal"),
+						2000,
+						_ref("ai/titleGeneration:autoTitle"),
 						_anyArgs({
 							conversationId: args.conversationId as string,
 							orgId: args.orgId as string,
-							firstUserMessage: lastUserMsg.slice(0, 200),
+							firstUserMessage: lastUserMsg.slice(0, 400),
 						}),
 					)
 					.catch(() => {});

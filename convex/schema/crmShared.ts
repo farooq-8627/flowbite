@@ -384,6 +384,7 @@ export const reminders = defineTable({
 	.index("by_org_and_status", ["orgId", "status"])
 	.index("by_org_and_status_and_due", ["orgId", "status", "dueAt"])
 	.index("by_org_and_source_and_due", ["orgId", "source", "dueAt"])
+	.index("by_org_and_followUpCode", ["orgId", "followUpCode"])
 	.index("by_user_and_due", ["assignedTo", "dueAt"]);
 
 // ─── Tags / entityTags / savedViews / companyMembers ─────────────────────────

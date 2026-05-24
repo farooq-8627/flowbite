@@ -58,9 +58,7 @@ export function ReasoningStepCard({ step }: Props) {
 						isError && "text-destructive",
 					)}
 				/>
-				<span className="font-mono text-[12px] truncate">
-					{prettify(step.toolName)}
-				</span>
+				<span className="font-mono text-[12px] truncate">{prettify(step.toolName)}</span>
 				{isInProgress && (
 					<span className="ms-auto text-[10px] uppercase tracking-wide text-muted-foreground">
 						running
@@ -69,11 +67,7 @@ export function ReasoningStepCard({ step }: Props) {
 			</div>
 			{isError && step.error && (
 				<div className="mt-1.5">
-					<CodeBlock
-						code={step.error}
-						label="error"
-						maxHeight={140}
-					/>
+					<CodeBlock code={step.error} label="error" maxHeight={140} />
 				</div>
 			)}
 		</div>

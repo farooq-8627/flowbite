@@ -79,4 +79,9 @@ export default defineSchema({
 	aiMessages: ai.aiMessages,
 	orgAiKeys: ai.orgAiKeys,
 	aiBriefings: ai.aiBriefings,
+	csvImports: ai.csvImports,
+	enrichmentRuns: ai.enrichmentRuns,
+	fileAnalyses: ai.fileAnalyses,
+	aiToolEvents: ai.aiToolEvents,
+	aiPersonaContext: ai.aiPersonaContext,
 });

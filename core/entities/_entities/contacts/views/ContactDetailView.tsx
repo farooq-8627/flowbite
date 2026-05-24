@@ -522,7 +522,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							menuItems={menuItems}
 							groupBy={groupBy}
 							resolveReplacementLabel={resolveReplacementLabel}
-							prefetchedTags={tagsByEntityId[item.id]}
+							prefetchedTags={tagsByEntityId[item.id] ?? []}
 						/>
 					);
 				}}

@@ -6,9 +6,10 @@
  *
  * Layout:
  *   ┌─ rounded composer card ──────────────────────────┐
+ *   │  [pending file chips] (shown only when files attached)
  *   │  textarea (auto-grow, full width)                │
  *   │  ─────────────────────────────                   │
- *   │  [model picker]                                  │
+ *   │  [📎 attach] [model picker]                      │
  *   │                                          [send]  │
  *   └──────────────────────────────────────────────────┘
  *
@@ -21,15 +22,29 @@
  *     composer disables itself and shows a "Add an API key in Settings → AI"
  *     hint instead of letting the user fire requests that would just bounce
  *     back as red error bubbles in the thread.
+ *   - Phase 4 Part 2 — file attach affordance. Uploaded files render as
+ *     chips above the textarea; on send, their fileIds are injected into
+ *     the body as `[Attached file:abc123 "name.jpg" (image/jpeg, 240 KB)]`
+ *     so the AI can see them and call `analyze_file` when relevant.
  */
-import { ArrowUp, KeyRound, Square } from "lucide-react";
+import { ArrowUp, KeyRound, Square, XIcon } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useModelPreference } from "../hooks/useModelPreference";
+import { useChatPrefillListener } from "../lib/chatPrefill";
 import { ChatModelPicker } from "./ChatModelPicker";
+import { ChatAttachButton } from "./composer/ChatAttachButton";
 import { SlashCommands } from "./composer/SlashCommands";
+
+type PendingAttachment = {
+	fileId: Id<"files">;
+	name: string;
+	mimeType: string;
+	size: number;
+};
 
 interface Props {
 	onSend: (body: string, model?: string, provider?: string) => void;
@@ -37,18 +52,62 @@ interface Props {
 	disabled?: boolean;
 	isStreaming?: boolean;
 	placeholder?: string;
+	/**
+	 * Active conversation id. When `null`, the attach button still works —
+	 * `onEnsureConversation` is invoked to create one before upload.
+	 */
+	conversationId?: Id<"aiConversations"> | null;
+	/**
+	 * Lazily create a conversation when the user attaches a file before
+	 * sending their first message. Returns the new conversation id.
+	 */
+	onEnsureConversation?: () => Promise<Id<"aiConversations">>;
 }
 
 const MAX_HEIGHT_PX = 160;
 
-export function ChatComposer({ onSend, onCancel, disabled, isStreaming, placeholder }: Props) {
+function formatSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+	return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function ChatComposer({
+	onSend,
+	onCancel,
+	disabled,
+	isStreaming,
+	placeholder,
+	conversationId = null,
+	onEnsureConversation,
+}: Props) {
 	// Single source of truth — same hook the settings page writes to.
 	const { defaultModel, defaultProvider, hasNoKeys, isReady } = useModelPreference();
 	const { fullOrgEntry } = useCurrentOrg();
 	const orgSlug = fullOrgEntry?.org.slug;
+	const orgId = fullOrgEntry?.org._id;
 
 	const [draft, setDraft] = useState("");
+	const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+	// P1.14 — receive pre-fills from the proactive suggestions panel.
+	// Drops the intent into the composer + focuses the textarea so the
+	// user can edit-or-send without a click. See `core/ai/lib/chatPrefill.ts`.
+	const onPrefill = useCallback((intent: string) => {
+		setDraft(intent);
+		const el = textareaRef.current;
+		if (el) {
+			el.focus();
+			el.style.height = "auto";
+			el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT_PX)}px`;
+			// Move the caret to the end so the user can keep typing.
+			requestAnimationFrame(() => {
+				el.setSelectionRange(intent.length, intent.length);
+			});
+		}
+	}, []);
+	useChatPrefillListener(onPrefill);
 
 	function resetTextareaHeight() {
 		const el = textareaRef.current;
@@ -58,13 +117,27 @@ export function ChatComposer({ onSend, onCancel, disabled, isStreaming, placehol
 
 	function handleSend() {
 		const trimmed = draft.trim();
-		if (!trimmed || disabled || hasNoKeys) return;
-		// Always pass the freshly-read preference — never a stale local copy.
-		// Provider matters for BYOK lookup: the action queries the orgAiKeys
-		// table by provider, so a saved kimi-k2 with provider=moonshot must
-		// arrive paired so the right key gets pulled.
-		onSend(trimmed, defaultModel, defaultProvider ?? undefined);
+		if (disabled || hasNoKeys) return;
+		if (!trimmed && attachments.length === 0) return;
+
+		// Prepend a clear, machine-friendly attachment manifest the AI
+		// can parse to discover fileIds. The model is instructed in
+		// system prompt + tool docs that `[file:<id>]` is a real
+		// fileId it can pass to analyze_file.
+		let body = trimmed;
+		if (attachments.length > 0) {
+			const manifest = attachments
+				.map(
+					(a) =>
+						`[file:${a.fileId} "${a.name.replace(/"/g, "'")}" (${a.mimeType}, ${formatSize(a.size)})]`,
+				)
+				.join("\n");
+			body = body ? `${manifest}\n\n${body}` : manifest;
+		}
+
+		onSend(body, defaultModel, defaultProvider ?? undefined);
 		setDraft("");
+		setAttachments([]);
 		resetTextareaHeight();
 	}
 
@@ -83,7 +156,7 @@ export function ChatComposer({ onSend, onCancel, disabled, isStreaming, placehol
 	}
 
 	const composerDisabled = !!disabled || hasNoKeys;
-	const canSend = draft.trim().length > 0 && !composerDisabled;
+	const canSend = (draft.trim().length > 0 || attachments.length > 0) && !composerDisabled;
 
 	// Pre-flight: no AI key configured anywhere.
 	// Show a clear actionable banner in place of the input.
@@ -118,6 +191,35 @@ export function ChatComposer({ onSend, onCancel, disabled, isStreaming, placehol
 	return (
 		<div className="shrink-0 border-t border-sidebar-border bg-sidebar p-3">
 			<div className="relative flex flex-col gap-2 rounded-[var(--radius)] border border-input bg-background px-3 py-2.5 shadow-xs transition-colors focus-within:border-ring">
+				{attachments.length > 0 && (
+					<div className="flex flex-wrap gap-1.5">
+						{attachments.map((a) => (
+							<span
+								key={a.fileId}
+								className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs"
+							>
+								<span className="max-w-[220px] truncate" title={a.name}>
+									{a.name}
+								</span>
+								<span className="text-muted-foreground">
+									· {formatSize(a.size)}
+								</span>
+								<button
+									type="button"
+									className="text-muted-foreground hover:text-foreground"
+									onClick={() =>
+										setAttachments((prev) =>
+											prev.filter((p) => p.fileId !== a.fileId),
+										)
+									}
+									aria-label={`Remove ${a.name}`}
+								>
+									<XIcon className="size-3" />
+								</button>
+							</span>
+						))}
+					</div>
+				)}
 				<SlashCommands
 					draft={draft}
 					onPick={(expansion) => {
@@ -148,7 +250,18 @@ export function ChatComposer({ onSend, onCancel, disabled, isStreaming, placehol
 				/>
 
 				<div className="flex items-center justify-between gap-2">
-					<ChatModelPicker />
+					<div className="flex items-center gap-1">
+						{onEnsureConversation && (
+							<ChatAttachButton
+								orgId={orgId}
+								conversationId={conversationId}
+								disabled={composerDisabled}
+								onAttached={(att) => setAttachments((prev) => [...prev, att])}
+								onEnsureConversation={onEnsureConversation}
+							/>
+						)}
+						<ChatModelPicker />
+					</div>
 
 					<div className="flex items-center gap-2">
 						{isStreaming && onCancel ? (

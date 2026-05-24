@@ -50,7 +50,7 @@ export function CodeBlock({
 	return (
 		<div
 			className={cn(
-				"overflow-hidden rounded-[var(--radius)] border border-border/60 bg-muted/40",
+				"w-full max-w-lg min-w-0 overflow-hidden rounded-[var(--radius)] border border-border/60 bg-muted/40",
 				"text-[12px] leading-relaxed",
 				className,
 			)}
@@ -72,10 +72,7 @@ export function CodeBlock({
 					{!hideCopy && <CopyButton value={code} />}
 				</div>
 			)}
-			<div
-				className="code-block-body overflow-x-auto overflow-y-auto"
-				style={{ maxHeight }}
-			>
+			<div className="code-block-body overflow-x-auto overflow-y-auto" style={{ maxHeight }}>
 				<pre className="m-0 ps-3 pe-3 py-2 text-[12px] font-mono whitespace-pre">
 					<code>{code}</code>
 				</pre>

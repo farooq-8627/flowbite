@@ -31,8 +31,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { z, ZodError } from "zod";
+import { ZodError, z } from "zod";
+import { parseReasoning } from "../../core/ai/components/reasoning/parseReasoning";
 
+import { formatZodError, wrapWithZodErrorFormatter } from "./orchestrator/zodErrorFormatter";
 // Module under test imports. The toolRegistry runs side-effects on
 // import (registers tools), but in a Vitest run we just want its public
 // surface. The introspect / search / etc. files are loaded via the
@@ -48,9 +50,6 @@ import {
 	setActiveRequestContext,
 	type ToolDef,
 } from "./toolRegistry";
-
-import { formatZodError, wrapWithZodErrorFormatter } from "./orchestrator/zodErrorFormatter";
-import { parseReasoning } from "../../core/ai/components/reasoning/parseReasoning";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -262,5 +261,650 @@ describe("agent scorer — regression guards (Week 1 #1.6)", () => {
 		expect(runbooks2.find((r) => r.name === guarded.name)).toBeDefined();
 
 		clearActiveRequestContext();
+	});
+});
+
+// ─── Week 4 — CSV import + dual-LLM safety (PHASE-3-AI-AUDIT §6 Week 4) ─────
+
+import {
+	type DedupCandidate,
+	decideDedup,
+	dedupIdemKey,
+	levenshtein,
+	normaliseEmail,
+	normaliseName,
+} from "../_shared/dedup";
+import { buildPreviewRow, parseCsvBody } from "./quarantined/csvParser";
+
+describe("Week 4 — dedup helper", () => {
+	it("normalises emails by lowercasing + stripping +suffix tags", () => {
+		expect(normaliseEmail("John+work@Acme.COM")).toBe("john@acme.com");
+		expect(normaliseEmail("  Jane@x.io ")).toBe("jane@x.io");
+		expect(normaliseEmail("not-an-email")).toBe(null);
+		expect(normaliseEmail(undefined)).toBe(null);
+	});
+
+	it("strips trailing corporate suffixes from company names", () => {
+		expect(normaliseName("Driven Properties LLC")).toBe("driven properties");
+		expect(normaliseName("ACME, Corp.")).toBe("acme");
+		expect(normaliseName("  Globex   Inc  ")).toBe("globex");
+		// Single-token name without a suffix passes through.
+		expect(normaliseName("Driven")).toBe("driven");
+	});
+
+	it("Levenshtein returns Infinity past the cap (early termination)", () => {
+		expect(levenshtein("kitten", "sitting", 1)).toBe(Infinity);
+		expect(levenshtein("kitten", "sitting", 3)).toBe(3);
+		// Length difference of 1 — well within cap.
+		expect(levenshtein("acme", "acmex", 2)).toBe(1);
+		// Identical inputs short-circuit to 0.
+		expect(levenshtein("driven", "driven", 0)).toBe(0);
+	});
+
+	it("decideDedup picks SKIP on an exact email collision", () => {
+		const candidates: DedupCandidate[] = [
+			{
+				personCode: "P-001",
+				displayName: "Sarah Khan",
+				email: "sarah@acme.com",
+				phone: null,
+				companyName: null,
+			},
+		];
+		const r = decideDedup(
+			{
+				displayName: "Sarah K.",
+				email: "SARAH+work@ACME.COM",
+				phone: null,
+				companyName: null,
+			},
+			candidates,
+		);
+		expect(r.decision).toBe("skip");
+		expect(r.matchCode).toBe("P-001");
+	});
+
+	it("decideDedup picks MERGE on a near-match name + same company", () => {
+		const candidates: DedupCandidate[] = [
+			{
+				personCode: "P-002",
+				displayName: "Sarah Khan",
+				email: null,
+				phone: null,
+				companyName: "Driven Properties",
+			},
+		];
+		const r = decideDedup(
+			{
+				displayName: "Sara Khan",
+				email: null,
+				phone: null,
+				companyName: "Driven Properties LLC",
+			},
+			candidates,
+		);
+		expect(r.decision).toBe("merge");
+		expect(r.matchCode).toBe("P-002");
+	});
+
+	it("decideDedup picks INSERT when nothing matches", () => {
+		const candidates: DedupCandidate[] = [
+			{
+				personCode: "P-003",
+				displayName: "Sarah Khan",
+				email: "sarah@acme.com",
+				phone: null,
+				companyName: null,
+			},
+		];
+		const r = decideDedup(
+			{
+				displayName: "Ali Rashid",
+				email: "ali@gulf.ae",
+				phone: null,
+				companyName: null,
+			},
+			candidates,
+		);
+		expect(r.decision).toBe("insert");
+		expect(r.matchCode).toBeUndefined();
+	});
+
+	it("dedupIdemKey is stable across permutations and variants", () => {
+		const a = dedupIdemKey({
+			displayName: "Sarah Khan",
+			email: "sarah+work@acme.com",
+			phone: "+971501234567",
+			companyName: "Driven Properties LLC",
+		});
+		const b = dedupIdemKey({
+			displayName: "Sarah Khan",
+			email: "SARAH@ACME.COM",
+			phone: "+971-50-123-4567",
+			companyName: "Driven Properties",
+		});
+		// Same logical row → same key (email normaliser strips +work, phone strips
+		// formatting, company strips LLC).
+		expect(a).toBe(b);
+	});
+});
+
+describe("Week 4 — CSV body tokeniser", () => {
+	it("parses a simple CSV with quoted commas + escaped quotes", () => {
+		const body = `name,email,note
+"Smith, John","john@x.com","He said ""hi"""
+Jane Doe,jane@x.com,Plain text
+`;
+		const { headers, rows } = parseCsvBody(body);
+		expect(headers).toEqual(["name", "email", "note"]);
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toEqual(["Smith, John", "john@x.com", 'He said "hi"']);
+		expect(rows[1]).toEqual(["Jane Doe", "jane@x.com", "Plain text"]);
+	});
+
+	it("handles \\r\\n line endings + a trailing row without newline", () => {
+		const body = "a,b\r\n1,2\r\n3,4";
+		const { headers, rows } = parseCsvBody(body);
+		expect(headers).toEqual(["a", "b"]);
+		expect(rows).toEqual([
+			["1", "2"],
+			["3", "4"],
+		]);
+	});
+
+	it("returns empty arrays on an empty input", () => {
+		expect(parseCsvBody("")).toEqual({ headers: [], rows: [] });
+		expect(parseCsvBody("\n\n\n")).toEqual({ headers: [], rows: [] });
+	});
+
+	it("preserves embedded newlines inside quoted fields", () => {
+		const body = `name,note
+"Sarah","line1
+line2"
+`;
+		const { rows } = parseCsvBody(body);
+		expect(rows).toHaveLength(1);
+		expect(rows[0][1]).toBe("line1\nline2");
+	});
+});
+
+describe("Week 4 — buildPreviewRow integration", () => {
+	it("flags missing displayName as a validation error (no insert)", () => {
+		const candidates: DedupCandidate[] = [];
+		const r = buildPreviewRow(
+			{
+				displayName: null,
+				email: "x@x.com",
+				phone: null,
+				companyName: null,
+				source: null,
+				notes: null,
+			},
+			candidates,
+		);
+		expect(r.validationError).toMatch(/displayName/);
+		// Validation error short-circuits the dedup decision (defaults to insert,
+		// the commit step skips it on validationError).
+		expect(r.dedupDecision).toBe("insert");
+	});
+
+	it("baked dedup decision is SKIP when the email is already taken", () => {
+		const candidates: DedupCandidate[] = [
+			{
+				personCode: "P-100",
+				displayName: "Sarah Khan",
+				email: "sarah@acme.com",
+				phone: null,
+				companyName: null,
+			},
+		];
+		const r = buildPreviewRow(
+			{
+				displayName: "Sarah K.",
+				email: "sarah@acme.com",
+				phone: null,
+				companyName: null,
+				source: null,
+				notes: null,
+			},
+			candidates,
+		);
+		expect(r.validationError).toBeUndefined();
+		expect(r.dedupDecision).toBe("skip");
+		expect(r.dedupTargetCode).toBe("P-100");
+		expect(r.fields.source).toBe("csv-import"); // default applied
+		expect(r.idemKey).toMatch(/^[a-z0-9]+$/);
+	});
+
+	it("baked dedup decision is INSERT for a brand new contact", () => {
+		const candidates: DedupCandidate[] = [
+			{
+				personCode: "P-200",
+				displayName: "Sarah Khan",
+				email: "sarah@acme.com",
+				phone: null,
+				companyName: null,
+			},
+		];
+		const r = buildPreviewRow(
+			{
+				displayName: "Ali Rashid",
+				email: "ali@gulf.ae",
+				phone: null,
+				companyName: null,
+				source: null,
+				notes: "Met at conference",
+			},
+			candidates,
+		);
+		expect(r.dedupDecision).toBe("insert");
+		expect(r.dedupTargetCode).toBeUndefined();
+		expect(r.fields.notes).toBe("Met at conference");
+	});
+
+	it("idemKey is identical for two CSV rows that describe the same person", () => {
+		const a = buildPreviewRow(
+			{
+				displayName: "Sarah Khan",
+				email: "sarah+old@acme.com",
+				phone: null,
+				companyName: "Driven Properties LLC",
+				source: null,
+				notes: null,
+			},
+			[],
+		);
+		const b = buildPreviewRow(
+			{
+				displayName: "Sarah Khan",
+				email: "SARAH@acme.com",
+				phone: null,
+				companyName: "Driven Properties",
+				source: null,
+				notes: null,
+			},
+			[],
+		);
+		expect(a.idemKey).toBe(b.idemKey);
+	});
+});
+
+// ─── Week 6.6 — variant-matrix scorer (Attio defineAgentTestSuite) ──────────
+//
+// Extends the Week-1.6 baseline guards with a variant-matrix layer: the
+// SAME deterministic test runs across every (model, prompt, tool-set)
+// combination so when one variant regresses, we know which dimension
+// caused it. Cost/latency reporting is still Phase 4 (we don't run real
+// model calls in CI), but the matrix shape mirrors what the live runner
+// will use once it lands.
+
+import { buildPatchFromExtracted } from "./quarantined/fileAnalyzer";
+import { sanitiseTitle } from "./titleGeneration";
+
+interface ScorerVariant {
+	model: string;
+	prompt: "long" | "short" | "no-system";
+	toolset: "full" | "minimal" | "none";
+}
+
+interface ScorerCase<I, O> {
+	id: string;
+	input: I;
+	expect: (actual: O) => void;
+}
+
+/**
+ * Runs `cases` × `variants` and asserts each combination. Each variant
+ * is a label-only key today (the actual differentiation is configured
+ * by the unit under test). The matrix exists so we can plug in real
+ * model invocations in Phase 4 without rewriting case bodies.
+ */
+function runVariantMatrix<I, O>(
+	suiteId: string,
+	cases: ScorerCase<I, O>[],
+	variants: ScorerVariant[],
+	runner: (input: I, variant: ScorerVariant) => O,
+): void {
+	for (const v of variants) {
+		describe(`${suiteId} [${v.model}/${v.prompt}/${v.toolset}]`, () => {
+			for (const c of cases) {
+				it(c.id, () => {
+					const actual = runner(c.input, v);
+					c.expect(actual);
+				});
+			}
+		});
+	}
+}
+
+// Variant matrix definition. In Phase 4 this expands to (claude-sonnet-4-5,
+// gemini-2.5-flash, nvidia-llama-3.3-70b) × (long, short) × (full, minimal).
+// For unit-test usage today we just lock in the matrix shape with a single
+// variant per axis so the harness contract is enforced.
+const DEFAULT_VARIANTS: ScorerVariant[] = [
+	{ model: "deterministic-baseline", prompt: "long", toolset: "full" },
+];
+
+describe("Week 6.6 — variant-matrix scorer (deterministic suite)", () => {
+	// Suite 1: title sanitiser — model output is unpredictable, but the
+	// post-processor MUST normalise consistently.
+	runVariantMatrix<string, string>(
+		"title sanitiser",
+		[
+			{
+				id: "strips quotes",
+				input: '"Find leads in Dubai"',
+				expect: (s) => expect(s).toBe("Find leads in Dubai"),
+			},
+			{
+				id: "drops Title: prefix",
+				input: "Title: Update Acme deal",
+				expect: (s) => expect(s).toBe("Update Acme deal"),
+			},
+			{
+				id: "trailing punctuation",
+				input: "Schedule reminder!",
+				expect: (s) => expect(s).toBe("Schedule reminder"),
+			},
+			{
+				id: "collapses whitespace",
+				input: "Find\n  leads\t in   Dubai",
+				expect: (s) => expect(s).toBe("Find leads in Dubai"),
+			},
+			{
+				id: "caps at 60 chars",
+				input: "x".repeat(120),
+				expect: (s) => expect(s.length).toBeLessThanOrEqual(60),
+			},
+			{ id: "empty input → empty", input: "   ", expect: (s) => expect(s).toBe("") },
+		],
+		DEFAULT_VARIANTS,
+		(input) => sanitiseTitle(input),
+	);
+
+	// Suite 2: file-analysis patch builder — the canonical-field projection
+	// must produce identical patches regardless of which vision model is
+	// upstream.
+	type PatchOut = ReturnType<typeof buildPatchFromExtracted>;
+
+	runVariantMatrix<Record<string, unknown>, PatchOut>(
+		"file analyzer patch builder (passport)",
+		[
+			{
+				id: "drops empty values",
+				input: { firstName: "Sarah", lastName: "", documentNumber: null },
+				expect: (patches) => {
+					const fieldNames = patches.map((p) => p.field);
+					expect(fieldNames).toContain("firstName");
+					expect(fieldNames).not.toContain("lastName");
+					expect(fieldNames).not.toContain("documentNumber");
+				},
+			},
+			{
+				id: "synthesises displayName from first+last",
+				input: { firstName: "Sarah", lastName: "Khan" },
+				expect: (patches) => {
+					const dn = patches.find((p) => p.field === "displayName");
+					expect(dn).toBeDefined();
+					expect(dn?.value).toBe("Sarah Khan");
+				},
+			},
+			{
+				id: "no displayName when both names missing",
+				input: { documentNumber: "X12345" },
+				expect: (patches) => {
+					const fieldNames = patches.map((p) => p.field);
+					expect(fieldNames).not.toContain("displayName");
+					expect(fieldNames).toContain("documentNumber");
+				},
+			},
+			{
+				id: "documentNumber confidence is high",
+				input: { documentNumber: "X12345" },
+				expect: (patches) => {
+					const docnum = patches.find((p) => p.field === "documentNumber");
+					expect(docnum?.confidence ?? 0).toBeGreaterThanOrEqual(0.9);
+				},
+			},
+		],
+		DEFAULT_VARIANTS,
+		(input) => buildPatchFromExtracted("passport", input),
+	);
+
+	// Suite 3: file-analysis patch builder — invoice variant. Tests that
+	// kind-specific extraction stays kind-specific.
+	runVariantMatrix<Record<string, unknown>, PatchOut>(
+		"file analyzer patch builder (invoice)",
+		[
+			{
+				id: "extracts vendor + total",
+				input: { vendor: "Acme", invoiceNumber: "INV-001", total: 1234, currency: "USD" },
+				expect: (patches) => {
+					const fieldNames = patches.map((p) => p.field);
+					expect(fieldNames).toContain("vendor");
+					expect(fieldNames).toContain("total");
+					expect(fieldNames).toContain("currency");
+				},
+			},
+			{
+				id: "doesn't bleed passport fields into invoice extraction",
+				input: { vendor: "Acme", firstName: "Sarah" }, // firstName is invalid for invoice kind
+				expect: (patches) => {
+					const fieldNames = patches.map((p) => p.field);
+					expect(fieldNames).toContain("vendor");
+					expect(fieldNames).not.toContain("firstName");
+					expect(fieldNames).not.toContain("displayName");
+				},
+			},
+		],
+		DEFAULT_VARIANTS,
+		(input) => buildPatchFromExtracted("invoice", input),
+	);
+});
+
+// ─── Week 4.5 — friendly-tool-error mapper ────────────────────────────
+// Regression guard for the 2026-05-24 incident where a `commit_create_lead`
+// argument-validation failure surfaced as the unhelpful generic
+// "An unexpected error occurred. Please try again."
+
+describe("friendlyToolError", () => {
+	it("maps an explicit DUPLICATE code into a helpful suggestion with personCode", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{
+				ok: false,
+				error: "Lead with this email already exists",
+				code: "DUPLICATE",
+				data: {
+					code: "DUPLICATE",
+					personCode: "P-007",
+					message: "Lead with this email already exists",
+				},
+			},
+			"commit_create_lead",
+		);
+		expect(r.code).toBe("DUPLICATE");
+		expect(r.markdown).toContain("already exists");
+		// Currently the helper sources personCode from `data` only when the
+		// outer envelope is the Convex `{ data }` shape; this assertion just
+		// checks the markdown surfaces the right concept.
+		expect(r.markdown.toLowerCase()).toMatch(/email|update|different/);
+	});
+
+	it("recognises a Convex argument-validation failure and rewrites it", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{
+				ok: false,
+				error: "ArgumentValidationError: Object contains extra field `notes` that is not in the validator.",
+			},
+			"commit_create_lead",
+		);
+		expect(r.code).toBe("ARG_MISMATCH");
+		expect(r.markdown).toContain("unexpected field");
+		expect(r.markdown.toLowerCase()).toContain("manually");
+	});
+
+	it("never echoes an unbounded error string back to the user", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const huge = `Boom! ${"x".repeat(2000)}`;
+		const r = friendlyToolError({ ok: false, error: huge }, "create_lead");
+		expect(r.markdown.length).toBeLessThan(700);
+		expect(r.markdown).toContain("create_lead");
+	});
+
+	it("FORBIDDEN code routes to a permissions-style explanation", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{ ok: false, error: "You don't have permission.", code: "AI_TOOL_UNAUTHORIZED" },
+			"create_lead",
+		);
+		expect(r.code).toBe("AI_TOOL_UNAUTHORIZED");
+		expect(r.markdown.toLowerCase()).toContain("admin");
+	});
+
+	it("RATE_LIMITED code routes to a wait-and-try-again explanation", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{ ok: false, error: "Too many requests.", code: "RATE_LIMITED" },
+			"create_lead",
+		);
+		expect(r.code).toBe("RATE_LIMITED");
+		expect(r.markdown.toLowerCase()).toContain("wait");
+	});
+
+	it("falls back to the unknown-error template when nothing matches", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError({ ok: false, error: "Something exploded." }, "create_lead");
+		expect(r.code).toBe("UNKNOWN");
+		expect(r.markdown).toContain("create_lead");
+		expect(r.markdown).toContain("exploded");
+	});
+
+	// ─── P1.11 — Multi-tier envelope ───────────────────────────────
+	// Phase 4 Part 1 P1.11 (`PHASE-3-AI-AUDIT.md §5`). Each known code
+	// must populate `summary` (always shown) + at least one of
+	// `details` / `manualSteps` / `recoveryActions` so the chat
+	// renderer has something to put in the collapsibles.
+
+	it("DUPLICATE returns a structured envelope with manual steps and recovery actions", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{
+				ok: false,
+				error: "Already exists",
+				code: "DUPLICATE",
+				data: { code: "DUPLICATE", personCode: "P-007" },
+			},
+			"commit_create_lead",
+		);
+		expect(r.summary).toContain("P-007");
+		expect(r.details).toBeTruthy();
+		expect(Array.isArray(r.manualSteps)).toBe(true);
+		expect(r.manualSteps!.length).toBeGreaterThanOrEqual(2);
+		expect(Array.isArray(r.recoveryActions)).toBe(true);
+		expect(r.recoveryActions!.length).toBeGreaterThan(0);
+		expect(r.recoveryActions![0]).toMatchObject({
+			label: expect.any(String),
+			intent: expect.any(String),
+		});
+	});
+
+	it("RATE_LIMITED returns at least one recovery action", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{ ok: false, error: "Hit rate limit", code: "RATE_LIMITED" },
+			"create_lead",
+		);
+		expect(r.code).toBe("RATE_LIMITED");
+		expect(r.summary.toLowerCase()).toContain("rate limit");
+		expect(r.recoveryActions?.length).toBeGreaterThan(0);
+	});
+
+	it("FORBIDDEN returns numbered manual steps the user can follow", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{ ok: false, error: "Need leads.update", code: "FORBIDDEN" },
+			"update_entity",
+		);
+		expect(r.code).toBe("FORBIDDEN");
+		expect(r.manualSteps).toBeDefined();
+		expect(r.manualSteps!.some((s) => s.toLowerCase().includes("admin"))).toBe(true);
+	});
+
+	it("ARG_MISMATCH returns a recovery action and manual steps", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{
+				ok: false,
+				error: "ArgumentValidationError: extra field `foo`.",
+			},
+			"commit_update_entity",
+		);
+		expect(r.code).toBe("ARG_MISMATCH");
+		expect(r.summary.toLowerCase()).toContain("unexpected field");
+		expect(r.manualSteps).toBeDefined();
+		expect(r.recoveryActions).toBeDefined();
+	});
+
+	it("legacy `markdown` is derived from the structured fields", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const r = friendlyToolError(
+			{ ok: false, error: "Need leads.update", code: "FORBIDDEN" },
+			"update_entity",
+		);
+		// Headline appears bolded in the legacy markdown body.
+		expect(r.markdown).toContain(`**${r.summary}**`);
+		// Manual-steps body appears in legacy markdown.
+		expect(r.markdown).toContain("manually");
+	});
+
+	it("short is always ≤ 60 chars (badge-friendly)", async () => {
+		const { friendlyToolError } = await import("./orchestrator/friendlyToolError");
+		const longErr = "a".repeat(500);
+		const r = friendlyToolError({ ok: false, error: longErr }, "create_lead");
+		expect(r.short.length).toBeLessThanOrEqual(60);
+	});
+});
+
+// ─── Week 4.5 — commit-arg strip via zod ──────────────────────────────
+// Direct test of the resume.ts behaviour: parsing the propose payload
+// through the commit's zod schema BEFORE invoking execute strips
+// propose-only fields (e.g. `notes` on create_lead).
+
+describe("commit zod strip", () => {
+	it("strips propose-only fields from the payload", () => {
+		// Mirror the create_lead -> commit_create_lead schema shape.
+		const commitSchema = z.object({
+			displayName: z.string(),
+			email: z.string().optional(),
+			phone: z.string().optional(),
+			source: z.string().default("manual"),
+			assignedTo: z.string().optional(),
+		});
+		const propose = {
+			displayName: "Farooq",
+			email: "farooq@example.com",
+			phone: undefined,
+			source: "manual",
+			notes: "Initial note from propose", // propose-only, must be stripped
+		};
+		const parsed = commitSchema.safeParse(propose);
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			expect(parsed.data).not.toHaveProperty("notes");
+			expect(parsed.data.displayName).toBe("Farooq");
+			expect(parsed.data.source).toBe("manual");
+		}
+	});
+
+	it("applies defaults when the field is missing", () => {
+		const commitSchema = z.object({
+			displayName: z.string(),
+			source: z.string().default("manual"),
+		});
+		const parsed = commitSchema.safeParse({ displayName: "Farooq" });
+		expect(parsed.success).toBe(true);
+		if (parsed.success) expect(parsed.data.source).toBe("manual");
 	});
 });

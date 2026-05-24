@@ -154,14 +154,31 @@ export const resume = internalAction({
 		};
 		bindAllToolContexts(toolCtx);
 
-		const toolArgs = args.editedPayload ?? pending.confirmationPayload.args ?? {};
+		const rawToolArgs = args.editedPayload ?? pending.confirmationPayload.args ?? {};
 
 		// Look up the commit tool in the registry and execute it
-		const { getToolsForRequest } = await import("../toolRegistry");
+		const { getToolsForRequest, getRegisteredTool } = await import("../toolRegistry");
+		const { friendlyToolError } = await import("./friendlyToolError");
+		// Architecture fix (2026-05-24) — match `run.ts` which exposes every
+		// layer the user has permission for at turn start. `commit_*` tools
+		// live in the same layer as their `propose_*` siblings, so we MUST
+		// expand all of them here or the resume can't find the commit tool.
+		const allLayers = [
+			"pipelines",
+			"fields",
+			"tags",
+			"views",
+			"categories",
+			"members",
+			"settings",
+			"bulk",
+			"templates",
+			"data",
+		];
 		const allTools = getToolsForRequest({
 			permissions: memberInfo.permissions,
 			modelTier: "premium",
-			expandedLayers: [],
+			expandedLayers: allLayers,
 		});
 
 		const commitTool = allTools[commitToolName] as
@@ -169,7 +186,100 @@ export const resume = internalAction({
 			| undefined;
 		if (!commitTool?.execute) {
 			console.error(`[resume] Commit tool not found: ${commitToolName}`);
+			// Surface a friendly error to the user instead of a silent failure.
+			const failMsgId = (await ctx.runMutation(
+				_ref("ai/messages:appendAssistantPlaceholder"),
+				{ orgId: args.orgId as string, conversationId: args.conversationId as string },
+			)) as string;
+			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+				messageId: failMsgId,
+				content: `❌ Couldn't apply your approval — the commit handler \`${commitToolName}\` isn't registered.`,
+				thinkingState: "error",
+			});
 			return;
+		}
+
+		// Defensive — the persisted payload should be the original model
+		// args, but we've seen field shapes get clipped on a partial write.
+		// Bail with a friendly message instead of letting a TypeError
+		// crash the whole resume action.
+		if (!rawToolArgs || typeof rawToolArgs !== "object") {
+			console.error(`[resume] ${commitToolName}: missing args payload`);
+			const failMsgId = (await ctx.runMutation(
+				_ref("ai/messages:appendAssistantPlaceholder"),
+				{ orgId: args.orgId as string, conversationId: args.conversationId as string },
+			)) as string;
+			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+				messageId: failMsgId,
+				content: `❌ Couldn't apply your approval — the original arguments aren't available. Please ask again.`,
+				thinkingState: "error",
+			});
+			return;
+		}
+
+		// Bug fix 2026-05-24 — `resume` calls `commitTool.execute()` directly,
+		// bypassing the AI SDK's input validator. Without an explicit zod
+		// strip here, propose-only fields (e.g. `create_lead.notes`) are
+		// forwarded to the commit's underlying mutation, which throws an
+		// `ArgumentValidationError` because its validator doesn't declare
+		// the field. The user then sees the dreaded "An unexpected error
+		// occurred. Please try again." Re-parsing through the commit's
+		// own zod schema strips extras and applies defaults.
+		//
+		// Hardening 2026-05-24 (round 2): if the zod parse fails because
+		// REQUIRED fields are missing (e.g. update_org_settings persisted
+		// without `patch`), forwarding the raw args used to crash the
+		// commit's execute() with cryptic "Cannot convert undefined or
+		// null to object". Now we return a friendly error and stop.
+		const commitDef = getRegisteredTool(commitToolName);
+		let toolArgs: unknown = rawToolArgs;
+		if (commitDef?.schema) {
+			const parsed = commitDef.schema.safeParse(rawToolArgs);
+			if (parsed.success) {
+				toolArgs = parsed.data;
+			} else {
+				console.warn(`[resume] ${commitToolName}: zod parse failed`, parsed.error.issues);
+				const issueSummary = parsed.error.issues
+					.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`)
+					.join("; ");
+				const friendly = friendlyToolError(
+					{
+						ok: false,
+						error: `Approved payload for ${commitToolName} is malformed. ${issueSummary}`,
+						code: "MALFORMED_PAYLOAD",
+					},
+					commitToolName,
+				);
+				await ctx.runMutation(_ref("ai/messages:patchToolCallRecord"), {
+					messageId: args.confirmedMessageId,
+					output: {
+						ok: false,
+						error: friendly.short,
+						code: friendly.code,
+						friendlyMarkdown: friendly.markdown,
+						friendlyError: {
+							code: friendly.code,
+							short: friendly.short,
+							summary: friendly.summary,
+							details: friendly.details,
+							manualSteps: friendly.manualSteps,
+							recoveryActions: friendly.recoveryActions,
+						},
+						rawError: issueSummary,
+					},
+					status: "failed",
+				});
+				const failMsgId = (await ctx.runMutation(
+					_ref("ai/messages:appendAssistantPlaceholder"),
+					{ orgId: args.orgId as string, conversationId: args.conversationId as string },
+				)) as string;
+				await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+					messageId: failMsgId,
+					content: `❌ ${friendly.markdown}`,
+					thinkingState: "error",
+				});
+				return;
+			}
 		}
 
 		const result = await commitTool.execute(toolArgs).catch((err: unknown) => ({
@@ -177,7 +287,99 @@ export const resume = internalAction({
 			error: err instanceof Error ? err.message : "Commit failed.",
 		}));
 
-		// Insert the result as an assistant message
+		const isError = typeof result === "object" && result && "ok" in result && !result.ok;
+
+		// Patch the original propose tool record's status — without this
+		// the timeline row stays as a loading spinner forever (because
+		// no `tool-result` chunk ever fires in the resume path).
+		if (isError) {
+			// Phase 4 Part 1 P1.11 — also surface the multi-tier envelope
+			// to the chat renderer so the timeline row can show the
+			// summary always-visible plus collapsibles for details +
+			// manual steps + recovery chips.
+			const friendly = friendlyToolError(result, commitToolName);
+			await ctx.runMutation(_ref("ai/messages:patchToolCallRecord"), {
+				messageId: args.confirmedMessageId,
+				output: {
+					ok: false,
+					error: friendly.short,
+					code: friendly.code,
+					friendlyMarkdown: friendly.markdown,
+					friendlyError: {
+						code: friendly.code,
+						short: friendly.short,
+						summary: friendly.summary,
+						details: friendly.details,
+						manualSteps: friendly.manualSteps,
+						recoveryActions: friendly.recoveryActions,
+					},
+					rawError: (result as { error?: string }).error ?? "Commit failed.",
+				},
+				status: "failed",
+			});
+		} else {
+			await ctx.runMutation(_ref("ai/messages:patchToolCallRecord"), {
+				messageId: args.confirmedMessageId,
+				output: result,
+				status: "completed",
+			});
+		}
+
+		// Build the body that gets appended to the assistant turn. On
+		// success we keep the existing pithy "✅ Done." (the live entity
+		// card already renders below the message). On failure we use the
+		// friendly mapper so the user sees something actionable instead
+		// of a generic "An unexpected error occurred."
+		let resultBody: string;
+		if (isError) {
+			const friendly = friendlyToolError(result, commitToolName);
+			resultBody = `❌ ${friendly.markdown}`;
+		} else if (
+			typeof result === "object" &&
+			result &&
+			"display" in result &&
+			typeof (result as { display: unknown }).display === "string"
+		) {
+			resultBody = String((result as { display: string }).display);
+		} else {
+			resultBody = "✅ Done.";
+		}
+
+		// Day 1 T1.3 (`PHASE-3-AI-AUDIT.md §6.5 E.T1.3`) — single-turn HITL.
+		// Reuse the assistant message that originally hosted the approval
+		// card instead of inserting a new placeholder. Visually keeps
+		// "one ask = one bubble"; resume becomes a body patch, not a new
+		// turn. The list returned by listForConversationInternal is
+		// chronological (asc), so the last assistant row is the one we
+		// want.
+		const allMessages = (await ctx.runQuery(
+			_ref("ai/messages:listForConversationInternal"),
+			_anyArgs({
+				orgId: args.orgId as string,
+				conversationId: args.conversationId as string,
+			}),
+		)) as Array<{ _id: string; role: string; content?: string; thinkingState?: string }>;
+		const targetAssistant = [...allMessages].reverse().find((m) => m.role === "assistant");
+
+		if (targetAssistant) {
+			// Append to the existing assistant body. Use a short separator
+			// so the user can visually distinguish the original turn from
+			// the commit confirmation.
+			const previousContent = targetAssistant.content ?? "";
+			const merged =
+				previousContent.trim().length > 0
+					? `${previousContent}\n\n${resultBody}`
+					: resultBody;
+			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+				messageId: targetAssistant._id,
+				content: merged,
+				thinkingState: isError ? "error" : "done",
+			});
+			return;
+		}
+
+		// Defensive fallback — no assistant message exists somehow. Insert
+		// a fresh one so the user still sees the result.
 		const assistantMsgId = (await ctx.runMutation(
 			_ref("ai/messages:appendAssistantPlaceholder"),
 			{
@@ -185,24 +387,13 @@ export const resume = internalAction({
 				conversationId: args.conversationId as string,
 			},
 		)) as string;
-
 		await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
 			messageId: assistantMsgId,
-			content:
-				typeof result === "object" && result && "display" in result
-					? typeof (result as { display: unknown }).display === "string"
-						? String((result as { display: string }).display)
-						: "✅ Done."
-					: typeof result === "object" && result && "ok" in result && !result.ok
-						? `❌ ${typeof result === "object" && "error" in result ? String(result.error) : "Action failed."}`
-						: "✅ Done.",
+			content: resultBody,
 			model: "system",
 			provider: "system",
 			usageMode: "platform",
-			thinkingState:
-				typeof result === "object" && result && "ok" in result && !result.ok
-					? "error"
-					: "done",
+			thinkingState: isError ? "error" : "done",
 		});
 	},
 });

@@ -65,7 +65,9 @@ const LS_STATUS = v.union(
 	v.literal("expired"),
 );
 
-function normaliseStatus(s: string | undefined): "on_trial" | "active" | "paused" | "past_due" | "unpaid" | "cancelled" | "expired" {
+function normaliseStatus(
+	s: string | undefined,
+): "on_trial" | "active" | "paused" | "past_due" | "unpaid" | "cancelled" | "expired" {
 	if (
 		s === "on_trial" ||
 		s === "active" ||
@@ -98,8 +100,7 @@ export const applyWebhookEvent = internalMutation({
 		const customDataOrgId = payload.meta?.custom_data?.org_id;
 		const data = payload.data;
 		const attrs = data?.attributes ?? {};
-		const customerId =
-			attrs.customer_id !== undefined ? String(attrs.customer_id) : undefined;
+		const customerId = attrs.customer_id !== undefined ? String(attrs.customer_id) : undefined;
 		const subscriptionId = data?.id;
 		const variantId = attrs.variant_id !== undefined ? String(attrs.variant_id) : undefined;
 		const status = normaliseStatus(attrs.status);
@@ -120,9 +121,7 @@ export const applyWebhookEvent = internalMutation({
 		if (!orgId) {
 			// Without an org we can't apply — log and exit. Webhook still
 			// returns 200 so LS doesn't retry indefinitely.
-			console.warn(
-				`[billing] Webhook ${args.eventName} could not be matched to an org.`,
-			);
+			console.warn(`[billing] Webhook ${args.eventName} could not be matched to an org.`);
 			return { ok: false, reason: "no_org_match" };
 		}
 

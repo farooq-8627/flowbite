@@ -38,9 +38,9 @@ import {
 import {
 	FALLBACK_SUBAGENT_ID,
 	resolveSubagentForUser,
-	type Subagent,
-	SUBAGENTS,
 	SUBAGENT_IDS,
+	SUBAGENTS,
+	type Subagent,
 	type SubagentId,
 } from "../subagents";
 
@@ -110,12 +110,20 @@ function heuristicClassify(message: string): { id: SubagentId; confidence: numbe
 	const m = message.toLowerCase();
 
 	// CSV / spreadsheet phrasing → csv_import.
-	if (/\b(csv|spreadsheet|\.csv|excel|xlsx|import\s+(my|the)?\s*(contacts|leads|file|sheet))\b/i.test(message)) {
+	if (
+		/\b(csv|spreadsheet|\.csv|excel|xlsx|import\s+(my|the)?\s*(contacts|leads|file|sheet))\b/i.test(
+			message,
+		)
+	) {
 		return { id: "csv_import", confidence: 0.7 };
 	}
 
 	// Enrichment phrasing.
-	if (/\b(enrich|enrichment|find\s+(?:the\s+)?(?:email|phone|linkedin)|look\s*up\s+(?:on\s+linkedin)|fill\s+in\s+missing)\b/i.test(message)) {
+	if (
+		/\b(enrich|enrichment|find\s+(?:the\s+)?(?:email|phone|linkedin)|look\s*up\s+(?:on\s+linkedin)|fill\s+in\s+missing)\b/i.test(
+			message,
+		)
+	) {
 		return { id: "enrichment", confidence: 0.7 };
 	}
 
@@ -128,7 +136,11 @@ function heuristicClassify(message: string): { id: SubagentId; confidence: numbe
 	}
 
 	// Pure read questions ("what / which / who / how many / can I / show me / list").
-	if (/^(what|which|who|how\s+many|can\s+i|show\s+me|list|find|search|do\s+i\s+have|are\s+there)\b/i.test(message.trim())) {
+	if (
+		/^(what|which|who|how\s+many|can\s+i|show\s+me|list|find|search|do\s+i\s+have|are\s+there)\b/i.test(
+			message.trim(),
+		)
+	) {
 		// "show me + entity" without a write verb still routes here.
 		if (!/(create|add|update|edit|delete|remove|move|invite)\b/i.test(m)) {
 			return { id: "qa", confidence: 0.62 };
@@ -173,8 +185,7 @@ export async function classifyRequest(args: ClassifyArgs): Promise<RouterDecisio
 
 	// Try the classifier. It needs the briefing platform key.
 	const briefingModelKey = process.env.AI_BRIEFING_MODEL ?? PLATFORM_BRIEFING_MODEL;
-	const info =
-		MODEL_REGISTRY[briefingModelKey] ?? MODEL_REGISTRY[PLATFORM_BRIEFING_MODEL];
+	const info = MODEL_REGISTRY[briefingModelKey] ?? MODEL_REGISTRY[PLATFORM_BRIEFING_MODEL];
 	const apiKey = getPlatformKey(info.provider as ProviderId);
 
 	if (!apiKey) {
@@ -269,9 +280,7 @@ export async function classifyRequest(args: ClassifyArgs): Promise<RouterDecisio
 	}
 }
 
-function safeParseDecision(
-	raw: string,
-): { id: SubagentId; confidence: number } | null {
+function safeParseDecision(raw: string): { id: SubagentId; confidence: number } | null {
 	try {
 		const obj = JSON.parse(raw) as { subagent?: unknown; confidence?: unknown };
 		const idCandidate = typeof obj.subagent === "string" ? obj.subagent : "";

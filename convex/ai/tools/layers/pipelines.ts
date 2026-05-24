@@ -38,12 +38,16 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "deals.changeStage");
-			const result = await toolMutation(getCtx(), "crm/entities/deals/mutations:moveToStage", {
-				orgId,
-				...args,
-			});
+			const result = await toolMutation(
+				getCtx(),
+				"crm/entities/deals/mutations:moveToStage",
+				{
+					orgId,
+					...args,
+				},
+			);
 			return {
 				ok: true as const,
 				data: result,
@@ -99,7 +103,7 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "deals.close");
 			const mutation =
 				args.outcome === "won"
@@ -173,7 +177,7 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "pipelines.manage");
 			const result = await toolMutation(getCtx(), "crm/fields/pipelines/mutations:create", {
 				orgId,
@@ -232,7 +236,7 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "pipelines.manage");
 			const result = await toolMutation(getCtx(), "crm/fields/pipelines/mutations:addStage", {
 				orgId,

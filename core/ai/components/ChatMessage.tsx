@@ -73,7 +73,7 @@ export function ChatMessage({ message, orgId, isLast }: ChatMessageProps) {
 			(display as ToolDisplay).kind !== "text";
 
 		return (
-			<div className="flex flex-col gap-1.5 px-4 py-1">
+			<div className="flex flex-col gap-1.5 px-3 py-1">
 				{/* Tool summary header — always visible so the user can
 				    see WHICH tool ran. Kept compact (single row). */}
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -128,15 +128,18 @@ function AssistantMessage({
 	const wasCancelled = !!message.aborted;
 
 	return (
-		<div className="group flex flex-col gap-1.5 px-4 py-2">
-			{/* Header row: avatar + author + model */}
-			<div className="flex items-center gap-2">
+		<div className="group flex flex-col gap-1.5 px-3 py-2 items-end min-w-0">
+			{/* Header row: avatar + author + model — right-aligned to match
+			    the assistant bubble (see AssistantTurn for the canonical
+			    layout — this branch is only hit for orphan / legacy
+			    assistant messages without grouped tool messages). */}
+			<div className="flex flex-row-reverse items-center gap-2 min-w-0">
 				<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
 					<Bot className="size-3.5 text-primary" />
 				</div>
 				<span className="text-xs font-semibold">AI Assistant</span>
 				{message.model && !isLive && (
-					<span className="text-[10px] text-muted-foreground/70">
+					<span className="text-[10px] text-muted-foreground/70 truncate">
 						· {message.model}
 						{message.usageMode === "byok" ? " · 🔑" : ""}
 					</span>
@@ -149,7 +152,7 @@ function AssistantMessage({
 			</div>
 
 			{/* Body */}
-			<div className="ms-9 min-w-0">
+			<div className="w-full min-w-0">
 				<ReasoningPanel
 					state={thinkingState}
 					activeTool={message.activeTool ?? null}
@@ -228,19 +231,21 @@ function UserMessage({
 	}
 
 	return (
-		<div className="group flex flex-col gap-1.5 px-4 py-2">
+		<div className="group flex flex-col gap-1.5 px-3 py-2 items-start min-w-0">
 			{/* Header row */}
-			<div className="flex items-center gap-2">
+			<div className="flex items-center gap-2 min-w-0">
 				<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
 					<User className="size-3.5 text-muted-foreground" />
 				</div>
 				<span className="text-xs font-semibold">You</span>
 			</div>
 
-			{/* Body */}
-			<div className="ms-9 min-w-0">
+			{/* Body — fills the entire user-message column (after the
+			    parent's `px-3` outer padding). The bubble shrinks-to-
+			    content; alignment comes from the parent's `items-start`. */}
+			<div className="w-full min-w-0">
 				{editing ? (
-					<div className="flex flex-col gap-2 rounded-[var(--radius)] border border-input bg-background px-3 py-2.5 shadow-xs">
+					<div className="flex w-full min-w-0 flex-col gap-2 rounded-[var(--radius)] border border-input bg-background px-3 py-2.5 shadow-xs">
 						<textarea
 							ref={editTextareaRef}
 							value={draft}
@@ -277,7 +282,7 @@ function UserMessage({
 				) : (
 					<div
 						className={cn(
-							"rounded-[var(--radius)] bg-muted/60 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words",
+							"max-w-full min-w-0 rounded-[var(--radius)] bg-muted/60 px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words",
 						)}
 					>
 						{message.content || (

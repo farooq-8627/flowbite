@@ -44,6 +44,7 @@
 		"@dnd-kit/sortable": "10.0.0",
 		"@dnd-kit/utilities": "3.2.2",
 		"@hookform/resolvers": "^5.2.2",
+		"@mendable/firecrawl-js": "4.25.0",
 		"@openrouter/ai-sdk-provider": "~2.9.0",
 		"@payloadcms/plugin-mcp": "^3.83.0",
 		"@posthog/next": "^0.1.0",

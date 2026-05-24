@@ -706,7 +706,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 						highlightEpoch={flashEpoch}
 						groupBy={groupBy}
 						resolveReplacementLabel={resolveReplacementLabel}
-						prefetchedTags={tagsByEntityId[item.id]}
+						prefetchedTags={tagsByEntityId[item.id] ?? []}
 						onConvert={() => handleInstantConvert(item.id as Id<"leads">)}
 						onConvertWithOptions={() => openConvertFor([item.id as Id<"leads">])}
 						onDelete={() => handleDelete(item.id as Id<"leads">)}

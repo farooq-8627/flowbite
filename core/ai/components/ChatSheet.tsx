@@ -14,17 +14,18 @@
 import { useMutation } from "convex/react";
 import { anyApi } from "convex/server";
 import { Bot, Plus, Settings } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { APP_CONFIG } from "@/config/app-config";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useAIChat } from "../hooks/useAIChat";
-import { useRouteContext } from "../hooks/useRouteContext";
+import { useChatRouteContext } from "../hooks/useChatRouteContext";
+import { AssistantTurn } from "./AssistantTurn";
 import { ChatComposer } from "./ChatComposer";
 import { ChatContextCard } from "./ChatContextCard";
 import { ChatHistoryDropdown } from "./ChatHistoryDropdown";
 import { ChatMessage } from "./ChatMessage";
-import { AssistantTurn } from "./AssistantTurn";
 import { Suggestions } from "./composer/Suggestions";
 
 interface Props {
@@ -40,13 +41,26 @@ export function ChatSheet({ onOpenSettings }: Props) {
 	const [autoContextLoad, setAutoContextLoad] = useState(true);
 	const [contextCollapsed, setContextCollapsed] = useState(false);
 
-	const routeContext = useRouteContext();
+	const { page: pageContext, entity: routeContext } = useChatRouteContext();
 
-	const { messages, conversations, isStreaming, send } = useAIChat({
+	const { messages, conversations, isStreaming, send, createConversation } = useAIChat({
 		conversationId,
 		routeContext,
+		pageContext,
 		autoContextLoad,
 	});
+
+	// Header label — show the active conversation's title if any, otherwise
+	// fall back to the app brand name. The auto-titler (`convex/ai/titleGeneration.ts`)
+	// patches `aiConversations.title` ~2s after the first assistant turn ends,
+	// so a brand-new conversation briefly shows the brand label before the
+	// real title arrives.
+	const activeConversation = useMemo(
+		() =>
+			conversationId ? (conversations.find((c) => c._id === conversationId) ?? null) : null,
+		[conversationId, conversations],
+	);
+	const headerTitle = (activeConversation?.title ?? "").trim() || APP_CONFIG.name;
 
 	const scrollViewportRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +105,19 @@ export function ChatSheet({ onOpenSettings }: Props) {
 		},
 		[orgId, send, conversationId],
 	);
+
+	// Phase 4 Part 2 — file attach. ChatComposer needs a conversationId
+	// before it can scope an upload, so we expose a lazy-create helper
+	// that yields the existing id or creates a new one on demand. We
+	// also flip the local `conversationId` state so future messages
+	// land on the same thread.
+	const handleEnsureConversation = useCallback(async () => {
+		if (!orgId) throw new Error("Org not loaded");
+		if (conversationId) return conversationId;
+		const newId = (await createConversation({ orgId })) as Id<"aiConversations">;
+		setConversationId(newId);
+		return newId;
+	}, [orgId, conversationId, createConversation]);
 
 	const handleNew = useCallback(() => {
 		setConversationId(null);
@@ -154,7 +181,9 @@ export function ChatSheet({ onOpenSettings }: Props) {
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2 border-b border-sidebar-border px-3 py-2">
 				<Bot className="size-4 text-primary shrink-0" />
-				<span className="flex-1 font-semibold text-sm">AI Assistant</span>
+				<span className="flex-1 truncate font-semibold text-sm" title={headerTitle}>
+					{headerTitle}
+				</span>
 				<ChatHistoryDropdown
 					conversations={conversations}
 					activeConversationId={conversationId}
@@ -196,14 +225,14 @@ export function ChatSheet({ onOpenSettings }: Props) {
 			{/* Messages */}
 			<div ref={scrollViewportRef} className="flex-1 min-h-0 chat-sheet-wrapper">
 				<ScrollArea className="h-full">
-					<div className="flex flex-col py-2">
+					<div className="flex w-full min-w-0 flex-col py-2">
 						{messages.length === 0 && (
 							<div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
 								<div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
 									<Bot className="size-6 text-primary" />
 								</div>
 								<div>
-									<p className="font-medium text-sm">AI Assistant</p>
+									<p className="font-medium text-sm">{APP_CONFIG.name}</p>
 									<p className="mt-1 text-xs text-muted-foreground">
 										Ask me to search records, create leads, set reminders, or
 										explain your pipeline.
@@ -223,9 +252,13 @@ export function ChatSheet({ onOpenSettings }: Props) {
 							// happen, but defensively) falls through to the
 							// legacy <ChatMessage> branch so we never lose data.
 							const items: Array<
-								| { kind: "user"; msg: typeof messages[number] }
-								| { kind: "assistantTurn"; assistant: typeof messages[number]; tools: Array<typeof messages[number]> }
-								| { kind: "orphanTool"; msg: typeof messages[number] }
+								| { kind: "user"; msg: (typeof messages)[number] }
+								| {
+										kind: "assistantTurn";
+										assistant: (typeof messages)[number];
+										tools: Array<(typeof messages)[number]>;
+								  }
+								| { kind: "orphanTool"; msg: (typeof messages)[number] }
 							> = [];
 							let cursor = 0;
 							while (cursor < messages.length) {
@@ -310,6 +343,8 @@ export function ChatSheet({ onOpenSettings }: Props) {
 				onCancel={handleCancel}
 				disabled={isStreaming}
 				isStreaming={isStreaming}
+				conversationId={conversationId}
+				onEnsureConversation={handleEnsureConversation}
 				placeholder={
 					routeContext
 						? `Ask about ${routeContext.name ?? routeContext.personCode}…`

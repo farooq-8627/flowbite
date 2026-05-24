@@ -18,8 +18,14 @@
  * - https://github.com/get-convex/convex-helpers/blob/main/packages/convex-helpers/server/customFunctions.ts
  */
 import { v } from "convex/values";
-import { authenticatedQuery, orgQuery, superAdminQuery } from "../_functions/authenticated";
-import { internalQuery } from "../_generated/server";
+import {
+	authenticatedQuery,
+	orgQuery,
+	requireOrgMemberByIds,
+	superAdminQuery,
+} from "../_functions/authenticated";
+import type { Id } from "../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../_generated/server";
 import { readAllOrgStats } from "../_shared/orgStats";
 import { getOrgById, getUserOrgs } from "./helpers";
 
@@ -63,7 +69,6 @@ export const getFullSettings = orgQuery({
 			logoStorageId: org.logoStorageId,
 			industry: org.industry,
 			plan: org.plan,
-			aiContext: org.aiContext,
 			entityLabels: org.entityLabels,
 			settings: org.settings,
 		};
@@ -148,25 +153,49 @@ export const listMembers = orgQuery({
 
 		if (!membership || membership.deletedAt !== undefined) return [];
 
-		const members = await ctx.db
-			.query("orgMembers")
-			.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", args.orgId))
-			.take(100);
+		return listMembersImpl(ctx, args.orgId);
+	},
+});
 
-		const result = [];
-		for (const m of members) {
-			if (m.deletedAt !== undefined) continue;
-			const memberUser = await ctx.db.get(m.userId);
-			if (!memberUser || memberUser.deletedAt !== undefined) continue;
-			// Resolve the storage-backed avatar to a URL if one isn't already set.
-			// Avoids "UM" initials-only rendering for users who uploaded a photo.
-			let avatarUrl = memberUser.avatarUrl;
-			if (!avatarUrl && memberUser.avatarStorageId) {
-				avatarUrl = (await ctx.storage.getUrl(memberUser.avatarStorageId)) ?? undefined;
-			}
-			result.push({ ...m, user: { ...memberUser, avatarUrl } });
+/**
+ * Shared implementation reused by both the public `listMembers` and the
+ * AI-callable `listMembersForAI` twin. Caller is responsible for membership
+ * verification before invoking this helper.
+ */
+async function listMembersImpl(ctx: QueryCtx, orgId: Id<"orgs">) {
+	const members = await ctx.db
+		.query("orgMembers")
+		.withIndex("by_orgId_and_userId", (q) => q.eq("orgId", orgId))
+		.take(100);
+
+	const result = [];
+	for (const m of members) {
+		if (m.deletedAt !== undefined) continue;
+		const memberUser = await ctx.db.get(m.userId);
+		if (!memberUser || memberUser.deletedAt !== undefined) continue;
+		// Resolve the storage-backed avatar to a URL if one isn't already set.
+		// Avoids "UM" initials-only rendering for users who uploaded a photo.
+		let avatarUrl = memberUser.avatarUrl;
+		if (!avatarUrl && memberUser.avatarStorageId) {
+			avatarUrl = (await ctx.storage.getUrl(memberUser.avatarStorageId)) ?? undefined;
 		}
-		return result;
+		result.push({ ...m, user: { ...memberUser, avatarUrl } });
+	}
+	return result;
+}
+
+/** AI-callable internal twin of `listMembers`. Adds top-level `name`/`email` so
+ * `list_members` tool can read without re-typing the nested `user`. */
+export const listMembersForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const rows = await listMembersImpl(ctx, args.orgId);
+		return rows.map((m) => ({
+			...m,
+			name: m.user.name,
+			email: m.user.email,
+		}));
 	},
 });
 
@@ -423,7 +452,8 @@ export const getMemberWithPermissions = internalQuery({
 			permissions: orgRole.permissions as string[],
 			plan: (org.plan as string) ?? "free",
 			settings: (org.settings ?? {}) as Record<string, unknown>,
-			aiMessagesUsed: (org as Record<string, unknown>).aiMessagesUsedThisPeriod as number ?? 0,
+			aiMessagesUsed:
+				((org as Record<string, unknown>).aiMessagesUsedThisPeriod as number) ?? 0,
 		};
 	},
 });

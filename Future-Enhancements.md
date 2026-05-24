@@ -224,17 +224,20 @@ streamText({ ..., stopWhen: stepCountIs(cap) });
 
 | Field           | Value                                                                              |
 |-----------------|------------------------------------------------------------------------------------|
-| Status          | Deferred                                                                           |
+| Status          | ✅ **Shipped 2026-05-24** (Week 4 of `PHASE-3-AI-AUDIT.md §6`)                      |
 | Category        | Onboarding / Data import                                                           |
-| Phase to ship   | **Week 4** of `PHASE-3-AI-AUDIT.md §6` (CSV import + dual-LLM safety) — earlier than Phase 4 |
-| Owners          | `core/data-io/csv-import/`, `convex/ai/quarantined/csvParser.ts` (new), `convex/crm/entities/leads/mutations.ts` (`bulkInsertFromCsvImport`) |
+| Phase to ship   | Week 4 of `PHASE-3-AI-AUDIT.md §6` — DONE                                           |
+| Owners          | `core/ai/components/preview/CsvImportPreviewCard.tsx`, `convex/ai/quarantined/csvParser.ts`, `convex/crm/entities/leads/mutations.ts` (`bulkInsertFromCsvImpl/Import/ForAI`), `convex/_shared/dedup.ts` |
 | Risk if skipped | High. Audit (§11) calls this out: "Every CRM buyer's first action is import my old spreadsheet. If that fails, deal dies in week 1." |
-| Files involved  | New table `csvImports` (planned schema in audit §6 Week 4)                         |
+| Files involved  | `csvImports` table; `convex/_shared/dedup.ts`; `convex/ai/quarantined/csvParser.ts` + `csvParserInternal.ts`; `convex/ai/tools/layers/csvImport.ts` + `csvImportInternal.ts`; `convex/ai/csvImports.ts` (public read); `core/ai/components/preview/CsvImportPreviewCard.tsx` |
 
-**Implementation sketch.**
-- Dual-LLM pattern (audit §7): quarantined LLM extracts structured rows, privileged commit only sees Zod-validated payload.
-- Preview UI: 10 sample rows + field-mapping editor + dedup warnings (fuzzy match `email + name+company`, Levenshtein ≤ 2).
-- Bulk insert in batches of 100.
+**What shipped (one-paragraph rollup).**
+Dual-LLM pattern enforced — quarantined LLM extracts structured rows with no tools, privileged `bulkInsertFromCsvImpl` only sees Zod-validated row list. Per-row dedup decisions (insert/merge/skip) baked at parse-time and re-validated at write-time. Preview UI shows status banner + decision count badges + first-5-row sample table. AI tool flow: `import_csv` (twoStep) → user approval → `commit_import_csv` re-reads previewRows from trusted DB. Phase 1 ships `lead` entity only; contact/company/deal twins deferred to B.9.
+
+**Deferred sub-items captured in their own cards:**
+- B.11 — Multi-entity CSV import (contact / company / deal twins)
+- B.12 — CSV preview per-row dedup-decision override UI
+- B.13 — CSV mapping editor in the preview card
 
 ---
 
@@ -350,6 +353,126 @@ Bundled here for brevity; each is a separate row in the audit doc. Re-read `PHAS
 
 ---
 
+## B.11 — Multi-entity CSV import (contact / company / deal twins)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Onboarding / Data import                                                           |
+| Phase to ship   | Phase 5 (vertical-CRM expansion) — track behind Week 5 enrichment                  |
+| Owners          | `convex/crm/entities/{contacts,companies,deals}/mutations.ts` (new `bulkInsertFromCsvImpl/Import/ForAI` per entity) |
+| Risk if skipped | Medium. Users with mixed-entity spreadsheets ("companies sheet + contacts sheet") today must split-and-import twice. |
+| Files involved  | `convex/ai/quarantined/csvParser.ts` (extend `targetEntity` switch); `convex/ai/tools/layers/csvImport.ts` (broaden `TARGET_ENTITY` enum); `convex/schema/ai.ts` (already supports the union — no migration). |
+
+**Why deferred.** Phase 1 ships `lead` only because it's the highest-frequency import path. The schema's `targetEntity` union already accepts `lead | contact | company | deal`; the parser short-circuits non-lead with a friendly error today. Adding the three additional entities is structurally straightforward — each needs its own `*Impl` body that respects entity-specific dedup keys (companies dedup by domain, deals by `(stage, value, personCode)`).
+
+**Implementation sketch.**
+1. Add `bulkInsertFromCsvImpl` + public + ForAI in `crm/entities/contacts/mutations.ts`, `companies/mutations.ts`, `deals/mutations.ts`.
+2. Extend `convex/_shared/dedup.ts` with entity-specific candidate shapes (e.g. `DedupCompanyCandidate` keyed on domain).
+3. Widen `TARGET_ENTITY` enum in `convex/ai/tools/layers/csvImport.ts` from `["lead"]` to `["lead", "contact", "company", "deal"]`.
+4. Drop the Phase-1 short-circuit in `convex/ai/quarantined/csvParser.ts` (`if (importRow.targetEntity !== "lead") fail()`).
+
+**Verification.** Add three new scorer tests mirroring the existing CSV ones, one per entity. Manual: import a real contacts CSV → preview shows correct dedup decisions → commit lands rows in the right table.
+
+---
+
+## B.12 — CSV preview per-row dedup-decision override UI
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | UX                                                                                 |
+| Phase to ship   | Phase 4 (CRM polish) — independent of Phase 3                                       |
+| Owners          | `core/ai/components/preview/CsvImportPreviewCard.tsx`; new `convex/ai/csvImports.ts:patchRowDecision` mutation |
+| Risk if skipped | Low. Users who disagree with a parser decision today must re-export the file with a different shape (e.g. add a `__skip__` column). |
+| Files involved  | `core/ai/components/preview/CsvImportPreviewCard.tsx` (currently read-only); `convex/ai/csvImports.ts` (add `patchRowDecision` orgMutation that flips `dedupDecision` in `previewRows[idx]`). |
+
+**Why deferred.** The propose-and-approve flow is functional without per-row override; the user reviews the parser's decisions and either accepts the whole batch or re-runs the import. Adding clickable buttons per row is incremental polish, not blocking sales.
+
+**Implementation sketch.**
+1. Add `patchRowDecision` to `convex/ai/csvImports.ts` — orgMutation that takes `{csvImportId, idemKey, decision}`, locates the row by idemKey, swaps the field, patches the doc.
+2. Add inline `Skip` / `Insert` / `Merge` buttons to each row in `CsvImportPreviewCard.tsx` (only visible while status === "ready").
+3. Optimistic update — `withOptimisticUpdate` so the badge flips instantly.
+
+**Verification.** Add a frontend vitest covering the click-flip flow. Manual: open a preview with a wrong dedup call, click the row to flip skip→insert, approve, confirm the row landed.
+
+---
+
+## B.13 — CSV mapping editor in the preview card
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | UX                                                                                 |
+| Phase to ship   | Phase 4 (CRM polish) — independent of Phase 3                                       |
+| Owners          | `core/ai/components/preview/CsvImportPreviewCard.tsx`; new `convex/ai/csvImports.ts:patchMapping` mutation; re-parse path |
+| Risk if skipped | Low–Medium. The parser's heuristic header guesser handles ~85% of real-world CSVs; outlier cases need a second import after editing the file. |
+| Files involved  | `core/ai/components/preview/CsvImportPreviewCard.tsx` (today shows mapping read-only / not at all); `convex/ai/quarantined/csvParser.ts` (re-extract using user-edited mapping); `convex/ai/csvImports.ts`. |
+
+**Why deferred.** The parser's `guessHeaderMap` heuristic catches the common cases (`first_name` / `email` / `company`). When it misses, the user re-exports with renamed headers — slower than an inline editor but functional. Inline editing requires re-running the LLM extract step, which costs additional tokens and complicates the state machine.
+
+**Implementation sketch.**
+1. Add `patchMapping` orgMutation that swaps the `mapping` field + flips status back to `parsing`.
+2. Schedule the parser action to re-run with the new mapping passed in.
+3. Add an "Edit mapping" toggle in the preview card that exposes a per-column `<select>` of canonical fields.
+4. Show "Re-parsing…" spinner while the action re-runs.
+
+**Verification.** Add a scorer test where the parser is fed a CSV with `surname` instead of `lastName` and the mapping editor is used to fix it. Manual: import a CSV with off-spec headers → edit mapping → re-parse → preview shows the corrected fields.
+
+---
+
+## B.20 — Cross-conversation AI learning (embedding-based memory)
+
+**Status:** Backlog
+**Category:** AI / UX
+**Phase to ship:** Phase 5 (`PHASE-3-AI-AUDIT.md` Phase 4 Part 3 follow-on)
+**Owners:** `core/ai`
+**Risk if skipped:** Without it, every new chat starts from zero. The AI re-learns the user's preferences each time. P1.12 (`aiPersonaContext`) covers durable facts the model writes explicitly, but does NOT capture latent patterns ("this user always asks for short replies", "this user tags every lead with `@hot`").
+**Files involved:** `convex/ai/personaContext.ts` (extend), new `convex/ai/learningPipeline.ts`, new `convex/schema/aiSchema.ts::aiObservations` table, new embedding store (Convex's vector index or external).
+**Why we deferred:** Real cross-chat learning needs an embedding store, a quarantined summarisation worker that runs after each conversation, and a careful safety review (we must NEVER store PII in the persona). P1.12 ships the durable-context surface; this card ships the auto-learning loop.
+**Benefits when reinstated:**
+- Conversational warmth: AI remembers "you prefer concise answers" without being told each session.
+- Personalised suggestions: P1.14's suggestion ranking improves with observed preferences.
+- Reduced clarifications: AI infers user intent from prior patterns.
+**Use cases / who it protects:**
+- Field workers who chat from mobile and want minimal back-and-forth.
+- Power users who want the AI to anticipate their next ask.
+**Implementation sketch:**
+1. New `aiObservations` table (orgId, userId, observation, confidence, ts) — capped at 200 rows / user via FIFO eviction.
+2. After each chat completes, a quarantined LLM action reads the conversation + the current `aiPersonaContext` and emits either a `keyFacts` patch or an observation.
+3. `buildSystemPrompt` reads top-N observations by confidence, includes them under `## Observed patterns` (clearly labelled "may be wrong, ask if you're unsure").
+4. User-facing toggle in Settings → AI: "Let the AI learn from our conversations" (off by default; opt-in).
+**Verification:** A two-conversation scorer test where conversation 1 establishes "I prefer one-line replies", conversation 2 verifies the AI honours it without being re-told.
+
+---
+
+## B.21 — AI workflow integration (Inngest + activityLogs event bus)
+
+**Status:** Backlog
+**Category:** AI / Workflow
+**Phase to ship:** Phase 5
+**Owners:** `core/ai`, `core/workflows` (new module)
+**Risk if skipped:** AI is currently chat-only. The user's vision is "AI integrated everywhere — when a deal moves stage, when a lead goes stale, when a reminder fires, AI suggests / summarises / acts." P1.14 (proactive suggestions panel) is the synchronous read-side; this card is the asynchronous event side.
+**Files involved:** new `convex/workflows/` module, new `convex/ai/triggers.ts`, integration with Inngest (already provisioned).
+**Why we deferred:** This is its own phase. It needs a workflow definition language, a trigger registry, retries, idempotency, and per-org limits. Piling it on top of Phase 4 Part 1 would compromise the polish work. Phase 4 Part 2's "Per-org AI Telemetry UI" is a prerequisite — operators need visibility before we let the AI fire async.
+**Benefits when reinstated:**
+- AI-generated daily digest of org activity emailed to admins.
+- Auto-summarise long activity threads on entity detail.
+- Proactive flag of risky deals (stalled / value-mismatch / unassigned).
+- Auto-suggest follow-up reminders when a lead goes 14d untouched.
+**Use cases / who it protects:**
+- Sales managers who want a "what changed yesterday" digest.
+- Solo founders running the CRM solo who need an AI co-pilot watching the pipeline.
+- RE teams managing 200+ listings who can't manually scan for stale ones.
+**Implementation sketch:**
+1. Define `workflows` schema (id, trigger, action, enabled, lastRanAt, …).
+2. Inngest function listens for `activityLogs` inserts, dispatches matching workflows.
+3. Workflow actions can be: "summarise to slack", "create AI insight row", "send notification", "schedule reminder".
+4. Per-org cost cap (workflow actions count against the org's AI budget).
+**Verification:** End-to-end test: insert an activityLog row of type "deal.stage.moved" → workflow fires → an `aiInsights` row appears with the AI's analysis.
+
+---
+
 # C. Audit-flagged but not yet roadmapped
 
 ## C.1 — Tree-shaped conversations (Attio Problem 1)
@@ -371,6 +494,36 @@ We've shipped Week 1 #1.6 baseline scorer (5 tests) — this is the kernel of th
 ## C.3 — Multi-tenancy: cross-org platform-admin AI (Phase 4)
 
 Reserved for super-admin operations (e.g. "show me churn risk across all paying orgs", "list orgs with > 80% plan usage"). Schema is multi-tenant from day 1; the AI layer hasn't yet been pointed at the multi-org view.
+
+---
+
+## C.4 — Audit every twoStep tool's propose-vs-commit schema diff
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | AI / reliability                                                                   |
+| Phase to ship   | Phase 4 — alongside the LemonSqueezy billing wall pass                             |
+| Owners          | `convex/ai/tools/*`, especially the `commit_*` halves                              |
+| Risk if skipped | Currently mitigated by `resume.ts` zod-strip (every commit safely drops unknown fields). But silent data loss is still possible — e.g. a propose carries `notes` and the commit ignores it (this is exactly the original `create_lead` bug, fixed for that one tool). For every other twoStep tool, a propose-only field that the commit lacks is silently lost. |
+
+**Why this card exists.** The 2026-05-24 incident in `convex/ai/tools/crud/createLead.ts` was the first symptom — the propose carried `notes`, the commit dropped it, and the underlying mutation rejected it as an unknown arg. We fixed `create_lead` end-to-end (commit now persists the note via a chained `notes:create`). The same shape risk exists for any future twoStep that adds preview-only fields to its propose schema.
+
+**Implementation sketch.** Add a startup check that diffs each `propose_X.schema` against `commit_X.schema` and warns (not fails) when propose has fields commit doesn't. The strip-on-resume already guarantees correctness at runtime; this would catch the silent-loss case at the agent-author moment.
+
+---
+
+## C.5 — `streamLoop.ts` should also surface friendly errors on `tool-error` chunks
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | UX                                                                                 |
+| Phase to ship   | Phase 4 — alongside markdown / streaming polish (B.10)                             |
+| Owners          | `convex/ai/orchestrator/streamLoop.ts` `case "tool-error"`                         |
+| Risk if skipped | Tool failures inside the model's run loop (vs. resume-time commits) currently render the raw error text in the timeline row. The model still sees and recovers from it, but the user-visible expanded error is verbose. |
+
+**Implementation sketch.** Run the same `friendlyToolError` mapper on the `chunk.error` value before patching the tool record's output. Keep the raw error in `output.rawError` for debugging, but surface `friendly.markdown` to the timeline rendering layer.
 
 ---
 
@@ -427,3 +580,35 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-23 | AI (shipped)  | B.6 — Subagent routing — SHIPPED                                | B       |
 | 2026-05-23 | AI (shipped)  | B.7 — `contextBag` typed conversational state — SHIPPED         | B       |
 | 2026-05-23 | AI (shipped)  | B.8 — `needsApproval` migration (with deviation) — SHIPPED      | B       |
+| 2026-05-24 | AI (shipped)  | B.3 — CSV import + dual-LLM safety (audit Week 4) — SHIPPED     | B       |
+| 2026-05-24 | Onboarding    | B.11 — Multi-entity CSV import (contact / company / deal)       | B       |
+| 2026-05-24 | UX            | B.12 — CSV preview per-row dedup-decision override UI           | B       |
+| 2026-05-24 | UX            | B.13 — CSV mapping editor in the preview card                   | B       |
+| 2026-05-24 | AI (audit)    | C.4 — Audit propose-vs-commit schema diff for every twoStep      | C       |
+| 2026-05-24 | UX            | C.5 — Friendly errors in streamLoop tool-error chunk             | C       |
+| 2026-05-24 | AI (shipped)  | C.6 — DataTable duplicate-key from `fieldDefinitions` create — SHIPPED | C  |
+| 2026-05-24 | AI (shipped)  | C.7 — `commit_*` tools wired through `applyEntityPatchByCode` (Bug 2) — SHIPPED | C |
+| 2026-05-24 | AI (shipped)  | B.17 — File-analysis custom-field application (P1.3) — SHIPPED   | B       |
+| 2026-05-24 | AI (shipped)  | B.10a — Multi-provider failover wired into streamLoop (P1.1) — SHIPPED | B   |
+| 2026-05-24 | AI (shipped)  | C.8 — Follow-up by code (`complete_followup_by_code` / `cancel_followup_by_code`) — SHIPPED | C |
+| 2026-05-24 | AI (shipped)  | C.9 — Fuzzy code normalisation (`P001 → P-001`) — SHIPPED        | C       |
+| 2026-05-24 | AI (shipped)  | C.10 — Dev-time twoStep schema-diff log (P1.6) — SHIPPED         | C       |
+| 2026-05-24 | AI            | B.20 — Cross-conversation AI learning (embedding-based memory)   | B       |
+| 2026-05-24 | AI            | B.21 — AI workflow integration (Inngest + activityLogs bus)      | B       |
+| 2026-05-24 | AI (shipped)  | P1.10 — Dynamic per-org schema context (buildOrgSchemaContext) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.9 — ToolSummary envelope + ToolSummaryCard — SHIPPED          | —       |
+| 2026-05-24 | AI (shipped)  | P1.4 — ToolInstruction structured template (infra + create_lead) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.11 — Multi-tier FriendlyToolError + ChatToolError card — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.12 — aiPersonaContext (per-org + per-user durable AI memory) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.13 — Route-aware context expansion (## Current page block) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.14 — Proactive AI Suggestions panel (pure heuristics, no model calls) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.2 — Streaming Markdown polish (lazy table, defer mid-stream heading, text-balance) — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.4 + P1.9 follow-on — instruction + summary on create_contact / create_deal / create_company / add_note / create_followup / search_crm — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | P1.14 mounting — AISuggestionsPanel on dashboard + person profile, chat-prefill window-event bridge — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | orgs.aiContext wired into system prompt as `## About this organisation`; users.aiContext marked DEPRECATED; per-user follow-up snapshot + file upload limits added to system prompt — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | AI-native cleanup wave: dropped orgs.aiContext column entirely (migration shipped), added aiPersonaContext.identity field, new update_org_identity AI tool, last 6 lower-traffic tool migrations completed, per-entity rebuildEntityContext shipped as deterministic summariser (455 lines + 14 tests), full codebase cleanup (biome 0/typecheck 0/build green) — SHIPPED | — |
+| 2026-05-24 | AI + Settings (shipped) | Phase 4 Part 2 — Telemetry writer (`recordToolEvent`) wired into streamLoop tool-call/result/error/finish; `getOrgUsage` rollup query (247 lines); AI quota gate (`checkAiQuota`) hard-blocks free tier and meters paid tiers at chat entry; new Settings → AI sections: AI Memory (read-only summary + keyFacts + per-scope "Forget all") + AI Usage (gauge + range tabs + 4-stat strip + daily sparkline + top-5 tools/models); Billing → Plan limits AI tokens UsageBar wired to real telemetry; settings folder restructure (notes/ deleted, pipelines/ created, field editors moved to modules/); 97 → 99 — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | Phase 4 Part 2 — AI-native parity push: phantom tools fixed (list_followups + list_followups_for_person registered as always-on); 5 new always-on read tools (list_tags / list_categories / list_members / list_saved_views / list_field_options) + 5 ForAI internal twins; orgSchemaContext.ts now renders showInStages / allowedFileTypes / sensitive / defaultValue / groupName flag column on every entity field table; systemPrompt.ts adds plan tier, codePrefixes, reminderDefaults, followupDefaults, softDeleteRetentionDays, dashboardMetrics ordering, pipeline-level stageTransitionPolicy + allowSkipStages, and a static "File attachments in chat" convention block; convex/ai/webSearchAction.ts (Node-only Firecrawl wrapper) + convex/ai/tools/webSearch.ts always-on web_search tool gated on FIRECRAWL_API_KEY; convex/ai/chatAttachments.ts (attach mutation, scope=aiChat scopeId=conversationId); core/ai/components/composer/ChatAttachButton.tsx + ChatComposer paperclip + chip list + body marker injection; ChatSheet handleEnsureConversation lazily creates a conversation when user attaches before sending — SHIPPED | — |
+| 2026-05-24 | AI (shipped)  | T8 — WIDGET_REGISTRY backend exposure (`convex/_shared/widgetRegistry.ts` SSoT, frontend imports the data half + decorates with icons/getters/hrefs); `list_widgets` always-on read tool emits the catalogue + current layout; `update_dashboard_layout` settings-layer twoStep tool patches `org.settings.dashboardMetrics` after validating every key. systemPrompt now points the model at `update_dashboard_layout` instead of the generic `update_org_settings` patch path — SHIPPED | — |
+| 2026-05-24 | Billing (shipped) | BYOK policy update — quota gate now allows BYOK on every plan including free; platform models stay locked to paid tiers (free → "add BYOK or upgrade" message; starter/pro → metered; enterprise → unmetered). `convex/ai/orchestrator/quotaGate.ts` rewritten + `run.ts` moved the gate from before to after `resolveModelAndKey` so it knows `usageMode`. — SHIPPED | — |
+| 2026-05-24 | Cleanup (shipped) | Stale-code purge — deprecated `invitationRoleValidator` / `invitationRoleValues` / `InvitationRole` removed (no consumers); legacy `orgs.stripeCustomerId` + `stripeSubscriptionId` fields + `by_stripeCustomerId` index removed (zero rows had values, verified via runOneoffQuery; LemonSqueezy fields are the SSoT); dead `users.preferences.aiContextCardCollapsed` removed (no UI consumer). — SHIPPED | — |

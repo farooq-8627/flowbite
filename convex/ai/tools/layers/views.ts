@@ -2,6 +2,7 @@
  * convex/ai/tools/layers/views.ts — Saved view management tools.
  */
 import { z } from "zod";
+import { entityTypeEnum } from "../../../_shared/synonyms";
 import { registerTool } from "../../toolRegistry";
 import { propose, requirePermission, runTool, type ToolContext, toolMutation } from "../_shared";
 
@@ -26,7 +27,7 @@ registerTool({
 	},
 	schema: z.object({
 		name: z.string(),
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		scope: z.enum(["user", "org"]).default("user"),
 		filters: z.optional(z.record(z.string(), z.unknown())),
 		columns: z.optional(z.array(z.string())),
@@ -56,14 +57,14 @@ registerTool({
 	description: "Internal: commit saved view creation.",
 	schema: z.object({
 		name: z.string(),
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeEnum(),
 		scope: z.enum(["user", "org"]).default("user"),
 		filters: z.optional(z.record(z.string(), z.unknown())),
 		columns: z.optional(z.array(z.string())),
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.createPersonal");
 			const result = await toolMutation(getCtx(), "crm/shared/savedViews/mutations:create", {
 				orgId,
@@ -85,7 +86,7 @@ registerTool({
 	schema: z.object({ viewId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.createPersonal");
 			await toolMutation(getCtx(), "crm/shared/savedViews/mutations:togglePin", {
 				orgId,
@@ -125,9 +126,12 @@ registerTool({
 	schema: z.object({ viewId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "savedViews.delete");
-			await toolMutation(getCtx(), "crm/shared/savedViews/mutations:remove", { orgId, ...args });
+			await toolMutation(getCtx(), "crm/shared/savedViews/mutations:remove", {
+				orgId,
+				...args,
+			});
 			return { ok: true as const, data: args, display: `✅ View deleted.` };
 		}),
 });

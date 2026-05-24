@@ -9,34 +9,32 @@
  *   - An optional href to deep-link the tile.
  *   - An icon + color accent.
  *
- * Templates declare an ORDERED list of keys via
- * `template.dashboardMetrics` and the dashboard renders them in that
- * order. A template that omits a key simply hides that tile. A new
- * template + new key = add one row here.
+ * Phase 4 Part 2 (T8) — the **data** half of this registry (keys, labels,
+ * descriptions, categories) lives in `convex/_shared/widgetRegistry.ts`
+ * so the AI agent can introspect + write the dashboard layout. This
+ * file owns the **render** half (icons, formatters, link factories).
  *
- * Why this lives outside `cards/`: the registry is a pure data table,
- * not a card component. Cards (RemindersCard, PipelineCard, etc.)
- * remain free-form. Tiles (the small rectangle metrics) are
- * registry-driven.
+ * To add a new widget, update both files in lock-step.
  */
 
-import type { ReactNode } from "react";
 import {
 	BriefcaseIcon,
 	CalendarClockIcon,
 	CheckCircle2Icon,
 	ClockIcon,
 	DollarSignIcon,
-	TrendingUpIcon,
 	Sparkles,
+	TrendingUpIcon,
 	UsersIcon,
 } from "lucide-react";
+import type { ReactNode } from "react";
+import { WIDGETS, type WidgetKey } from "@/convex/_shared/widgetRegistry";
 import { formatCurrency } from "@/core/shell/shared/hooks/useOrgDefaultCurrency";
 import type { DashboardStats } from "../types";
 
 export interface WidgetSpec {
 	/** Metric key — also the registry-table key. */
-	key: string;
+	key: WidgetKey;
 	/** Short label rendered on the tile. */
 	label: string;
 	/** Pulls the value off the stats payload. Number → rendered as count; string → rendered as-is. */
@@ -52,15 +50,14 @@ export interface WidgetSpec {
 }
 
 /**
- * Order in this object is irrelevant — the dashboard renders in the
- * order specified by `template.dashboardMetrics`. The dictionary
- * structure is purely for O(1) lookup.
+ * Render-side specs. The data (label, description, category, size,
+ * placeholder flag) is sourced from `convex/_shared/widgetRegistry.ts`
+ * via the `WIDGETS` table; this object adds icons + getters + hrefs.
  */
-export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
-	// CRM-shape widgets.
+export const WIDGET_REGISTRY: Record<WidgetKey, WidgetSpec> = {
 	"leads.open": {
 		key: "leads.open",
-		label: "Open leads",
+		label: WIDGETS["leads.open"].label,
 		get: (s) => s.leadCount,
 		href: (slug) => `/${slug}/leads`,
 		icon: <UsersIcon className="size-3.5" />,
@@ -68,7 +65,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"contacts.active": {
 		key: "contacts.active",
-		label: "Contacts",
+		label: WIDGETS["contacts.active"].label,
 		get: (s) => s.contactCount,
 		href: (slug) => `/${slug}/contacts`,
 		icon: <UsersIcon className="size-3.5" />,
@@ -76,7 +73,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"companies.active": {
 		key: "companies.active",
-		label: "Companies",
+		label: WIDGETS["companies.active"].label,
 		get: (s) => s.companiesCount,
 		href: (slug) => `/${slug}/companies`,
 		icon: <BriefcaseIcon className="size-3.5" />,
@@ -84,7 +81,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"deals.open": {
 		key: "deals.open",
-		label: "Open deals",
+		label: WIDGETS["deals.open"].label,
 		get: (s) => s.dealCount,
 		href: (slug) => `/${slug}/deals`,
 		icon: <BriefcaseIcon className="size-3.5" />,
@@ -92,7 +89,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"deals.won": {
 		key: "deals.won",
-		label: "Deals won",
+		label: WIDGETS["deals.won"].label,
 		get: (s) => s.dealsWon,
 		href: (slug) => `/${slug}/deals?stage=won`,
 		icon: <TrendingUpIcon className="size-3.5" />,
@@ -100,7 +97,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"deals.pipelineValue": {
 		key: "deals.pipelineValue",
-		label: "Pipeline value",
+		label: WIDGETS["deals.pipelineValue"].label,
 		get: (s) =>
 			s.dealCount === 0 && s.pipelineValue === 0
 				? "—"
@@ -108,20 +105,14 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 		icon: <DollarSignIcon className="size-3.5" />,
 		accent: "text-foreground",
 	},
-
-	// Reminder / scheduling widgets — the productivity template uses
-	// these as task widgets via the same metric keys (a reminder IS a
-	// task in productivity-mode).
 	"reminders.dueToday": {
 		key: "reminders.dueToday",
-		label: "Due today",
+		label: WIDGETS["reminders.dueToday"].label,
 		get: (s) => s.remindersDueToday,
 		href: (slug) => `/${slug}/reminders`,
 		icon: <CalendarClockIcon className="size-3.5" />,
 		accent: "text-blue-600",
 	},
-
-	// Productivity widgets — template id "productivity".
 	"tasks.dueToday": {
 		key: "tasks.dueToday",
 		label: "Due today",
@@ -132,7 +123,7 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"tasks.overdue": {
 		key: "tasks.overdue",
-		label: "Overdue",
+		label: WIDGETS["tasks.overdue"].label,
 		get: (s) => s.tasksOverdue,
 		href: (slug) => `/${slug}/reminders?overdue=1`,
 		icon: <ClockIcon className="size-3.5" />,
@@ -140,24 +131,19 @@ export const WIDGET_REGISTRY: Record<string, WidgetSpec> = {
 	},
 	"tasks.doneThisWeek": {
 		key: "tasks.doneThisWeek",
-		label: "Done this week",
+		label: WIDGETS["tasks.doneThisWeek"].label,
 		get: (s) => s.tasksDoneThisWeek,
 		icon: <CheckCircle2Icon className="size-3.5" />,
 		accent: "text-emerald-600",
 	},
-	// Phase 4 — daily-activity streak. Stub renders a placeholder tile.
 	"tasks.streak": {
 		key: "tasks.streak",
-		label: "Streak",
+		label: WIDGETS["tasks.streak"].label,
 		get: () => "—",
 		icon: <TrendingUpIcon className="size-3.5" />,
 		accent: "text-orange-600",
 		placeholder: true,
 	},
-	// Phase 3B — AI Morning Briefing. Renders as a full-width card via AIBriefingCard.
-	// The "get" returns a stub here because the briefing widget renders its own card,
-	// not a stat tile — the dashboard view checks for this key and renders AIBriefingCard
-	// at the top of the layout.
 	"ai.morningBriefing": {
 		key: "ai.morningBriefing",
 		label: "AI briefing",
@@ -175,13 +161,13 @@ export function resolveWidgets(metricKeys: string[] | undefined): WidgetSpec[] {
 	if (!metricKeys || metricKeys.length === 0) {
 		// Sensible default for orgs without a dashboardMetrics array.
 		return [
-			WIDGET_REGISTRY["leads.open"]!,
-			WIDGET_REGISTRY["contacts.active"]!,
-			WIDGET_REGISTRY["deals.open"]!,
-			WIDGET_REGISTRY["deals.pipelineValue"]!,
+			WIDGET_REGISTRY["leads.open"],
+			WIDGET_REGISTRY["contacts.active"],
+			WIDGET_REGISTRY["deals.open"],
+			WIDGET_REGISTRY["deals.pipelineValue"],
 		];
 	}
 	return metricKeys
-		.map((k) => WIDGET_REGISTRY[k])
+		.map((k) => (k in WIDGET_REGISTRY ? WIDGET_REGISTRY[k as WidgetKey] : undefined))
 		.filter((w): w is WidgetSpec => w !== undefined);
 }

@@ -41,9 +41,20 @@ export function ChatHistoryDropdown({
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<Button variant="ghost" size="sm" className="gap-1.5 text-xs">
+				<Button
+					variant="ghost"
+					size="sm"
+					className="gap-1 px-1.5 text-xs"
+					title={
+						active.length > 0
+							? `${active.length} conversation${active.length === 1 ? "" : "s"}`
+							: "No conversation history"
+					}
+				>
 					<MessageSquare className="size-3.5" />
-					{active.length > 0 ? `${active.length} threads` : "No history"}
+					{active.length > 0 ? (
+						<span className="font-medium">{active.length}</span>
+					) : null}
 				</Button>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" className="w-72 max-h-96 overflow-y-auto">

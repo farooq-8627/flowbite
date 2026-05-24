@@ -79,9 +79,16 @@ export function TagsCell({
 	// already batched the lookup via `useEntityTagsMap` and forwarded
 	// `prefetchedTags` — see AGENTS.md "Per-row data on a list view comes
 	// from one batched query".
+	//
+	// CRITICAL gate: `prefetchedTags === undefined` means the parent didn't
+	// prefetch, fall back to per-row. An empty array `[]` means the parent
+	// DID prefetch and the entity simply has no tags — DO NOT subscribe.
+	// Earlier `!prefetchedTags` treated `[]` as falsy too, which made every
+	// untagged row open a `getTagsForEntity` subscription and produced the
+	// 100-400 calls/min storm seen in the deployment dashboard 2026-05-24.
 	const attached = useQuery(
 		api.crm.shared.tags.queries.getTagsForEntity,
-		orgId && !prefetchedTags ? { orgId, entityType, entityId } : "skip",
+		orgId && prefetchedTags === undefined ? { orgId, entityType, entityId } : "skip",
 	);
 
 	const attach = useMutation(api.crm.shared.tags.mutations.attachToEntity);

@@ -18,13 +18,13 @@
  * - https://github.com/get-convex/convex-saas/blob/main/convex/invitations.ts
  */
 import { ConvexError, v } from "convex/values";
-import type { Id } from "../_generated/dataModel";
 import {
 	authenticatedMutation,
 	orgMutation,
 	requireOrgMemberByIds,
 } from "../_functions/authenticated";
 import { internal } from "../_generated/api";
+import type { Id } from "../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../_generated/server";
 import { ENTITY_TYPES, INVITATION_EXPIRY_MS } from "../_shared/constants";
 import { ERRORS } from "../_shared/errors";
@@ -87,9 +87,7 @@ async function createImpl(
 
 	const existing = await ctx.db
 		.query("invitations")
-		.withIndex("by_orgId_and_email", (q) =>
-			q.eq("orgId", args.orgId).eq("email", args.email),
-		)
+		.withIndex("by_orgId_and_email", (q) => q.eq("orgId", args.orgId).eq("email", args.email))
 		.first();
 
 	if (existing && existing.status === "pending" && existing.expiresAt > now) {

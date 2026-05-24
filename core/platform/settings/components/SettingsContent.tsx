@@ -69,7 +69,7 @@ export function SettingsContent({ activeGroup, org, orgId, permissions }: Props)
 		case "ai":
 			return (
 				<PermissionGate orgId={orgId} permission="ai.manageTools">
-					<AIGroup org={org} orgId={orgId} />
+					<AIGroup orgId={orgId} />
 				</PermissionGate>
 			);
 		case "appearance":

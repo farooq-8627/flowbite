@@ -42,18 +42,9 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "../../types";
 import { parseReasoning } from "./parseReasoning";
-import {
-	PendingTimelineRow,
-	ThinkingTimelineRow,
-	TimelineRow,
-} from "./TimelineRow";
+import { PendingTimelineRow, ThinkingTimelineRow, TimelineRow } from "./TimelineRow";
 
-export type ThinkingState =
-	| "thinking"
-	| "calling_tool"
-	| "streaming"
-	| "done"
-	| "error";
+export type ThinkingState = "thinking" | "calling_tool" | "streaming" | "done" | "error";
 
 interface Props {
 	state: ThinkingState | undefined;
@@ -64,20 +55,13 @@ interface Props {
 	orgId: string;
 }
 
-export function ThinkingTimeline({
-	state,
-	activeTool,
-	reasoning,
-	toolMessages,
-	orgId,
-}: Props) {
+export function ThinkingTimeline({ state, activeTool, reasoning, toolMessages, orgId }: Props) {
 	const effectiveState: ThinkingState = state ?? "done";
 	const isLive =
 		effectiveState === "thinking" ||
 		effectiveState === "calling_tool" ||
 		effectiveState === "streaming";
-	const isWorking =
-		effectiveState === "thinking" || effectiveState === "calling_tool";
+	const isWorking = effectiveState === "thinking" || effectiveState === "calling_tool";
 
 	// Sticky-open semantics — see 1.5a in audit doc.
 	const userOverrideRef = useRef(false);
@@ -130,10 +114,7 @@ export function ThinkingTimeline({
 
 	const seenToolNames = new Set(
 		toolMessages
-			.map(
-				(m) =>
-					(m.toolCalls as Array<{ name: string }> | null | undefined)?.[0]?.name,
-			)
+			.map((m) => (m.toolCalls as Array<{ name: string }> | null | undefined)?.[0]?.name)
 			.filter((n): n is string => typeof n === "string"),
 	);
 	const showPendingPlaceholder =
@@ -142,8 +123,7 @@ export function ThinkingTimeline({
 		activeTool.length > 0 &&
 		!seenToolNames.has(activeTool);
 
-	const rowCount =
-		toolMessages.length + thinkingSteps.length + (showPendingPlaceholder ? 1 : 0);
+	const rowCount = toolMessages.length + thinkingSteps.length + (showPendingPlaceholder ? 1 : 0);
 	const hasContent = rowCount > 0;
 
 	// Once done with no content (a pure prose answer with no tool calls
@@ -156,9 +136,7 @@ export function ThinkingTimeline({
 		if (effectiveState === "calling_tool") return "Working";
 		if (effectiveState === "streaming") return hasContent ? "Working" : "Writing…";
 		if (effectiveState === "error") return "Working · failed";
-		return rowCount > 0
-			? `Worked for ${rowCount} step${rowCount === 1 ? "" : "s"}`
-			: "Worked";
+		return rowCount > 0 ? `Worked for ${rowCount} step${rowCount === 1 ? "" : "s"}` : "Worked";
 	})();
 
 	const Caret = expanded ? ChevronDown : ChevronRight;
@@ -190,16 +168,20 @@ export function ThinkingTimeline({
 			{expanded && hasContent && (
 				<div
 					className={cn(
-						"reasoning-panel-body mt-1.5 max-w-full min-w-0",
+						"reasoning-panel-body mt-1.5 w-full max-w-full min-w-0 overflow-x-clip",
 						"rounded-[var(--radius)] border border-border/50 bg-muted/20",
 					)}
 				>
-					<div className="max-h-[60vh] overflow-y-auto p-3">
+					<div className="max-h-[60vh] overflow-y-auto overflow-x-clip p-3 min-w-0">
 						{/* Free-form thinking paragraphs from the model, rendered
 						    BEFORE the tool list — they typically describe what
 						    the model is about to do. */}
 						{thinkingSteps.map((text, i) => (
-							<ThinkingTimelineRow key={`t-${i}-${text.slice(0, 12)}`} text={text} />
+							<ThinkingTimelineRow
+								// biome-ignore lint/suspicious/noArrayIndexKey: append-only reasoning log; items never reorder
+								key={`t-${i}`}
+								text={text}
+							/>
 						))}
 
 						{toolMessages.map((tm, i) => (
@@ -207,9 +189,7 @@ export function ThinkingTimeline({
 								key={tm._id}
 								toolMessage={tm}
 								orgId={orgId}
-								isLast={
-									i === toolMessages.length - 1 && !showPendingPlaceholder
-								}
+								isLast={i === toolMessages.length - 1 && !showPendingPlaceholder}
 							/>
 						))}
 

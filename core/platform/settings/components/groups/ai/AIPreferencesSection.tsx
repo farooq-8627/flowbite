@@ -20,7 +20,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { type ModelTier } from "@/convex/ai/modelRegistry";
+import type { ModelTier } from "@/convex/ai/modelRegistry";
 import { useModelPreference } from "@/core/ai/hooks/useModelPreference";
 import { toast } from "@/lib/toast";
 import { SettingsRow } from "../../shared/SettingsRow";
@@ -71,13 +71,8 @@ function modelLabel(key: string) {
 }
 
 export function AIPreferencesSection() {
-	const {
-		defaultModel,
-		availableModelsByProvider,
-		isReady,
-		hasNoKeys,
-		setModel,
-	} = useModelPreference();
+	const { defaultModel, availableModelsByProvider, isReady, hasNoKeys, setModel } =
+		useModelPreference();
 	const updatePrefs = useMutation(anyApi.users.mutations.updatePreferences);
 
 	function handleModelChange(modelKey: string) {
@@ -115,8 +110,8 @@ export function AIPreferencesSection() {
 					<div className="text-sm text-muted-foreground">Loading…</div>
 				) : hasNoKeys ? (
 					<div className="text-sm text-amber-600 dark:text-amber-400">
-						No API keys configured. Add one in the “API Keys (BYOK)” section above
-						to unlock model choices.
+						No API keys configured. Add one in the “API Keys (BYOK)” section above to
+						unlock model choices.
 					</div>
 				) : (
 					<Select value={defaultModel ?? ""} onValueChange={handleModelChange}>

@@ -20,7 +20,7 @@
  */
 
 import { ConvexError, v } from "convex/values";
-import { zipSync, strToU8 } from "fflate";
+import { strToU8, zipSync } from "fflate";
 import { api, internal } from "../_generated/api";
 import { action } from "../_generated/server";
 
@@ -53,7 +53,10 @@ function rowsToCsv(rows: Array<Record<string, unknown>>): string {
 
 export const exportOrgData = action({
 	args: { orgId: v.id("orgs") },
-	handler: async (ctx, args): Promise<{ downloadUrl: string; storageId: string; bytes: number }> => {
+	handler: async (
+		ctx,
+		args,
+	): Promise<{ downloadUrl: string; storageId: string; bytes: number }> => {
 		// Auth + permission check — actions don't have ctx.userId, so we
 		// hop through a query that already does the auth.
 		const membership = await ctx.runQuery(api.orgs.queries.getMyMembership, {

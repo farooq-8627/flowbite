@@ -173,6 +173,102 @@ export const orgAiKeys = defineTable({
 	.index("by_org_and_provider", ["orgId", "provider"]);
 
 /**
+ * Week 4 — `PHASE-3-AI-AUDIT.md §6 Week 4` & §7 Dual-LLM safety.
+ *
+ * Per-user CSV-import session state. Created when the user (or the AI on
+ * the user's behalf) hands a CSV to the quarantined parser
+ * (`convex/ai/quarantined/csvParser.ts`). The privileged commit step in
+ * `crm/entities/leads/mutations.ts:bulkInsertFromCsvImpl` reads only the
+ * `previewRows` field — never the raw uploaded file — so a prompt
+ * injection inside row 47 of the CSV cannot reach the tool-calling
+ * layer (Simon Willison's Dual-LLM pattern, OWASP-endorsed).
+ *
+ * Lifecycle:
+ *   parsing  → parser action is running (quarantined LLM extracting fields)
+ *   ready    → parse complete, awaiting user approval
+ *   committing → privileged action is bulk-inserting (transient state)
+ *   completed → bulk insert finished, summary stored in `result`
+ *   failed   → parser/validator threw; `errors` populated, no rows committed
+ *   cancelled → user dismissed the preview before approving
+ *
+ * Idempotency: each row gets a stable per-import-row dedup key
+ * (`row.idemKey`) so retrying the same import is safe.
+ *
+ * Index choices:
+ *   `by_org_and_user_and_status` — list a user's pending imports for the
+ *      "Resume CSV import" UI; surfaces `parsing` and `ready` rows.
+ *   `by_file` — find the import row from a `files._id` (used when the
+ *      user re-attaches a file we've already parsed).
+ */
+export const csvImports = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	fileId: v.id("files"),
+	status: v.union(
+		v.literal("parsing"),
+		v.literal("ready"),
+		v.literal("committing"),
+		v.literal("completed"),
+		v.literal("failed"),
+		v.literal("cancelled"),
+	),
+	/** Target entity. Phase 1 ships `lead` only; contact/company/deal land in Phase 5. */
+	targetEntity: v.union(
+		v.literal("lead"),
+		v.literal("contact"),
+		v.literal("company"),
+		v.literal("deal"),
+	),
+	/** Total rows the parser saw in the file (post-header). */
+	rowCount: v.number(),
+	/** AI-suggested column-name → canonical-field map. User can edit before commit. */
+	mapping: v.record(v.string(), v.string()),
+	/**
+	 * Preview rows — the FULL parsed dataset (capped at 5,000 by the parser
+	 * action). Each row already has the dedup decision baked in so the user
+	 * can override per-row before approval. `display: true` rows are
+	 * included in commit; `display: false` rows are skipped.
+	 *
+	 * `idemKey` is stable across retries (sha256 of normalised email+name+phone).
+	 */
+	previewRows: v.array(
+		v.object({
+			idemKey: v.string(),
+			fields: v.record(v.string(), v.union(v.string(), v.null())),
+			dedupDecision: v.union(v.literal("insert"), v.literal("merge"), v.literal("skip")),
+			dedupTargetCode: v.optional(v.string()), // personCode of the existing match (when merging/skipping)
+			validationError: v.optional(v.string()), // Zod failure on the row, e.g. "missing email"
+		}),
+	),
+	/** Headers the parser saw (preserved so the UI can render an editable mapping). */
+	sourceHeaders: v.optional(v.array(v.string())),
+	/** Parse-time errors (file-level, not row-level). Populated only on `failed`. */
+	errors: v.optional(v.array(v.string())),
+	/** Result summary populated on `completed`. */
+	result: v.optional(
+		v.object({
+			inserted: v.number(),
+			merged: v.number(),
+			skipped: v.number(),
+			failedRows: v.array(
+				v.object({
+					idemKey: v.string(),
+					error: v.string(),
+				}),
+			),
+		}),
+	),
+	/** Quarantined model used for the parse — for telemetry / cost reporting. */
+	parserModel: v.optional(v.string()),
+	/** Approximate token cost of the parse (input + output). */
+	parserTokens: v.optional(v.number()),
+	...timestamps,
+})
+	.index("by_org_and_user_and_status", ["orgId", "userId", "status"])
+	.index("by_org_and_status", ["orgId", "status"])
+	.index("by_file", ["fileId"]);
+
+/**
  * AI Morning Briefing cache — generated daily by cron (or on-demand via manual trigger).
  *
  * Two scopes (Sprint 5 — added 2026-05-23):
@@ -233,3 +329,214 @@ export const aiBriefings = defineTable({
 	.index("by_org_and_user_and_generated", ["orgId", "userId", "generatedAt"])
 	.index("by_org_and_scope", ["orgId", "scope"])
 	.index("by_expires", ["expiresAt"]);
+
+/**
+ * Week 5.1 — Enrichment runs (`PHASE-3-AI-AUDIT.md §6 Week 5`, §2.6 Clay
+ * waterfall pattern).
+ *
+ * Each enrichment job is one row. The agent calls `enrich_record` to start
+ * a run; the quarantined enrichment-provider action walks the configured
+ * waterfall (web_search → linkedin_lookup → email_finder → domain_whois)
+ * stopping early when a step returns a high-confidence match. The user
+ * approves the patch in a propose() preview; commit_enrich_record applies
+ * the diff via `update_entity`.
+ *
+ * Lifecycle: running → ready → committing → completed / failed / cancelled.
+ *
+ * Same dual-LLM defence as csvImports — the providers run in their own
+ * action with NO write tools and only emit Zod-validated structured output.
+ */
+export const enrichmentRuns = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	/** Which CRM record to enrich. */
+	targetEntity: v.union(
+		v.literal("lead"),
+		v.literal("contact"),
+		v.literal("company"),
+		v.literal("deal"),
+	),
+	targetEntityId: v.string(), // entity._id (lead/contact/etc.) — string so we don't bind to a single table
+	targetCode: v.optional(v.string()), // personCode/dealCode for display
+	status: v.union(
+		v.literal("running"),
+		v.literal("ready"),
+		v.literal("committing"),
+		v.literal("completed"),
+		v.literal("failed"),
+		v.literal("cancelled"),
+	),
+	/** Snapshot of the existing record's fields, taken when the run started. Used to compute the diff. */
+	beforeFields: v.record(v.string(), v.union(v.string(), v.null())),
+	/** Per-provider trace (for telemetry + the audit trail). */
+	providerTrace: v.array(
+		v.object({
+			provider: v.string(), // "web_search" | "linkedin_lookup" | "email_finder" | "domain_whois"
+			ok: v.boolean(),
+			model: v.optional(v.string()), // quarantined model used for parsing the provider response
+			tokens: v.optional(v.number()),
+			latencyMs: v.optional(v.number()),
+			error: v.optional(v.string()),
+			summary: v.optional(v.string()), // short human-readable line shown in the audit trail
+		}),
+	),
+	/**
+	 * Suggested patch (per-field). User can edit per-row before approval.
+	 * Each entry: { field, value, source, confidence }.
+	 */
+	proposedPatch: v.array(
+		v.object({
+			field: v.string(),
+			value: v.union(v.string(), v.null()),
+			source: v.string(), // human-readable URL or provider id
+			confidence: v.number(), // 0..1
+		}),
+	),
+	/** Final committed patch (only set on `completed`). */
+	committedPatch: v.optional(
+		v.array(
+			v.object({
+				field: v.string(),
+				value: v.union(v.string(), v.null()),
+			}),
+		),
+	),
+	errors: v.optional(v.array(v.string())),
+	...timestamps,
+})
+	.index("by_org_and_user_and_status", ["orgId", "userId", "status"])
+	.index("by_org_and_target", ["orgId", "targetEntity", "targetEntityId"]);
+
+/**
+ * Week 5.2 — File analysis (`PHASE-3-AI-AUDIT.md §6 Week 5`).
+ *
+ * Mirror of csvImports for vision-extracted data: passport scans, listing
+ * photos (RE-specific), invoice PDFs. The privileged commit path applies
+ * the structured output to the target CRM record after user approval.
+ */
+export const fileAnalyses = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	fileId: v.id("files"),
+	kind: v.union(
+		v.literal("passport"),
+		v.literal("listing_photo"),
+		v.literal("invoice"),
+		v.literal("generic"),
+	),
+	status: v.union(
+		v.literal("analyzing"),
+		v.literal("ready"),
+		v.literal("committing"),
+		v.literal("completed"),
+		v.literal("failed"),
+		v.literal("cancelled"),
+	),
+	/** Optional target — if user kicked off the analysis FROM a record's detail page. */
+	targetEntity: v.optional(
+		v.union(v.literal("lead"), v.literal("contact"), v.literal("company"), v.literal("deal")),
+	),
+	targetEntityId: v.optional(v.string()),
+	targetCode: v.optional(v.string()),
+	/** Structured output from the vision parser. Shape varies by kind. */
+	extracted: v.optional(v.record(v.string(), v.any())),
+	/** Per-field diff if a target was supplied. */
+	proposedPatch: v.optional(
+		v.array(
+			v.object({
+				field: v.string(),
+				value: v.union(v.string(), v.null()),
+				confidence: v.number(),
+			}),
+		),
+	),
+	errors: v.optional(v.array(v.string())),
+	parserModel: v.optional(v.string()),
+	parserTokens: v.optional(v.number()),
+	...timestamps,
+})
+	.index("by_org_and_user_and_status", ["orgId", "userId", "status"])
+	.index("by_file", ["fileId"]);
+
+/**
+ * Week 6.2 — AI tool execution events (telemetry).
+ *
+ * One row per tool execution. Aggregated by the telemetry dashboard for
+ * cost / latency / per-tool error rate. Retention: 30 days (TTL via
+ * `by_expires` cron).
+ */
+export const aiToolEvents = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	conversationId: v.id("aiConversations"),
+	toolName: v.string(),
+	layer: v.optional(v.string()),
+	model: v.optional(v.string()),
+	provider: v.optional(v.string()),
+	startedAt: v.number(),
+	durationMs: v.number(),
+	ok: v.boolean(),
+	errorCode: v.optional(v.string()),
+	errorMessage: v.optional(v.string()),
+	inputTokens: v.optional(v.number()),
+	outputTokens: v.optional(v.number()),
+	costUsd: v.optional(v.number()),
+	expiresAt: v.number(),
+})
+	.index("by_org_and_started", ["orgId", "startedAt"])
+	.index("by_org_and_tool_and_started", ["orgId", "toolName", "startedAt"])
+	.index("by_expires", ["expiresAt"]);
+
+/**
+ * Phase 4 Part 1 P1.12 — `aiPersonaContext`.
+ *
+ * Per-org and per-user durable AI memory. The agent updates this table
+ * via two `update_*_context_facts` AI tools whenever a turn surfaces a
+ * fact worth remembering across conversations. The system-prompt
+ * builder reads both rows (orgId+null = org-level, orgId+userId =
+ * per-user) every turn and injects them as
+ *
+ *   ## Long-term context for this organisation
+ *   ## Long-term context for you (Alex Patel)
+ *
+ * blocks immediately after the workspace schema block.
+ *
+ * Hard caps (enforced at the writer in
+ * `convex/ai/personaContext.ts`):
+ *   summary  ≤ 600 chars
+ *   keyFacts ≤ 30 entries
+ *   byteCount ≤ 4 KB (re-computed on every write)
+ * Over caps → throws `BUDGET_EXCEEDED` so the model stops trying to
+ * append. A future Phase-5 nice-to-have is auto-pruning the oldest 5
+ * keyFacts into a sentence appended to summary; for now we just refuse.
+ *
+ * Index choice:
+ *   `by_org_and_user` — `[orgId, userId]`. The two reads per turn are
+ *   `(orgId, undefined)` for the org row and `(orgId, userId)` for the
+ *   user row. Convex treats `undefined` as a value in an index, so
+ *   `withIndex("by_org_and_user", q => q.eq("orgId", orgId).eq("userId", undefined))`
+ *   is the canonical way to fetch the org-level row.
+ */
+export const aiPersonaContext = defineTable({
+	orgId: v.id("orgs"),
+	/** undefined = org-level row. set = per-user-within-this-org row. */
+	userId: v.optional(v.id("users")),
+	/**
+	 * Owner-edited static identity blob — answers "what is this organisation?"
+	 * (or "what is this user's role?"). Distinct from `summary` + `keyFacts`,
+	 * which are AI-managed dynamic memory. Settings UI writes here; AI tools
+	 * never modify this field. Soft cap 10 000 chars (validated at the writer).
+	 * Replaces the deprecated `orgs.aiContext` column (migrated 2026-05-24).
+	 */
+	identity: v.optional(v.string()),
+	/** Free-form ≤ 600-char summary the model writes. */
+	summary: v.string(),
+	/** Bullet facts (e.g. ["Default deal size: $5K", "Calls leads 'opportunities'"]). */
+	keyFacts: v.array(v.string()),
+	/** Structured prefs the model can read (per-user only — undefined for org row). */
+	preferences: v.optional(v.record(v.string(), v.any())),
+	lastUpdatedAt: v.number(),
+	/** Re-computed byte count of (identity + summary + keyFacts + preferences) JSON. */
+	byteCount: v.number(),
+	...timestamps,
+}).index("by_org_and_user", ["orgId", "userId"]);

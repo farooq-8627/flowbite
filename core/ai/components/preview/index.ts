@@ -23,9 +23,11 @@ import type { ComponentType } from "react";
 import { BulkPreviewCard } from "./BulkPreviewCard";
 import { CompanyPreviewCard } from "./CompanyPreviewCard";
 import { ContactPreviewCard } from "./ContactPreviewCard";
+import { CsvImportPreviewCard } from "./CsvImportPreviewCard";
 import { DangerPreviewCard } from "./DangerPreviewCard";
 import { DealPreviewCard } from "./DealPreviewCard";
 import { EntityDiffCard } from "./EntityDiffCard";
+import { FieldPreviewCard } from "./FieldPreviewCard";
 import { GenericPreviewCard } from "./GenericPreviewCard";
 import { LeadPreviewCard } from "./LeadPreviewCard";
 import { PipelinePreviewCard } from "./PipelinePreviewCard";
@@ -67,6 +69,8 @@ export const PREVIEW_REGISTRY: Record<string, ComponentType<PreviewCardProps>> =
 	create_contact: ContactPreviewCard,
 	create_company: CompanyPreviewCard,
 	create_deal: DealPreviewCard,
+	create_field: FieldPreviewCard,
+	update_field: FieldPreviewCard,
 	update_entity: EntityDiffCard,
 	bulk_update_entities: BulkPreviewCard,
 	bulk_close_deals: BulkPreviewCard,
@@ -76,6 +80,7 @@ export const PREVIEW_REGISTRY: Record<string, ComponentType<PreviewCardProps>> =
 	add_pipeline_stage: PipelinePreviewCard,
 	update_org_settings: SettingsPreviewCard,
 	rename_entity_labels: SettingsPreviewCard,
+	import_csv: CsvImportPreviewCard,
 };
 
 export function getPreviewCard(toolName: string): ComponentType<PreviewCardProps> {
@@ -86,9 +91,11 @@ export {
 	BulkPreviewCard,
 	CompanyPreviewCard,
 	ContactPreviewCard,
+	CsvImportPreviewCard,
 	DangerPreviewCard,
 	DealPreviewCard,
 	EntityDiffCard,
+	FieldPreviewCard,
 	GenericPreviewCard,
 	LeadPreviewCard,
 	PipelinePreviewCard,

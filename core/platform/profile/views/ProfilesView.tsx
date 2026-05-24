@@ -351,7 +351,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 						staleness={staleness}
 						isDragging={isDragging}
 						resolveReplacementLabel={resolveReplacementLabel}
-						prefetchedTags={leadTagsById[item.id]}
+						prefetchedTags={leadTagsById[item.id] ?? []}
 						onConvert={() => handleInstantConvert(leadId)}
 						onConvertWithOptions={() => openConvertFor([leadId])}
 						onDelete={() => handleDeleteLead(leadId)}
@@ -405,7 +405,7 @@ export function ProfilesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 					cardFields={PROFILE_CARD_FIELDS}
 					isDragging={isDragging}
 					menuItems={menuItems}
-					prefetchedTags={contactTagsById[item.id]}
+					prefetchedTags={contactTagsById[item.id] ?? []}
 					resolveReplacementLabel={resolveReplacementLabel}
 				/>
 			);

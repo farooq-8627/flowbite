@@ -95,3 +95,65 @@ export async function resolveModelAndKey(args: {
 		plan: args.plan,
 	});
 }
+
+// ─── Week 6.3 — Multi-provider auto-failover ─────────────────────────────────
+//
+// `resolveFallbackChain()` returns the user's primary model first, followed
+// by 1-3 providers from a *different* family that have working configuration
+// (BYOK or platform key). The streamLoop iterates this list — if streamText
+// throws or emits an `error` chunk before the first `text-delta`, we move
+// to the next provider transparently. The user sees the answer; only the
+// telemetry log records the fallback.
+//
+// Why "different family": the typical 5xx is a single provider being down
+// (Anthropic capacity, Google quota). Falling back to the same provider is
+// almost always pointless; a different family is most likely to succeed.
+//
+// Conservative max chain length = 3 — beyond that we're chasing tail latency.
+
+export async function resolveFallbackChain(args: {
+	ctx: { runQuery: RunQueryFn };
+	orgId: Id<"orgs">;
+	userId: Id<"users">;
+	primary: ResolvedModel;
+	plan: OrgPlan;
+}): Promise<ResolvedModel[]> {
+	const chain: ResolvedModel[] = [args.primary];
+	const triedProviders = new Set<string>([args.primary.provider]);
+
+	// Candidate fallback model keys, ordered by reliability/quality.
+	// We only care that they're a DIFFERENT provider from the primary;
+	// the actual model picked is whichever is configured.
+	const fallbackOrder = [
+		"claude-sonnet-4-5",
+		"gemini-2.5-flash",
+		"gpt-4o-mini",
+		"claude-haiku-3-5",
+		"nvidia-llama-3.3-70b",
+	];
+
+	for (const key of fallbackOrder) {
+		if (chain.length >= 3) break;
+		const info = MODEL_REGISTRY[key];
+		if (!info) continue;
+		if (triedProviders.has(info.provider)) continue;
+
+		// Try BYOK first, then platform key. Same shape as primary resolution.
+		try {
+			const candidate = await resolveModelAndKey({
+				ctx: args.ctx,
+				orgId: args.orgId,
+				userId: args.userId,
+				requestedModel: key,
+				requestedProvider: info.provider,
+				plan: args.plan,
+			});
+			chain.push(candidate);
+			triedProviders.add(candidate.provider);
+		} catch {
+			// No working key for this provider → skip.
+		}
+	}
+
+	return chain;
+}

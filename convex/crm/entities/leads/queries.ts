@@ -3,13 +3,13 @@
  * STATUS: IMPLEMENTED
  */
 import { v } from "convex/values";
-import type { Id } from "../../../_generated/dataModel";
-import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import {
 	orgQuery,
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { requireRole } from "../../../_shared/permissions";
 
 export const list = orgQuery({
@@ -70,10 +70,7 @@ export const getById = orgQuery({
 	},
 });
 
-async function getByPersonCodeImpl(
-	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; personCode: string },
-) {
+async function getByPersonCodeImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; personCode: string }) {
 	return ctx.db
 		.query("leads")
 		.withIndex("by_org_and_personCode", (q) =>

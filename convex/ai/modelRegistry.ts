@@ -19,6 +19,14 @@ export type ModelInfo = {
 	contextWindow: number;
 	inputCostPerMTok: number;
 	outputCostPerMTok: number;
+	/**
+	 * Optional one-line caveat surfaced in the model picker UI.
+	 * Use for "best for" / "weak at" hints — keeps users from picking
+	 * a model that's a poor fit for the chat workflow.
+	 *
+	 * Day 1 T1.7 (PHASE-3-AI-AUDIT.md §6.5 E.T1.7).
+	 */
+	pickerNote?: string;
 };
 
 export const MODEL_REGISTRY: Readonly<Record<string, ModelInfo>> = {
@@ -76,23 +84,59 @@ export const MODEL_REGISTRY: Readonly<Record<string, ModelInfo>> = {
 		inputCostPerMTok: 1.1,
 		outputCostPerMTok: 4.4,
 	},
-	"gemini-2.0-flash": {
+	// ── Google Gemini ────────────────────────────────────────────────────────
+	// Day 1 T1.7 — `PHASE-3-AI-AUDIT.md §6.5 E.T1.7`. Gemini 2.0 Flash is
+	// deprecated by Google as of late 2025 (per ai.google.dev/models, last
+	// updated 2026-05-18); 2.0 Pro never had a stable API name. The current
+	// stable family is 2.5; 3.x is partly preview. We keep the 2.0 entries
+	// out so the model picker doesn't surface a model that 404s on first
+	// call. Provider env var: GOOGLE_GENERATIVE_AI_API_KEY (or BYOK).
+	"gemini-2.5-flash-lite": {
 		provider: "google",
-		modelId: "gemini-2.0-flash",
+		modelId: "gemini-2.5-flash-lite",
 		tier: "small",
 		supportsTools: true,
 		contextWindow: 1_000_000,
-		inputCostPerMTok: 0.1,
-		outputCostPerMTok: 0.4,
+		inputCostPerMTok: 0.075,
+		outputCostPerMTok: 0.3,
 	},
-	"gemini-2.0-pro": {
+	"gemini-2.5-flash": {
 		provider: "google",
-		modelId: "gemini-2.0-pro-exp-02-05",
+		modelId: "gemini-2.5-flash",
+		tier: "standard",
+		supportsTools: true,
+		contextWindow: 1_000_000,
+		inputCostPerMTok: 0.15,
+		outputCostPerMTok: 0.6,
+	},
+	"gemini-2.5-pro": {
+		provider: "google",
+		modelId: "gemini-2.5-pro",
 		tier: "premium",
 		supportsTools: true,
 		contextWindow: 2_000_000,
 		inputCostPerMTok: 1.25,
 		outputCostPerMTok: 5.0,
+	},
+	"gemini-3.5-flash": {
+		provider: "google",
+		modelId: "gemini-3.5-flash",
+		tier: "standard",
+		supportsTools: true,
+		contextWindow: 1_000_000,
+		inputCostPerMTok: 0.2,
+		outputCostPerMTok: 0.8,
+		pickerNote: "Newest Flash — strong tool calling.",
+	},
+	"gemini-3.1-pro-preview": {
+		provider: "google",
+		modelId: "gemini-3.1-pro-preview",
+		tier: "premium",
+		supportsTools: true,
+		contextWindow: 2_000_000,
+		inputCostPerMTok: 2.0,
+		outputCostPerMTok: 8.0,
+		pickerNote: "Preview — usable for production but rate-limited.",
 	},
 	"grok-3": {
 		provider: "xai",
@@ -135,14 +179,23 @@ export const MODEL_REGISTRY: Readonly<Record<string, ModelInfo>> = {
 	// Free tier: 5,000 requests/month for build.nvidia.com personal accounts.
 	// Set `NVIDIA_API_KEY` in Convex dashboard env vars, OR add via Settings → AI as BYOK.
 	// Tool calling support varies per model; Llama-3.3-70b-instruct supports tools.
+	//
+	// Day 1 T1.7 (`PHASE-3-AI-AUDIT.md §6.5 E.T1.7`) — re-tiered from
+	// `standard` → `small`. In practice Llama-3.3-70B-Instruct via NIM is
+	// closer to Haiku than to Sonnet at multi-step tool flows: it doesn't
+	// auto-map plural→singular synonyms, sometimes ignores "stop after
+	// twoStep", and echoes raw tool-result JSON as prose. Fine for free
+	// tier + one-shot Q&A; we surface that caveat via `pickerNote`.
 	"nvidia-llama-3.3-70b": {
 		provider: "nvidia",
 		modelId: "meta/llama-3.3-70b-instruct",
-		tier: "standard",
+		tier: "small",
 		supportsTools: true,
 		contextWindow: 128_000,
 		inputCostPerMTok: 0,
 		outputCostPerMTok: 0,
+		pickerNote:
+			"Free via NVIDIA NIM. Best for one-shot Q&A; weaker at multi-step CRM actions — prefer Claude or Gemini 2.5 Flash for create/update flows.",
 	},
 	// OpenRouter free model — `:free` suffix is mandatory for free tier.
 	// Free tier: 20 requests/min, ~200/day per account.

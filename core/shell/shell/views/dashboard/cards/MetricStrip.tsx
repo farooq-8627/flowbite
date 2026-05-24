@@ -14,9 +14,9 @@
  * than 4 widgets are configured).
  */
 
+import type { DashboardStats } from "../types";
 import { StatTile } from "./StatTile";
 import type { WidgetSpec } from "./WidgetRegistry";
-import type { DashboardStats } from "../types";
 
 interface MetricStripProps {
 	stats: DashboardStats;

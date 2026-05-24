@@ -37,6 +37,13 @@ export type ToolDisplay =
 			kind: "entity";
 			entityType: "lead" | "contact" | "deal" | "company";
 			entityId: string;
+			/**
+			 * P1.9 — when present, EntityResultCard surfaces these fields
+			 * instead of the hardcoded default 5. Tools that return a
+			 * {@link ToolSummary} with `cardFields` get this spliced in
+			 * by `TimelineRow` before the renderer is mounted.
+			 */
+			cardFields?: string[];
 	  }
 	| {
 			kind: "entityList";
@@ -81,6 +88,7 @@ export function ToolResultRenderer({ display, orgId }: ToolResultRendererProps) 
 					entityType={display.entityType}
 					entityId={display.entityId}
 					orgId={orgId}
+					cardFields={display.cardFields}
 				/>
 			);
 		case "entityList":

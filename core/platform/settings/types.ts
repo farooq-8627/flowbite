@@ -16,7 +16,6 @@ export type OrgSettings = {
 	plan: string;
 	logoStorageId?: Id<"_storage">;
 	industry?: string;
-	aiContext?: string;
 	entityLabels?: OrgEntityLabels | null;
 	settings?: {
 		timezone?: string;

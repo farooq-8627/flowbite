@@ -2,20 +2,15 @@
  * convex/ai/subagents/csvImport.ts
  *
  * CSV import specialist (`PHASE-3-AI-AUDIT.md §6 Week 4`, §7 Dual-LLM
- * pattern). The actual quarantined LLM + privileged commit ships in
- * Week 4; this subagent declaration exists today so the router has a
- * target for "import this CSV" requests.
+ * pattern). The dual-LLM pipeline ships in Week 4: `import_csv` (propose)
+ * triggers the quarantined parser + dedup; `commit_import_csv` runs the
+ * privileged bulk insert. Both are gated by `leads.create`.
  *
- * Until Week 4 lands, the subagent is intentionally tool-light:
- *   - `set_context_var` so it can record what the user said about the
- *     pending file (column hints, dedup preferences) without losing it
- *     when the conversation continues.
- *   - `search_crm` so it can answer "do I already have this lead?"
- *     questions that come up while reviewing a CSV preview.
- *
- * Crucially, NO write tools — Week 4's commit path is a dedicated
- * privileged action (`bulkInsertFromCsvImport`), not a generic AI tool.
- * Keeping the subagent write-free defends the dual-LLM boundary.
+ * Tools:
+ *   - `import_csv` / `commit_import_csv` — Week 4 dual-LLM CSV pipeline.
+ *   - `search_crm` + `get_entity_detail` — answer "do I already have
+ *     this lead?" questions while reviewing a preview.
+ *   - `set_context_var` — persist column-mapping hints across turns.
  */
 import type { Subagent } from "./types";
 
@@ -23,15 +18,36 @@ export const csvImportSubagent: Subagent = {
 	id: "csv_import",
 	displayName: "CSV Import",
 	description:
-		"Specialist for bulk importing a CSV / spreadsheet of leads or contacts. Use when the user mentions 'CSV', 'spreadsheet', 'import', 'upload my contacts', or attaches a file with rows. Does NOT enrich; does NOT mutate without user-approved preview.",
+		"Specialist for bulk importing a CSV / spreadsheet of leads or contacts. Use when the user mentions 'CSV', 'spreadsheet', 'import', 'upload my contacts', or attaches a file with rows. Runs the dual-LLM pipeline: a quarantined parser extracts fields, the user reviews dedup decisions, the privileged commit inserts in batches.",
 	systemPromptHint: `
 You are the **CSV Import** specialist. The user wants to bulk-load
-records. As of Phase 3 / Week 4 the dual-LLM CSV pipeline is under
-construction. Until then, walk the user through how to manually paste
-small batches and use create_lead / create_contact with two-step
-confirmation. Never invent rows. Never claim to have parsed a file you
-haven't actually seen — the parser doesn't exist yet.
+records from a spreadsheet. Workflow:
+
+1. Ask the user (or read from context) which file id contains the rows.
+   If unsure, call \`search_crm\` for recent uploads or \`ask_user_input\`
+   for the file id.
+2. Call \`import_csv\` with { fileId, targetEntity: "lead" }. The tool
+   runs the quarantined parser (no tools, structured-output only) and
+   returns a preview card showing per-row dedup decisions.
+3. The user reviews and approves the preview. Do NOT call any more
+   tools after \`import_csv\` — wait for approval.
+4. After approval, the orchestrator runs \`commit_import_csv\`
+   automatically. Summarise the result.
+
+Hard rules:
+  - Never invent rows. The parser sees the raw file; you only see its
+    structured output.
+  - Never ask the user to send raw cell content in chat — the file is
+    enough.
+  - Phase 1 ships \`lead\` only. If the user wants contacts/companies/deals,
+    explain Phase 5 will add them and offer to import as leads instead.
 	`.trim(),
-	allowedTools: ["search_crm", "get_entity_detail", "set_context_var"],
+	allowedTools: [
+		"import_csv",
+		"commit_import_csv",
+		"search_crm",
+		"get_entity_detail",
+		"set_context_var",
+	],
 	requiredPermissions: ["leads.create"],
 };

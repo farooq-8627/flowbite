@@ -50,7 +50,7 @@ import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
 import { usePersistedState } from "@/lib/hooks/use-persisted-state";
 import { normalizeError } from "@/lib/normalizeError";
 import { SettingsSection } from "../shared/SettingsSection";
-import { PipelineEditor } from "./crm/PipelineEditor";
+import { PipelineEditor } from "./pipelines/PipelineEditor";
 
 export function PipelinesGroup({ orgId }: { orgId: Id<"orgs"> }) {
 	const labels = useEntityLabels();

@@ -166,7 +166,6 @@ export const updatePreferences = authenticatedMutation({
 		aiDefaultProvider: v.optional(v.string()),
 		aiAutoContextLoad: v.optional(v.boolean()),
 		aiBriefingEnabled: v.optional(v.boolean()),
-		aiContextCardCollapsed: v.optional(v.boolean()),
 		aiPanelOpenByDefault: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
@@ -184,8 +183,6 @@ export const updatePreferences = authenticatedMutation({
 		if (args.aiDefaultProvider !== undefined) next.aiDefaultProvider = args.aiDefaultProvider;
 		if (args.aiAutoContextLoad !== undefined) next.aiAutoContextLoad = args.aiAutoContextLoad;
 		if (args.aiBriefingEnabled !== undefined) next.aiBriefingEnabled = args.aiBriefingEnabled;
-		if (args.aiContextCardCollapsed !== undefined)
-			next.aiContextCardCollapsed = args.aiContextCardCollapsed;
 		if (args.aiPanelOpenByDefault !== undefined)
 			next.aiPanelOpenByDefault = args.aiPanelOpenByDefault;
 

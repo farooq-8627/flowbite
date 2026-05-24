@@ -90,24 +90,6 @@ export const ORG_ROLE_RANK: Record<OrgRole, number> = {
 	owner: 3,
 };
 
-// ─── Invitation Role validators (DEPRECATED 2026-05-21) ──────────────────────
-//
-// Invitations used to carry a role string ("admin"|"member"|"viewer"). They
-// now carry `roleId: Id<"orgRoles">` so admins can invite into any role
-// (including custom roles) and the server resolves the membership role from
-// the doc directly. See `convex/_migrations/2026_05_21_invitationRoleToRoleId.ts`.
-//
-// The validator below is kept exported only to avoid breaking imports that
-// may still reference it; new code should NOT use it. Remove it once every
-// downstream import is gone.
-
-/** @deprecated Use `v.id("orgRoles")` directly. */
-export const invitationRoleValues = ["admin", "member", "viewer"] as const;
-/** @deprecated Use `v.id("orgRoles")` directly. */
-export const invitationRoleValidator = v.union(...invitationRoleValues.map((r) => v.literal(r)));
-/** @deprecated Use `Id<"orgRoles">` directly. */
-export type InvitationRole = (typeof invitationRoleValues)[number];
-
 // ─── External Party Role validators (Connections module — Phase 1) ────────────
 //
 // These roles are NOT in orgMembers. They are managed per-connection in the

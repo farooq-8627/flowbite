@@ -30,12 +30,16 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
-			const result = await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:create", {
-				orgId,
-				...args,
-			});
+			const result = await toolMutation(
+				getCtx(),
+				"crm/shared/noteCategories/mutations:create",
+				{
+					orgId,
+					...args,
+				},
+			);
 			return {
 				ok: true as const,
 				data: result,
@@ -61,7 +65,7 @@ registerTool({
 	}),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
 			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:update", {
 				orgId,
@@ -100,7 +104,7 @@ registerTool({
 	schema: z.object({ categoryId: z.string() }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
 			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:setArchived", {
 				orgId,
@@ -123,7 +127,7 @@ registerTool({
 	schema: z.object({ orderedIds: z.array(z.string()) }),
 	execute: async (args) =>
 		runTool(async () => {
-			const { ctx, orgId, permissions } = getCtx();
+			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, "notes.categories.manage");
 			await toolMutation(getCtx(), "crm/shared/noteCategories/mutations:reorder", {
 				orgId,

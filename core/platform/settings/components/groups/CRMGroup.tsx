@@ -34,11 +34,11 @@ import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
+import { FollowupsSection } from "./crm/FollowupsSection";
+import { NoteCategoriesSection } from "./crm/NoteCategoriesSection";
+import { RemindersSection } from "./crm/RemindersSection";
 import { TagsSection } from "./crm/TagsSection";
-import { FollowupsSection } from "./notes/FollowupsSection";
-import { NoteCategoriesSection } from "./notes/NoteCategoriesSection";
-import { RemindersSection } from "./notes/RemindersSection";
-import { TimelineSection } from "./notes/TimelineSection";
+import { TimelineSection } from "./crm/TimelineSection";
 
 const CRM_TABS = ["tags", "notes", "reminders", "followups", "timeline"] as const;
 type CRMTab = (typeof CRM_TABS)[number];

@@ -51,6 +51,13 @@ export const users = defineTable({
 			aiAutoContextLoad: v.optional(v.boolean()), // default true
 			aiBriefingEnabled: v.optional(v.boolean()), // default true
 			aiPanelOpenByDefault: v.optional(v.boolean()), // default false mobile, true desktop
+			// Stage 5 — AIPulseRibbon dismiss state. Map of suggestion id ->
+			// dismissedAt epoch ms. Bounded at 50 entries via the writer
+			// (oldest entries dropped) so the row never balloons. Shape
+			// chosen over an array because lookups + idempotent writes are
+			// O(1). See core/shell/shell/views/dashboard/cards/AIPulseRibbon.tsx
+			// + convex/users/mutations.ts:dismissAiPulseSuggestion.
+			aiPulseDismissed: v.optional(v.record(v.string(), v.number())),
 		}),
 	),
 	...timestamps,

@@ -8,7 +8,16 @@
  */
 import { v } from "convex/values";
 import { authenticatedQuery } from "../_functions/authenticated";
+import type { Id } from "../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../_generated/server";
 import { getOrgMember } from "../orgs/helpers";
+
+async function listImpl(ctx: QueryCtx, args: { orgId: Id<"orgs"> }) {
+	return await ctx.db
+		.query("orgRoles")
+		.withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
+		.take(50);
+}
 
 /**
  * List all roles for an org.
@@ -19,11 +28,17 @@ export const list = authenticatedQuery({
 	handler: async (ctx, args) => {
 		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
 		if (!member || member.deletedAt !== undefined) return [];
+		return listImpl(ctx, args);
+	},
+});
 
-		return await ctx.db
-			.query("orgRoles")
-			.withIndex("by_orgId", (q) => q.eq("orgId", args.orgId))
-			.take(50);
+/** AI-callable internal twin. */
+export const listForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, args.userId);
+		if (!member || member.deletedAt !== undefined) return [];
+		return listImpl(ctx, { orgId: args.orgId });
 	},
 });
 

@@ -343,6 +343,10 @@ export const run = internalAction({
 			"bulk",
 			"templates",
 			"data",
+			"messaging",
+			"files",
+			"timeline",
+			"notifications",
 		];
 		const requestedLayers = new Set<string>(args.expandedLayers ?? []);
 		for (const l of ALL_LAYERS) requestedLayers.add(l);

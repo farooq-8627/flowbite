@@ -13,8 +13,13 @@
 
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import type { Doc, Id } from "../../../_generated/dataModel";
+import { internalQuery } from "../../../_generated/server";
 import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { findConversation, getMyMembership } from "../conversations/internal";
@@ -300,5 +305,166 @@ export const getById = orgQuery({
 		// Hidden for the caller via "delete for me" — treat as not found.
 		if (message.deletedFor?.some((u) => String(u) === String(userId))) return null;
 		return message;
+	},
+});
+
+// ─── ForAI internal twins ────────────────────────────────────────────────────
+//
+// Stage 2 of SPRINT-PLAN.md (2026-05-26). Same auth model as the public
+// `orgQuery` versions but driven by a trusted `userId` arg instead of
+// `getAuthUserId`. AI tools call these via the `toolQuery` helper which
+// auto-rewrites `module:export` → `module:exportForAI` and injects userId.
+//
+// Per AGENTS.md non-negotiable rule: any public mutation/query an AI tool
+// calls MUST have a same-file twin. We share the same body (inline because
+// queries are short and read-only) so behaviour cannot diverge.
+
+export const listForConversationForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		conversationId: v.id("conversations"),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const conversation = await ctx.db.get(args.conversationId);
+		if (!conversation || conversation.orgId !== args.orgId) return [];
+
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: args.conversationId,
+			userId: args.userId,
+		});
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		if (!myMembership && !canModerate) return [];
+
+		const cap = args.limit ?? 100;
+		const rows = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", args.conversationId),
+			)
+			.order("desc")
+			.take(cap);
+		return rows.filter(makeMessageVisibilityFilter(args.userId));
+	},
+});
+
+export const listForEntityForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: entityTypeForChatValidator,
+		entityId: v.string(),
+		threadId: v.optional(v.string()),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const conversation = await findConversation(ctx, args);
+		if (!conversation) return { conversation: null, messages: [] };
+
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: conversation._id,
+			userId: args.userId,
+		});
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		if (!myMembership && !canModerate) {
+			return { conversation: null, messages: [] };
+		}
+
+		const cap = args.limit ?? 100;
+		const rows = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", conversation._id),
+			)
+			.order("desc")
+			.take(cap);
+		return {
+			conversation,
+			messages: rows.filter(makeMessageVisibilityFilter(args.userId)),
+		};
+	},
+});
+
+export const listForPersonForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		personCode: v.string(),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const cap = args.limit ?? 100;
+		const rows = await ctx.db
+			.query("messages")
+			.withIndex("by_org_and_personCode", (q) =>
+				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+			)
+			.order("desc")
+			.take(cap);
+		return rows.filter(makeMessageVisibilityFilter(args.userId));
+	},
+});
+
+export const listInboxForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		filter: v.optional(
+			v.union(v.literal("all"), v.literal("unread"), v.literal("ai"), v.literal("mine")),
+		),
+		scanLimit: v.optional(v.number()),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const filter = args.filter ?? "all";
+		const scanLimit = args.scanLimit ?? 500;
+		const cap = args.limit ?? 50;
+
+		const recent = await ctx.db
+			.query("messages")
+			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
+			.order("desc")
+			.take(scanLimit);
+
+		const live = recent.filter(makeMessageVisibilityFilter(args.userId));
+
+		const seen = new Map<string, (typeof live)[number]>();
+		for (const m of live) {
+			const key = String(m.conversationId);
+			if (!seen.has(key)) seen.set(key, m);
+		}
+
+		const conversations = [...seen.values()];
+
+		const canModerate = hasPermission(member.permissions, "messages.viewAll");
+		const filteredOut = [];
+		for (const m of conversations) {
+			if (!canModerate) {
+				const myMembership = await getMyMembership(ctx, {
+					conversationId: m.conversationId,
+					userId: args.userId,
+				});
+				if (!myMembership) continue;
+			}
+			if (filter === "ai" && m.authorType !== "ai") continue;
+			if (filter === "mine" && String(m.authorId) !== String(args.userId)) continue;
+			filteredOut.push(m);
+			if (filteredOut.length >= cap) break;
+		}
+
+		return filteredOut;
 	},
 });

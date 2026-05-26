@@ -43,9 +43,14 @@
  */
 
 import { ConvexError, v } from "convex/values";
-import { authenticatedMutation, orgMutation, requireOrgMember } from "../_functions/authenticated";
+import {
+	authenticatedMutation,
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../_functions/authenticated";
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { internalMutation, type MutationCtx, type QueryCtx } from "../_generated/server";
 import { ERRORS } from "../_shared/errors";
 import { hasPermission, requireRole } from "../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../_shared/rateLimit";
@@ -361,6 +366,43 @@ export const record = orgMutation({
 /**
  * Add or remove tags on a file. Owner-only or files.deleteAny moderator.
  */
+async function updateTagsImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		fileId: Id<"files">;
+		tags: string[];
+	},
+) {
+	const file = await ctx.db.get(args.fileId);
+	if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const isOwn = file.uploadedBy === args.userId;
+	const canEditAny = hasPermission(args.member.permissions, "files.deleteAny");
+	if (!(canEditAny || isOwn)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	await ctx.db.patch(args.fileId, {
+		tags: args.tags,
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "file_updated",
+		entityType: file.scope,
+		entityId: file.scopeId,
+		description: `File tags updated: ${file.name}`,
+		metadata: { fileId: args.fileId },
+	});
+}
+
 export const updateTags = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -369,31 +411,21 @@ export const updateTags = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		const file = await ctx.db.get(args.fileId);
-		if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
+		return updateTagsImpl(ctx, { ...args, userId, member });
+	},
+});
 
-		const isOwn = file.uploadedBy === userId;
-		const canEditAny = hasPermission(member.permissions, "files.deleteAny");
-		if (!(canEditAny || isOwn)) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		await ctx.db.patch(args.fileId, {
-			tags: args.tags,
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "file_updated",
-			entityType: file.scope,
-			entityId: file.scopeId,
-			description: `File tags updated: ${file.name}`,
-			metadata: { fileId: args.fileId },
-		});
+/** AI-callable internal twin. */
+export const updateTagsForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		fileId: v.id("files"),
+		tags: v.array(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return updateTagsImpl(ctx, { ...args, member });
 	},
 });
 
@@ -401,6 +433,48 @@ export const updateTags = orgMutation({
  * Soft-delete a file row and purge the bytes from Convex File Storage.
  * Owner OR files.deleteAny moderator.
  */
+async function removeImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		fileId: Id<"files">;
+	},
+) {
+	const file = await ctx.db.get(args.fileId);
+	if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const isOwn = file.uploadedBy === args.userId;
+	const canDeleteOwn = hasPermission(args.member.permissions, "files.delete");
+	const canDeleteAny = hasPermission(args.member.permissions, "files.deleteAny");
+	if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	try {
+		await ctx.storage.delete(file.storageId);
+	} catch {
+		// Storage may already be gone — safe to ignore and still mark the row deleted.
+	}
+	await ctx.db.patch(args.fileId, {
+		deletedAt: Date.now(),
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "file_deleted",
+		entityType: file.scope,
+		entityId: file.scopeId,
+		description: `File deleted: ${file.name}`,
+		metadata: { fileId: args.fileId },
+	});
+}
+
 export const remove = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -408,36 +482,19 @@ export const remove = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		const file = await ctx.db.get(args.fileId);
-		if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
+		return removeImpl(ctx, { ...args, userId, member });
+	},
+});
 
-		const isOwn = file.uploadedBy === userId;
-		const canDeleteOwn = hasPermission(member.permissions, "files.delete");
-		const canDeleteAny = hasPermission(member.permissions, "files.deleteAny");
-		if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		try {
-			await ctx.storage.delete(file.storageId);
-		} catch {
-			// Storage may already be gone — safe to ignore and still mark the row deleted.
-		}
-		await ctx.db.patch(args.fileId, {
-			deletedAt: Date.now(),
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "file_deleted",
-			entityType: file.scope,
-			entityId: file.scopeId,
-			description: `File deleted: ${file.name}`,
-			metadata: { fileId: args.fileId },
-		});
+/** AI-callable internal twin. */
+export const removeForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		fileId: v.id("files"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return removeImpl(ctx, { ...args, member });
 	},
 });

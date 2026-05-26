@@ -28,7 +28,11 @@ export type LayerId =
 	| "settings"
 	| "bulk"
 	| "templates"
-	| "data";
+	| "data"
+	| "messaging"
+	| "files"
+	| "timeline"
+	| "notifications";
 
 /**
  * Per-tool runbook strings. The system-prompt builder injects a runbook
@@ -325,17 +329,25 @@ export function getRegisteredToolNames(): string[] {
 
 const LAYER_DESCRIPTIONS: Record<LayerId, string> = {
 	always: "Core CRM tools (always active).",
-	pipelines: "Pipeline and stage management (move stages, add/archive stages, create pipelines).",
+	pipelines:
+		"Pipeline and stage management (move stages, add/edit/remove/reorder stages, set default, reopen-deal, lead-status moves, create pipelines).",
 	fields: "Custom field management (create, update, archive field definitions).",
-	tags: "Tag management (create, attach, detach, delete tags).",
-	views: "Saved view management (create, pin, delete saved views).",
+	tags: "Tag management (create, attach, detach, update, delete tags).",
+	views: "Saved view management (create, pin, update, delete saved views).",
 	categories: "Note category management (create, rename, archive, reorder).",
-	members: "Member and invitation management (invite, change role, remove members).",
+	members:
+		"Member, invitation, and custom-role management (invite/resend, change role, remove members, create/update/delete custom roles).",
 	settings:
 		"Workspace settings (rename entities, set currency/timezone, visibility, reminder defaults).",
 	bulk: "Bulk operations (update/tag/assign/close many records at once). REQUIRES CONFIRMATION.",
 	templates: "Workspace template operations (list, apply, clear sample data).",
 	data: "Trash and restore (view deleted records, restore, permanently delete).",
+	messaging:
+		"Messaging and conversations (send messages, read threads, mark as read, manage participants).",
+	files: "File management (list files attached to records, update tags on a file, soft-delete a file).",
+	timeline: "Org-wide activity feed (list_org_timeline for 'what happened today?' questions).",
+	notifications:
+		"Per-user notifications (list_notifications, mark_notification_read for the calling user).",
 };
 
 // Registered at bottom of this file so it's always included
@@ -346,7 +358,7 @@ const expandToolsDef: ToolDef = {
 	confirmation: "none",
 	description: `
 Load a layer of advanced tools when the user's request needs them.
-Available layers: pipelines, fields, tags, views, categories, members, settings, bulk, templates, data.
+Available layers: pipelines, fields, tags, views, categories, members, settings, bulk, templates, data, messaging, files, timeline, notifications.
 Call this BEFORE attempting an action that isn't in the always-on layer.
 This tool does NOT execute any DB operations — it only unlocks new capabilities.
 
@@ -366,6 +378,10 @@ use list_entity_fields, list_pipelines, or list_my_permissions first.
 			"bulk",
 			"templates",
 			"data",
+			"messaging",
+			"files",
+			"timeline",
+			"notifications",
 		]),
 		reason: z
 			.string()

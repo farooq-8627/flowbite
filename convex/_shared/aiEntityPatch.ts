@@ -48,7 +48,7 @@
 
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { logActivity } from "../activityLogs/helpers";
 import { logFieldUpdates } from "./fieldUpdateLog";
 import { normaliseCode } from "./synonyms";
@@ -115,9 +115,13 @@ export type ResolvedRecord = {
  * Resolve a raw user-supplied code (`P001`, `p-001`, `P-001`) to the
  * canonical record. Returns `null` if no record exists. The caller is
  * responsible for surfacing a `NOT_FOUND` to the model.
+ *
+ * Accepts either a `QueryCtx` or `MutationCtx` — the function only reads
+ * (`ctx.db.query(...).first()`), so query callers can use it for
+ * read-only resolution (e.g. cascade-impact preflight).
  */
 export async function resolveCodeToRecordForAI(
-	ctx: MutationCtx,
+	ctx: QueryCtx | MutationCtx,
 	args: { orgId: Id<"orgs">; entityType: AIEntityType; code: string },
 ): Promise<ResolvedRecord | null> {
 	const canonicalCode = String(normaliseCode(args.code));

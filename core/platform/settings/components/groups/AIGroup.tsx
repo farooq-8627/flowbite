@@ -11,6 +11,7 @@ import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
 import { AIMemorySection } from "./ai/AIMemorySection";
 import { AIPreferencesSection } from "./ai/AIPreferencesSection";
+import { AIReliabilityCard } from "./ai/AIReliabilityCard";
 import { AIUsageSection } from "./ai/AIUsageSection";
 import { ApiKeySection } from "./ai/ApiKeySection";
 
@@ -103,6 +104,7 @@ export function AIGroup({ orgId }: { orgId: Id<"orgs"> }) {
 			<AIPreferencesSection />
 			<ApiKeySection orgId={orgId} />
 			<AIUsageSection orgId={orgId} />
+			<AIReliabilityCard orgId={orgId} />
 		</div>
 	);
 }

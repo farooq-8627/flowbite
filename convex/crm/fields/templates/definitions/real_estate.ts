@@ -336,6 +336,8 @@ export const realEstateTemplate: IndustryTemplate = {
 
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",

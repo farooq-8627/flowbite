@@ -175,6 +175,29 @@ End state: typecheck 0 / 243 backend tests / 140 frontend tests / biome 0 errors
 
 ## §2 — Pending work (full specs, ordered by sequence)
 
+### §2.0 — Reactive completeness wave + dashboard fix (audit-driven, 2026-05-25)
+
+Three new audit deliverables at the repo root drive the next sprint:
+
+| Doc | Headline finding |
+|---|---|
+| [/AI-AUDIT-COMPLETE.md](./AI-AUDIT-COMPLETE.md) | 75 AI tools registered, 51 actionable gaps. **P0:** AI cannot send messages — `crm/shared/messages/mutations:send` exists but no `send_message` tool wraps it. **P1:** no `update_reminder`, no per-entity `delete_*`, no note-edit tools, no company-person link tools. |
+| [/DASHBOARD-AUDIT.md](./DASHBOARD-AUDIT.md) | Reminders widget hidden because `generic` template writes `reminders.list` but `RemindersCard` is gated on `reminders.dueToday`. Plus 9 more dashboard keys aren't in `WIDGET_KEYS`. Empty widgets render `null` instead of CTA cards. |
+| [/AI-AGENT-CAPABILITY-AUDIT.md](./AI-AGENT-CAPABILITY-AUDIT.md) | Senior-CRM-specialist scorecard: 5.8/10. Reactive 9/10, Proactive 4/10, Analytical 3/10, Autonomous 1/10, Creative 2/10. Roadmap milestones A–E, ~10 eng-weeks. |
+
+**Sprint scope (next session):**
+
+| ID | Wave | Headline | Effort |
+|---|---|---|---|
+| ✅ R1 | Reactive | **SHIPPED 2026-05-26 (Stage 2)** — `send_message` (+ commit), `list_messages`, `mark_thread_read`, `add_participants` (+ commit), `remove_participant` (+ commit). New `messaging` tool layer in `convex/ai/tools/messaging/`; ForAI twins added across `convex/crm/shared/messages/{mutations,queries}.ts` and `convex/crm/shared/conversations/{mutations,queries}.ts`; system prompt `## Messaging` verb-routing block; 8 contract tests. | M (~1 day) |
+| ✅ R2–R5 | Reactive | **SHIPPED 2026-05-26 (Stage 3)** — Universal `delete_entity` (+ commit) routing to `softDeleteForAI` for lead/contact/company/deal + `removeForAI` for note/reminder; `update_reminder` (+ commit, accepts followUpCode or reminderId); `update_note` / `delete_note` (+ commits) + `pin_note` / `set_note_category` (atomic); `add_person_to_company` / `remove_person_from_company` (+ commits). ForAI twins extracted on entity `softDelete` mutations + companies `addPerson`/`removePerson` + notes `update`/`togglePin`/`setCategory`/`remove` + reminders `update`/`remove`. New cascade-impact internal query at `convex/ai/queries/cascadeImpact.ts`; system prompt gained Stage-3 verb-routing for Notes / Reminders / Companies / universal deletion; 12 ForAI contract tests at `convex/ai/tools/stage3/stage3.test.ts`. | M total |
+| ✅ D1 | Dashboard | **SHIPPED 2026-05-26 (Stage 1)** — Extended `WIDGET_KEYS` 12 → 25 keys; `WidgetMeta` entries for every template-used section + KPI + placeholder. `convex/_shared/widgetRegistry.ts`. | S |
+| ✅ D2 | Dashboard | **SHIPPED 2026-05-26 (Stage 1)** — Idempotent migration `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts` rewrites `calendar.miniWidget` → `calendar.mini`; all 9 templates use canonical keys; dev run scanned 1, patched 0 (already canonical). | S |
+| ✅ D3 | Dashboard | **SHIPPED 2026-05-26 (Stage 1)** — `MessagesPreviewWidget` / `TimelineActivityWidget` / `WeekAheadWidget` / `MiniCalendarWidget` CTA empty states; `TimelineFeed.emptyState.action` + `sendChatPrefill` wiring. | S each |
+| ⬜ D4 | Dashboard | Mount `AIQuickComposerCard` on dashboard so the user can talk to the AI without opening the sheet — **deferred to Stage 5** (`SPRINT-PLAN.md` "AI dashboard surface" stage groups all AI-surface widgets). | S |
+
+After this sprint, AI parity with manual UI moves from ~70% → ~95%. Score moves 99 → projected 99.5 (still gated on Billing for the 100 mark).
+
 ### §2.1 — Phase 4 Part 3: Billing wall via LemonSqueezy (target +1 pt → 100)
 
 Free tier capped at `aiTokensPerMonth = 0` already hard-blocks AI today (via the quota gate shipped in Part 2 — `convex/ai/orchestrator/quotaGate.ts`). What's still missing is the **paid-tier upgrade flow** that maps a successful LemonSqueezy checkout to a tier change on the org doc:

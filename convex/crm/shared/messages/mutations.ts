@@ -17,12 +17,24 @@
  *     (orgId, conversationId, idempotencyKey) message exists, return its id.
  *   • Edit + soft-delete: messages are soft-deleted; queries hide rows with
  *     `deletedAt` set. Edits are time-windowed (15 min by default).
+ *
+ * 2026-05-26 — Stage 2 of SPRINT-PLAN.md adds *ForAI internal twins so the
+ * AI tool layer (`convex/ai/tools/messaging/*`) can drive these mutations
+ * from inside `processChat.run`. Per AGENTS.md non-negotiable rule, every
+ * public mutation called by an AI tool MUST have a same-file twin that
+ * validates auth via `requireOrgMemberByIds(ctx, orgId, userId)` instead
+ * of `getAuthUserId(ctx)`. Each public + ForAI pair shares an `*Impl`
+ * helper so the bodies cannot diverge.
  */
 
 import { ConvexError, v } from "convex/values";
-import { orgMutation, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgMutation,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
-import type { MutationCtx } from "../../../_generated/server";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { entityTypeForChatValidator } from "../../../_shared/entityCodes";
 import { ERRORS } from "../../../_shared/errors";
 import { isNotificationPreferenceEnabled } from "../../../_shared/notificationKeys";
@@ -43,30 +55,235 @@ const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 // ─── send ────────────────────────────────────────────────────────────────────
 
+type SendImplArgs = {
+	orgId: Id<"orgs">;
+	userId: Id<"users">;
+	memberPermissions: string[];
+	conversationId?: Id<"conversations">;
+	entityType?: "user" | "lead" | "contact" | "person" | "deal" | "company" | "project" | "task";
+	entityId?: string;
+	threadId?: string;
+	content: string;
+	authorType?: "user" | "ai" | "system" | "contact";
+	onBehalfOf?: Id<"users">;
+	replyToId?: Id<"messages">;
+	attachments?: Id<"files">[];
+	mentions?: Id<"users">[];
+	channel?: "internal" | "whatsapp" | "email" | "sms";
+	authorPersonCode?: string;
+	idempotencyKey?: string;
+	senderDisplayName?: string;
+};
+
+async function sendImpl(ctx: MutationCtx, args: SendImplArgs): Promise<Id<"messages">> {
+	requireRole(args.memberPermissions, "messages.send");
+	await enforceRateLimit(ctx, {
+		orgId: args.orgId,
+		scope: "messages.send",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const trimmed = args.content.trim();
+	const hasAttachments = (args.attachments?.length ?? 0) > 0;
+	// Body must contain SOMETHING — text OR attachments. File-only sends
+	// (e.g. "send these 3 photos with no caption") are valid; pure empty
+	// sends are not.
+	if (trimmed.length === 0 && !hasAttachments) {
+		throw new ConvexError({
+			code: "INVALID_ARGS",
+			message: "Message must contain text, attachments, or both.",
+		});
+	}
+
+	// Resolve conversation — either by id or by (entityType, entityId).
+	let conversationId: Id<"conversations">;
+	let entityType: SendImplArgs["entityType"];
+	let entityId: string;
+	if (args.conversationId) {
+		const convo = await getConversationOrThrow(ctx, args.conversationId, args.orgId);
+		conversationId = convo._id;
+		entityType = convo.entityType;
+		entityId = convo.entityId;
+	} else if (args.entityType && args.entityId) {
+		const normalised = normaliseEntityType(args.entityType);
+		conversationId = await getOrCreateConversation(ctx, {
+			orgId: args.orgId,
+			entityType: normalised,
+			entityId: args.entityId,
+			threadId: args.threadId,
+			creatorId: args.userId,
+		});
+		entityType = normalised;
+		entityId = args.entityId;
+	} else {
+		throw new ConvexError({
+			code: "INVALID_ARGS",
+			message: "send requires either conversationId or (entityType + entityId)",
+		});
+	}
+
+	// Idempotency check.
+	if (args.idempotencyKey) {
+		const existing = await ctx.db
+			.query("messages")
+			.withIndex("by_org_and_idempotency", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("conversationId", conversationId)
+					.eq("idempotencyKey", args.idempotencyKey),
+			)
+			.first();
+		if (existing) return existing._id;
+	}
+
+	const now = Date.now();
+	const personCode =
+		entityType === "lead" || entityType === "contact" || entityType === "person"
+			? entityId
+			: undefined;
+
+	// 1. Insert the message row.
+	const messageId = await ctx.db.insert("messages", {
+		orgId: args.orgId,
+		conversationId,
+		entityType: entityType ?? "person",
+		entityId,
+		personCode,
+		threadId: args.threadId,
+		content: trimmed,
+		authorId: args.userId,
+		authorType: args.authorType ?? "user",
+		onBehalfOf: args.onBehalfOf,
+		replyToId: args.replyToId,
+		attachments: args.attachments,
+		mentions: args.mentions,
+		channel: args.channel,
+		authorPersonCode: args.authorPersonCode,
+		idempotencyKey: args.idempotencyKey,
+		createdAt: now,
+		updatedAt: now,
+	});
+
+	// 2. Update the conversation summary (denormalised for inbox query).
+	await ctx.db.patch(conversationId, {
+		lastMessageAt: now,
+		lastMessagePreview: trimmed.slice(0, 200),
+		lastMessageAuthorId: args.userId,
+		updatedAt: now,
+	});
+
+	// 3. Ensure the sender is a participant.
+	await ensureMember(ctx, {
+		orgId: args.orgId,
+		conversationId,
+		userId: args.userId,
+		role: "participant",
+		joinReason: "auto",
+	});
+
+	// 4. Auto-add the entity assignee.
+	const assigneeId = await resolveEntityAssignee(ctx, {
+		orgId: args.orgId,
+		entityType: entityType ?? "person",
+		entityId,
+	});
+	if (assigneeId && assigneeId !== args.userId) {
+		await ensureMember(ctx, {
+			orgId: args.orgId,
+			conversationId,
+			userId: assigneeId,
+			role: "participant",
+			joinReason: "auto",
+		});
+	}
+
+	// 5. Auto-add mentioned users.
+	const mentionedSet = new Set<string>();
+	for (const mentionedId of args.mentions ?? []) {
+		if (mentionedId === args.userId) continue;
+		await ensureMember(ctx, {
+			orgId: args.orgId,
+			conversationId,
+			userId: mentionedId,
+			role: "participant",
+			joinReason: "mention",
+		});
+		mentionedSet.add(String(mentionedId));
+	}
+
+	// Pre-resolve sender display name.
+	let senderDisplay = args.senderDisplayName;
+	if (!senderDisplay) {
+		const senderUser = await ctx.db.get(args.userId);
+		senderDisplay =
+			senderUser?.name?.split(" ")[0] ?? senderUser?.email?.split("@")[0] ?? "Someone";
+	}
+
+	// 6. Fan-out notifications.
+	const members = await listActiveMembers(ctx, conversationId);
+	for (const m of members) {
+		if (m.userId === args.userId) continue;
+
+		const isMentioned = mentionedSet.has(String(m.userId));
+		const level = m.notificationLevel;
+
+		if (!isMentioned) {
+			if (level === "none") continue;
+			if (level === "mentions") continue;
+		}
+
+		const recipientUser = await ctx.db.get(m.userId);
+		const prefKey = isMentioned ? "message_mention" : "message_received";
+		if (!isNotificationPreferenceEnabled(recipientUser?.notificationPreferences, prefKey)) {
+			continue;
+		}
+
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: m.userId,
+			type: isMentioned ? "message.mention" : "message.received",
+			title: isMentioned ? `${senderDisplay} mentioned you` : "New message",
+			body: trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed,
+			entityType,
+			entityId,
+			metadata: {
+				conversationId: String(conversationId),
+				messageId: String(messageId),
+				personCode: personCode ?? "",
+			},
+		});
+	}
+
+	// 7. Activity log.
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		actorType: args.authorType === "ai" ? "ai" : "user",
+		action: "message_sent",
+		entityType: entityType ?? "person",
+		entityId,
+		personCode,
+		description: `Message sent: ${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}`,
+		metadata: { messageId: String(messageId), conversationId: String(conversationId) },
+	});
+
+	return messageId;
+}
+
 /**
  * Send a message into a conversation thread.
  *
  * Either pass `conversationId` (existing thread) OR `entityType + entityId`
  * (auto-create / find). Mutually exclusive — provide one set.
- *
- * Fan-out:
- *   1. Sender is auto-added as participant if not already.
- *   2. Entity assignee is auto-added (auto-discoverable for lead/contact/
- *      deal/company; skipped for project/task in Phase 2).
- *   3. Mentioned users are auto-added with `joinReason: "mention"`.
- *   4. Notifications fan out to every active member except the sender,
- *      filtered by each member's `notificationLevel`. Mentions always notify.
  */
 export const send = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
-		// Either:
 		conversationId: v.optional(v.id("conversations")),
-		// Or (auto-create):
 		entityType: v.optional(entityTypeForChatValidator),
 		entityId: v.optional(v.string()),
 		threadId: v.optional(v.string()),
-		// Body:
 		content: v.string(),
 		authorType: v.optional(
 			v.union(v.literal("user"), v.literal("ai"), v.literal("system"), v.literal("contact")),
@@ -75,7 +292,6 @@ export const send = orgMutation({
 		replyToId: v.optional(v.id("messages")),
 		attachments: v.optional(v.array(v.id("files"))),
 		mentions: v.optional(v.array(v.id("users"))),
-		// Phase 3 transport metadata — see schema comment.
 		channel: v.optional(
 			v.union(
 				v.literal("internal"),
@@ -85,221 +301,115 @@ export const send = orgMutation({
 			),
 		),
 		authorPersonCode: v.optional(v.string()),
-		// Idempotency:
 		idempotencyKey: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
-		const { member, userId, org } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "messages.send");
-		await enforceRateLimit(ctx, {
-			orgId: args.orgId,
-			scope: "messages.send",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
-
-		const trimmed = args.content.trim();
-		const hasAttachments = (args.attachments?.length ?? 0) > 0;
-		// Body must contain SOMETHING — text OR attachments. File-only sends
-		// (e.g. "send these 3 photos with no caption") are valid; pure empty
-		// sends are not.
-		if (trimmed.length === 0 && !hasAttachments) {
-			throw new ConvexError({
-				code: "INVALID_ARGS",
-				message: "Message must contain text, attachments, or both.",
-			});
-		}
-
-		// Resolve conversation — either by id or by (entityType, entityId).
-		let conversationId: Id<"conversations">;
-		let entityType: typeof args.entityType;
-		let entityId: string;
-		if (args.conversationId) {
-			const convo = await getConversationOrThrow(ctx, args.conversationId, args.orgId);
-			conversationId = convo._id;
-			entityType = convo.entityType;
-			entityId = convo.entityId;
-		} else if (args.entityType && args.entityId) {
-			// Normalise lead/contact → person at the boundary so the
-			// denormalised `messages.entityType` field stays canonical.
-			const normalised = normaliseEntityType(args.entityType);
-			conversationId = await getOrCreateConversation(ctx, {
-				orgId: args.orgId,
-				entityType: normalised,
-				entityId: args.entityId,
-				threadId: args.threadId,
-				creatorId: userId,
-			});
-			entityType = normalised;
-			entityId = args.entityId;
-		} else {
-			throw new ConvexError({
-				code: "INVALID_ARGS",
-				message: "send requires either conversationId or (entityType + entityId)",
-			});
-		}
-
-		// Idempotency check — if the same key already produced a message in
-		// this conversation, return its id without inserting again.
-		if (args.idempotencyKey) {
-			const existing = await ctx.db
-				.query("messages")
-				.withIndex("by_org_and_idempotency", (q) =>
-					q
-						.eq("orgId", args.orgId)
-						.eq("conversationId", conversationId)
-						.eq("idempotencyKey", args.idempotencyKey),
-				)
-				.first();
-			if (existing) return existing._id;
-		}
-
-		const now = Date.now();
-		const personCode =
-			entityType === "lead" || entityType === "contact" || entityType === "person"
-				? entityId
-				: undefined;
-
-		// 1. Insert the message row.
-		const messageId = await ctx.db.insert("messages", {
-			orgId: args.orgId,
-			conversationId,
-			entityType: entityType ?? "person",
-			entityId,
-			personCode,
-			threadId: args.threadId,
-			content: trimmed,
-			authorId: userId,
-			authorType: args.authorType ?? "user",
-			onBehalfOf: args.onBehalfOf,
-			replyToId: args.replyToId,
-			attachments: args.attachments,
-			mentions: args.mentions,
-			channel: args.channel,
-			authorPersonCode: args.authorPersonCode,
-			idempotencyKey: args.idempotencyKey,
-			createdAt: now,
-			updatedAt: now,
-		});
-
-		// 2. Update the conversation summary (denormalised for inbox query).
-		await ctx.db.patch(conversationId, {
-			lastMessageAt: now,
-			lastMessagePreview: trimmed.slice(0, 200),
-			lastMessageAuthorId: userId,
-			updatedAt: now,
-		});
-
-		// 3. Ensure the sender is a participant (auto-join). Already-a-member
-		//    is a no-op.
-		await ensureMember(ctx, {
-			orgId: args.orgId,
-			conversationId,
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return sendImpl(ctx, {
+			...args,
 			userId,
-			role: "participant",
-			joinReason: "auto",
+			memberPermissions: member.permissions,
 		});
-
-		// 4. Auto-add the entity assignee (if discoverable) on first message.
-		const assigneeId = await resolveEntityAssignee(ctx, {
-			orgId: args.orgId,
-			entityType: entityType ?? "person",
-			entityId,
-		});
-		if (assigneeId && assigneeId !== userId) {
-			await ensureMember(ctx, {
-				orgId: args.orgId,
-				conversationId,
-				userId: assigneeId,
-				role: "participant",
-				joinReason: "auto",
-			});
-		}
-
-		// 5. Auto-add mentioned users.
-		const mentionedSet = new Set<string>();
-		for (const mentionedId of args.mentions ?? []) {
-			if (mentionedId === userId) continue;
-			await ensureMember(ctx, {
-				orgId: args.orgId,
-				conversationId,
-				userId: mentionedId,
-				role: "participant",
-				joinReason: "mention",
-			});
-			mentionedSet.add(String(mentionedId));
-		}
-
-		// Pre-resolve the sender's display name (cheaper than lookup-per-recipient
-		// inside the fan-out loop).
-		const senderUser = ctx.user; // injected by orgMutation wrapper
-		const senderDisplay =
-			senderUser?.name?.split(" ")[0] ?? senderUser?.email?.split("@")[0] ?? "Someone";
-
-		// 6. Fan-out notifications to every active member.
-		const members = await listActiveMembers(ctx, conversationId);
-		for (const m of members) {
-			if (m.userId === userId) continue; // never notify sender
-
-			const isMentioned = mentionedSet.has(String(m.userId));
-			const level = m.notificationLevel;
-
-			// Mentions always notify (highest priority), regardless of level.
-			if (!isMentioned) {
-				if (level === "none") continue;
-				if (level === "mentions") continue; // not mentioned, mute everything else
-			}
-
-			// Honour user's per-key preference too.
-			const recipientUser = await ctx.db.get(m.userId);
-			const prefKey = isMentioned ? "message_mention" : "message_received";
-			if (!isNotificationPreferenceEnabled(recipientUser?.notificationPreferences, prefKey)) {
-				continue;
-			}
-
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: m.userId,
-				type: isMentioned ? "message.mention" : "message.received",
-				title: isMentioned ? `${senderDisplay} mentioned you` : "New message",
-				body: trimmed.length > 120 ? `${trimmed.slice(0, 117)}…` : trimmed,
-				entityType,
-				entityId,
-				// `actionUrl` intentionally not stored — the client resolves
-				// the path from `entityType + entityId + useEntityLabels()`
-				// at render time, so renamed entity slugs (e.g. "Company"
-				// → "Agency") route correctly without a backfill. See
-				// `core/inbox/notifications/utils/resolveNotificationHref.ts`.
-				metadata: {
-					conversationId: String(conversationId),
-					messageId: String(messageId),
-					personCode: personCode ?? "",
-				},
-			});
-		}
-
-		// 7. Activity log (single row per send — fan-out lives in notifications).
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			actorType: args.authorType === "ai" ? "ai" : "user",
-			action: "message_sent",
-			entityType: entityType ?? "person",
-			entityId,
-			personCode,
-			description: `Message sent: ${trimmed.slice(0, 80)}${trimmed.length > 80 ? "…" : ""}`,
-			metadata: { messageId: String(messageId), conversationId: String(conversationId) },
-		});
-
-		// Avoid the "unused" lint on `org` — surface it for the future where we
-		// might use org settings here (e.g. message-edit-window override).
-		void org;
-
-		return messageId;
 	},
 });
 
-// ─── update / soft-delete / reactions ────────────────────────────────────────
+/**
+ * AI-callable internal twin. See AGENTS.md "AI tools call *ForAI" rule.
+ *
+ * Same body as `send` — auth comes from a trusted `userId` arg instead of
+ * `ctx.auth`. Caller is the AI orchestrator inside a scheduled action.
+ *
+ * Includes a forced `authorType: "ai"` default so the resulting activity
+ * log row + notification preview correctly attribute to the AI.
+ */
+export const sendForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		conversationId: v.optional(v.id("conversations")),
+		entityType: v.optional(entityTypeForChatValidator),
+		entityId: v.optional(v.string()),
+		threadId: v.optional(v.string()),
+		content: v.string(),
+		authorType: v.optional(
+			v.union(v.literal("user"), v.literal("ai"), v.literal("system"), v.literal("contact")),
+		),
+		onBehalfOf: v.optional(v.id("users")),
+		replyToId: v.optional(v.id("messages")),
+		attachments: v.optional(v.array(v.id("files"))),
+		mentions: v.optional(v.array(v.id("users"))),
+		channel: v.optional(
+			v.union(
+				v.literal("internal"),
+				v.literal("whatsapp"),
+				v.literal("email"),
+				v.literal("sms"),
+			),
+		),
+		authorPersonCode: v.optional(v.string()),
+		idempotencyKey: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return sendImpl(ctx, {
+			...rest,
+			userId: args.userId,
+			memberPermissions: member.permissions,
+			// Default authorType to "ai" when the AI tool layer drives the send.
+			// The AI tool can still pass "user" to send-on-behalf-of (rare).
+			authorType: args.authorType ?? "ai",
+		});
+	},
+});
+
+// ─── update ──────────────────────────────────────────────────────────────────
+
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		memberPermissions: string[];
+		messageId: Id<"messages">;
+		content: string;
+	},
+): Promise<void> {
+	const message = await ctx.db.get(args.messageId);
+	if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const isOwn = message.authorId === args.userId;
+	const canEditOwn = hasPermission(args.memberPermissions, "messages.editOwn");
+	const canEditAny = hasPermission(args.memberPermissions, "messages.deleteAny");
+
+	const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
+	if (!(canEditAny || (isOwn && canEditOwn && within))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	const trimmed = args.content.trim();
+	if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
+
+	const now = Date.now();
+	await ctx.db.patch(args.messageId, {
+		content: trimmed,
+		editedAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "message_edited",
+		entityType: message.entityType,
+		entityId: message.entityId,
+		personCode: message.personCode,
+		description: "Message edited",
+		metadata: { messageId: String(args.messageId) },
+	});
+}
 
 export const update = orgMutation({
 	args: {
@@ -309,137 +419,163 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return updateImpl(ctx, { ...args, userId, memberPermissions: member.permissions });
+	},
+});
 
-		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		// Edit window: own message + within 15 min, OR moderator.
-		const isOwn = message.authorId === userId;
-		const canEditOwn = hasPermission(member.permissions, "messages.editOwn");
-		const canEditAny = hasPermission(member.permissions, "messages.deleteAny"); // moderator
-
-		const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
-		if (!(canEditAny || (isOwn && canEditOwn && within))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		const trimmed = args.content.trim();
-		if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
-
-		const now = Date.now();
-		await ctx.db.patch(args.messageId, {
-			content: trimmed,
-			editedAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "message_edited",
-			entityType: message.entityType,
-			entityId: message.entityId,
-			personCode: message.personCode,
-			description: "Message edited",
-			metadata: { messageId: String(args.messageId) },
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		messageId: v.id("messages"),
+		content: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return updateImpl(ctx, {
+			...rest,
+			userId: args.userId,
+			memberPermissions: member.permissions,
 		});
 	},
 });
+
+// ─── remove ──────────────────────────────────────────────────────────────────
+
+async function removeImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		memberPermissions: string[];
+		messageId: Id<"messages">;
+		mode?: "self" | "everyone";
+	},
+): Promise<void> {
+	const message = await ctx.db.get(args.messageId);
+	if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const mode = args.mode ?? "self";
+
+	if (mode === "self") {
+		const already = (message.deletedFor ?? []).some((u) => String(u) === String(args.userId));
+		if (already) return;
+		await ctx.db.patch(args.messageId, {
+			deletedFor: [...(message.deletedFor ?? []), args.userId],
+			updatedAt: Date.now(),
+		});
+		return;
+	}
+
+	const isOwn = message.authorId === args.userId;
+	const canDeleteOwn = hasPermission(args.memberPermissions, "messages.deleteOwn");
+	const canDeleteAny = hasPermission(args.memberPermissions, "messages.deleteAny");
+	const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
+	if (!(canDeleteAny || (isOwn && canDeleteOwn && within))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	const conversationId = message.conversationId;
+	const entityType = message.entityType;
+	const entityId = message.entityId;
+	const personCode = message.personCode;
+
+	await ctx.db.delete(args.messageId);
+
+	const nextNewest = await ctx.db
+		.query("messages")
+		.withIndex("by_conversation_and_created", (q) => q.eq("conversationId", conversationId))
+		.order("desc")
+		.first();
+
+	await ctx.db.patch(conversationId, {
+		lastMessageAt: nextNewest?.createdAt,
+		lastMessagePreview: nextNewest?.content.slice(0, 200),
+		lastMessageAuthorId: nextNewest?.authorId,
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "message_deleted",
+		entityType,
+		entityId,
+		personCode,
+		description: "Message deleted (for everyone)",
+		metadata: { messageId: String(args.messageId) },
+	});
+}
 
 export const remove = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
 		messageId: v.id("messages"),
-		/**
-		 * `"self"`     — hide from the caller's own view only.
-		 *                Adds caller to `deletedFor`. Author + everyone else
-		 *                still see the message.
-		 * `"everyone"` — hard-delete for all participants. Only the author
-		 *                (within the edit window) OR a member with
-		 *                `messages.deleteAny` can do this.
-		 *
-		 * Defaults to `"self"` when omitted (the conservative choice — keep
-		 * legacy callers safe).
-		 */
 		mode: v.optional(v.union(v.literal("self"), v.literal("everyone"))),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return removeImpl(ctx, { ...args, userId, memberPermissions: member.permissions });
+	},
+});
 
-		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const mode = args.mode ?? "self";
-
-		if (mode === "self") {
-			// Per-user hide. No moderation gate — every conversation member can
-			// hide a message from their own view. Idempotent.
-			const already = (message.deletedFor ?? []).some((u) => String(u) === String(userId));
-			if (already) return;
-			await ctx.db.patch(args.messageId, {
-				deletedFor: [...(message.deletedFor ?? []), userId],
-				updatedAt: Date.now(),
-			});
-			return;
-		}
-
-		// mode === "everyone" → hard-delete.
-		const isOwn = message.authorId === userId;
-		const canDeleteOwn = hasPermission(member.permissions, "messages.deleteOwn");
-		const canDeleteAny = hasPermission(member.permissions, "messages.deleteAny");
-		const within = Date.now() - message.createdAt < EDIT_WINDOW_MS;
-		// Author within the edit window (with deleteOwn) OR any moderator.
-		if (!(canDeleteAny || (isOwn && canDeleteOwn && within))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		// Capture the entity coords for activity-log + lastMessage recompute
-		// BEFORE deleting the row.
-		const conversationId = message.conversationId;
-		const entityType = message.entityType;
-		const entityId = message.entityId;
-		const personCode = message.personCode;
-
-		// Hard-delete — no tombstone. The row is gone for everyone.
-		await ctx.db.delete(args.messageId);
-
-		// Recompute the conversation's lastMessage* from the next surviving
-		// message (descending by createdAt). When the conversation now has
-		// no messages, clear the fields entirely.
-		const nextNewest = await ctx.db
-			.query("messages")
-			.withIndex("by_conversation_and_created", (q) => q.eq("conversationId", conversationId))
-			.order("desc")
-			.first();
-
-		await ctx.db.patch(conversationId, {
-			lastMessageAt: nextNewest?.createdAt,
-			lastMessagePreview: nextNewest?.content.slice(0, 200),
-			lastMessageAuthorId: nextNewest?.authorId,
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "message_deleted",
-			entityType,
-			entityId,
-			personCode,
-			description: "Message deleted (for everyone)",
-			metadata: { messageId: String(args.messageId) },
+export const removeForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		messageId: v.id("messages"),
+		mode: v.optional(v.union(v.literal("self"), v.literal("everyone"))),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return removeImpl(ctx, {
+			...rest,
+			userId: args.userId,
+			memberPermissions: member.permissions,
 		});
 	},
 });
 
-/**
- * Toggle a reaction by the current user. If the (userId, emoji) pair already
- * exists on the message, it's removed; otherwise added.
- */
+// ─── toggleReaction ──────────────────────────────────────────────────────────
+
+async function toggleReactionImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		memberPermissions: string[];
+		messageId: Id<"messages">;
+		emoji: string;
+	},
+): Promise<void> {
+	requireRole(args.memberPermissions, "messages.send");
+
+	const message = await ctx.db.get(args.messageId);
+	if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const reactions = message.reactions ?? [];
+	const existing = reactions.find(
+		(r) => String(r.userId) === String(args.userId) && r.emoji === args.emoji,
+	);
+
+	const next = existing
+		? reactions.filter(
+				(r) => !(String(r.userId) === String(args.userId) && r.emoji === args.emoji),
+			)
+		: [...reactions, { userId: args.userId, emoji: args.emoji, createdAt: Date.now() }];
+
+	await ctx.db.patch(args.messageId, {
+		reactions: next,
+		updatedAt: Date.now(),
+	});
+}
+
 export const toggleReaction = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -448,27 +584,24 @@ export const toggleReaction = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "messages.send");
+		return toggleReactionImpl(ctx, { ...args, userId, memberPermissions: member.permissions });
+	},
+});
 
-		const message = await ctx.db.get(args.messageId);
-		if (!message || message.orgId !== args.orgId || message.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const reactions = message.reactions ?? [];
-		const existing = reactions.find(
-			(r) => String(r.userId) === String(userId) && r.emoji === args.emoji,
-		);
-
-		const next = existing
-			? reactions.filter(
-					(r) => !(String(r.userId) === String(userId) && r.emoji === args.emoji),
-				)
-			: [...reactions, { userId, emoji: args.emoji, createdAt: Date.now() }];
-
-		await ctx.db.patch(args.messageId, {
-			reactions: next,
-			updatedAt: Date.now(),
+export const toggleReactionForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		messageId: v.id("messages"),
+		emoji: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return toggleReactionImpl(ctx, {
+			...rest,
+			userId: args.userId,
+			memberPermissions: member.permissions,
 		});
 	},
 });
@@ -479,12 +612,7 @@ async function resolveEntityAssignee(
 	ctx: MutationCtx,
 	args: { orgId: Id<"orgs">; entityType: string; entityId: string },
 ): Promise<Id<"users"> | undefined> {
-	if (args.entityType === "user") {
-		// DM pair key: "userIdA:userIdB". Both users are participants; the
-		// "assignee" concept doesn't apply. Return undefined — both are
-		// auto-added by ensureDirectMessage already.
-		return undefined;
-	}
+	if (args.entityType === "user") return undefined;
 	if (args.entityType === "lead" || args.entityType === "person") {
 		const lead = await ctx.db
 			.query("leads")
@@ -521,17 +649,6 @@ async function resolveEntityAssignee(
 			.first();
 		if (company?.assignedTo) return company.assignedTo;
 	}
-	// project / task assignee discovery lives in their own modules (Phase 4).
-	return undefined;
-}
-
-function _actionUrlFor(_entityType: string | undefined, _entityId: string): string | undefined {
-	// DEPRECATED 2026-05-22 — server no longer stores `actionUrl` on
-	// notifications. The client resolves the path from `entityType +
-	// entityId + useEntityLabels()` at render time so renamed entity
-	// slugs route correctly without a server-side backfill.
-	// Kept as a no-op so any out-of-tree callers don't break compilation
-	// before we delete it in a follow-up.
 	return undefined;
 }
 

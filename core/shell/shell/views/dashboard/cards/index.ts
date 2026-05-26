@@ -7,6 +7,8 @@
  */
 
 export { AIBriefingCard } from "./AIBriefingCard";
+export { AIPulseRibbon } from "./AIPulseRibbon";
+export { AIQuickComposerCard } from "./AIQuickComposerCard";
 export { DailyBriefingCard } from "./DailyBriefingCard";
 export { MetricStrip } from "./MetricStrip";
 export { MockDataBanner } from "./MockDataBanner";

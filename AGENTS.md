@@ -14,6 +14,26 @@ Convex agent skills for common tasks can be installed by running
 
 ---
 
+# 🎯 ACTIVE SPRINT — read first
+
+> **`SPRINT-PLAN.md`** is the canonical execution surface for the current
+> audit-driven sprint. It contains 10 self-contained stages, each with a
+> drop-in prompt sized for a single AI session.
+>
+> Before starting any feature work, check `SPRINT-PLAN.md` for the next
+> unfinished stage. Source audits the plan derives from:
+> `AI-AUDIT-COMPLETE.md` (75 tools mapped, 51 gaps), `DASHBOARD-AUDIT.md`
+> (3 stacked bugs + missing AI widgets), `AI-AGENT-CAPABILITY-AUDIT.md`
+> (senior-CRM-specialist scorecard 5.8/10 → roadmap to 9/10).
+>
+> Each stage's prompt enforces full-repo verification (typecheck, biome,
+> test, vitest, build all green for the WHOLE repository, not just changed
+> files), the doc-cleanup rule (collapse shipped, keep pending in full),
+> and the no-backward-compat directive (rename → delete old + migrate same
+> edit).
+
+---
+
 # 🏗️ GLOBAL CODING RULES (apply to every file, every session)
 
 ## RULE: Write decisions to MODULE.md
@@ -578,6 +598,13 @@ await enforceRateLimit(ctx, {
 - Always use the `ask_user` tool with `choices` array for next-step options
 - This gives the user proper control over what happens next
 
+## ⛔ RULE 4: TOOLING — pnpm only, run checks after every change
+
+- Use `pnpm` exclusively — never `npm` or `yarn`. The lockfile is `pnpm-lock.yaml`.
+- After any non-trivial change run `pnpm typecheck` and `pnpm exec biome check .`. They must come back 0 errors / 0 warnings before the change is "done".
+- Before merging or ending a session that touched runtime code: also run `pnpm test`, `pnpm exec vitest run`, `pnpm build`. All green for the **whole repository**, not just the files you touched.
+- Never run interactive git commands (`-i` flags). Convex codegen drift: when in doubt, run `npx convex codegen`.
+
 ---
 
 # ⛔ ABSOLUTE RULE — NO TRAINING DATA
@@ -780,29 +807,6 @@ shortcut), `data-tour="lead-card-grip"` (EntityCard drag handle),
 
 ---
 
-
-
-> **Before doing ANY work in this project, read all files in `.github/agents/base/` in this order:**
-
-1. `.github/agents/base/AGENT.md` — Agent instructions & session protocol
-2. `.github/agents/base/context.md` — Current build state (what's done, what's next)
-3. `.github/agents/base/todos.md` — Active todo list
-4. `.github/agents/base/checklist.md` — Phase checklists
-5. `.github/agents/base/rules.md` — Non-negotiable coding rules
-6. `.github/agents/base/schema.md` — All Convex tables & indexes
-7. `.github/agents/base/folder-structure.md` — Target file/folder tree
-8. `.github/agents/base/tech-stack.md` — Libraries, versions, roles
-
-## Session Rules (enforced)
-
-- Read `context.md` + `todos.md` before writing any code
-- Follow the build order in `rules.md` for every feature slice
-- **Before ending the session**: update `context.md`, `todos.md`, `checklist.md`
-- Never create duplicate context files — always overwrite the existing ones
-- Use `pnpm` — never `npm` or `yarn`
-- Run `pnpm typecheck` and `pnpm lint-check` after every significant change
-- **Before writing ANY code**: scan the web with Firecrawl or search GitHub for a production example first
-
 <!-- code-review-graph MCP tools -->
 ## MCP Tools: code-review-graph
 
@@ -841,52 +845,6 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 2. Use `detect_changes` for code review.
 3. Use `get_affected_flows` to understand impact.
 4. Use `query_graph` pattern="tests_for" to check coverage.
-
----
-
-# 📊 Current Project State (Updated: April 30, 2026)
-
-## ✅ Production Status: READY FOR DEPLOYMENT
-
-**Build Status**: ✅ Passing  
-**TypeScript**: ✅ No Errors  
-**Production Score**: 95/100  
-**Deployment**: Vercel-Ready
-
-### Completed Features (100%)
-- ✅ Core Shell UI (17/17 components)
-- ✅ Preferences System (SSR-safe, cookie-based)
-- ✅ Theme System (5 presets, smooth transitions)
-- ✅ Error Handling (ErrorBoundary + Sentry)
-- ✅ Loading States (Suspense + Skeletons)
-- ✅ RBAC System (PermissionGate + hooks)
-- ✅ Documentation (JSDoc on all components)
-
-### Key Files Created/Updated
-- ✅ `.github/agents/base/context.md` - Full project context
-- ✅ `.github/agents/base/todos.md` - Active todos and future enhancements
-- ✅ `core/shell/STATE.md` - Shell module state documentation
-- ✅ `PRODUCTION_GRADE_ANALYSIS.md` - Comprehensive production analysis
-- ✅ `UI_PRODUCTION_COMPLETE.md` - UI improvements summary
-- ✅ `features/orgs/hooks/useOrgPermission.ts` - Permission hook
-
-### Recent Fixes (April 30, 2026)
-1. ✅ Fixed all TypeScript errors (created missing useOrgPermission hook)
-2. ✅ Fixed all lint issues in modified files
-3. ✅ Verified build passes successfully
-4. ✅ Created comprehensive documentation
-5. ✅ Updated all agent instruction files
-
-### Next Phase: Testing & Analytics
-- [ ] Set up Vitest for unit testing
-- [ ] Set up Playwright for E2E testing
-- [ ] Add analytics tracking
-- [ ] Perform accessibility audit
-
-**For detailed information, read:**
-- `.github/agents/base/context.md` - Current build state
-- `.github/agents/base/todos.md` - Active tasks
-- `PRODUCTION_GRADE_ANALYSIS.md` - Full production analysis
 
 ---
 

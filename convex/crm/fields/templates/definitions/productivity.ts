@@ -195,12 +195,14 @@ export const productivityTemplate: IndustryTemplate = {
 	// ─── Dashboard widgets (ranked, productivity-shape) ───────────────────
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"tasks.dueToday",
 		"tasks.overdue",
 		"tasks.thisWeek",
 		"tasks.recentlyCompleted",
 		"today.focus",
-		"calendar.miniWidget",
+		"calendar.mini",
 		"calendar.weekAhead",
 		"activity.recent",
 		// Streak deferred to Phase 4 — registry slot reserved, renders "Coming soon" card.

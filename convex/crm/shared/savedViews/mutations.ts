@@ -101,6 +101,48 @@ export const createForAI = internalMutation({
 	},
 });
 
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		viewId: Id<"savedViews">;
+		name?: string;
+		filters?: string;
+		sortBy?: string;
+		sortOrder?: string;
+		columns?: string[];
+	},
+) {
+	const view = await ctx.db.get(args.viewId);
+	if (!view || view.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	// Only creator can edit personal views; admin+ can edit org views
+	if (view.scope === "user" && view.createdBy !== args.userId) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+	if (view.scope === "org") {
+		requireRole(args.member.permissions, "savedViews.createOrg");
+	}
+
+	if (args.filters) {
+		try {
+			JSON.parse(args.filters);
+		} catch {
+			throw new ConvexError({
+				code: "INVALID_FILTERS",
+				message: "filters must be valid JSON",
+			});
+		}
+	}
+
+	const { orgId: _o, userId: _u, member: _m, viewId: _v, ...updates } = args;
+	const patch = Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined));
+	if (Object.keys(patch).length === 0) return;
+	await ctx.db.patch(args.viewId, { ...patch, updatedAt: Date.now() });
+}
+
 export const update = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -113,34 +155,25 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return updateImpl(ctx, { ...args, userId, member });
+	},
+});
 
-		const view = await ctx.db.get(args.viewId);
-		if (!view || view.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// Only creator can edit personal views; admin+ can edit org views
-		if (view.scope === "user" && view.createdBy !== userId) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-		if (view.scope === "org") {
-			requireRole(member.permissions, "savedViews.createOrg");
-		}
-
-		if (args.filters) {
-			try {
-				JSON.parse(args.filters);
-			} catch {
-				throw new ConvexError({
-					code: "INVALID_FILTERS",
-					message: "filters must be valid JSON",
-				});
-			}
-		}
-
-		const { orgId: _o, viewId: _v, ...updates } = args;
-		const patch = Object.fromEntries(
-			Object.entries(updates).filter(([, v]) => v !== undefined),
-		);
-		await ctx.db.patch(args.viewId, { ...patch, updatedAt: Date.now() });
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		viewId: v.id("savedViews"),
+		name: v.optional(v.string()),
+		filters: v.optional(v.string()),
+		sortBy: v.optional(v.string()),
+		sortOrder: v.optional(v.string()),
+		columns: v.optional(v.array(v.string())),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return updateImpl(ctx, { ...args, member });
 	},
 });
 

@@ -14,6 +14,13 @@
  * so the AI agent can introspect + write the dashboard layout. This
  * file owns the **render** half (icons, formatters, link factories).
  *
+ * Sprint Stage 1 (2026-05-26 — DASHBOARD-AUDIT.md §3) — the registry
+ * is now `Partial<Record<WidgetKey, WidgetSpec>>`. Section-size widgets
+ * (e.g. `messages.recent`, `today.focus`) have no tile spec because
+ * they render as cards gated on `isEnabled(key)` in `DashboardHomeView`,
+ * not as tiles in `MetricStrip`. `resolveWidgets` filters to entries
+ * that exist here AND have `size === "kpi"` in the data registry.
+ *
  * To add a new widget, update both files in lock-step.
  */
 
@@ -24,8 +31,10 @@ import {
 	ClockIcon,
 	DollarSignIcon,
 	Sparkles,
+	TrendingDownIcon,
 	TrendingUpIcon,
 	UsersIcon,
+	WalletIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { WIDGETS, type WidgetKey } from "@/convex/_shared/widgetRegistry";
@@ -53,8 +62,12 @@ export interface WidgetSpec {
  * Render-side specs. The data (label, description, category, size,
  * placeholder flag) is sourced from `convex/_shared/widgetRegistry.ts`
  * via the `WIDGETS` table; this object adds icons + getters + hrefs.
+ *
+ * Only KPI-size keys appear here. Section-size keys (half / full)
+ * are gated as cards in `DashboardHomeView` directly via
+ * `isEnabled(key)` — they don't need a tile spec.
  */
-export const WIDGET_REGISTRY: Record<WidgetKey, WidgetSpec> = {
+export const WIDGET_REGISTRY: Partial<Record<WidgetKey, WidgetSpec>> = {
 	"leads.open": {
 		key: "leads.open",
 		label: WIDGETS["leads.open"].label,
@@ -144,6 +157,42 @@ export const WIDGET_REGISTRY: Record<WidgetKey, WidgetSpec> = {
 		accent: "text-orange-600",
 		placeholder: true,
 	},
+	// Stage 1 (2026-05-26) — KPI placeholders for productivity-template
+	// + freelancer / agency / b2b_saas variants. Render as "Soon" tiles
+	// (MetricStrip honours `placeholder` and substitutes the value).
+	"tasks.thisWeek": {
+		key: "tasks.thisWeek",
+		label: WIDGETS["tasks.thisWeek"].label,
+		get: () => "—",
+		icon: <CalendarClockIcon className="size-3.5" />,
+		accent: "text-blue-600",
+		placeholder: true,
+	},
+	"tasks.recentlyCompleted": {
+		key: "tasks.recentlyCompleted",
+		label: WIDGETS["tasks.recentlyCompleted"].label,
+		get: () => "—",
+		icon: <CheckCircle2Icon className="size-3.5" />,
+		accent: "text-emerald-600",
+		placeholder: true,
+	},
+	"deals.lost": {
+		key: "deals.lost",
+		label: WIDGETS["deals.lost"].label,
+		get: () => "—",
+		href: (slug) => `/${slug}/deals?stage=lost`,
+		icon: <TrendingDownIcon className="size-3.5" />,
+		accent: "text-rose-600",
+		placeholder: true,
+	},
+	"deals.invoiced.unpaid": {
+		key: "deals.invoiced.unpaid",
+		label: WIDGETS["deals.invoiced.unpaid"].label,
+		get: () => "—",
+		icon: <WalletIcon className="size-3.5" />,
+		accent: "text-amber-600",
+		placeholder: true,
+	},
 	"ai.morningBriefing": {
 		key: "ai.morningBriefing",
 		label: "AI briefing",
@@ -154,20 +203,26 @@ export const WIDGET_REGISTRY: Record<WidgetKey, WidgetSpec> = {
 };
 
 /**
- * Resolve the metric keys a template wants into widget specs, dropping
- * anything not in the registry. Preserves the template's order.
+ * Resolve the metric keys a template wants into widget specs. Drops
+ * keys without a tile spec — section-size widgets (`reminders.list`,
+ * `messages.recent`, `today.focus`, …) are rendered as cards gated by
+ * `isEnabled(key)` in `DashboardHomeView` and intentionally don't
+ * appear in the KPI strip. Preserves the template's order.
  */
 export function resolveWidgets(metricKeys: string[] | undefined): WidgetSpec[] {
 	if (!metricKeys || metricKeys.length === 0) {
 		// Sensible default for orgs without a dashboardMetrics array.
 		return [
-			WIDGET_REGISTRY["leads.open"],
-			WIDGET_REGISTRY["contacts.active"],
-			WIDGET_REGISTRY["deals.open"],
-			WIDGET_REGISTRY["deals.pipelineValue"],
+			WIDGET_REGISTRY["leads.open"]!,
+			WIDGET_REGISTRY["contacts.active"]!,
+			WIDGET_REGISTRY["deals.open"]!,
+			WIDGET_REGISTRY["deals.pipelineValue"]!,
 		];
 	}
-	return metricKeys
-		.map((k) => (k in WIDGET_REGISTRY ? WIDGET_REGISTRY[k as WidgetKey] : undefined))
-		.filter((w): w is WidgetSpec => w !== undefined);
+	const specs: WidgetSpec[] = [];
+	for (const k of metricKeys) {
+		const spec = WIDGET_REGISTRY[k as WidgetKey];
+		if (spec) specs.push(spec);
+	}
+	return specs;
 }

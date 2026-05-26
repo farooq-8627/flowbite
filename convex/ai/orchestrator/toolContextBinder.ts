@@ -13,8 +13,10 @@
  * `processChat.resume` — now they share `bindAllToolContexts(toolCtx)`.
  */
 import type { ToolContext } from "../tools/_shared";
+import { setCompaniesContext } from "../tools/companies";
 import { setContextBagToolContext } from "../tools/contextBag";
 import { setCreateEntitiesContext } from "../tools/crud";
+import { setFilesContext } from "../tools/files";
 import { setAskChoiceContext } from "../tools/interaction/askChoice";
 import { setAskInputContext } from "../tools/interaction/askInput";
 import { setIntrospectContext } from "../tools/introspect";
@@ -31,9 +33,14 @@ import { setSettingsContext } from "../tools/layers/settings";
 import { setTagsContext } from "../tools/layers/tags";
 import { setTemplatesContext } from "../tools/layers/templates";
 import { setViewsContext } from "../tools/layers/views";
+import { setMessagingContext } from "../tools/messaging";
+import { setNotesContext } from "../tools/notes";
 import { setNotesRemindersContext } from "../tools/notesReminders";
+import { setNotificationsContext } from "../tools/notifications";
 import { setPersonaContextToolContext } from "../tools/personaContext";
+import { setSchedulingContext } from "../tools/scheduling";
 import { setSearchToolContext } from "../tools/search";
+import { setTimelineContext } from "../tools/timeline";
 import { setUpdateEntityContext } from "../tools/updateEntity";
 import { setWebSearchToolContext } from "../tools/webSearch";
 
@@ -72,4 +79,11 @@ export function bindAllToolContexts(toolCtx: ToolContext): void {
 	setDataContext(toolCtx);
 	setFieldsContext(toolCtx);
 	setWebSearchToolContext(toolCtx);
+	setMessagingContext(toolCtx);
+	setNotesContext(toolCtx);
+	setSchedulingContext(toolCtx);
+	setCompaniesContext(toolCtx);
+	setFilesContext(toolCtx);
+	setTimelineContext(toolCtx);
+	setNotificationsContext(toolCtx);
 }

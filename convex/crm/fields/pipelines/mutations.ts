@@ -379,6 +379,47 @@ export const addStageForAI = internalMutation({
 	},
 });
 
+async function updateStageImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		pipelineId: Id<"pipelines">;
+		stageId: string;
+		name?: string;
+		code?: string;
+		color?: string;
+		staleAfterDays?: number;
+	},
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const target = pipeline.stages.find((s) => s.id === args.stageId);
+	if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
+
+	// Validate the new code against EVERY OTHER stage's codes
+	if (args.code !== undefined) {
+		const otherCodes = new Set(
+			pipeline.stages.filter((s) => s.id !== args.stageId).map((s) => s.code),
+		);
+		const err = validateStageCode(args.code, otherCodes);
+		if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
+	}
+
+	const stages = pipeline.stages.map((s) => {
+		if (s.id !== args.stageId) return s;
+		return {
+			...s,
+			name: args.name ?? s.name,
+			code: args.code ?? s.code,
+			color: args.color ?? s.color,
+			staleAfterDays: args.staleAfterDays ?? s.staleAfterDays,
+		};
+	});
+
+	await ctx.db.patch(args.pipelineId, { stages, updatedAt: Date.now() });
+}
+
 export const updateStage = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -392,101 +433,138 @@ export const updateStage = orgMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const target = pipeline.stages.find((s) => s.id === args.stageId);
-		if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
-
-		// Validate the new code against EVERY OTHER stage's codes
-		if (args.code !== undefined) {
-			const otherCodes = new Set(
-				pipeline.stages.filter((s) => s.id !== args.stageId).map((s) => s.code),
-			);
-			const err = validateStageCode(args.code, otherCodes);
-			if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
-		}
-
-		const stages = pipeline.stages.map((s) => {
-			if (s.id !== args.stageId) return s;
-			return {
-				...s,
-				name: args.name ?? s.name,
-				code: args.code ?? s.code,
-				color: args.color ?? s.color,
-				staleAfterDays: args.staleAfterDays ?? s.staleAfterDays,
-			};
-		});
-
-		await ctx.db.patch(args.pipelineId, { stages, updatedAt: Date.now() });
+		return updateStageImpl(ctx, args);
 	},
 });
+
+/** AI-callable internal twin. */
+export const updateStageForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		stageId: v.string(),
+		name: v.optional(v.string()),
+		code: v.optional(v.string()),
+		color: v.optional(v.string()),
+		staleAfterDays: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		const { userId: _u, ...rest } = args;
+		return updateStageImpl(ctx, rest);
+	},
+});
+
+async function removeStageImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; pipelineId: Id<"pipelines">; stageId: string },
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const target = pipeline.stages.find((s) => s.id === args.stageId);
+	if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
+	if (target.isDefaultStage) {
+		throw new ConvexError({
+			code: "DEFAULT_STAGE_PROTECTED",
+			message: "The Default stage cannot be removed — every pipeline has one.",
+		});
+	}
+
+	const dealsInStage = await ctx.db
+		.query("deals")
+		.withIndex("by_org_and_stage", (q) =>
+			q.eq("orgId", args.orgId).eq("currentStageId", args.stageId),
+		)
+		.first();
+	if (dealsInStage)
+		throw new ConvexError({
+			code: "STAGE_HAS_DEALS",
+			message: "Cannot remove stage with active deals",
+		});
+
+	const filtered = pipeline.stages
+		.filter((s) => s.id !== args.stageId)
+		.map((s, i) => ({ ...s, order: i }));
+
+	await ctx.db.patch(args.pipelineId, { stages: filtered, updatedAt: Date.now() });
+}
 
 export const removeStage = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageId: v.string() },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const target = pipeline.stages.find((s) => s.id === args.stageId);
-		if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
-		if (target.isDefaultStage) {
-			throw new ConvexError({
-				code: "DEFAULT_STAGE_PROTECTED",
-				message: "The Default stage cannot be removed — every pipeline has one.",
-			});
-		}
-
-		const dealsInStage = await ctx.db
-			.query("deals")
-			.withIndex("by_org_and_stage", (q) =>
-				q.eq("orgId", args.orgId).eq("currentStageId", args.stageId),
-			)
-			.first();
-		if (dealsInStage)
-			throw new ConvexError({
-				code: "STAGE_HAS_DEALS",
-				message: "Cannot remove stage with active deals",
-			});
-
-		const filtered = pipeline.stages
-			.filter((s) => s.id !== args.stageId)
-			.map((s, i) => ({ ...s, order: i }));
-
-		await ctx.db.patch(args.pipelineId, { stages: filtered, updatedAt: Date.now() });
+		return removeStageImpl(ctx, args);
 	},
 });
+
+/** AI-callable internal twin. */
+export const removeStageForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		stageId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		const { userId: _u, ...rest } = args;
+		return removeStageImpl(ctx, rest);
+	},
+});
+
+async function reorderStagesImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; pipelineId: Id<"pipelines">; stageIds: string[] },
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	// The Default stage is always at order 0 — re-pin it to the front
+	// regardless of where the caller dragged it. This matches the UX
+	// spec: the Default stage cannot be reordered.
+	const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
+	const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
+
+	const requestedIds = args.stageIds.filter((id) => !defaultStage || id !== defaultStage.id);
+	const orderedIds = defaultStage ? [defaultStage.id, ...requestedIds] : requestedIds;
+
+	const reordered = orderedIds.map((id, i) => {
+		const stage = stageMap.get(id);
+		if (!stage)
+			throw new ConvexError({ code: "INVALID_STAGE", message: `Stage ${id} not found` });
+		return { ...stage, order: i };
+	});
+
+	await ctx.db.patch(args.pipelineId, { stages: reordered, updatedAt: Date.now() });
+}
 
 export const reorderStages = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines"), stageIds: v.array(v.string()) },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
+		return reorderStagesImpl(ctx, args);
+	},
+});
 
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		// The Default stage is always at order 0 — re-pin it to the front
-		// regardless of where the caller dragged it. This matches the UX
-		// spec: the Default stage cannot be reordered.
-		const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
-		const stageMap = new Map(pipeline.stages.map((s) => [s.id, s]));
-
-		const requestedIds = args.stageIds.filter((id) => !defaultStage || id !== defaultStage.id);
-		const orderedIds = defaultStage ? [defaultStage.id, ...requestedIds] : requestedIds;
-
-		const reordered = orderedIds.map((id, i) => {
-			const stage = stageMap.get(id);
-			if (!stage)
-				throw new ConvexError({ code: "INVALID_STAGE", message: `Stage ${id} not found` });
-			return { ...stage, order: i };
-		});
-
-		await ctx.db.patch(args.pipelineId, { stages: reordered, updatedAt: Date.now() });
+/** AI-callable internal twin. */
+export const reorderStagesForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		stageIds: v.array(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		const { userId: _u, ...rest } = args;
+		return reorderStagesImpl(ctx, rest);
 	},
 });
 
@@ -500,6 +578,26 @@ export const reorderStages = orgMutation({
  * default — UI is expected to use `updateStage` to rename the default
  * stage instead.
  */
+async function setDefaultStageImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; pipelineId: Id<"pipelines">; stageId: string },
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const target = pipeline.stages.find((s) => s.id === args.stageId);
+	if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
+	if (target.isDefaultStage) {
+		// Already the default — no-op (idempotent).
+		return;
+	}
+	throw new ConvexError({
+		code: "DEFAULT_STAGE_FIXED",
+		message:
+			"The Default stage is fixed per pipeline. Edit the label of the existing Default stage instead of promoting another stage.",
+	});
+}
+
 export const setDefaultStage = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -509,23 +607,87 @@ export const setDefaultStage = orgMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const target = pipeline.stages.find((s) => s.id === args.stageId);
-		if (!target) throw new ConvexError({ code: "INVALID_STAGE", message: "Stage not found" });
-		if (target.isDefaultStage) {
-			// Already the default — no-op (idempotent).
-			return;
-		}
-		throw new ConvexError({
-			code: "DEFAULT_STAGE_FIXED",
-			message:
-				"The Default stage is fixed per pipeline. Edit the label of the existing Default stage instead of promoting another stage.",
-		});
+		return setDefaultStageImpl(ctx, args);
 	},
 });
+
+/** AI-callable internal twin. */
+export const setDefaultStageForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		stageId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		const { userId: _u, ...rest } = args;
+		return setDefaultStageImpl(ctx, rest);
+	},
+});
+
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		pipelineId: Id<"pipelines">;
+		name?: string;
+		stageTransitionPolicy?: "block" | "warn" | "off";
+		allowSkipStages?: boolean;
+		markDoneRequiresAllFields?: boolean;
+	},
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const patch: Record<string, unknown> = { updatedAt: Date.now() };
+	if (args.name !== undefined) {
+		const trimmed = args.name.trim();
+		if (trimmed.length === 0) {
+			throw new ConvexError({
+				code: "INVALID_NAME",
+				message: "Pipeline name cannot be empty",
+			});
+		}
+		patch.name = trimmed;
+	}
+	if (args.stageTransitionPolicy !== undefined) {
+		patch.stageTransitionPolicy = args.stageTransitionPolicy;
+	}
+	if (args.allowSkipStages !== undefined) {
+		patch.allowSkipStages = args.allowSkipStages;
+	}
+	if (args.markDoneRequiresAllFields !== undefined) {
+		patch.markDoneRequiresAllFields = args.markDoneRequiresAllFields;
+	}
+
+	if (Object.keys(patch).length === 1) return; // only updatedAt — nothing to do
+
+	await ctx.db.patch(args.pipelineId, patch);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "pipeline_updated",
+		entityType: "pipeline",
+		entityId: args.pipelineId,
+		description: `Pipeline updated: ${pipeline.name}`,
+		metadata: {
+			...(args.name !== undefined ? { newName: args.name } : {}),
+			...(args.stageTransitionPolicy !== undefined
+				? { newStageTransitionPolicy: args.stageTransitionPolicy }
+				: {}),
+			...(args.allowSkipStages !== undefined
+				? { newAllowSkipStages: args.allowSkipStages }
+				: {}),
+			...(args.markDoneRequiresAllFields !== undefined
+				? { newMarkDoneRequiresAllFields: args.markDoneRequiresAllFields }
+				: {}),
+		},
+	});
+}
 
 /**
  * Update top-level pipeline metadata. Today: rename, change the
@@ -548,86 +710,79 @@ export const update = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const patch: Record<string, unknown> = { updatedAt: Date.now() };
-		if (args.name !== undefined) {
-			const trimmed = args.name.trim();
-			if (trimmed.length === 0) {
-				throw new ConvexError({
-					code: "INVALID_NAME",
-					message: "Pipeline name cannot be empty",
-				});
-			}
-			patch.name = trimmed;
-		}
-		if (args.stageTransitionPolicy !== undefined) {
-			patch.stageTransitionPolicy = args.stageTransitionPolicy;
-		}
-		if (args.allowSkipStages !== undefined) {
-			patch.allowSkipStages = args.allowSkipStages;
-		}
-		if (args.markDoneRequiresAllFields !== undefined) {
-			patch.markDoneRequiresAllFields = args.markDoneRequiresAllFields;
-		}
-
-		if (Object.keys(patch).length === 1) return; // only updatedAt — nothing to do
-
-		await ctx.db.patch(args.pipelineId, patch);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "pipeline_updated",
-			entityType: "pipeline",
-			entityId: args.pipelineId,
-			description: `Pipeline updated: ${pipeline.name}`,
-			metadata: {
-				...(args.name !== undefined ? { newName: args.name } : {}),
-				...(args.stageTransitionPolicy !== undefined
-					? { newStageTransitionPolicy: args.stageTransitionPolicy }
-					: {}),
-				...(args.allowSkipStages !== undefined
-					? { newAllowSkipStages: args.allowSkipStages }
-					: {}),
-				...(args.markDoneRequiresAllFields !== undefined
-					? { newMarkDoneRequiresAllFields: args.markDoneRequiresAllFields }
-					: {}),
-			},
-		});
+		return updateImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+		name: v.optional(v.string()),
+		stageTransitionPolicy: v.optional(
+			v.union(v.literal("block"), v.literal("warn"), v.literal("off")),
+		),
+		allowSkipStages: v.optional(v.boolean()),
+		markDoneRequiresAllFields: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		return updateImpl(ctx, args);
+	},
+});
+
+async function deletePipelineImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; pipelineId: Id<"pipelines"> },
+) {
+	const pipeline = await ctx.db.get(args.pipelineId);
+	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (pipeline.isDefault)
+		throw new ConvexError({
+			code: "DEFAULT_PIPELINE",
+			message: "Cannot delete the default pipeline",
+		});
+
+	for (const stage of pipeline.stages) {
+		const deal = await ctx.db
+			.query("deals")
+			.withIndex("by_org_and_stage", (q) =>
+				q.eq("orgId", args.orgId).eq("currentStageId", stage.id),
+			)
+			.first();
+		if (deal)
+			throw new ConvexError({
+				code: "PIPELINE_HAS_DEALS",
+				message: `Cannot delete — deals exist in stage "${stage.name}"`,
+			});
+	}
+
+	await ctx.db.delete(args.pipelineId);
+}
 
 export const deletePipeline = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
+		return deletePipelineImpl(ctx, args);
+	},
+});
 
-		const pipeline = await ctx.db.get(args.pipelineId);
-		if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (pipeline.isDefault)
-			throw new ConvexError({
-				code: "DEFAULT_PIPELINE",
-				message: "Cannot delete the default pipeline",
-			});
-
-		for (const stage of pipeline.stages) {
-			const deal = await ctx.db
-				.query("deals")
-				.withIndex("by_org_and_stage", (q) =>
-					q.eq("orgId", args.orgId).eq("currentStageId", stage.id),
-				)
-				.first();
-			if (deal)
-				throw new ConvexError({
-					code: "PIPELINE_HAS_DEALS",
-					message: `Cannot delete — deals exist in stage "${stage.name}"`,
-				});
-		}
-
-		await ctx.db.delete(args.pipelineId);
+/** AI-callable internal twin. */
+export const deletePipelineForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		pipelineId: v.id("pipelines"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "pipelines.manage");
+		const { userId: _u, ...rest } = args;
+		return deletePipelineImpl(ctx, rest);
 	},
 });

@@ -222,6 +222,51 @@ export const updateForAI = internalMutation({
  * Attach a person (by personCode) to a company's member list. Idempotent —
  * calling it twice with the same personCode keeps the array unique.
  */
+async function addPersonImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		companyId: Id<"companies">;
+		personCode: string;
+	},
+): Promise<{ alreadyMember: boolean; companyName: string; companyCode: string }> {
+	const company = await ctx.db.get(args.companyId);
+	if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const current = company.personCodes ?? [];
+	if (current.includes(args.personCode)) {
+		return { alreadyMember: true, companyName: company.name, companyCode: company.companyCode };
+	}
+
+	await ctx.db.patch(args.companyId, {
+		personCodes: [...current, args.personCode],
+		updatedAt: Date.now(),
+	});
+
+	// Maintain the indexed join table for O(1) lookups.
+	await ctx.db.insert("companyMembers", {
+		orgId: args.orgId,
+		personCode: args.personCode,
+		companyId: args.companyId,
+		createdAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "updated",
+		entityType: "company",
+		entityId: args.companyId,
+		description: `Added ${args.personCode} to ${company.name}`,
+		metadata: { companyCode: company.companyCode, personCode: args.personCode },
+	});
+
+	return { alreadyMember: false, companyName: company.name, companyCode: company.companyCode };
+}
+
 export const addPerson = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -231,43 +276,75 @@ export const addPerson = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.update");
+		return addPersonImpl(ctx, { ...args, userId });
+	},
+});
 
-		const company = await ctx.db.get(args.companyId);
-		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const current = company.personCodes ?? [];
-		if (current.includes(args.personCode)) return;
-
-		await ctx.db.patch(args.companyId, {
-			personCodes: [...current, args.personCode],
-			updatedAt: Date.now(),
-		});
-
-		// Maintain the indexed join table for O(1) lookups.
-		await ctx.db.insert("companyMembers", {
-			orgId: args.orgId,
-			personCode: args.personCode,
-			companyId: args.companyId,
-			createdAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "updated",
-			entityType: "company",
-			entityId: args.companyId,
-			description: `Added ${args.personCode} to ${company.name}`,
-			metadata: { companyCode: company.companyCode, personCode: args.personCode },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const addPersonForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		companyId: v.id("companies"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.update");
+		return addPersonImpl(ctx, args);
 	},
 });
 
 /**
  * Remove a person from the company's member list. Idempotent.
  */
+async function removePersonImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		companyId: Id<"companies">;
+		personCode: string;
+	},
+): Promise<{ wasMember: boolean; companyName: string; companyCode: string }> {
+	const company = await ctx.db.get(args.companyId);
+	if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	const current = company.personCodes ?? [];
+	const next = current.filter((pc) => pc !== args.personCode);
+	if (next.length === current.length) {
+		return { wasMember: false, companyName: company.name, companyCode: company.companyCode };
+	}
+
+	await ctx.db.patch(args.companyId, {
+		personCodes: next,
+		updatedAt: Date.now(),
+	});
+
+	// Remove from the indexed join table.
+	const link = await ctx.db
+		.query("companyMembers")
+		.withIndex("by_org_and_personCode", (q) =>
+			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
+		)
+		.first();
+	if (link) await ctx.db.delete(link._id);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "updated",
+		entityType: "company",
+		entityId: args.companyId,
+		description: `Removed ${args.personCode} from ${company.name}`,
+		metadata: { companyCode: company.companyCode, personCode: args.personCode },
+	});
+
+	return { wasMember: true, companyName: company.name, companyCode: company.companyCode };
+}
+
 export const removePerson = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -277,77 +354,76 @@ export const removePerson = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.update");
-
-		const company = await ctx.db.get(args.companyId);
-		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-
-		const current = company.personCodes ?? [];
-		const next = current.filter((pc) => pc !== args.personCode);
-		if (next.length === current.length) return;
-
-		await ctx.db.patch(args.companyId, {
-			personCodes: next,
-			updatedAt: Date.now(),
-		});
-
-		// Remove from the indexed join table.
-		const link = await ctx.db
-			.query("companyMembers")
-			.withIndex("by_org_and_personCode", (q) =>
-				q.eq("orgId", args.orgId).eq("personCode", args.personCode),
-			)
-			.first();
-		if (link) await ctx.db.delete(link._id);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "updated",
-			entityType: "company",
-			entityId: args.companyId,
-			description: `Removed ${args.personCode} from ${company.name}`,
-			metadata: { companyCode: company.companyCode, personCode: args.personCode },
-		});
+		return removePersonImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const removePersonForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		companyId: v.id("companies"),
+		personCode: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.update");
+		return removePersonImpl(ctx, args);
+	},
+});
+
+async function softDeleteImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; companyId: Id<"companies"> },
+) {
+	const company = await ctx.db.get(args.companyId);
+	if (!company || company.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const now = Date.now();
+	await ctx.db.patch(args.companyId, { deletedAt: now, updatedAt: now });
+	if (!company.deletedAt) {
+		await applyOrgStat(ctx, args.orgId, "companies.active", -1);
+	}
+
+	// Clean up the indexed join table — leave no stale companyMembers rows.
+	const memberLinks = await ctx.db
+		.query("companyMembers")
+		.withIndex("by_org_and_company", (q) =>
+			q.eq("orgId", args.orgId).eq("companyId", args.companyId),
+		)
+		.collect();
+	await Promise.all(memberLinks.map((link) => ctx.db.delete(link._id)));
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: "company",
+		entityId: args.companyId,
+		description: `Company deleted: ${company.name}`,
+		metadata: {
+			companyCode: company.companyCode,
+			cleanedMemberLinks: memberLinks.length,
+		},
+	});
+}
 
 export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), companyId: v.id("companies") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.delete");
+		return softDeleteImpl(ctx, { ...args, userId });
+	},
+});
 
-		const company = await ctx.db.get(args.companyId);
-		if (!company || company.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const now = Date.now();
-		await ctx.db.patch(args.companyId, { deletedAt: now, updatedAt: now });
-		if (!company.deletedAt) {
-			await applyOrgStat(ctx, args.orgId, "companies.active", -1);
-		}
-
-		// Clean up the indexed join table — leave no stale companyMembers rows.
-		const memberLinks = await ctx.db
-			.query("companyMembers")
-			.withIndex("by_org_and_company", (q) =>
-				q.eq("orgId", args.orgId).eq("companyId", args.companyId),
-			)
-			.collect();
-		await Promise.all(memberLinks.map((link) => ctx.db.delete(link._id)));
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "deleted",
-			entityType: "company",
-			entityId: args.companyId,
-			description: `Company deleted: ${company.name}`,
-			metadata: {
-				companyCode: company.companyCode,
-				cleanedMemberLinks: memberLinks.length,
-			},
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const softDeleteForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), companyId: v.id("companies") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "companies.delete");
+		return softDeleteImpl(ctx, args);
 	},
 });

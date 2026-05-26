@@ -489,6 +489,8 @@ export const recruitingTemplate: IndustryTemplate = {
 
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"leads.open",
 		"deals.open",
 		"deals.won",

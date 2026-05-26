@@ -39,7 +39,9 @@
 
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
+import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { type TimelineScope, usePaginatedTimeline } from "../hooks";
@@ -57,7 +59,18 @@ interface TimelineFeedProps {
 	scope: TimelineScope;
 	showComposer?: boolean;
 	showFilters?: boolean;
-	emptyState?: { title: string; body?: string };
+	emptyState?: {
+		title: string;
+		body?: string;
+		/**
+		 * Optional CTA — when set, the empty state renders a button that
+		 * dispatches a chat prefill (`flowbite:ai-chat-prefill`) so the
+		 * user can start the suggested action via the AI sheet without
+		 * leaving the dashboard. Mirrors the pattern used by
+		 * `<NextReminderFallback />`.
+		 */
+		action?: { label: string; chatPrefillIntent: string };
+	};
 	pageSize?: number;
 	visibleCap?: number;
 	className?: string;
@@ -311,14 +324,33 @@ export function TimelineFeed({
 
 // ─── Empty state ─────────────────────────────────────────────────────────────
 
-function EmptyState({ emptyState }: { emptyState?: { title: string; body?: string } }) {
+function EmptyState({
+	emptyState,
+}: {
+	emptyState?: {
+		title: string;
+		body?: string;
+		action?: { label: string; chatPrefillIntent: string };
+	};
+}) {
 	const title = emptyState?.title ?? "No activity yet";
 	const body =
 		emptyState?.body ?? "Activity, notes, and reminders will appear here as they happen.";
+	const action = emptyState?.action;
 	return (
-		<div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-1 px-6 text-center">
+		<div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed bg-muted/30 px-6 py-6 text-center">
 			<p className="text-sm font-medium text-foreground">{title}</p>
 			<p className="text-xs text-muted-foreground">{body}</p>
+			{action && (
+				<Button
+					size="sm"
+					variant="outline"
+					className="mt-1 h-7 text-xs"
+					onClick={() => sendChatPrefill(action.chatPrefillIntent)}
+				>
+					{action.label}
+				</Button>
+			)}
 		</div>
 	);
 }

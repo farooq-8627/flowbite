@@ -442,6 +442,8 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 	// ─── Dashboard widgets (ranked) ────────────────────────────────────────
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",

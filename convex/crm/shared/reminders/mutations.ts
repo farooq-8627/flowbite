@@ -245,6 +245,55 @@ export const completeForAI = internalMutation({
 	},
 });
 
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		reminderId: Id<"reminders">;
+		title?: string;
+		note?: string;
+		dueAt?: number;
+		assignedTo?: Id<"users">;
+		priority?: ReminderPriority;
+	},
+) {
+	const reminder = await ctx.db.get(args.reminderId);
+	if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (!canActOnReminder(args.member, args.userId, reminder.assignedTo)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+	// Shared rate-limit scope across reminder writes (see complete).
+	await enforceRateLimit(ctx, {
+		scope: "reminders.write",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	const { orgId: _o, userId: _u, member: _m, reminderId: _r, ...updates } = args;
+	const patch: Record<string, unknown> = Object.fromEntries(
+		Object.entries(updates).filter(([, val]) => val !== undefined),
+	);
+	// Server-stamped — never trust the client's clock.
+	patch.updatedAt = Date.now();
+
+	await ctx.db.patch(args.reminderId, patch);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reminder_updated",
+		entityType: reminder.entityType,
+		entityId: reminder.entityId,
+		personCode: reminder.personCode,
+		description: `Reminder updated: ${reminder.title}`,
+		metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+	});
+
+	return { followUpCode: reminder.followUpCode, reminderId: args.reminderId };
+}
+
 export const update = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -260,70 +309,81 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-
-		const reminder = await ctx.db.get(args.reminderId);
-		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-		// Shared rate-limit scope across reminder writes (see complete).
-		await enforceRateLimit(ctx, {
-			scope: "reminders.write",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
-
-		const { orgId: _o, reminderId: _r, ...updates } = args;
-		const patch: Record<string, unknown> = Object.fromEntries(
-			Object.entries(updates).filter(([, val]) => val !== undefined),
-		);
-		// Server-stamped — never trust the client's clock.
-		patch.updatedAt = Date.now();
-
-		await ctx.db.patch(args.reminderId, patch);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "reminder_updated",
-			entityType: reminder.entityType,
-			entityId: reminder.entityId,
-			personCode: reminder.personCode,
-			description: `Reminder updated: ${reminder.title}`,
-			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
-		});
+		return updateImpl(ctx, { ...args, userId, member });
 	},
 });
+
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		reminderId: v.id("reminders"),
+		title: v.optional(v.string()),
+		note: v.optional(v.string()),
+		dueAt: v.optional(v.number()),
+		assignedTo: v.optional(v.id("users")),
+		priority: v.optional(
+			v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
+		),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return updateImpl(ctx, { ...args, member });
+	},
+});
+
+async function removeImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		reminderId: Id<"reminders">;
+	},
+) {
+	const reminder = await ctx.db.get(args.reminderId);
+	if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (!canActOnReminder(args.member, args.userId, reminder.assignedTo)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+	// Shared rate-limit scope across reminder writes (see complete).
+	await enforceRateLimit(ctx, {
+		scope: "reminders.write",
+		key: `${args.userId}:${args.orgId}`,
+		...RATE_LIMITS.write,
+	});
+
+	await ctx.db.delete(args.reminderId);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reminder_deleted",
+		entityType: reminder.entityType,
+		entityId: reminder.entityId,
+		personCode: reminder.personCode,
+		description: `Reminder deleted: ${reminder.title}`,
+		metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
+	});
+
+	return { followUpCode: reminder.followUpCode, reminderId: args.reminderId };
+}
 
 export const remove = orgMutation({
 	args: { orgId: v.id("orgs"), reminderId: v.id("reminders") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return removeImpl(ctx, { ...args, userId, member });
+	},
+});
 
-		const reminder = await ctx.db.get(args.reminderId);
-		if (!reminder || reminder.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (!canActOnReminder(member, userId, reminder.assignedTo)) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-		// Shared rate-limit scope across reminder writes (see complete).
-		await enforceRateLimit(ctx, {
-			scope: "reminders.write",
-			key: `${userId}:${args.orgId}`,
-			...RATE_LIMITS.write,
-		});
-
-		await ctx.db.delete(args.reminderId);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "reminder_deleted",
-			entityType: reminder.entityType,
-			entityId: reminder.entityId,
-			personCode: reminder.personCode,
-			description: `Reminder deleted: ${reminder.title}`,
-			metadata: { followUpCode: reminder.followUpCode, reminderId: args.reminderId },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const removeForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), reminderId: v.id("reminders") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return removeImpl(ctx, { ...args, member });
 	},
 });
 

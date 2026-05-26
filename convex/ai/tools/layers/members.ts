@@ -212,3 +212,294 @@ registerTool({
 			return { ok: true as const, data: args, display: `✅ Member removed.` };
 		}),
 });
+
+// ─── Stage 4 — resend_invitation (twoStep) ───────────────────────────────────
+
+const resendSchema = z.object({
+	invitationId: z.string().describe("Convex invitations _id."),
+	email: z.string().describe("Recipient email (for the propose card)."),
+});
+
+registerTool({
+	name: "resend_invitation",
+	layer: "members",
+	permission: "members.invite",
+	confirmation: "twoStep",
+	description:
+		"Resend an existing pending invitation — regenerates the token, extends expiry, re-fires the email. Two-step.",
+	instruction: {
+		whenToCall:
+			"User asks to resend / re-send an invitation that's still pending. Refuses if the invitation is already accepted, declined, or cancelled.",
+		whenNotToCall:
+			"the user wants to send a NEW invitation (use invite_member) OR cancel the existing one (use cancel_invitation).",
+		preflight: ["list_members"],
+		requiredClarifications: ["invitationId"],
+		synonyms: ["resend invite", "re-send invitation", "send invite again"],
+		goodExample: {
+			description: "User: 'Resend the invite to bob@acme.com — they say they never got it.'",
+			args: { invitationId: "abc123", email: "bob@acme.com" },
+		},
+	},
+	runbook: {
+		onSuccess: "Confirm in one short sentence — invitation resent.",
+		onValidationError:
+			"If the mutation throws INVITATION_ALREADY_USED, the invite is no longer pending. Suggest creating a new invitation via invite_member.",
+	},
+	schema: resendSchema,
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "members.invite");
+		return propose("resend_invitation", args, {
+			title: `Resend invitation to ${args.email}`,
+			fields: [{ label: "Email", value: args.email }],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_resend_invitation",
+	layer: "members",
+	permission: "members.invite",
+	confirmation: "none",
+	description: "Internal: commit a pre-approved invitation resend.",
+	schema: resendSchema,
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "members.invite");
+			await toolMutation(getCtx(), "invitations/mutations:resend", {
+				orgId,
+				invitationId: args.invitationId,
+			});
+			return {
+				ok: true as const,
+				data: args,
+				display: `📧 Invitation resent to ${args.email}.`,
+			};
+		}),
+});
+
+// ─── Stage 4 — Custom role CRUD (create / update / delete, twoStep) ──────────
+
+const createRoleSchema = z.object({
+	name: z.string().min(1).describe("Role name (must be unique within the org)."),
+	description: z.optional(z.string()),
+	permissions: z
+		.array(z.string())
+		.describe("Permission keys this role grants. Use list_my_permissions to see the catalog."),
+	isDefault: z
+		.optional(z.boolean())
+		.describe("If true, becomes the default role for newly-invited members."),
+	color: z.optional(z.string()).describe("Optional hex colour for the role chip."),
+});
+
+registerTool({
+	name: "create_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "twoStep",
+	description:
+		"Create a new custom role for the workspace. Two-step — surfaces name + permission count first.",
+	instruction: {
+		whenToCall:
+			"User asks to create a new role (e.g. 'add a Sales Manager role with deal access').",
+		whenNotToCall:
+			"the user wants to assign an existing role (use change_member_role) OR edit an existing role (use update_custom_role).",
+		preflight: ["list_my_permissions"],
+		requiredClarifications: ["name", "permissions"],
+		synonyms: ["new role", "create role", "add role"],
+		goodExample: {
+			description:
+				"User: 'Create a Read-only role with leads.view, deals.view, contacts.view.'",
+			args: {
+				name: "Read-only",
+				permissions: ["leads.view", "deals.view", "contacts.view"],
+			},
+		},
+	},
+	runbook: {
+		onSuccess: "Confirm with the new role name and permission count in one short sentence.",
+		onValidationError:
+			"If a role with this name already exists, ask for a different name OR use update_custom_role on the existing one.",
+	},
+	schema: createRoleSchema,
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "members.changeRole");
+		return propose("create_custom_role", args, {
+			title: `Create role: ${args.name}`,
+			fields: [
+				{ label: "Name", value: args.name },
+				{ label: "Permissions", value: `${args.permissions.length} key(s)` },
+				...(args.isDefault ? [{ label: "Default", value: "yes" }] : []),
+			],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_create_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "none",
+	description: "Internal: commit a pre-approved role creation.",
+	schema: createRoleSchema,
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "members.changeRole");
+			const result = await toolMutation(getCtx(), "orgRoles/mutations:create", {
+				orgId,
+				name: args.name,
+				description: args.description,
+				permissions: args.permissions,
+				isDefault: args.isDefault,
+				color: args.color,
+			});
+			return {
+				ok: true as const,
+				data: result,
+				display: `✅ Role "${args.name}" created with ${args.permissions.length} permission(s).`,
+			};
+		}),
+});
+
+const updateRoleSchema = z.object({
+	roleId: z.string().describe("Convex orgRoles _id."),
+	name: z.optional(z.string().min(1)),
+	description: z.optional(z.string()),
+	permissions: z.optional(z.array(z.string())),
+	isDefault: z.optional(z.boolean()),
+	color: z.optional(z.string()),
+});
+
+registerTool({
+	name: "update_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "twoStep",
+	description: "Update a custom role's permissions, name, colour, or default flag. Two-step.",
+	instruction: {
+		whenToCall:
+			"User asks to edit / modify / change permissions on an existing role. System roles cannot be renamed (the mutation refuses) but their permissions and colour can be edited.",
+		whenNotToCall:
+			"the user wants to delete the role (use delete_custom_role) OR create a new one (use create_custom_role).",
+		preflight: ["list_my_permissions"],
+		requiredClarifications: ["roleId"],
+		synonyms: ["edit role", "change role permissions", "modify role"],
+	},
+	runbook: {
+		onSuccess: "Confirm in one short sentence with the changed fields.",
+		onValidationError:
+			"If the mutation refuses on a system-role rename, tell the user system role names are fixed and only permissions/colour can be edited.",
+	},
+	schema: updateRoleSchema,
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "members.changeRole");
+		const fields: Array<{ label: string; value: string }> = [
+			{ label: "Role", value: args.roleId },
+		];
+		if (args.name !== undefined) fields.push({ label: "Name", value: args.name });
+		if (args.permissions !== undefined)
+			fields.push({ label: "Permissions", value: `${args.permissions.length} key(s)` });
+		if (args.isDefault !== undefined)
+			fields.push({ label: "Default", value: args.isDefault ? "yes" : "no" });
+		if (args.color !== undefined) fields.push({ label: "Color", value: args.color });
+		return propose("update_custom_role", args, {
+			title: "Update custom role",
+			fields,
+		});
+	},
+});
+
+registerTool({
+	name: "commit_update_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "none",
+	description: "Internal: commit a pre-approved role update.",
+	schema: updateRoleSchema,
+	execute: async (args) =>
+		runTool(async () => {
+			const { permissions } = getCtx();
+			requirePermission(permissions, "members.changeRole");
+			await toolMutation(getCtx(), "orgRoles/mutations:update", {
+				roleId: args.roleId,
+				name: args.name,
+				description: args.description,
+				permissions: args.permissions,
+				isDefault: args.isDefault,
+				color: args.color,
+			});
+			return {
+				ok: true as const,
+				data: args,
+				display: `✏️ Role updated.`,
+			};
+		}),
+});
+
+const deleteRoleSchema = z.object({
+	roleId: z.string().describe("Convex orgRoles _id."),
+	roleName: z.string().optional().describe("Role name (for the propose card)."),
+});
+
+registerTool({
+	name: "delete_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "twoStep",
+	description:
+		"Delete a custom role. Members assigned to it are reassigned to the default role. System roles refuse deletion.",
+	instruction: {
+		whenToCall: "User asks to delete / remove a custom role.",
+		whenNotToCall:
+			"the user wants to edit it (use update_custom_role) OR remove a member (use remove_member).",
+		requiredClarifications: ["roleId"],
+		synonyms: ["delete role", "remove custom role"],
+	},
+	runbook: {
+		onSuccess:
+			"Confirm in one short sentence with the role name. Mention that affected members were reassigned to the default role.",
+		onValidationError:
+			"If the role is a system role, tell the user system roles cannot be deleted.",
+	},
+	schema: deleteRoleSchema,
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "members.changeRole");
+		return propose("delete_custom_role", args, {
+			title: `Delete role: ${args.roleName ?? args.roleId}`,
+			fields: [
+				{ label: "Role", value: args.roleName ?? args.roleId },
+				{
+					label: "Effect",
+					value: "Members are reassigned to the default role.",
+				},
+			],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_delete_custom_role",
+	layer: "members",
+	permission: "members.changeRole",
+	confirmation: "none",
+	description: "Internal: commit a pre-approved role deletion.",
+	schema: deleteRoleSchema,
+	execute: async (args) =>
+		runTool(async () => {
+			const { permissions } = getCtx();
+			requirePermission(permissions, "members.changeRole");
+			await toolMutation(getCtx(), "orgRoles/mutations:remove", {
+				roleId: args.roleId,
+			});
+			return {
+				ok: true as const,
+				data: args,
+				display: `✅ Role "${args.roleName ?? "deleted"}".`,
+			};
+		}),
+});

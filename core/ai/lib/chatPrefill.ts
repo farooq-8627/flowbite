@@ -32,6 +32,7 @@
 import { useEffect } from "react";
 
 const EVENT_NAME = "flowbite:ai-chat-prefill";
+const OPEN_EVENT_NAME = "flowbite:ai-chat-open";
 
 /**
  * Dispatch a chat-prefill intent. Safe to call during render — the
@@ -41,6 +42,23 @@ const EVENT_NAME = "flowbite:ai-chat-prefill";
 export function sendChatPrefill(intent: string): void {
 	if (typeof window === "undefined") return;
 	window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { intent } }));
+}
+
+/**
+ * Stage 5 — Open the AI chat panel from anywhere in the app.
+ *
+ * The dashboard's AIQuickComposerCard pairs this with `sendChatPrefill`
+ * to give the user a one-click "type → send" flow without first opening
+ * the side sheet. The DashboardLayoutClient owns the open/close state +
+ * the cookie persistence, so this is a fire-and-forget signal — the
+ * layout listener does the actual work.
+ *
+ * Idempotent if the panel is already open. Silently no-ops on the
+ * server (SSR).
+ */
+export function openChatPanel(): void {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(new CustomEvent(OPEN_EVENT_NAME));
 }
 
 /**
@@ -60,6 +78,25 @@ export function useChatPrefillListener(handler: (intent: string) => void): void 
 		window.addEventListener(EVENT_NAME, onEvent);
 		return () => {
 			window.removeEventListener(EVENT_NAME, onEvent);
+		};
+	}, [handler]);
+}
+
+/**
+ * Stage 5 — subscribe to chat-panel-open events. The DashboardLayoutClient
+ * uses this to open its panel when `openChatPanel()` is called from the
+ * dashboard quick composer (or any other surface that needs to surface
+ * the chat). Auto-cleans up on unmount; SSR-safe.
+ */
+export function useChatPanelOpenListener(handler: () => void): void {
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const onEvent = () => {
+			handler();
+		};
+		window.addEventListener(OPEN_EVENT_NAME, onEvent);
+		return () => {
+			window.removeEventListener(OPEN_EVENT_NAME, onEvent);
 		};
 	}, [handler]);
 }

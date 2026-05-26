@@ -618,34 +618,193 @@ export const closeAsDoneForAI = internalMutation({
 	},
 });
 
+async function softDeleteImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+	},
+) {
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	await ctx.db.patch(args.dealId, { deletedAt: Date.now(), updatedAt: Date.now() });
+
+	// Counter rebalance: only decrement if the deal was open before deletion.
+	if (!deal.wonAt && !deal.lostAt && !deal.deletedAt) {
+		await applyOrgStat(ctx, args.orgId, "deals.open", -1);
+		if (deal.value && deal.value > 0) {
+			await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
+		}
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description: `Deal deleted: ${deal.title}`,
+	});
+}
+
 export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), dealId: v.id("deals") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.delete");
+		return softDeleteImpl(ctx, { ...args, userId });
+	},
+});
 
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+/**
+ * AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule.
+ * Soft-delete only (sets `deletedAt`).
+ */
+export const softDeleteForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), dealId: v.id("deals") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.delete");
+		return softDeleteImpl(ctx, args);
+	},
+});
 
-		await ctx.db.patch(args.dealId, { deletedAt: Date.now(), updatedAt: Date.now() });
+/**
+ * reopen — reverse a closed (won OR lost) deal back into the pipeline.
+ *
+ * Behaviour:
+ *   - Refuses if the deal is already open (no `wonAt` AND no `lostAt`).
+ *   - Clears `wonAt` and `lostAt` (whichever was set).
+ *   - Resets `currentStageId` to the pipeline's Default stage if present;
+ *     otherwise the first non-final stage by `order`.
+ *   - Restores `deals.open` counter and `deals.pipelineValue` (since it
+ *     went down on `closeAsDone`).
+ *   - Decrements `deals.won` or `deals.lost` to keep totals consistent.
+ *   - Logs `reopened` activity.
+ *
+ * RBAC: `deals.close` (the inverse of close — same trust gate).
+ */
+async function reopenImpl(
+	ctx: import("../../../_generated/server").MutationCtx,
+	args: {
+		orgId: import("../../../_generated/dataModel").Id<"orgs">;
+		userId: import("../../../_generated/dataModel").Id<"users">;
+		dealId: import("../../../_generated/dataModel").Id<"deals">;
+	},
+) {
+	await enforceRateLimit(ctx, {
+		scope: "deals.update",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
 
-		// Counter rebalance: only decrement if the deal was open before deletion.
-		if (!deal.wonAt && !deal.lostAt && !deal.deletedAt) {
-			await applyOrgStat(ctx, args.orgId, "deals.open", -1);
-			if (deal.value && deal.value > 0) {
-				await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", -deal.value);
-			}
-		}
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	const wasWon = !!deal.wonAt;
+	const wasLost = !!deal.lostAt;
+	if (!wasWon && !wasLost) {
+		throw new ConvexError({
+			code: "DEAL_ALREADY_OPEN",
+			message: "Deal is already open — nothing to reopen.",
+		});
+	}
 
-		await logActivity(ctx, {
+	const pipeline = await ctx.db.get(deal.pipelineId);
+	if (!pipeline) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const defaultStage = pipeline.stages.find((s) => s.isDefaultStage === true);
+	const sorted = [...pipeline.stages].sort((a, b) => a.order - b.order);
+	const restoreStage = defaultStage ?? sorted.find((s) => !s.isFinal) ?? sorted[0];
+	if (!restoreStage) {
+		throw new ConvexError({
+			code: "EMPTY_PIPELINE",
+			message: "Pipeline has no stages to restore the deal into.",
+		});
+	}
+
+	const now = Date.now();
+	await ctx.db.patch(args.dealId, {
+		wonAt: undefined,
+		lostAt: undefined,
+		outcomeReason: undefined,
+		currentStageId: restoreStage.id,
+		stageEnteredAt: now,
+		updatedAt: now,
+	});
+
+	// Counter rebalance: open +1 (deal is back in the funnel),
+	// pipelineValue +deal.value (was deducted on close), won/lost -1.
+	await applyOrgStat(ctx, args.orgId, "deals.open", +1);
+	if (deal.value && deal.value > 0) {
+		await applyOrgStat(ctx, args.orgId, "deals.pipelineValue", +deal.value);
+	}
+	if (wasWon) {
+		await applyOrgStat(ctx, args.orgId, "deals.won", -1);
+	} else if (wasLost) {
+		await applyOrgStat(ctx, args.orgId, "deals.lost", -1);
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "reopened",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description: `Deal reopened: ${deal.title}`,
+		metadata: {
+			fromOutcome: wasWon ? "won" : "lost",
+			toStageId: restoreStage.id,
+			toStageCode: restoreStage.code,
+		},
+	});
+
+	if (deal.assignedTo && deal.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
 			orgId: args.orgId,
-			userId,
-			action: "deleted",
+			userId: deal.assignedTo,
+			type: "deal.stage_changed",
+			title: `Deal reopened: ${deal.title}`,
 			entityType: "deal",
 			entityId: args.dealId,
-			personCode: deal.personCode,
-			description: `Deal deleted: ${deal.title}`,
 		});
+	}
+
+	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+		orgId: args.orgId,
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+	});
+}
+
+export const reopen = orgMutation({
+	args: { orgId: v.id("orgs"), dealId: v.id("deals") },
+	handler: async (ctx, args) => {
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "deals.close");
+		return reopenImpl(ctx, { ...args, userId });
+	},
+});
+
+/** AI-callable internal twin. */
+export const reopenForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.close");
+		return reopenImpl(ctx, args);
 	},
 });
 

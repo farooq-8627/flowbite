@@ -527,6 +527,72 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 
 ---
 
+## C.6 — Reactive-completeness wave (audit-driven, 2026-05-25)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | ✅ Implemented — Stages 2-4 of the audit-driven sprint shipped (2026-05-26). Milestone A complete. |
+| Category        | AI / tool surface parity                                                           |
+| Phase to ship   | — (shipped)                                                                        |
+| Owners          | `convex/ai/tools/**`                                                                |
+| Risk if skipped | — (shipped)                                                                        |
+
+**Why this card exists.** Audit pass on 2026-05-25 enumerated every backend public function and cross-mapped against the registered AI tool surface. Found 51 actionable gaps. P0 items (3) all sit in the messaging module — `send_message`, `list_messages`, `mark_thread_read` — none wrapped despite the underlying mutations/queries being fully implemented. P1 items (5) cover note edits, reminder updates, company-person links, and a universal `delete_entity`. P2 items (7) cover pipeline-stage edits, lead-stage move, files, tag/view edits, reopen-deal, org-timeline, invitations + custom-role CRUD.
+
+**Cross-references:**
+- `/AI-AUDIT-COMPLETE.md` — full 3-column map + 75-tool registry. §16 P0/P1/P2/P3 all flipped to ✅.
+- `/AI-AGENT-CAPABILITY-AUDIT.md` — what reactive-completeness unlocks (Milestone A in the senior-CRM roadmap).
+- `core/ai/STATE.md` — Reactive-completeness wave block.
+
+**Shipped (2026-05-26).** Stage 2 of the audit-driven sprint shipped the P0 messaging family (`send_message`, `list_messages`, `mark_thread_read`, `add_participants`, `remove_participant`) plus all the matching ForAI twins. Stage 3 shipped the entire P1 wave: universal `delete_entity` + commit routing to `softDeleteForAI` for lead/contact/company/deal + `removeForAI` for note/reminder; `update_reminder` + commit; `update_note` / `delete_note` + commits + atomic `pin_note` / `set_note_category`; `add_person_to_company` / `remove_person_from_company` + commits. Stage 4 closed P2/P3: 18 new AI tools across 7 layers covering pipeline-stage edits (`update_pipeline_stage` / `remove_pipeline_stage` / `reorder_pipeline_stages` / `set_default_pipeline`), `move_lead_status` (atomic, mirrors `move_deal_stage`), `update_tag` + `update_saved_view` (atomic), files (`list_files` / `update_file_tags` / `remove_file`), `reopen_deal`, `list_org_timeline`, invitations (`resend_invitation`), custom roles (`create_custom_role` / `update_custom_role` / `delete_custom_role`), and notifications (`list_notifications` / `mark_notification_read`). 3 new tool layers introduced (`files`, `timeline`, `notifications`); 4 existing layers extended (`pipelines`, `tags`, `views`, `members`). Per AGENTS.md non-negotiable rule, every backing public mutation/query has a same-file `*ForAI` twin: pipelines (6 twins via `*Impl` extraction), tags (NEW public `update` + ForAI), savedViews (`updateForAI`), files (`listByScopeForAI` + `listForEntityForAI` + `updateTagsForAI` + `removeForAI`), orgRoles (3 twins on `authenticatedMutation` model + `listForAI`), timeline (`getForOrgForAI`), invitations (NEW public `resend` + `resendForAI`), deals (NEW public `reopen` + `reopenForAI`), notifications (`listMineForAI` + `markReadForAI`). System prompt gained Stage-4 verb-routing block for Pipelines / Files / Timeline / Roles / Notifications / Tag-view edits. 14 ForAI contract tests at `convex/ai/tools/stage4/stage4.test.ts`. AI coverage by usage frequency: ~70% → ~95%. Reactive parity gap with the UI is closed for the entire app — the user can no longer say "the AI can't do X" for any common reactive verb.
+
+---
+
+## C.7 — Dashboard widget registry & template key normalisation
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | ✅ Implemented — Stage 1, 2026-05-26                                              |
+| Category        | UX / AI tool reliability                                                           |
+| Phase to ship   | Same sprint as C.6                                                                 |
+| Owners          | `convex/_shared/widgetRegistry.ts`, `core/shell/shell/views/dashboard/cards/WidgetRegistry.tsx`, every `convex/crm/fields/templates/definitions/*.ts` |
+| Risk if skipped | Reminders / Messages / Activity / Calendar widgets disappear from the dashboard for orgs whose template wrote unrecognised metric keys (`reminders.list`, `calendar.miniWidget`, `tasks.thisWeek`, `tasks.recentlyCompleted`). The user explicitly hit this on 2026-05-25 ("why are reminders not showing on dashboard?"). Also blocks the AI's `update_dashboard_layout` tool from writing the same keys the dashboard itself uses. |
+
+**Why this card exists.** `WIDGET_KEYS` registers 12 KPI tile keys. The dashboard layout uses an additional 9+ keys (`messages.recent`, `activity.recent`, `today.focus`, `calendar.weekAhead`, `calendar.mini`, plus template-specific variants). `validateDashboardLayout` rejects anything not in `WIDGET_KEYS`, so the AI tool surface is artificially restricted and the templates emit "ghost" keys.
+
+**Implementation sketch.** See `/DASHBOARD-AUDIT.md §3 Step 1–3` — extend `WIDGET_KEYS`, write migration, update templates. Plus replace `null` empty states on `MessagesPreviewWidget`, `TimelineActivityWidget`, `WeekAheadWidget` with CTA cards (pattern: `<NextReminderFallback />`).
+
+**Verification.** `convex/ai/queries/widgets.test.ts` asserts `validateDashboardLayout` accepts every key emitted by every template definition (32 contract tests, parametrised across all 9 templates). Migration `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts` is idempotent — dev run scanned 1 org, patched 0 (already canonical post-registry-extension).
+
+**Shipped (2026-05-26).** Stage 1 of the audit-driven sprint (`SPRINT-PLAN.md`). `WIDGET_KEYS` 12 → 25; `LEGACY_KEY_RENAMES` collapses `calendar.miniWidget` → `calendar.mini`; all 9 templates use canonical keys; CTA empty states landed on the 4 broken widgets; `RemindersCard` gate widened to honour `reminders.list`. The "reminders widget not showing" bug is fixed end-to-end.
+
+**Shipped (2026-05-26 — Stage 5).** The remaining Stage-1 deferral is closed. `AIQuickComposerCard` + `AIPulseRibbon` mounted on the dashboard (`core/shell/shell/views/dashboard/cards/`); two new widget keys (`ai.quickComposer`, `ai.pulseRibbon`) registered + opted into all 9 templates; idempotent migration `convex/_migrations/2026_05_26_addAiDashboardWidgets.ts` ran on dev (1 org patched, idempotent re-run unchanged=1); `AIReliabilityCard` lands the per-tool reliability table in Settings → AI; `users.preferences.aiPulseDismissed` schema field + `dismissAiPulseSuggestion` authenticated mutation drive per-user dismissal. 15 contract tests at `convex/stage5.test.ts`. C.7 is now fully Implemented.
+
+---
+
+## C.8 — Senior-CRM roadmap (Milestones B–E from AI-AGENT-CAPABILITY-AUDIT.md)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog (~10 eng-weeks total)                                                      |
+| Category        | AI / proactive + analytical + autonomous + creative                                |
+| Phase to ship   | Phase 5 (post-launch — once reactive completeness is shipped)                      |
+| Owners          | `convex/ai/**`, `core/ai/**`                                                        |
+| Risk if skipped | Without these, the AI remains a "junior agent that does what's asked." The user's stated bar is "senior CRM specialist who suggests, improves, analyses, gives ideas, creates followups by itself, runs autonomous tasks without input." That requires **proactive ranking + analytical reasoning + autonomous workflows + creative drafting**. |
+
+**Why this card exists.** AI-AGENT-CAPABILITY-AUDIT scorecard: Reactive 9/10, Proactive 4/10, Analytical 3/10, Autonomous 1/10, Creative 2/10. Overall 5.8/10. Roadmap milestones:
+
+- **Milestone B — Proactive (2–3 wk).** Stale-record detector, per-record next-action ranking (materialised `aiNextActions` table), pipeline-anomaly alerts, dashboard insights ribbon.
+- **Milestone C — Analytical (2–3 wk).** `analyze_metric` tool, cohort analysis, win/loss reasoning on `close_deal`, pipeline-velocity dashboard, "why did you do that?" trace UI.
+- **Milestone D — Autonomous (3–4 wk).** Standing orders / playbooks (cron-driven LLM workflows via `aiStandingOrders` table), auto-followup on stage move, auto-enrich on contact create, per-user autonomy allow-list (`users.preferences.aiAutonomy`).
+- **Milestone E — Creative (2 wk).** `draft_message` (pairs with `send_message` from C.6), `draft_proposal`, conversation summariser.
+
+**Cost estimate.** +$30–80/org/mo at full opt-in (cron-driven LLM calls dominate, but heuristic ranking is free).
+
+**Implementation sketch + cross-references.** See `/AI-AGENT-CAPABILITY-AUDIT.md §2-§4` for per-milestone gaps and `§5` for cost/eng-week breakdowns.
+
+---
+
 # D. Process / governance items (rules and conventions, not features)
 
 ## D.1 — STATE.md compliance audit (every module)
@@ -612,3 +678,11 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-24 | AI (shipped)  | T8 — WIDGET_REGISTRY backend exposure (`convex/_shared/widgetRegistry.ts` SSoT, frontend imports the data half + decorates with icons/getters/hrefs); `list_widgets` always-on read tool emits the catalogue + current layout; `update_dashboard_layout` settings-layer twoStep tool patches `org.settings.dashboardMetrics` after validating every key. systemPrompt now points the model at `update_dashboard_layout` instead of the generic `update_org_settings` patch path — SHIPPED | — |
 | 2026-05-24 | Billing (shipped) | BYOK policy update — quota gate now allows BYOK on every plan including free; platform models stay locked to paid tiers (free → "add BYOK or upgrade" message; starter/pro → metered; enterprise → unmetered). `convex/ai/orchestrator/quotaGate.ts` rewritten + `run.ts` moved the gate from before to after `resolveModelAndKey` so it knows `usageMode`. — SHIPPED | — |
 | 2026-05-24 | Cleanup (shipped) | Stale-code purge — deprecated `invitationRoleValidator` / `invitationRoleValues` / `InvitationRole` removed (no consumers); legacy `orgs.stripeCustomerId` + `stripeSubscriptionId` fields + `by_stripeCustomerId` index removed (zero rows had values, verified via runOneoffQuery; LemonSqueezy fields are the SSoT); dead `users.preferences.aiContextCardCollapsed` removed (no UI consumer). — SHIPPED | — |
+| 2026-05-25 | AI / Audit    | C.6 — Reactive-completeness wave (51 actionable gaps catalogued in `/AI-AUDIT-COMPLETE.md`). P0: `send_message` family (3 tools), P1: 5 tools (note edits, reminder updates, company-person, universal delete) | C |
+| 2026-05-25 | UX / Audit    | C.7 — Dashboard widget registry & template key normalisation. Root cause: `generic` template writes `reminders.list` but dashboard gates on `reminders.dueToday`; 9+ keys not in `WIDGET_KEYS`. See `/DASHBOARD-AUDIT.md` | C |
+| 2026-05-25 | AI / Roadmap  | C.8 — Senior-CRM specialist roadmap (Milestones B–E, ~10 eng-weeks). Proactive ranking + analytical reasoning + autonomous workflows + creative drafting. See `/AI-AGENT-CAPABILITY-AUDIT.md` | C |
+| 2026-05-26 | UX (shipped)  | C.7 — Dashboard widget registry & template key normalisation — SHIPPED Stage 1. `WIDGET_KEYS` 12 → 25; `LEGACY_KEY_RENAMES`; idempotent migration; CTA empty states on 4 widgets; `RemindersCard` gate widened. `D4` (`AIQuickComposerCard`) deferred to Stage 5. | C |
+| 2026-05-26 | AI (shipped)  | C.6 — Messaging tool wave — Stage 2 SHIPPED. `send_message` (+ commit), `list_messages`, `mark_thread_read`, `add_participants` (+ commit), `remove_participant` (+ commit). ForAI twins added across messages + conversations modules. P1 surface still pending Stage 3. | C |
+| 2026-05-26 | AI (shipped)  | C.6 — Reactive parity P1 wave — Stage 3 SHIPPED. Universal `delete_entity` (+ commit) over lead/contact/company/deal/note/reminder; `update_reminder` (+ commit); `update_note` / `delete_note` (+ commits) + `pin_note` / `set_note_category` (atomic); `add_person_to_company` / `remove_person_from_company` (+ commits). ForAI twins on entity `softDelete`, companies `addPerson`/`removePerson`, notes `update`/`togglePin`/`setCategory`/`remove`, reminders `update`/`remove`. New `convex/ai/queries/cascadeImpact.ts` powers cascade-impact propose card. P2 surface still pending Stage 4. | C |
+| 2026-05-26 | AI (shipped)  | C.6 — Reactive parity P2 wave — Stage 4 SHIPPED. 18 new AI tools across 7 layers covering pipeline-stage edits (`update_pipeline_stage` / `remove_pipeline_stage` / `reorder_pipeline_stages` / `set_default_pipeline`), `move_lead_status`, `update_tag`, `update_saved_view`, files (`list_files` / `update_file_tags` / `remove_file`), `reopen_deal`, `list_org_timeline`, `resend_invitation`, custom roles (`create_custom_role` / `update_custom_role` / `delete_custom_role`), and notifications (`list_notifications` / `mark_notification_read`). 3 new tool layers: `files`, `timeline`, `notifications`. ForAI twins added on pipelines/tags/savedViews/files/orgRoles/timeline/invitations/deals/notifications backend modules. NEW public `tags/mutations:update`, `invitations/mutations:resend`, `deals/mutations:reopen`. 14 ForAI contract tests. AI coverage by usage frequency: ~70% → ~95%. **Milestone A (Reactive parity) complete.** | C |
+| 2026-05-26 | UX (shipped)  | C.7 — AI dashboard surface — Stage 5 SHIPPED. `AIQuickComposerCard` (pinned mini composer that opens the chat sheet via new `flowbite:ai-chat-open` event + prefills via existing `flowbite:ai-chat-prefill`); `AIPulseRibbon` (top-3 dismissible AI suggestions ribbon, per-user dismiss in `users.preferences.aiPulseDismissed` via new `dismissAiPulseSuggestion` mutation); `AIReliabilityCard` in Settings → AI driven by new `getOrgUsage.reliability.perTool` aggregation. 2 new widget keys (`ai.quickComposer`, `ai.pulseRibbon`) registered + opted into all 9 templates; idempotent migration `convex/_migrations/2026_05_26_addAiDashboardWidgets.ts`. 15 contract tests at `convex/stage5.test.ts`. **C.7 fully closed.** | C |

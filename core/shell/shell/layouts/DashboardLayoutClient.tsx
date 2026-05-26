@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { SidebarSkeleton } from "@/components/skeletons/SidebarSkeleton";
 import { AppSheet } from "@/components/ui/app-sheet";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { useChatPanelOpenListener } from "@/core/ai/lib/chatPrefill";
 import { CrmDataProvider } from "@/core/entities/shared/hooks/useOrgTags";
 import { OrgProvider } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
@@ -76,6 +77,19 @@ export function DashboardLayoutClient({
 		// biome-ignore lint/suspicious/noDocumentCookie: Cookie Store API is still unstable in Safari; sync document.cookie assignment is the cross-browser baseline.
 		document.cookie = `chat_panel_state=${newState}; path=/; max-age=31536000`;
 	}, [chatOpen]);
+
+	// Stage 5 — let any surface (e.g. AIQuickComposerCard on the dashboard)
+	// open the chat panel by dispatching `openChatPanel()`. Idempotent — no
+	// state change if the panel is already open.
+	const handleOpenChat = useCallback(() => {
+		setChatOpen((prev) => {
+			if (prev) return prev;
+			// biome-ignore lint/suspicious/noDocumentCookie: matches the toggleChat path above.
+			document.cookie = `chat_panel_state=true; path=/; max-age=31536000`;
+			return true;
+		});
+	}, []);
+	useChatPanelOpenListener(handleOpenChat);
 
 	const onMouseDown = useCallback(
 		(e: React.MouseEvent) => {

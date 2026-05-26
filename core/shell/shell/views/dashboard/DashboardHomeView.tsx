@@ -35,6 +35,8 @@ import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalen
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
+	AIPulseRibbon,
+	AIQuickComposerCard,
 	DailyBriefingCard,
 	MetricStrip,
 	MockDataBanner,
@@ -114,6 +116,16 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				    Hidden when there are zero suggestions (no panel = no noise). */}
 				<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
 
+				{/* Stage 5 — AI Pulse Ribbon. Top-3 highest-value suggestions,
+				    dismissible per-user, rendered ABOVE the metric strip when
+				    there is at least one undismissed suggestion. Same heuristic
+				    source as AISuggestionsPanel — no extra Convex subscription. */}
+				{isEnabled("ai.pulseRibbon") && <AIPulseRibbon orgId={orgId} />}
+
+				{/* Stage 5 — AI Quick Composer. Pinned mini chat textarea so the
+				    user can ask the AI without opening the side sheet first. */}
+				{isEnabled("ai.quickComposer") && <AIQuickComposerCard />}
+
 				{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
 				    Daily on the left (per-user), Weekly on the right (org-wide).
 				    Both visible only when the template opted in via `ai.morningBriefing`. */}
@@ -127,9 +139,16 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				{/* Row 1 — Registry-driven metric strip */}
 				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />
 
-				{/* Row 2 — Reminders + Pipeline */}
+				{/* Row 2 — Reminders + Pipeline.
+				    `reminders.list` is the canonical section-card key (added in
+				    Stage 1 of DASHBOARD-AUDIT.md fixes — the user's "reminders
+				    not showing" bug). KPI-shaped variants (`reminders.dueToday`
+				    / `tasks.dueToday`) also enable the card so existing
+				    templates keep rendering it without a forced migration. */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					{(isEnabled("reminders.dueToday") || isEnabled("tasks.dueToday")) && (
+					{(isEnabled("reminders.list") ||
+						isEnabled("reminders.dueToday") ||
+						isEnabled("tasks.dueToday")) && (
 						<div className="lg:col-span-7">
 							<RemindersCard orgId={orgId} orgSlug={orgSlug} />
 						</div>

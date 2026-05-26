@@ -9,13 +9,22 @@
  * widget itself filters out anything the user shouldn't see.
  *
  * Per FRONTEND-DECISIONS Rule 1 — pure Convex live query, no Zustand.
+ *
+ * Sprint Stage 1 (2026-05-26 — DASHBOARD-AUDIT.md §3 Step 3) — empty
+ * state replaced with a CTA card mirroring `<NextReminderFallback />`:
+ * dashed border, icon, prompt, and a button that prefills the chat
+ * composer so the user can send the first message via the AI rather
+ * than navigating away. The widget no longer renders `null`-shaped
+ * empty content; the dashboard always shows actionable affordance.
  */
 import { format } from "date-fns";
 import { MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Id } from "@/convex/_generated/dataModel";
+import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { useRecentMessages } from "@/core/comms/messages/hooks";
 import { useOrgMembers } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { type EntityLabels, useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
@@ -76,16 +85,7 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 				{messages === undefined ? (
 					<p className="text-xs text-muted-foreground">Loading…</p>
 				) : messages.length === 0 ? (
-					<p className="text-xs text-muted-foreground">
-						No conversations yet. Start one from{" "}
-						<Link
-							href={`/${orgSlug}/messages`}
-							className="text-foreground underline-offset-4 hover:underline"
-						>
-							Messages
-						</Link>
-						.
-					</p>
+					<MessagesEmptyFallback orgSlug={orgSlug} />
 				) : (
 					<ul className="flex flex-col gap-1">
 						{messages.map((m) => {
@@ -134,5 +134,38 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 				)}
 			</CardContent>
 		</Card>
+	);
+}
+
+/**
+ * Empty-state CTA — mirrors the `<NextReminderFallback />` pattern from
+ * `RemindersCard`. Card-shaped, dashed border, icon, prompt, button.
+ * The button dispatches a chat prefill so the user can compose the
+ * first message via the AI sheet without navigating off the dashboard.
+ */
+function MessagesEmptyFallback({ orgSlug }: { orgSlug: string }) {
+	return (
+		<div className="flex h-full flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed bg-muted/30 px-4 py-6 text-center">
+			<MessageSquare className="size-6 text-muted-foreground" aria-hidden="true" />
+			<p className="text-sm font-medium text-foreground">No conversations yet</p>
+			<p className="text-xs text-muted-foreground">
+				Start a thread with a contact, lead, or teammate.
+			</p>
+			<div className="mt-1 flex items-center gap-2">
+				<Button
+					size="sm"
+					variant="outline"
+					className="h-7 text-xs"
+					onClick={() =>
+						sendChatPrefill("Send a message to a contact about a recent deal.")
+					}
+				>
+					Ask AI to send one
+				</Button>
+				<Button asChild size="sm" variant="ghost" className="h-7 text-xs">
+					<Link href={`/${orgSlug}/messages`}>Open messages</Link>
+				</Button>
+			</div>
+		</div>
 	);
 }

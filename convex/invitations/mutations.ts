@@ -400,6 +400,90 @@ export const cancelForAI = internalMutation({
 });
 
 /**
+ * Resend a pending invitation — regenerates the token, extends `expiresAt`
+ * by `INVITATION_EXPIRY_MS` from now, and re-fires the email-delivery action.
+ *
+ * Why a fresh token: the invite link is one-shot per `accept` flow. Resending
+ * with the original token reuses the same URL — but if the original recipient
+ * forwarded it or the inviter wants a clean restart (e.g. email typo), a new
+ * token is the safer default. The previous token is invalidated.
+ *
+ * Refuses to resend invitations that are NOT in `pending` state (already
+ * accepted, declined, or cancelled).
+ *
+ * RBAC: `members.invite` (same as create).
+ */
+async function resendImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		invitationId: Id<"invitations">;
+	},
+) {
+	const now = Date.now();
+
+	const invitation = await ctx.db.get(args.invitationId);
+	if (!invitation || invitation.orgId !== args.orgId)
+		throw new ConvexError(ERRORS.INVITATION_NOT_FOUND);
+	if (invitation.status !== "pending") throw new ConvexError(ERRORS.INVITATION_ALREADY_USED);
+
+	const newToken = crypto.randomUUID();
+
+	await ctx.db.patch(args.invitationId, {
+		token: newToken,
+		expiresAt: now + INVITATION_EXPIRY_MS,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "updated",
+		entityType: ENTITY_TYPES.INVITATION,
+		entityId: args.invitationId,
+		description: `Resent invitation to ${invitation.email}`,
+	});
+
+	await ctx.scheduler.runAfter(0, internal.invitations.actions.sendInvitationEmail, {
+		invitationId: args.invitationId,
+	});
+
+	return {
+		invitationId: args.invitationId,
+		token: newToken,
+		acceptUrl: buildAcceptUrl(newToken),
+	};
+}
+
+export const resend = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		invitationId: v.id("invitations"),
+	},
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined) throw new ConvexError(ERRORS.FORBIDDEN);
+		requireRole(member.permissions, "members.invite");
+		return resendImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
+
+/** AI-callable internal twin. */
+export const resendForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		invitationId: v.id("invitations"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "members.invite");
+		return resendImpl(ctx, args);
+	},
+});
+
+/**
  * Internal — called by `sendInvitationEmail` action to record the email
  * delivery outcome on the activity log. Never throws (a failed write here
  * shouldn't break the user-visible flow).

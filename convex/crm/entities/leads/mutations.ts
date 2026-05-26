@@ -407,31 +407,52 @@ export const updateAiContext = orgMutation({
 	},
 });
 
+async function softDeleteImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; leadId: Id<"leads"> },
+) {
+	const lead = await ctx.db.get(args.leadId);
+	if (!lead || lead.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	await ctx.db.patch(args.leadId, { deletedAt: Date.now(), updatedAt: Date.now() });
+
+	// Counter: only decrement "open" if it WAS still open (not converted, not deleted).
+	if (!lead.deletedAt && !lead.convertedAt) {
+		await applyOrgStat(ctx, args.orgId, "leads.open", -1);
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: "lead",
+		entityId: args.leadId,
+		personCode: lead.personCode,
+		description: `Lead deleted: ${lead.displayName}`,
+	});
+}
+
 export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), leadId: v.id("leads") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.delete");
+		return softDeleteImpl(ctx, { ...args, userId });
+	},
+});
 
-		const lead = await ctx.db.get(args.leadId);
-		if (!lead || lead.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		await ctx.db.patch(args.leadId, { deletedAt: Date.now(), updatedAt: Date.now() });
-
-		// Counter: only decrement "open" if it WAS still open (not converted, not deleted).
-		if (!lead.deletedAt && !lead.convertedAt) {
-			await applyOrgStat(ctx, args.orgId, "leads.open", -1);
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "deleted",
-			entityType: "lead",
-			entityId: args.leadId,
-			personCode: lead.personCode,
-			description: `Lead deleted: ${lead.displayName}`,
-		});
+/**
+ * AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule.
+ * Wraps `softDeleteImpl` with `userId` validated via `requireOrgMemberByIds`
+ * so scheduled actions (which can't read getAuthUserId) can still safely
+ * delete a lead. Soft-delete only — sets `deletedAt`, never hard-removes.
+ */
+export const softDeleteForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), leadId: v.id("leads") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.delete");
+		return softDeleteImpl(ctx, args);
 	},
 });
 

@@ -577,6 +577,8 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 	// Order matches §9.6 of CODE-ARCHITECTURE-PHASE-3A.md.
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"leads.open",
 		"deals.open",
 		"deals.pipelineValue",

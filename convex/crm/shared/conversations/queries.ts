@@ -10,8 +10,13 @@
  */
 
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
 import type { Doc, Id } from "../../../_generated/dataModel";
+import { internalQuery } from "../../../_generated/server";
 import { entityTypeForChatValidator, getOtherUserFromPairKey } from "../../../_shared/entityCodes";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 import { findConversation, getMyMembership, listActiveMembers } from "./internal";
@@ -334,5 +339,116 @@ export const listEntityDisplays = orgQuery({
 		}
 
 		return result;
+	},
+});
+
+// ─── ForAI internal twins ────────────────────────────────────────────────────
+//
+// Stage 2 of SPRINT-PLAN.md (2026-05-26). Drives the AI tools
+// `list_messages` / `mark_thread_read` / `add_participants` /
+// `remove_participant` from `convex/ai/tools/messaging/*`.
+//
+// Per AGENTS.md: same body as the public versions, auth from a trusted
+// `userId` arg via `requireOrgMemberByIds`. Doc<"conversations"> is
+// reused here to keep the cross-conversation inbox shape consistent.
+
+export const listForUserForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		filter: v.optional(v.union(v.literal("all"), v.literal("unread"), v.literal("archived"))),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const filter = args.filter ?? "all";
+		const cap = args.limit ?? 25;
+
+		const memberships = await ctx.db
+			.query("conversationMembers")
+			.withIndex("by_org_and_user", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", args.userId),
+			)
+			.take(cap * 2);
+
+		const active = memberships.filter((m) => m.leftAt === undefined);
+
+		type EnrichedRow = {
+			membership: Doc<"conversationMembers">;
+			conversation: Doc<"conversations">;
+			unread: boolean;
+		};
+
+		const enriched: EnrichedRow[] = [];
+		for (const m of active) {
+			const convo = await ctx.db.get(m.conversationId);
+			if (!convo) continue;
+			const unread = Boolean(
+				convo.lastMessageAt && (m.lastReadAt ?? 0) < convo.lastMessageAt,
+			);
+			enriched.push({ membership: m, conversation: convo, unread });
+		}
+
+		const filtered = enriched.filter((r) => {
+			if (filter === "unread") return r.unread && !r.conversation.isArchived;
+			if (filter === "archived") return r.conversation.isArchived;
+			return !r.conversation.isArchived;
+		});
+
+		filtered.sort(
+			(a, b) =>
+				(b.conversation.lastMessageAt ?? b.conversation.createdAt) -
+				(a.conversation.lastMessageAt ?? a.conversation.createdAt),
+		);
+
+		return filtered.slice(0, cap);
+	},
+});
+
+export const getUnreadCountForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		conversationId: v.id("conversations"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		const conversation = await ctx.db.get(args.conversationId);
+		if (!conversation || conversation.orgId !== args.orgId) return 0;
+
+		const myMembership = await getMyMembership(ctx, {
+			conversationId: args.conversationId,
+			userId: args.userId,
+		});
+		if (!myMembership) return 0;
+
+		const lastReadAt = myMembership.lastReadAt ?? 0;
+		const newer = await ctx.db
+			.query("messages")
+			.withIndex("by_conversation_and_created", (q) =>
+				q.eq("conversationId", args.conversationId).gt("createdAt", lastReadAt),
+			)
+			.take(100);
+		return newer.length;
+	},
+});
+
+export const getForEntityForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: entityTypeForChatValidator,
+		entityId: v.string(),
+		threadId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "messages.view");
+
+		return await findConversation(ctx, args);
 	},
 });

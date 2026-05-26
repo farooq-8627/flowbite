@@ -12,7 +12,29 @@
  */
 
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../_functions/authenticated";
+import { orgQuery, requireOrgMember, requireOrgMemberByIds } from "../_functions/authenticated";
+import type { Id } from "../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../_generated/server";
+
+async function listByScopeImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; scope: string; scopeId: string },
+) {
+	const rows = await ctx.db
+		.query("files")
+		.withIndex("by_org_and_scope", (q) =>
+			q.eq("orgId", args.orgId).eq("scope", args.scope).eq("scopeId", args.scopeId),
+		)
+		.collect();
+	const active = rows.filter((f) => f.deletedAt === undefined);
+	const withUrls = await Promise.all(
+		active.map(async (f) => ({
+			...f,
+			url: await ctx.storage.getUrl(f.storageId),
+		})),
+	);
+	return withUrls.sort((a, b) => b.createdAt - a.createdAt);
+}
 
 export const listByScope = orgQuery({
 	args: {
@@ -22,20 +44,22 @@ export const listByScope = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		await requireOrgMember(ctx, args.orgId);
-		const rows = await ctx.db
-			.query("files")
-			.withIndex("by_org_and_scope", (q) =>
-				q.eq("orgId", args.orgId).eq("scope", args.scope).eq("scopeId", args.scopeId),
-			)
-			.collect();
-		const active = rows.filter((f) => f.deletedAt === undefined);
-		const withUrls = await Promise.all(
-			active.map(async (f) => ({
-				...f,
-				url: await ctx.storage.getUrl(f.storageId),
-			})),
-		);
-		return withUrls.sort((a, b) => b.createdAt - a.createdAt);
+		return listByScopeImpl(ctx, args);
+	},
+});
+
+/** AI-callable internal twin. */
+export const listByScopeForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		scope: v.string(),
+		scopeId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return listByScopeImpl(ctx, rest);
 	},
 });
 
@@ -103,6 +127,54 @@ export const listByTag = orgQuery({
  * EntityFilesPanel previously opened (listByScope + listByTag + listByScope for person).
  * One server-side query, deduped + sorted. Saves 2 subscriptions per detail-page mount.
  */
+async function listForEntityImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; scope: string; scopeId: string; personCode?: string },
+) {
+	const tag = `${args.scope}:${args.scopeId}`;
+	const personScopeRedundant = args.scope === "person" && args.personCode === args.scopeId;
+
+	const [direct, tagged, person] = await Promise.all([
+		ctx.db
+			.query("files")
+			.withIndex("by_org_and_scope", (q) =>
+				q.eq("orgId", args.orgId).eq("scope", args.scope).eq("scopeId", args.scopeId),
+			)
+			.collect(),
+		ctx.db
+			.query("files")
+			.withIndex("by_org_and_scope", (q) => q.eq("orgId", args.orgId))
+			.collect()
+			.then((rows) => rows.filter((f) => f.tags?.includes(tag))),
+		args.personCode && !personScopeRedundant
+			? ctx.db
+					.query("files")
+					.withIndex("by_org_and_scope", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("scope", "person")
+							.eq("scopeId", args.personCode!),
+					)
+					.collect()
+			: Promise.resolve([]),
+	]);
+
+	const seen = new Set<string>();
+	const merged: typeof direct = [];
+	for (const f of [...direct, ...tagged, ...person]) {
+		if (f.deletedAt !== undefined) continue;
+		const key = String(f._id);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(f);
+	}
+	merged.sort((a, b) => b.createdAt - a.createdAt);
+
+	return await Promise.all(
+		merged.map(async (f) => ({ ...f, url: await ctx.storage.getUrl(f.storageId) })),
+	);
+}
+
 export const listForEntity = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
@@ -113,48 +185,23 @@ export const listForEntity = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		await requireOrgMember(ctx, args.orgId);
-		const tag = `${args.scope}:${args.scopeId}`;
-		const personScopeRedundant = args.scope === "person" && args.personCode === args.scopeId;
+		return listForEntityImpl(ctx, args);
+	},
+});
 
-		const [direct, tagged, person] = await Promise.all([
-			ctx.db
-				.query("files")
-				.withIndex("by_org_and_scope", (q) =>
-					q.eq("orgId", args.orgId).eq("scope", args.scope).eq("scopeId", args.scopeId),
-				)
-				.collect(),
-			ctx.db
-				.query("files")
-				.withIndex("by_org_and_scope", (q) => q.eq("orgId", args.orgId))
-				.collect()
-				.then((rows) => rows.filter((f) => f.tags?.includes(tag))),
-			args.personCode && !personScopeRedundant
-				? ctx.db
-						.query("files")
-						.withIndex("by_org_and_scope", (q) =>
-							q
-								.eq("orgId", args.orgId)
-								.eq("scope", "person")
-								.eq("scopeId", args.personCode!),
-						)
-						.collect()
-				: Promise.resolve([]),
-		]);
-
-		const seen = new Set<string>();
-		const merged: typeof direct = [];
-		for (const f of [...direct, ...tagged, ...person]) {
-			if (f.deletedAt !== undefined) continue;
-			const key = String(f._id);
-			if (seen.has(key)) continue;
-			seen.add(key);
-			merged.push(f);
-		}
-		merged.sort((a, b) => b.createdAt - a.createdAt);
-
-		return await Promise.all(
-			merged.map(async (f) => ({ ...f, url: await ctx.storage.getUrl(f.storageId) })),
-		);
+/** AI-callable internal twin. */
+export const listForEntityForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		scope: v.string(),
+		scopeId: v.string(),
+		personCode: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const { userId: _u, ...rest } = args;
+		return listForEntityImpl(ctx, rest);
 	},
 });
 

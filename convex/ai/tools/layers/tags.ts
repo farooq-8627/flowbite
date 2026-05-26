@@ -128,3 +128,56 @@ registerTool({
 			return { ok: true as const, data: args, display: `✅ Tag deleted.` };
 		}),
 });
+
+// ─── Stage 4 — update_tag (atomic) ───────────────────────────────────────────
+
+registerTool({
+	name: "update_tag",
+	layer: "tags",
+	permission: "tags.manage",
+	confirmation: "none",
+	description: "Rename a tag and / or change its colour. Atomic — small change, no propose card.",
+	instruction: {
+		whenToCall:
+			"User asks to rename / recolour an existing tag. Pre-compute the desired final name + colour.",
+		whenNotToCall:
+			"the user wants to delete the tag (use delete_tag) OR create a new one (use create_tag) OR attach/detach the tag from a record (use attach_tag / detach_tag).",
+		preflight: ["list_tags"],
+		requiredClarifications: ["tagId"],
+		synonyms: ["rename tag", "recolour tag", "edit tag"],
+		goodExample: {
+			description: "User: 'Rename the Hot tag to High-priority and make it red.'",
+			args: { tagId: "abc123", name: "High-priority", color: "#ef4444" },
+		},
+	},
+	runbook: {
+		onSuccess: "Confirm in one short sentence with the new label and colour if changed.",
+		onValidationError:
+			"If tagId doesn't resolve OR the new name collides with an existing tag, surface available tags via list_tags.",
+	},
+	schema: z
+		.object({
+			tagId: z.string().describe("Convex tags _id."),
+			name: z.optional(z.string().min(1)).describe("New name (optional)."),
+			color: z.optional(z.string()).describe("New hex colour (optional, e.g. #6366f1)."),
+		})
+		.refine((v) => v.name !== undefined || v.color !== undefined, {
+			message: "At least one of name / color must be set.",
+		}),
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "tags.manage");
+			await toolMutation(getCtx(), "crm/shared/tags/mutations:update", {
+				orgId,
+				tagId: args.tagId,
+				name: args.name,
+				color: args.color,
+			});
+			return {
+				ok: true as const,
+				data: args,
+				display: `✏️ Tag updated.`,
+			};
+		}),
+});

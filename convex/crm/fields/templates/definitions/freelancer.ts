@@ -236,6 +236,8 @@ export const freelancerTemplate: IndustryTemplate = {
 
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"deals.invoiced.unpaid",
 		"reminders.dueToday",
 		"deals.open",
@@ -243,7 +245,7 @@ export const freelancerTemplate: IndustryTemplate = {
 		"reminders.list",
 		"today.focus",
 		"messages.recent",
-		"calendar.miniWidget",
+		"calendar.mini",
 	],
 
 	customRoles: [],

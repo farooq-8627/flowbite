@@ -4,6 +4,11 @@
  * Forces all layer tool files to be loaded so registerTool() side-effects fire.
  * Imported from processChat.ts.
  */
+
+export { setFilesContext } from "../files";
+export { setMessagingContext } from "../messaging";
+export { setNotificationsContext } from "../notifications";
+export { setTimelineContext } from "../timeline";
 export { setBulkContext } from "./bulk";
 export { setCategoriesContext } from "./categories";
 export { setCsvImportContext } from "./csvImport";

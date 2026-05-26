@@ -366,6 +366,8 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 
 	dashboardMetrics: [
 		"ai.morningBriefing",
+		"ai.pulseRibbon",
+		"ai.quickComposer",
 		"deals.open",
 		"deals.pipelineValue",
 		"deals.invoiced.unpaid",

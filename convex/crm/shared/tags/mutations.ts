@@ -71,6 +71,77 @@ export const createForAI = internalMutation({
 	},
 });
 
+async function updateImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; tagId: Id<"tags">; name?: string; color?: string },
+) {
+	const tag = await ctx.db.get(args.tagId);
+	if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const patch: Record<string, unknown> = {};
+	if (args.name !== undefined) {
+		const trimmed = args.name.trim();
+		if (trimmed.length === 0) {
+			throw new ConvexError({
+				code: "INVALID_NAME",
+				message: "Tag name cannot be empty",
+			});
+		}
+		// Reject duplicate names (case-sensitive — matches `create` behaviour).
+		if (trimmed !== tag.name) {
+			const collision = await ctx.db
+				.query("tags")
+				.withIndex("by_org_and_name", (q) => q.eq("orgId", args.orgId).eq("name", trimmed))
+				.first();
+			if (collision && collision._id !== args.tagId) {
+				throw new ConvexError({
+					code: "DUPLICATE",
+					message: "Tag with this name already exists",
+				});
+			}
+			patch.name = trimmed;
+		}
+	}
+	if (args.color !== undefined) patch.color = args.color;
+
+	if (Object.keys(patch).length === 0) return; // nothing to do
+	await ctx.db.patch(args.tagId, patch);
+}
+
+/**
+ * Rename a tag and / or change its colour. Owner / admin only (tags.manage).
+ */
+export const update = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		tagId: v.id("tags"),
+		name: v.optional(v.string()),
+		color: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "tags.manage");
+		return updateImpl(ctx, args);
+	},
+});
+
+/** AI-callable internal twin. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		tagId: v.id("tags"),
+		name: v.optional(v.string()),
+		color: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "tags.manage");
+		const { userId: _u, ...rest } = args;
+		return updateImpl(ctx, rest);
+	},
+});
+
 async function removeImpl(ctx: MutationCtx, args: { orgId: Id<"orgs">; tagId: Id<"tags"> }) {
 	const tag = await ctx.db.get(args.tagId);
 	if (!tag || tag.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);

@@ -1,7 +1,23 @@
 # core/ai — State
 
-> Updated: 2026-05-24 (post hotfix wave: convert_lead tool, EntityResultCard arg fix, message patch hardening, add_note entityCode acceptance, settings empty-patch guard)
-> Status: **~98 / 100 production-readiness.** Phase 3 closed; Phase 4 Part 1 + Part 2 (telemetry + AI quota gate + AI-native parity push + widget registry) fully shipped. Only Phase 4 Part 3 (LemonSqueezy upgrade flow) remains.
+> Updated: 2026-05-25 (audit pass: AI-AUDIT-COMPLETE.md + DASHBOARD-AUDIT.md + AI-AGENT-CAPABILITY-AUDIT.md generated)
+> Status: **~98 / 100 production-readiness.** Phase 3 closed; Phase 4 Part 1 + Part 2 (telemetry + AI quota gate + AI-native parity push + widget registry) fully shipped. Phase 4 Part 3 (LemonSqueezy upgrade flow) + Reactive-completeness wave (P0/P1 missing tools) remain.
+
+## 🆕 2026-05-25 audit deliverables
+
+Three new audit docs at the repo root — read in this order before adding new tools:
+
+| Doc | What it answers |
+|---|---|
+| [/AI-AUDIT-COMPLETE.md](../../AI-AUDIT-COMPLETE.md) | The full **3-column map** of every backend function ↔ AI tool. 75 tools enumerated, 51 actionable gaps prioritised P0–P3, half-baked tool list, edge-case test matrix. |
+| [/DASHBOARD-AUDIT.md](../../DASHBOARD-AUDIT.md) | Root-cause analysis of the "reminders not showing" bug — `generic` template writes `reminders.list`, frontend gates on `reminders.dueToday`. Also lists the 9 dashboard-metric keys that aren't in `WIDGET_KEYS`. Fix plan + migration sketch. |
+| [/AI-AGENT-CAPABILITY-AUDIT.md](../../AI-AGENT-CAPABILITY-AUDIT.md) | Senior-CRM-specialist evaluation. Reactive 9/10, Proactive 4/10, Analytical 3/10, Autonomous 1/10, Creative 2/10. Roadmap milestones A–E (~10 eng-weeks) to reach the bar. |
+
+**Headline findings:**
+- AI **cannot send messages** — `crm/shared/messages/mutations:send` exists but no `send_message` tool wraps it. This is why the AI fell back to `add_note`. **P0.**
+- AI **cannot edit/delete notes**, **cannot edit reminders**, **cannot delete entities** without going through the bulk-update workaround. **P1.**
+- Dashboard widget hide is caused by **template/registry key mismatch**, not "no data". `RemindersCard` is gated on `reminders.dueToday`, generic template writes `reminders.list` → widget hidden permanently.
+- Empty-state UX hides widgets instead of showing CTAs — needs a `<NextReminderFallback>`-style pattern on `MessagesPreviewWidget`, `TimelineActivityWidget`, `WeekAheadWidget`.
 >
 > This file is a **pending-work index**, not a changelog. For shipped detail see git history; for the durable AI Context Architecture see `/PHASE-3-AI-AUDIT.md §0.2`. For active gap analysis see `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md`.
 > **For how to test the AI end-to-end, see `core/ai/TESTING.md`.**
@@ -41,11 +57,45 @@ All five regressions are now covered by:
 
 ## ⬜ Pending
 
+### 🚨 Reactive-completeness wave (audit-driven, 2026-05-25)
+
+| ID | Task | Priority | Effort |
+|---|---|---|---|
+| ✅ **R1** | **Stage 2 — SHIPPED 2026-05-26.** `send_message` + `commit_send_message`, `list_messages`, `mark_thread_read`, `add_participants` + commit, `remove_participant` + commit shipped under the new `messaging` tool layer. ForAI twins added for every public mutation/query the tools call (`sendForAI` / `updateForAI` / `removeForAI` / `toggleReactionForAI` on messages; `ensureForEntityForAI` / `addParticipantsForAI` / `removeParticipantForAI` / `markReadForAI` / `leaveForAI` / `updateNotificationLevelForAI` on conversations; matching query twins). System prompt gained `## Messaging` verb-routing block. 8 ForAI contract tests at `convex/ai/tools/messaging/messaging.test.ts`. Closes the user's "AI calls add_note when I asked to send a message" complaint end-to-end. | — | — |
+| ✅ **R2-R5** | **Stage 3 — SHIPPED 2026-05-26.** P1 reactive parity wave shipped: `delete_entity` + commit (universal — soft-deletes lead/contact/company/deal/note/reminder via cascade-impact propose), `update_reminder` + commit (twoStep, accepts `followUpCode` or `reminderId`), `update_note` + commit / `delete_note` + commit / `pin_note` (atomic) / `set_note_category` (atomic), `add_person_to_company` + commit / `remove_person_from_company` + commit (twoStep, idempotent). Per AGENTS.md non-negotiable rule: every backing public mutation gained a same-file `*ForAI` twin (leads/contacts/companies/deals `softDeleteForAI`; companies `addPersonForAI` / `removePersonForAI`; notes `updateForAI` / `togglePinForAI` / `setCategoryForAI` / `removeForAI`; reminders `updateForAI` / `removeForAI`) — bodies extracted to `*Impl` helpers so public + ForAI cannot diverge. New internal query `convex/ai/queries/cascadeImpact.ts:getEntityCascadeImpact` powers the universal delete propose card. System prompt gained Stage-3 verb-routing blocks for Notes / Reminders / Companies / universal deletion. 12 ForAI contract tests at `convex/ai/tools/stage3/stage3.test.ts`. Closes the user's "AI uses bulk_update to delete things" + "AI can't push my reminder" + "AI can't add Sara to Acme" complaints. | — | — |
+| ✅ **R6-R10** | **Stage 4 — SHIPPED 2026-05-26.** P2/P3 reactive parity wave shipped: 18 new AI tools across 7 layers covering pipeline-stage edits (`update_pipeline_stage`, `remove_pipeline_stage`, `reorder_pipeline_stages`, `set_default_pipeline`), lead status (`move_lead_status`), tag/view edits (`update_tag`, `update_saved_view`), files (`list_files`, `update_file_tags`, `remove_file`), reopen-deal (`reopen_deal`), org-wide timeline (`list_org_timeline`), invitations (`resend_invitation`), custom roles (`create_custom_role` / `update_custom_role` / `delete_custom_role`), and per-user notifications (`list_notifications`, `mark_notification_read`). 3 new tool layers introduced: `files`, `timeline`, `notifications`. Per AGENTS.md non-negotiable rule, every backing public mutation/query has a same-file `*ForAI` twin: pipelines (6 twins via `*Impl` extraction), tags (NEW public `update` + ForAI), savedViews (`updateForAI`), files (`listByScopeForAI` + `listForEntityForAI` + `updateTagsForAI` + `removeForAI`), orgRoles (3 twins on `authenticatedMutation` model + `listForAI`), timeline (`getForOrgForAI`), invitations (NEW public `resend` + `resendForAI`), deals (NEW public `reopen` + `reopenForAI`), notifications (`listMineForAI` + `markReadForAI`). System prompt gained a `## Pipelines / Files / Timeline / Roles / Notifications / Tag-view` block with verb-driven routing. 14 ForAI contract tests at `convex/ai/tools/stage4/stage4.test.ts`. AI coverage by usage frequency: ~70% → ~95%. Reactive parity gap with the UI is closed for the entire app. | — | — |
+
+### 🐛 Dashboard fix wave
+
+✅ **Stage 1 — SHIPPED 2026-05-26.** `WIDGET_KEYS` extended from 12 → 25 covering every section + KPI + placeholder key the industry templates use; `LEGACY_KEY_RENAMES` collapses `calendar.miniWidget` → `calendar.mini`; idempotent migration `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts` ran on dev (scanned 1 / patched 0 — already canonical); 4 widget empty states replaced with CTA cards mirroring `<NextReminderFallback />`; `RemindersCard` gate widened to honour `reminders.list`. The user's "reminders not showing" complaint is fixed end-to-end. See `convex/_shared/widgetRegistry.ts`, `convex/ai/queries/widgets.test.ts` (32 contract tests).
+
+✅ **Stage 5 — SHIPPED 2026-05-26.** D4 (`AIQuickComposerCard`) + D5 (`AIPulseRibbon`) + AICostWatcher all closed. New AI dashboard surface: `core/shell/shell/views/dashboard/cards/AIQuickComposerCard.tsx` (pinned mini composer that opens the side sheet via the new `flowbite:ai-chat-open` event + prefills via the existing `flowbite:ai-chat-prefill` event) and `AIPulseRibbon.tsx` (top-3 dismissible suggestions reading `ai.suggestions.list` — same heuristic engine — with per-user dismiss persisted in `users.preferences.aiPulseDismissed`). Settings → AI gained `AIReliabilityCard` (per-tool callCount / successRate / avgDurationMs / topErrorReason for 7d / 30d / 90d windows) backed by the new `getOrgUsage.reliability.perTool` aggregation. Two new widget keys (`ai.quickComposer`, `ai.pulseRibbon`) registered + opted into all 9 templates; idempotent migration `convex/_migrations/2026_05_26_addAiDashboardWidgets.ts` patches existing org rows (1 patched on dev, idempotent re-run unchanged=1). 15 contract tests at `convex/stage5.test.ts`. Schema added `users.preferences.aiPulseDismissed` (record, capped 50 via writer).
+
+### 🎓 Senior CRM specialist roadmap (per AI-AGENT-CAPABILITY-AUDIT.md)
+
+**Today: 5.8 / 10. Bar: senior specialist who suggests, analyses, and acts autonomously.**
+
+| Milestone | Headline | Key tools / queries | Effort |
+|---|---|---|---|
+| **B — Proactive** | Stale-record detector, per-record next-action ranking, pipeline-anomaly alerts | `aiNextActions` table + `convex/ai/queries/anomalies.ts` + dashboard ribbon | 2–3 wk |
+| **C — Analytical** | "Why is X happening?" tool, cohort analysis, win/loss reasoning, pipeline-velocity, trace UI | `analyze_metric`, `cohort_analysis`, member-performance query, `/ai/trace/:conversationId` viewer | 2–3 wk |
+| **D — Autonomous** | Standing orders / playbooks (cron-driven LLM workflows), auto-followup on stage move, auto-enrich on create, per-user autonomy allow-list | `aiStandingOrders` table, `users.preferences.aiAutonomy` map, audit trail in `aiToolEvents` | 3–4 wk |
+| **E — Creative** | `draft_message` (pairs with `send_message` from R1), `draft_proposal`, conversation summariser | New tools + drafts table | 2 wk |
+
+Total to reach senior-CRM bar: ~10 eng-weeks, +$30–80/org/mo at full opt-in.
+
+### 💸 Phase 4 Part 3 — Billing wall (still pending)
+
 | ID | Task | Effort |
 |---|---|---|
-| T9 | **Phase 4 Part 3 — LemonSqueezy upgrade flow.** Webhook smoke test (full subscription lifecycle in test mode) + production signing-secret rotation playbook + per-variant feature-gate copy on the pricing card + trial flow + 3-day past_due grace period. Full plan in `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md §2 T9`. | ~3 days |
-| T11 | Reminder kinds histogram (low priority). `create_reminder.reminderType` is hardcoded to a 5-item enum; if telemetry shows custom kinds, add `list_reminder_kinds` exposing a 30-day distinct histogram. | ~1 hour |
-| T12 | Permission catalog introspection (low priority). Add `list_permission_catalog` always-on read tool returning `{ key, description, category }[]` from `convex/_shared/permissions/catalog.ts`. | ~30 min |
+| T9 | **LemonSqueezy upgrade flow.** Webhook smoke test (full subscription lifecycle in test mode) + production signing-secret rotation playbook + per-variant feature-gate copy on the pricing card + trial flow + 3-day past_due grace period. Full plan in `/PHASE-4-PART-2-AI-NATIVE-AUDIT.md §2 T9`. | ~3 days |
+
+### 🧹 Low-priority backlog
+
+| ID | Task | Effort |
+|---|---|---|
+| T11 | Reminder kinds histogram. `create_reminder.reminderType` is hardcoded to a 5-item enum; if telemetry shows custom kinds, add `list_reminder_kinds` exposing a 30-day distinct histogram. | ~1 hr |
+| T12 | Permission catalog introspection. Add `list_permission_catalog` always-on read tool returning `{ key, description, category }[]` from `convex/_shared/permissions/catalog.ts`. | ~30 min |
 
 ## 🆕 BYOK policy (locked 2026-05-24)
 

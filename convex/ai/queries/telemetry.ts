@@ -68,7 +68,14 @@ export const getOrgUsage = orgQuery({
 
 		const byTool = new Map<
 			string,
-			{ calls: number; errors: number; costUsd: number; durationMs: number }
+			{
+				calls: number;
+				errors: number;
+				costUsd: number;
+				durationMs: number;
+				/** Per-tool error-reason histogram for reliability stats. */
+				errorReasons: Map<string, number>;
+			}
 		>();
 		const byModel = new Map<
 			string,
@@ -99,9 +106,18 @@ export const getOrgUsage = orgQuery({
 					errors: 0,
 					costUsd: 0,
 					durationMs: 0,
+					errorReasons: new Map<string, number>(),
 				};
 				t.calls += 1;
-				if (!e.ok) t.errors += 1;
+				if (!e.ok) {
+					t.errors += 1;
+					// Group by errorCode (preferred) or fall back to a
+					// truncated message so the histogram never explodes.
+					const reason =
+						e.errorCode ??
+						(e.errorMessage ? truncateErrorReason(e.errorMessage) : "unknown");
+					t.errorReasons.set(reason, (t.errorReasons.get(reason) ?? 0) + 1);
+				}
 				t.costUsd += cost;
 				t.durationMs += e.durationMs ?? 0;
 				byTool.set(e.toolName, t);
@@ -172,6 +188,35 @@ export const getOrgUsage = orgQuery({
 			.sort((a, b) => b.calls - a.calls)
 			.slice(0, 10);
 
+		// Stage 5 — per-tool reliability stats. Surfaces the AI Reliability
+		// card in Settings → AI and feeds Constraint H ("inject low-reliability
+		// tool hints into systemPrompt") in Stage 6+. Sorted by callCount desc
+		// so the noisiest tools come first; capped at 50 to keep the payload
+		// bounded for very busy orgs.
+		const perTool = [...byTool.entries()]
+			.map(([name, t]) => {
+				let topErrorReason: string | null = null;
+				let topErrorCount = 0;
+				for (const [reason, count] of t.errorReasons) {
+					if (count > topErrorCount) {
+						topErrorReason = reason;
+						topErrorCount = count;
+					}
+				}
+				return {
+					toolName: name,
+					callCount: t.calls,
+					successCount: t.calls - t.errors,
+					errorCount: t.errors,
+					successRate: t.calls > 0 ? (t.calls - t.errors) / t.calls : 1,
+					avgDurationMs: t.calls > 0 ? Math.round(t.durationMs / t.calls) : 0,
+					topErrorReason,
+					topErrorCount,
+				};
+			})
+			.sort((a, b) => b.callCount - a.callCount)
+			.slice(0, 50);
+
 		const topModels = [...byModel.entries()]
 			.map(([model, m]) => ({
 				model,
@@ -210,9 +255,36 @@ export const getOrgUsage = orgQuery({
 			topTools,
 			topModels,
 			daily,
+			/**
+			 * Stage 5 — per-tool reliability over the requested range.
+			 * Independent of `topTools` because this list is sized for
+			 * the dedicated AIReliabilityCard (capped at 50 entries) and
+			 * carries the top error reason + duration breakdown the card
+			 * surfaces. Drives Constraint H once Stage 6 lands.
+			 */
+			reliability: {
+				windowMs: RANGE_MS[range],
+				perTool,
+			},
 		};
 	},
 });
+
+/**
+ * Trim an error message into a short reason key for the per-tool
+ * error-reason histogram. Keeps the histogram bounded — long error
+ * messages from external providers (Anthropic, OpenAI) often carry
+ * a request id that would otherwise create a unique reason per call.
+ */
+function truncateErrorReason(msg: string): string {
+	const trimmed = msg.trim();
+	if (trimmed.length === 0) return "unknown";
+	// Take the first sentence / line, capped at 80 chars.
+	const firstLine = trimmed.split(/[\r\n]/)[0] ?? trimmed;
+	const firstSentence = firstLine.split(/[.!?]/)[0] ?? firstLine;
+	const candidate = (firstSentence || firstLine).slice(0, 80);
+	return candidate || "unknown";
+}
 
 function round2(n: number): number {
 	return Math.round(n * 100) / 100;

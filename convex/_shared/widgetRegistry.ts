@@ -9,6 +9,19 @@
  * `get(stats)` formatters, and the link factories — those live next
  * to the React render path.
  *
+ * Sprint Stage 1 (2026-05-26 — DASHBOARD-AUDIT.md §3 Step 1) — extended
+ * the catalogue from 12 KPI-only keys to 25 keys covering every
+ * dashboard surface (KPI tiles + section cards + placeholders) the
+ * industry templates legitimately reference. Closes the "reminders
+ * widget not showing" bug whose root cause was the `generic` template
+ * writing the unregistered `reminders.list` section key. After this
+ * change `validateDashboardLayout` accepts every template's keys, the
+ * `update_dashboard_layout` AI tool can write them, and unknown keys
+ * are still rejected loudly. The companion migration
+ * `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts` rewrites
+ * the legacy `calendar.miniWidget` alias to canonical `calendar.mini`
+ * across every existing org row.
+ *
  * Why pure data here: Convex modules can't import React. The frontend
  * registry imports `WIDGETS` from this file and decorates each entry
  * with the rendering metadata it needs. The widget keys themselves —
@@ -18,8 +31,11 @@
  *
  * To add a new widget:
  *   1. Add the key + meta below.
- *   2. Add the matching `WidgetSpec` (icon, get, href) in the
- *      frontend WidgetRegistry.tsx so the dashboard can render it.
+ *   2. (For KPI-size widgets) add the matching `WidgetSpec` (icon,
+ *      get, href) in the frontend `WidgetRegistry.tsx` so the dashboard
+ *      can render it as a tile. Section / full-size widgets render as
+ *      cards gated on `isEnabled(key)` in `DashboardHomeView.tsx` and
+ *      do not need a frontend tile spec.
  *   3. (Optional) update industry templates' `dashboardMetrics`
  *      arrays to opt the new widget into the default layout.
  */
@@ -30,6 +46,7 @@
  * `org.settings.dashboardMetrics`.
  */
 export const WIDGET_KEYS = [
+	// ── KPI tiles (rendered by MetricStrip) ─────────────────────────────
 	"leads.open",
 	"contacts.active",
 	"companies.active",
@@ -41,13 +58,42 @@ export const WIDGET_KEYS = [
 	"tasks.overdue",
 	"tasks.doneThisWeek",
 	"tasks.streak",
+	// KPI placeholders (templates use them; UI ships in Phase 4+).
+	"tasks.thisWeek",
+	"tasks.recentlyCompleted",
+	"deals.lost",
+	"deals.invoiced.unpaid",
+	// ── Section cards (rendered conditionally below the KPI strip) ──────
+	"reminders.list", // RemindersCard gate
+	"messages.recent", // MessagesPreviewWidget gate
+	"activity.recent", // TimelineActivityWidget gate
+	"calendar.weekAhead", // WeekAheadWidget gate (full width)
+	"calendar.mini", // MiniCalendarWidget gate
+	"today.focus", // TodaySummaryCard gate
+	// Section placeholders (templates use them; widgets to be built later).
+	"deals.pipeline",
+	"deals.staleByStage",
+	"deals.renewingIn30Days",
+	// ── Full-width AI surfaces ──────────────────────────────────────────
 	"ai.morningBriefing",
+	"ai.quickComposer",
+	"ai.pulseRibbon",
 ] as const;
 
 export type WidgetKey = (typeof WIDGET_KEYS)[number];
 
 export type WidgetCategory = "crm" | "scheduling" | "productivity" | "ai";
 
+/**
+ * Layout-size discriminator.
+ *   - `kpi`  — small numeric tile rendered by `MetricStrip`.
+ *   - `half` — half-width card rendered conditionally below the strip.
+ *   - `full` — full-width card rendered conditionally below the strip.
+ *
+ * Frontend `resolveWidgets` filters to size === "kpi" only — section
+ * widgets are not iterated as tiles, they gate dedicated cards via
+ * `isEnabled(key)` in `DashboardHomeView`.
+ */
 export type WidgetSize = "kpi" | "half" | "full";
 
 export type WidgetMeta = {
@@ -60,8 +106,10 @@ export type WidgetMeta = {
 	/** Size hint — KPI tiles vs half-width vs full-width cards. */
 	size: WidgetSize;
 	/**
-	 * Marker for incomplete widgets that render a placeholder tile.
-	 * Excluded from default layouts; AI should not propose adding them.
+	 * Marker for incomplete widgets that render a placeholder tile or
+	 * have no UI surface yet. Excluded from default layouts; AI may
+	 * reference them via `list_widgets` but should not propose adding
+	 * them until the matching widget is built.
 	 */
 	placeholder?: boolean;
 };
@@ -71,6 +119,7 @@ export type WidgetMeta = {
  * from here and adds icons / formatters / hrefs on top.
  */
 export const WIDGETS: Record<WidgetKey, WidgetMeta> = {
+	// ── KPI tiles ───────────────────────────────────────────────────────
 	"leads.open": {
 		label: "Open leads",
 		description: "Count of leads that haven't been won, lost, or converted.",
@@ -138,10 +187,119 @@ export const WIDGETS: Record<WidgetKey, WidgetMeta> = {
 		size: "kpi",
 		placeholder: true,
 	},
+	"tasks.thisWeek": {
+		label: "Due this week",
+		description: "Tasks due in the trailing 7 days (placeholder — UI in Phase 4B).",
+		category: "productivity",
+		size: "kpi",
+		placeholder: true,
+	},
+	"tasks.recentlyCompleted": {
+		label: "Recently completed",
+		description: "Most recently completed tasks (placeholder — UI in Phase 4B).",
+		category: "productivity",
+		size: "kpi",
+		placeholder: true,
+	},
+	"deals.lost": {
+		label: "Deals lost",
+		description: "Deals closed-lost across the workspace history (placeholder).",
+		category: "crm",
+		size: "kpi",
+		placeholder: true,
+	},
+	"deals.invoiced.unpaid": {
+		label: "Awaiting payment",
+		description:
+			"Invoiced deals not yet paid — used by freelancer / agency templates (placeholder).",
+		category: "crm",
+		size: "kpi",
+		placeholder: true,
+	},
+
+	// ── Section cards (gated below the KPI strip) ───────────────────────
+	"reminders.list": {
+		label: "Reminders & follow-ups",
+		description:
+			"Card surfacing today's + overdue reminders with inline create. Gates the dashboard's RemindersCard.",
+		category: "scheduling",
+		size: "half",
+	},
+	"messages.recent": {
+		label: "Recent messages",
+		description: "Card listing the most recent conversation messages across the workspace.",
+		category: "crm",
+		size: "half",
+	},
+	"activity.recent": {
+		label: "Recent activity",
+		description: "Card surfacing the org-wide timeline feed of CRM activity.",
+		category: "crm",
+		size: "half",
+	},
+	"calendar.weekAhead": {
+		label: "Week ahead",
+		description: "Full-width 7-day strip of upcoming reminders + calendar events.",
+		category: "scheduling",
+		size: "full",
+	},
+	"calendar.mini": {
+		label: "Calendar (mini)",
+		description: "Small month-grid date picker that deep-links into the full calendar.",
+		category: "scheduling",
+		size: "half",
+	},
+	"today.focus": {
+		label: "Today's focus",
+		description:
+			"Card summarising today's commitments — reminders due, leads to qualify, deals to advance.",
+		category: "productivity",
+		size: "half",
+	},
+	"deals.pipeline": {
+		label: "Pipeline visualisation",
+		description:
+			"Stage-by-stage pipeline overview (placeholder — gated until the dedicated card ships).",
+		category: "crm",
+		size: "half",
+		placeholder: true,
+	},
+	"deals.staleByStage": {
+		label: "Stale deals by stage",
+		description: "Stage-by-stage breakdown of deals past their stale threshold (placeholder).",
+		category: "crm",
+		size: "half",
+		placeholder: true,
+	},
+	"deals.renewingIn30Days": {
+		label: "Renewing in 30 days",
+		description:
+			"Won deals whose lease / subscription expires within 30 days — used by real-estate / Saudi templates (placeholder).",
+		category: "crm",
+		size: "half",
+		placeholder: true,
+	},
+
+	// ── Full-width AI surfaces ──────────────────────────────────────────
 	"ai.morningBriefing": {
 		label: "AI morning briefing",
 		description:
 			"Full-width AI summary of overnight activity, top priorities, and stale records.",
+		category: "ai",
+		size: "full",
+	},
+	// Stage 5 — AI dashboard surface (SPRINT-PLAN.md Stage 5).
+	"ai.quickComposer": {
+		label: "AI quick composer",
+		description:
+			"Pinned mini chat composer on the dashboard. Drops the typed prompt into the AI chat panel with a single click — no need to open the side sheet first.",
+		category: "ai",
+		size: "full",
+	},
+	"ai.pulseRibbon": {
+		label: "AI pulse",
+		description:
+			"Top 3 highest-value AI suggestions, dismissible per-user. Renders above the metric strip when there is at least one suggestion.",
 		category: "ai",
 		size: "full",
 	},
@@ -184,4 +342,50 @@ export function validateDashboardLayout(input: string[]): {
 		else rejected.push(k);
 	}
 	return { keys, rejected };
+}
+
+/**
+ * Legacy → canonical key rename map. Read by both the schema-time
+ * migration `2026_05_26_normalizeDashboardMetrics.ts` AND the AI tool
+ * `update_dashboard_layout` so models that still emit the old name
+ * silently coerce instead of erroring. New legacy aliases must be
+ * added here AND covered by a migration that rewrites existing rows.
+ *
+ * Aliases are NOT registered as widget keys. `validateDashboardLayout`
+ * still rejects them — callers must rewrite via this map first.
+ */
+export const LEGACY_KEY_RENAMES: Record<string, WidgetKey> = {
+	// `calendar.miniWidget` was used by productivity + freelancer templates
+	// before Stage 1 of the dashboard fix wave. Collapsed to canonical
+	// `calendar.mini`. The migration rewrites all existing org settings.
+	"calendar.miniWidget": "calendar.mini",
+};
+
+/**
+ * Apply legacy renames + de-duplication to a candidate dashboardMetrics
+ * array. Used by the migration and any future bulk-import path.
+ * Idempotent — running twice is a no-op.
+ */
+export function normalizeDashboardLayout(input: readonly string[]): {
+	keys: WidgetKey[];
+	rejected: string[];
+	renamed: Array<{ from: string; to: WidgetKey }>;
+} {
+	const seen = new Set<string>();
+	const keys: WidgetKey[] = [];
+	const rejected: string[] = [];
+	const renamed: Array<{ from: string; to: WidgetKey }> = [];
+	for (const raw of input) {
+		const aliasTarget = LEGACY_KEY_RENAMES[raw];
+		const candidate = aliasTarget ?? raw;
+		if (seen.has(candidate)) continue;
+		seen.add(candidate);
+		if (isWidgetKey(candidate)) {
+			keys.push(candidate);
+			if (aliasTarget) renamed.push({ from: raw, to: aliasTarget });
+		} else {
+			rejected.push(raw);
+		}
+	}
+	return { keys, rejected, renamed };
 }

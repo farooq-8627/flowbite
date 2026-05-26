@@ -174,6 +174,10 @@ export const resume = internalAction({
 			"bulk",
 			"templates",
 			"data",
+			"messaging",
+			"files",
+			"timeline",
+			"notifications",
 		];
 		const allTools = getToolsForRequest({
 			permissions: memberInfo.permissions,

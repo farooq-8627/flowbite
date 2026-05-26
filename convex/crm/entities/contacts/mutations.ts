@@ -281,29 +281,48 @@ export const updateAiContext = orgMutation({
 	},
 });
 
+async function softDeleteImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; contactId: Id<"contacts"> },
+) {
+	const contact = await ctx.db.get(args.contactId);
+	if (!contact || contact.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	await ctx.db.patch(args.contactId, { deletedAt: Date.now(), updatedAt: Date.now() });
+	if (!contact.deletedAt) {
+		await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: "contact",
+		entityId: args.contactId,
+		personCode: contact.personCode,
+		description: `Contact deleted: ${contact.displayName}`,
+	});
+}
+
 export const softDelete = orgMutation({
 	args: { orgId: v.id("orgs"), contactId: v.id("contacts") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "contacts.delete");
+		return softDeleteImpl(ctx, { ...args, userId });
+	},
+});
 
-		const contact = await ctx.db.get(args.contactId);
-		if (!contact || contact.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		await ctx.db.patch(args.contactId, { deletedAt: Date.now(), updatedAt: Date.now() });
-		if (!contact.deletedAt) {
-			await applyOrgStat(ctx, args.orgId, "contacts.active", -1);
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "deleted",
-			entityType: "contact",
-			entityId: args.contactId,
-			personCode: contact.personCode,
-			description: `Contact deleted: ${contact.displayName}`,
-		});
+/**
+ * AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule.
+ * Soft-delete only (sets `deletedAt`).
+ */
+export const softDeleteForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), contactId: v.id("contacts") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "contacts.delete");
+		return softDeleteImpl(ctx, args);
 	},
 });
 

@@ -504,6 +504,10 @@ You're running on a lightweight model. You DO have access to every tool the user
 		"bulk",
 		"templates",
 		"data",
+		"messaging",
+		"files",
+		"timeline",
+		"notifications",
 	] as const;
 	// Only include a layer in the prompt if (a) it's one of the user's
 	// expanded layers AND (b) the runbook block has at least one tool from
@@ -535,6 +539,48 @@ You're running on a lightweight model. You DO have access to every tool the user
 		if (name.includes("template")) liveLayerNames.add("templates");
 		if (name.includes("trash") || name.includes("restore") || name.includes("undelete"))
 			liveLayerNames.add("data");
+		if (
+			name === "send_message" ||
+			name === "commit_send_message" ||
+			name === "list_messages" ||
+			name === "mark_thread_read" ||
+			name === "add_participants" ||
+			name === "commit_add_participants" ||
+			name === "remove_participant" ||
+			name === "commit_remove_participant"
+		) {
+			liveLayerNames.add("messaging");
+		}
+		if (
+			name === "list_files" ||
+			name === "update_file_tags" ||
+			name === "commit_update_file_tags" ||
+			name === "remove_file" ||
+			name === "commit_remove_file"
+		) {
+			liveLayerNames.add("files");
+		}
+		if (name === "list_org_timeline") {
+			liveLayerNames.add("timeline");
+		}
+		if (name === "list_notifications" || name === "mark_notification_read") {
+			liveLayerNames.add("notifications");
+		}
+		// Stage 4 — pipelines layer additions (update/remove/reorder/setDefault stage,
+		// move_lead_status, reopen_deal). Existing `pipeline` / `stage` heuristic
+		// catches all of them already.
+		if (
+			name === "resend_invitation" ||
+			name === "commit_resend_invitation" ||
+			name === "create_custom_role" ||
+			name === "commit_create_custom_role" ||
+			name === "update_custom_role" ||
+			name === "commit_update_custom_role" ||
+			name === "delete_custom_role" ||
+			name === "commit_delete_custom_role"
+		) {
+			liveLayerNames.add("members");
+		}
 	}
 	const advertisedLayers = ALL_KNOWN_LAYERS.filter((l) => liveLayerNames.has(l));
 	const expansionInstruction =
@@ -568,6 +614,133 @@ The blank line between the row and the prose is REQUIRED — without it the rend
 5. **One table per entity.** When listing fields for multiple entities (leads + contacts), emit a separate fenced markdown table for EACH, separated by a blank line and an h3 header. Do not stack rows from different entities into a single table.
 6. **Pre-flight every write.** Before any \`create_*\` or \`update_*\` tool call, run the pre-flight read named in that tool's runbook (typically \`list_entity_fields\` for field tools or \`search_crm\` for entity tools) so duplicates are caught before approval. The user should NEVER see two leads named "Sarah Khan" because pre-flight was skipped.
 7. **Auto-map common synonyms.** Schema enums coerce \`leads → lead\`, \`picklist → select\`, \`checkbox → boolean\` automatically — but if the user said something the schema can't map (e.g. "people", "file"), call \`ask_user_choice\` instead of guessing.
+`.trim(),
+	);
+
+	// ── Messaging (Stage 2 of SPRINT-PLAN.md) ───────────────────────────────
+	// Steady-state policy block telling the model when to call send_message
+	// vs add_note vs create_followup. The verb-based routing matters because
+	// (a) "send X" and "log a note about X" produce different rows in
+	// different tables and (b) the user's mental model is verb-driven.
+	parts.push(
+		`
+## Messaging
+
+Verb-driven routing — use the right tool for the user's verb:
+
+- **"send / message / tell / reply / DM / write to / ping"** → \`send_message\`. Posts to the conversation thread; recipients get a notification. NEVER use \`add_note\` for these verbs.
+- **"add a note / record that / log / annotate"** → \`add_note\`. Internal record on the entity; doesn't notify other members.
+- **"remind me / follow up / schedule"** → \`create_followup\` (or \`update_reminder\`).
+
+Targeting:
+- Pass exactly one of \`personCode\` (P-XXX), \`dealCode\` (D-XXX), \`companyCode\` (C-XXX), or \`conversationId\` (raw Convex id, only when the chat originated from a thread).
+- The conversation is auto-created on first message — you do NOT need to "ensure conversation" first.
+
+Reading threads (\`list_messages\`):
+- For "what did <person> say?" → pass \`personCode\`.
+- For "show me the Acme thread" → search for the deal/company code first, then pass it.
+- For "my inbox / unread messages" → pass \`inbox: true\`. Default \`limit\` is 25.
+
+Participants (\`add_participants\` / \`remove_participant\`):
+- Always pre-flight with \`list_members\` to resolve names to userIds. Never guess userIds.
+- Self-leave is allowed without the messages.subscribe permission.
+
+When in doubt about target or content, call \`ask_user_input\` before proposing the send. Do NOT guess message bodies.
+`.trim(),
+	);
+
+	// ── Stage 3 verb-routing (Notes / Reminders / Companies / Deletion) ────
+	// Mirrors the Stage 2 Messaging block — the user's mental model is
+	// verb-driven, and the tools fan out to different mutation paths
+	// depending on the verb. Without this guidance the model defaults
+	// to bulk_update_entities for deletes (the old workaround) and
+	// silently changes column fields for what should have been a
+	// dedicated tool call.
+	parts.push(
+		`
+## Notes — edit / pin / category / delete
+
+Verb-driven routing for note tools:
+
+- **"edit / fix / amend / rewrite / correct"** a note → \`update_note\` (twoStep). Surface the before/after for user confirmation. NEVER use add_note when the user is editing — add_note creates a new note, hiding the typo instead of fixing it.
+- **"pin / unpin / star / highlight"** a note → \`pin_note\` (atomic, no confirmation).
+- **"recategorize / move column / reclassify"** → \`set_note_category\` (atomic). Run \`list_categories\` first to resolve the categoryId.
+- **"delete / remove / trash"** a note → \`delete_note\` (twoStep) OR \`delete_entity\` with \`entityType: "note"\` (twoStep). Both work; prefer delete_entity for free-form "delete this thing" prompts that span entity types.
+
+Notes are hard-deleted (no trash) — there's no undo. The propose card already says so; don't re-warn the user in prose.
+
+## Reminders — edit / push / cancel
+
+- **"push / postpone / reschedule / change / reassign / re-prioritise"** a reminder → \`update_reminder\` (twoStep). Pass \`followUpCode\` (FU-XXX, preferred) or \`reminderId\`. NEVER use update_entity for reminders — \`update_entity\` is for lead/contact/deal/company only.
+- **"mark done / completed"** → \`complete_reminder\` (raw id) OR \`complete_followup_by_code\` (FU-XXX).
+- **"cancel / drop"** → \`cancel_followup_by_code\` (FU-XXX) — permanent, no undo. The propose card warns; don't re-warn.
+- **"delete the reminder"** → \`delete_entity\` with \`entityType: "reminder"\` and \`followUpCode\`. Same destructive behaviour as cancel; the propose card surfaces it consistently with other deletes.
+
+When the user says "remind me to do X next Tuesday", that's a CREATE intent — call \`create_followup\` (preferred for person-tied) or \`create_reminder\` (org-internal), not \`update_reminder\`.
+
+## Companies — link / unlink people
+
+- **"add / link / attach"** a person to a company → \`add_person_to_company\` (twoStep). Idempotent — safe to retry.
+- **"remove / unlink / disassociate"** a person from a company → \`remove_person_from_company\` (twoStep). Idempotent.
+
+NEVER edit \`personCodes\` or \`companyId\` directly via update_entity — those are denormalised join columns. The dedicated link tools maintain the join table and activity log correctly. The user's "Sara works at Acme" or "Sara left Acme" prompts route here, not through update_entity.
+
+For free-form "Sara joined Acme as VP Sales", call \`add_person_to_company\` first AND then \`update_entity\` to set Sara's title — two separate user-approved tool calls is safer than one big patch.
+
+## Universal delete
+
+When the user says "delete X" without an obvious tool match, prefer \`delete_entity\` (twoStep) — it routes by \`entityType\` to the right \`*ForAI\` softDelete and surfaces a cascade-impact preview ("this will trash 3 deals + 2 notes"). Use the dedicated entity-specific delete tools (delete_note) only when the user has clearly named the entity type AND the tool is more direct.
+
+Soft-delete only — every entity goes to trash and can be restored via \`restore_entity\`. Notes are the exception (hard-delete; the propose card says so).
+`.trim(),
+	);
+
+	// ── Stage 4 verb-routing (Pipelines / Files / Timeline / Roles / Notifications) ──
+	parts.push(
+		`
+## Pipelines — stage edits / lead status / reopen-deal
+
+Verb-driven routing for pipeline tools (layer: \`pipelines\`):
+
+- **"rename / recolour / change-code / set-stale-days"** on a stage → \`update_pipeline_stage\` (twoStep). The propose card surfaces deals affected.
+- **"delete / remove"** a stage → \`remove_pipeline_stage\` (twoStep). Refuses if any deals sit in the stage; the user must move them first via \`move_deal_stage\`.
+- **"reorder / rearrange / move stage up"** → \`reorder_pipeline_stages\` (twoStep). Pre-compute the FULL desired non-default order; the Default stage stays pinned at position 0.
+- **"set default / make default / promote stage"** → \`set_default_pipeline\` (twoStep). NOTE: the Default stage is fixed in this build — the tool no-ops if the target IS already the default and refuses otherwise. Use \`update_pipeline_stage\` to rename the existing Default stage instead.
+- **Lead status moves** (\`new\` / \`contacted\` / \`qualified\` / \`unqualified\`) → \`move_lead_status\` (atomic). Mirrors \`move_deal_stage\` for verb shape; "qualify L-007" is the canonical phrasing. To convert a lead to a contact, use \`convert_lead\`, not move_lead_status.
+- **"reopen / restart / un-close"** a closed deal → \`reopen_deal\` (twoStep). Clears wonAt/lostAt, restores to the Default stage, rebalances org counters.
+
+## Files — list / tag / remove (layer: \`files\`)
+
+The AI cannot upload files (UI-only). It can only manage already-uploaded files.
+
+- **"show / list files / attachments / documents"** → \`list_files\`. Pass exactly one of \`personCode\` / \`dealCode\` / \`companyCode\`, OR a raw \`(scope, scopeId)\` pair.
+- **"tag / categorise / retag"** a file → \`update_file_tags\` (twoStep). The mutation REPLACES the entire tag list — pre-compute the desired final state.
+- **"delete / remove / discard"** a file → \`remove_file\` (twoStep). Soft-delete; the bytes are best-effort purged from storage.
+
+For raw bytes / extracted text, use \`analyze_file\` instead — it's a different tool family.
+
+## Timeline — org-wide activity (layer: \`timeline\`)
+
+- **"what happened today / recent activity / who did what / what did the AI do"** → \`list_org_timeline\`. Optionally filter by \`actorType\` (\`user\` / \`ai\` / \`system\`). Per-person history lives on the profile page UI; for the AI, prefer \`search_crm\` + \`get_entity_detail\` for that.
+
+## Roles & invitations (layer: \`members\`)
+
+- **"resend invite / re-send invitation"** → \`resend_invitation\` (twoStep). Regenerates the token, extends expiry, re-fires the email. Refuses if the invite is already accepted/declined/cancelled.
+- **"create role / add role"** → \`create_custom_role\` (twoStep). Pre-flight \`list_my_permissions\` to discover the permission key catalogue.
+- **"edit role / change permissions"** → \`update_custom_role\` (twoStep). System roles cannot be renamed; permissions and colour can be edited.
+- **"delete role / remove role"** → \`delete_custom_role\` (twoStep). Members assigned to it are auto-reassigned to the default role. System roles refuse deletion.
+
+## Notifications (layer: \`notifications\`)
+
+- **"my notifications / inbox / unread alerts"** → \`list_notifications\` (atomic). Optionally pass \`onlyUnread: true\`.
+- **"mark X as read / dismiss / acknowledge"** → \`mark_notification_read\` (atomic, idempotent).
+
+For org-wide messages NOT addressed to the user, \`list_messages\` with \`inbox: true\` is the right tool — notifications are user-scoped, messages are conversation-scoped.
+
+## Tag / saved-view edits
+
+- **"rename / recolour"** a tag → \`update_tag\` (atomic; layer \`tags\`).
+- **"rename / re-filter / re-sort"** a saved view → \`update_saved_view\` (atomic; layer \`views\`).
 `.trim(),
 	);
 

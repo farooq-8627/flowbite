@@ -17,15 +17,23 @@
  * Per SCHEDULING-IMPLEMENTATION.md §4.6 — uses ONE
  * `useCalendarEvents({ scope: "org" })` call with a tight 7-day window.
  * Dedupes naturally with the org-wide CalendarView when both are mounted.
+ *
+ * Sprint Stage 1 (2026-05-26 — DASHBOARD-AUDIT.md §3 Step 3) — when
+ * the 7-day window has zero events, the widget now renders a CTA card
+ * (title + body + "Schedule via AI" button) instead of a row of empty
+ * grid cells. The grid still shows when there's at least one event so
+ * the user keeps the day-by-day cadence affordance.
  */
 
 import { addDays, format, isToday, startOfDay } from "date-fns";
 import { ArrowRightIcon, CalendarRangeIcon } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { CalendarEventDTO } from "@/convex/crm/shared/calendar/queries";
+import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { useCalendarEvents } from "@/core/scheduling/calendar/hooks";
 import { bucketByDay } from "@/core/scheduling/calendar/lib/calendar-buckets";
 import { ymdKey } from "@/core/scheduling/calendar/lib/calendar-grid";
@@ -58,6 +66,8 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 	const buckets = useMemo(() => bucketByDay(events ?? []), [events]);
 	const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(new Date(), i)), []);
 
+	const isEmpty = events !== undefined && events.length === 0;
+
 	return (
 		<Card className={cn("flex flex-col", className)}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
@@ -75,6 +85,8 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 			<CardContent className="flex-1 pt-0">
 				{events === undefined ? (
 					<p className="text-xs text-muted-foreground">Loading…</p>
+				) : isEmpty ? (
+					<WeekAheadEmptyFallback orgSlug={orgSlug} />
 				) : (
 					<ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 lg:gap-1.5">
 						{days.map((day) => {
@@ -137,6 +149,39 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 				)}
 			</CardContent>
 		</Card>
+	);
+}
+
+/**
+ * Empty-state CTA when no events fall in the next 7 days. Mirrors
+ * `<NextReminderFallback />` shape — dashed border, icon, prompt, two
+ * buttons (AI prefill + open calendar). Replaces the silent "—" grid
+ * the widget would otherwise render.
+ */
+function WeekAheadEmptyFallback({ orgSlug }: { orgSlug: string }) {
+	return (
+		<div className="flex h-full flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed bg-muted/30 px-4 py-6 text-center">
+			<CalendarRangeIcon className="size-6 text-muted-foreground" aria-hidden />
+			<p className="text-sm font-medium text-foreground">Nothing scheduled this week</p>
+			<p className="text-xs text-muted-foreground">
+				Add a reminder, follow-up, or call to plan the next 7 days.
+			</p>
+			<div className="mt-1 flex items-center gap-2">
+				<Button
+					size="sm"
+					variant="outline"
+					className="h-7 text-xs"
+					onClick={() =>
+						sendChatPrefill("Schedule a follow-up reminder for tomorrow morning.")
+					}
+				>
+					Ask AI to schedule one
+				</Button>
+				<Button asChild size="sm" variant="ghost" className="h-7 text-xs">
+					<Link href={`/${orgSlug}/reminders?view=calendar`}>Open calendar</Link>
+				</Button>
+			</div>
+		</div>
 	);
 }
 

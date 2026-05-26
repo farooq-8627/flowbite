@@ -11,6 +11,13 @@
  * The widget pairs with `MessagesPreviewWidget` on the dashboard. Both
  * use the same row count (`limit`) and live in equal-width grid cells
  * so the visual density matches across the row.
+ *
+ * Sprint Stage 1 (2026-05-26 — DASHBOARD-AUDIT.md §3 Step 3) — empty
+ * state widened from a plain-text "Workspace activity will appear here"
+ * to a proper CTA card with an "Ask AI to create a record" button. The
+ * underlying `TimelineFeed`'s `emptyState` prop now accepts an `action`
+ * with `chatPrefillIntent` so the dashboard never hides itself behind
+ * a quiet empty state.
  */
 
 import { ActivityIcon } from "lucide-react";
@@ -72,7 +79,12 @@ export function TimelineActivityWidget({ orgSlug, limit = 6 }: TimelineActivityW
 					entryGapPx={12}
 					emptyState={{
 						title: "Nothing yet",
-						body: "Workspace activity will appear here.",
+						body: "Workspace activity will appear here as you create leads, deals, or notes.",
+						action: {
+							label: "Ask AI to create a lead",
+							chatPrefillIntent:
+								"Create a new lead — pick a name and seed the basics.",
+						},
 					}}
 					className="min-h-0"
 				/>

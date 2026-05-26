@@ -246,9 +246,66 @@ export const createForAI = internalMutation({
 
 /**
  * Patch any combination of `title`, `content`, `categoryId`, `isInternal`.
- * Only the note owner (with `notes.updateOwn`) or an admin (with
- * `notes.deleteAny`) may call this.
+ * Caller-provided permission gate: owner with `notes.updateOwn` OR an admin
+ * with `notes.deleteAny`. Body is shared by the public + ForAI twins.
  */
+async function updateImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		permissions: string[];
+		noteId: Id<"notes">;
+		title?: string;
+		content?: string;
+		categoryId?: Id<"noteCategories">;
+		isInternal?: boolean;
+	},
+) {
+	const note = await ctx.db.get(args.noteId);
+	if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const isOwn = note.authorId === args.userId;
+	const canEditOwn = hasPermission(args.permissions, "notes.updateOwn");
+	const canEditAny = hasPermission(args.permissions, "notes.deleteAny");
+	if (!(canEditAny || (isOwn && canEditOwn))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	// biome-ignore lint/suspicious/noExplicitAny: building a partial patch
+	const patch: any = { updatedAt: Date.now() };
+
+	if (args.content !== undefined) {
+		const trimmed = args.content.trim();
+		if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
+		patch.content = trimmed;
+	}
+	if (args.title !== undefined) {
+		const trimmed = args.title.trim();
+		if (trimmed.length > TITLE_MAX_LEN) throw new ConvexError(ERRORS.INVALID_ARGS);
+		patch.title = trimmed.length > 0 ? trimmed : undefined;
+	}
+	if (args.categoryId !== undefined) {
+		const cat = await ctx.db.get(args.categoryId);
+		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+		patch.categoryId = args.categoryId;
+	}
+	if (args.isInternal !== undefined) patch.isInternal = args.isInternal;
+
+	await ctx.db.patch(args.noteId, patch);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "note_updated",
+		entityType: note.entityType,
+		entityId: note.entityId,
+		personCode: note.personCode,
+		description: "Note updated",
+		metadata: { noteId: args.noteId },
+	});
+}
+
 export const update = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -260,76 +317,69 @@ export const update = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return updateImpl(ctx, { ...args, userId, permissions: member.permissions });
+	},
+});
 
-		const note = await ctx.db.get(args.noteId);
-		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isOwn = note.authorId === userId;
-		const canEditOwn = hasPermission(member.permissions, "notes.updateOwn");
-		const canEditAny = hasPermission(member.permissions, "notes.deleteAny");
-		if (!(canEditAny || (isOwn && canEditOwn))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		// biome-ignore lint/suspicious/noExplicitAny: building a partial patch
-		const patch: any = { updatedAt: Date.now() };
-
-		if (args.content !== undefined) {
-			const trimmed = args.content.trim();
-			if (trimmed.length === 0) throw new ConvexError(ERRORS.INVALID_ARGS);
-			patch.content = trimmed;
-		}
-		if (args.title !== undefined) {
-			const trimmed = args.title.trim();
-			if (trimmed.length > TITLE_MAX_LEN) throw new ConvexError(ERRORS.INVALID_ARGS);
-			patch.title = trimmed.length > 0 ? trimmed : undefined;
-		}
-		if (args.categoryId !== undefined) {
-			const cat = await ctx.db.get(args.categoryId);
-			if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-			patch.categoryId = args.categoryId;
-		}
-		if (args.isInternal !== undefined) patch.isInternal = args.isInternal;
-
-		await ctx.db.patch(args.noteId, patch);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "note_updated",
-			entityType: note.entityType,
-			entityId: note.entityId,
-			personCode: note.personCode,
-			description: "Note updated",
-			metadata: { noteId: args.noteId },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const updateForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		noteId: v.id("notes"),
+		title: v.optional(v.string()),
+		content: v.optional(v.string()),
+		categoryId: v.optional(v.id("noteCategories")),
+		isInternal: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return updateImpl(ctx, { ...args, permissions: member.permissions });
 	},
 });
 
 // ─── togglePin ───────────────────────────────────────────────────────────────
+
+async function togglePinImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; noteId: Id<"notes"> },
+): Promise<{ isPinned: boolean }> {
+	const note = await ctx.db.get(args.noteId);
+	if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const nextPinned = !note.isPinned;
+	await ctx.db.patch(args.noteId, { isPinned: nextPinned, updatedAt: Date.now() });
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: nextPinned ? "note_pinned" : "note_unpinned",
+		entityType: note.entityType,
+		entityId: note.entityId,
+		personCode: note.personCode,
+		description: nextPinned ? "Note pinned" : "Note unpinned",
+		metadata: { noteId: args.noteId },
+	});
+
+	return { isPinned: nextPinned };
+}
 
 export const togglePin = orgMutation({
 	args: { orgId: v.id("orgs"), noteId: v.id("notes") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.pin");
+		return togglePinImpl(ctx, { ...args, userId });
+	},
+});
 
-		const note = await ctx.db.get(args.noteId);
-		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const nextPinned = !note.isPinned;
-		await ctx.db.patch(args.noteId, { isPinned: nextPinned, updatedAt: Date.now() });
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: nextPinned ? "note_pinned" : "note_unpinned",
-			entityType: note.entityType,
-			entityId: note.entityId,
-			personCode: note.personCode,
-			description: nextPinned ? "Note pinned" : "Note unpinned",
-			metadata: { noteId: args.noteId },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const togglePinForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), noteId: v.id("notes") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.pin");
+		return togglePinImpl(ctx, args);
 	},
 });
 
@@ -349,6 +399,81 @@ export const togglePin = orgMutation({
  *   sortOrder so the recategorized card lands at the top of the new
  *   column, matching the user's expectation when they pick a category).
  */
+async function setCategoryImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		permissions: string[];
+		noteId: Id<"notes">;
+		categoryId: Id<"noteCategories">;
+		sortOrder?: number;
+	},
+) {
+	// Same drag-rate guard as `reorder`. Cross-column drops fire
+	// `setCategory` instead of `reorder`, so the throttle has to gate
+	// both for full coverage. We use the SAME scope so the budget is
+	// shared — a user dragging non-stop across columns counts the
+	// same as one dragging within a column.
+	await enforceRateLimit(ctx, {
+		scope: "notes.reorder",
+		key: `${args.userId}:${args.orgId}`,
+		max: 120,
+		periodMs: 60_000,
+		orgId: args.orgId,
+	});
+
+	const note = await ctx.db.get(args.noteId);
+	if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const isOwn = note.authorId === args.userId;
+	const canEditOwn = hasPermission(args.permissions, "notes.updateOwn");
+	const canEditAny = hasPermission(args.permissions, "notes.deleteAny");
+	if (!(canEditAny || (isOwn && canEditOwn))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	const cat = await ctx.db.get(args.categoryId);
+	if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const sameCategory = note.categoryId === args.categoryId;
+	const sameOrder = args.sortOrder === undefined || note.sortOrder === args.sortOrder;
+	if (sameCategory && sameOrder) return; // idempotent
+
+	// Compute the new sortOrder.
+	// - explicit value from the drag handler → use it
+	// - otherwise (dropdown picker, no neighbours) → server stamps a
+	//   top-of-column position so the recategorized card lands above
+	//   every existing card in the new column.
+	let nextSortOrder: number | undefined = args.sortOrder;
+	if (nextSortOrder === undefined && !sameCategory) {
+		nextSortOrder = await topOfColumnSortOrder(ctx, args.orgId, args.categoryId);
+	}
+
+	const patch: Record<string, unknown> = {
+		categoryId: args.categoryId,
+		updatedAt: Date.now(),
+	};
+	if (nextSortOrder !== undefined) patch.sortOrder = nextSortOrder;
+	await ctx.db.patch(args.noteId, patch);
+
+	// Defensive: if the drop landed in a tight neighbour gap, renumber
+	// the destination column with 1024-step gaps. Idempotent — bails
+	// when the column is already well-spaced.
+	await rebalanceCategoryIfTight(ctx, args.orgId, args.categoryId);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "note_recategorized",
+		entityType: note.entityType,
+		entityId: note.entityId,
+		personCode: note.personCode,
+		description: `Note category → ${cat.name}`,
+		metadata: { noteId: args.noteId, to: args.categoryId },
+	});
+}
+
 export const setCategory = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -358,69 +483,22 @@ export const setCategory = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return setCategoryImpl(ctx, { ...args, userId, permissions: member.permissions });
+	},
+});
 
-		// Same drag-rate guard as `reorder`. Cross-column drops fire
-		// `setCategory` instead of `reorder`, so the throttle has to gate
-		// both for full coverage. We use the SAME scope so the budget is
-		// shared — a user dragging non-stop across columns counts the
-		// same as one dragging within a column.
-		await enforceRateLimit(ctx, {
-			scope: "notes.reorder",
-			key: `${userId}:${args.orgId}`,
-			max: 120,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
-
-		const note = await ctx.db.get(args.noteId);
-		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isOwn = note.authorId === userId;
-		const canEditOwn = hasPermission(member.permissions, "notes.updateOwn");
-		const canEditAny = hasPermission(member.permissions, "notes.deleteAny");
-		if (!(canEditAny || (isOwn && canEditOwn))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		const cat = await ctx.db.get(args.categoryId);
-		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const sameCategory = note.categoryId === args.categoryId;
-		const sameOrder = args.sortOrder === undefined || note.sortOrder === args.sortOrder;
-		if (sameCategory && sameOrder) return; // idempotent
-
-		// Compute the new sortOrder.
-		// - explicit value from the drag handler → use it
-		// - otherwise (dropdown picker, no neighbours) → server stamps a
-		//   top-of-column position so the recategorized card lands above
-		//   every existing card in the new column.
-		let nextSortOrder: number | undefined = args.sortOrder;
-		if (nextSortOrder === undefined && !sameCategory) {
-			nextSortOrder = await topOfColumnSortOrder(ctx, args.orgId, args.categoryId);
-		}
-
-		const patch: Record<string, unknown> = {
-			categoryId: args.categoryId,
-			updatedAt: Date.now(),
-		};
-		if (nextSortOrder !== undefined) patch.sortOrder = nextSortOrder;
-		await ctx.db.patch(args.noteId, patch);
-
-		// Defensive: if the drop landed in a tight neighbour gap, renumber
-		// the destination column with 1024-step gaps. Idempotent — bails
-		// when the column is already well-spaced.
-		await rebalanceCategoryIfTight(ctx, args.orgId, args.categoryId);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "note_recategorized",
-			entityType: note.entityType,
-			entityId: note.entityId,
-			personCode: note.personCode,
-			description: `Note category → ${cat.name}`,
-			metadata: { noteId: args.noteId, to: args.categoryId },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const setCategoryForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		noteId: v.id("notes"),
+		categoryId: v.id("noteCategories"),
+		sortOrder: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return setCategoryImpl(ctx, { ...args, permissions: member.permissions });
 	},
 });
 
@@ -631,33 +709,53 @@ export const setEntity = orgMutation({
 
 // ─── remove ──────────────────────────────────────────────────────────────────
 
+async function removeImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		permissions: string[];
+		noteId: Id<"notes">;
+	},
+) {
+	const note = await ctx.db.get(args.noteId);
+	if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const isOwn = note.authorId === args.userId;
+	const canDeleteOwn = hasPermission(args.permissions, "notes.deleteOwn");
+	const canDeleteAny = hasPermission(args.permissions, "notes.deleteAny");
+	if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	await ctx.db.delete(args.noteId);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "note_deleted",
+		entityType: note.entityType,
+		entityId: note.entityId,
+		personCode: note.personCode,
+		description: "Note deleted",
+		metadata: { noteId: args.noteId },
+	});
+}
+
 export const remove = orgMutation({
 	args: { orgId: v.id("orgs"), noteId: v.id("notes") },
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return removeImpl(ctx, { ...args, userId, permissions: member.permissions });
+	},
+});
 
-		const note = await ctx.db.get(args.noteId);
-		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isOwn = note.authorId === userId;
-		const canDeleteOwn = hasPermission(member.permissions, "notes.deleteOwn");
-		const canDeleteAny = hasPermission(member.permissions, "notes.deleteAny");
-		if (!(canDeleteAny || (isOwn && canDeleteOwn))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		await ctx.db.delete(args.noteId);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "note_deleted",
-			entityType: note.entityType,
-			entityId: note.entityId,
-			personCode: note.personCode,
-			description: "Note deleted",
-			metadata: { noteId: args.noteId },
-		});
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const removeForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users"), noteId: v.id("notes") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return removeImpl(ctx, { ...args, permissions: member.permissions });
 	},
 });
 

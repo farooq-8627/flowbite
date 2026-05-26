@@ -193,6 +193,54 @@ export const updatePreferences = authenticatedMutation({
 	},
 });
 
+/**
+ * Stage 5 — Dismiss an AI Pulse Ribbon suggestion for the current user.
+ *
+ * The dismiss state lives in `users.preferences.aiPulseDismissed` as a
+ * record `{ [suggestionId]: dismissedAt }`. We cap the map at 50 entries
+ * (drops the oldest by dismissedAt) so the row never balloons — pulse
+ * suggestion ids are heuristic and rotate as the underlying records
+ * change, so dropping old dismissals is safe (worst case the user sees
+ * a stale dismissal re-surface, which they can dismiss again).
+ *
+ * Idempotent — dismissing the same id twice updates the timestamp but
+ * doesn't add a row.
+ */
+const AI_PULSE_DISMISSED_CAP = 50;
+
+export const dismissAiPulseSuggestion = authenticatedMutation({
+	args: {
+		suggestionId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const id = args.suggestionId.trim();
+		if (id.length === 0 || id.length > 200) {
+			throw new ConvexError("Invalid suggestion id.");
+		}
+		const existingPrefs = ctx.user.preferences ?? {};
+		const existingMap = existingPrefs.aiPulseDismissed ?? {};
+
+		const next: Record<string, number> = { ...existingMap, [id]: Date.now() };
+
+		// Cap at 50 — drop the oldest by dismissedAt timestamp.
+		const entries = Object.entries(next);
+		if (entries.length > AI_PULSE_DISMISSED_CAP) {
+			entries.sort((a, b) => b[1] - a[1]); // newest first
+			const trimmed = entries.slice(0, AI_PULSE_DISMISSED_CAP);
+			await ctx.db.patch(ctx.userId, {
+				preferences: { ...existingPrefs, aiPulseDismissed: Object.fromEntries(trimmed) },
+				updatedAt: Date.now(),
+			});
+			return;
+		}
+
+		await ctx.db.patch(ctx.userId, {
+			preferences: { ...existingPrefs, aiPulseDismissed: next },
+			updatedAt: Date.now(),
+		});
+	},
+});
+
 // ─── Internal mutations ───────────────────────────────────────────────────────
 
 /**

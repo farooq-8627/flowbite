@@ -32,7 +32,13 @@
  */
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
+import type { Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 
 /** Unified timeline entry shape returned to the frontend */
@@ -134,6 +140,29 @@ export const getForPerson = orgQuery({
  * Get org-wide timeline (admin/owner only).
  * Used by /settings/activity-log page.
  */
+async function getForOrgImpl(
+	ctx: QueryCtx,
+	args: { orgId: Id<"orgs">; limit?: number; actorType?: string },
+) {
+	const cap = args.limit ?? 100;
+
+	const q = ctx.db
+		.query("activityLogs")
+		.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
+		.order("desc");
+
+	const logs = await q.take(cap);
+
+	return logs
+		.filter((r) => !args.actorType || r.actorType === args.actorType)
+		.map((e) => ({
+			...e,
+			_entryType: "activity" as TimelineEntryType,
+			_kind: resolveActivityKind(e.action),
+			_color: resolveActivityColor(e.action),
+		}));
+}
+
 export const getForOrg = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
@@ -143,24 +172,23 @@ export const getForOrg = orgQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "activityLogs.viewOrg");
+		return getForOrgImpl(ctx, args);
+	},
+});
 
-		const cap = args.limit ?? 100;
-
-		const q = ctx.db
-			.query("activityLogs")
-			.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
-			.order("desc");
-
-		const logs = await q.take(cap);
-
-		return logs
-			.filter((r) => !args.actorType || r.actorType === args.actorType)
-			.map((e) => ({
-				...e,
-				_entryType: "activity" as TimelineEntryType,
-				_kind: resolveActivityKind(e.action),
-				_color: resolveActivityColor(e.action),
-			}));
+/** AI-callable internal twin. */
+export const getForOrgForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		limit: v.optional(v.number()),
+		actorType: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "activityLogs.viewOrg");
+		const { userId: _u, ...rest } = args;
+		return getForOrgImpl(ctx, rest);
 	},
 });
 

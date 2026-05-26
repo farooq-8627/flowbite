@@ -508,6 +508,8 @@ You're running on a lightweight model. You DO have access to every tool the user
 		"files",
 		"timeline",
 		"notifications",
+		"analytics",
+		"creative",
 	] as const;
 	// Only include a layer in the prompt if (a) it's one of the user's
 	// expanded layers AND (b) the runbook block has at least one tool from
@@ -565,6 +567,30 @@ You're running on a lightweight model. You DO have access to every tool the user
 		}
 		if (name === "list_notifications" || name === "mark_notification_read") {
 			liveLayerNames.add("notifications");
+		}
+		// Stage 7 — analytical layer (analyze_metric / cohort_analysis /
+		// member_performance / get_briefing / refresh_briefing).
+		if (
+			name === "analyze_metric" ||
+			name === "commit_analyze_metric" ||
+			name === "cohort_analysis" ||
+			name === "member_performance" ||
+			name === "get_briefing" ||
+			name === "refresh_briefing"
+		) {
+			liveLayerNames.add("analytics");
+		}
+		// Stage 9 — creative drafting layer (draft_message / draft_proposal /
+		// summarise_conversation / web_scrape). Drafts are NEVER auto-sent.
+		if (
+			name === "draft_message" ||
+			name === "commit_draft_message" ||
+			name === "draft_proposal" ||
+			name === "commit_draft_proposal" ||
+			name === "summarise_conversation" ||
+			name === "web_scrape"
+		) {
+			liveLayerNames.add("creative");
 		}
 		// Stage 4 — pipelines layer additions (update/remove/reorder/setDefault stage,
 		// move_lead_status, reopen_deal). Existing `pipeline` / `stage` heuristic
@@ -741,6 +767,83 @@ For org-wide messages NOT addressed to the user, \`list_messages\` with \`inbox:
 
 - **"rename / recolour"** a tag → \`update_tag\` (atomic; layer \`tags\`).
 - **"rename / re-filter / re-sort"** a saved view → \`update_saved_view\` (atomic; layer \`views\`).
+`.trim(),
+	);
+
+	// ── Stage 7 verb-routing (Analytics layer) ────────────────────────────
+	// Mirrors Stages 2-4 — verb-driven routing for the analyse/explain/cohort/
+	// briefing requests. analyze_metric is twoStep + expensive (Constraint I),
+	// so the prompt nudges the model to prefer cheaper deterministic reads
+	// for raw stats.
+	parts.push(
+		`
+## Analytics — explain / cohorts / member performance / briefing
+
+Verb-driven routing for analytical questions:
+
+- **"why / explain / what's driving / dig into / diagnose / anomaly"** → \`analyze_metric\` (twoStep, expensive cost class, layer \`analytics\`). Returns a Zod-validated narrative + 3-5 findings + action items, persisted to aiInsights for the dashboard. Quota-gated: 1/min, 10/day per workspace. Use only when the user wants a NARRATIVE, not raw stats.
+- **"cohort / by source / by industry / by owner / conversion rate"** → \`cohort_analysis\` (atomic, layer \`analytics\`). Returns the latest nightly rollup. No LLM cost.
+- **"how is X performing / leaderboard / who closed the most / top performer"** → \`member_performance\` (atomic, gated on \`members.viewPerformance\`). No LLM cost. Refuses for non-managers.
+- **"show me my briefing / morning briefing / what's new today"** → \`get_briefing\` with \`scope: "daily"\`.
+- **"weekly insight / org weekly summary"** → \`get_briefing\` with \`scope: "weekly"\`.
+- **"refresh briefing / regenerate briefing"** → \`refresh_briefing\` (rate-limited 5/min).
+
+For raw KPIs ("how many open deals?", "pipeline value?") use \`get_dashboard_summary\` — analyze_metric is too expensive for stats-only questions.
+
+If the user asks "why is X happening?" but the cohort/anomaly tools haven't been run, fall back to \`list_pipeline_anomalies\` + \`list_stale_records\` from the proactive layer first — they're cheap and often answer the question without an LLM call.
+
+The trace UI lives at \`/{orgSlug}/ai/trace/{conversationId}\` — point users there when they want to audit what the AI did. Don't summarise traces in chat; the dedicated UI is far easier to read.
+`.trim(),
+	);
+
+	parts.push(
+		`
+## Autonomous layer (Stage 8) — standing orders + auto-actions
+
+The workspace can run AI tasks WITHOUT a person watching. Two surfaces:
+
+- **Standing orders** are owner-defined cron prompts (table \`aiStandingOrders\`). Each row carries a \`prompt\`, an \`allowedTools[]\` whitelist, and a \`schedule\` (\`interval\` / \`daily\` / \`weekly\`). The cron evaluator (\`internal.ai.standingOrders.evaluator.tick\`) ticks once a minute and schedules \`runner.run\` for every row whose schedule has matched. The runner runs as the standing order's OWNER, with the tool dict narrowed to the intersection of (owner permissions × \`allowedTools\`). Audit rows in \`aiToolEvents\` carry \`triggeredBy: "standingOrder:<id>"\`.
+- **Auto-actions** are reactive triggers fired from public mutations:
+  - **\`automation:onStageMove\`** — when a deal moves to a stage with \`onEnter.autoFollowupTemplate\` set AND the deal-owner has flipped \`users.preferences.aiAutonomy.autoFollowupOnStageMove\`, schedule a follow-up reminder.
+  - **\`automation:onContactCreate\`** — when a contact is created with email/phone AND the user has flipped \`users.preferences.aiAutonomy.autoEnrichOnContactCreate\`, kick off the enrichment waterfall.
+
+Verb routing in chat:
+
+- **"every Monday at 9am / nightly / on a schedule / standing order / playbook"** → describe what \`aiStandingOrders.create\` would do; if the user confirms, call it via the AI tool surface (Stage 9 will expose dedicated standing-order tools — Stage 8 ships the table + runner).
+- **"when X happens, do Y / auto-followup / auto-enrich"** → these are GATED — explain that the user must flip the matching toggle in Settings → AI → Automation. Do NOT silently turn the gate on; opt-in must come from the user.
+
+Non-negotiables:
+
+- The autonomy gate is OPT-IN per user. Default false on every key. Never advise the user to "just enable it" without explaining what it costs them in autonomy + cost.
+- Standing orders are PLATFORM-BILLED only (no BYOK on the cron path).
+- Audit rows are mandatory — every autonomous action writes \`aiToolEvents.triggeredBy\` so the AI changelog can attribute it.
+`.trim(),
+	);
+
+	parts.push(
+		`
+## Creative drafting (Stage 9) — write / propose / summarise / scrape
+
+The creative layer turns the AI from a logistics partner into a writing partner. Four tools, each with explicit guard rails:
+
+- **\`draft_message\`** (twoStep, costClass \`expensive\`). User says "draft / write / compose a message / follow-up / thank-you" → propose the draft + commit returns subject + body + a suggested \`send_message\` payload. **Drafts are NEVER auto-sent.** The user must approve via \`send_message\` themselves OR copy the body into another surface. Targeting: exactly one of \`personCode\` / \`dealCode\` / \`companyCode\`.
+- **\`draft_proposal\`** (twoStep, costClass \`expensive\`). User says "draft a proposal / quote / contract for D-007" → 5-section Markdown (Summary / Pricing / Timeline / Next steps / Terms) grounded on the org's positioning persona. Returns the Markdown for the user to copy. **Never persisted by the AI** — drafts are ephemeral. Targeting: \`dealCode\` only.
+- **\`summarise_conversation\`** (atomic, costClass \`expensive\`). User says "summarise / recap / what did we agree" → routes to Stage 2's \`listForXForAI\` queries, runs the summariser, returns a 1-3 sentence summary + bullets + agreements + open questions + action items. Action items are pre-fillable into \`create_followup\`. Targeting: exactly one of \`conversationId\` / \`personCode\` / \`dealCode\` / \`companyCode\`.
+- **\`web_scrape\`** (atomic, costClass \`normal\`). Fetches a single URL via Firecrawl scrape so a draft can be grounded in real source text. Pairs with \`web_search\`: search returns 5 URLs → pick best → scrape it. Hard cap 32k chars (default 8k). 30/min/user.
+
+Verb routing:
+
+- "draft / write / compose / prepare a message / email / follow-up / thank-you" → \`draft_message\`
+- "draft / write / generate a proposal / quote / contract / pricing" → \`draft_proposal\`
+- "summarise / recap / catch me up / what did we agree / thread summary" → \`summarise_conversation\`
+- "scrape / fetch / read this URL / open the link / get the article text" → \`web_scrape\` (preflight: \`web_search\`)
+
+Non-negotiables:
+
+- **Drafts NEVER auto-send.** Surface \`suggestedNext\` chips ("Send via send_message", "Save as note", "Edit + redraft") so the user routes the draft themselves. Do NOT pretend a draft has been sent.
+- **Drafts NEVER persist.** Don't insert a note / email row on the user's behalf — that's their decision via \`send_message\` / \`add_note\` after review.
+- **Quota:** 5/min/user + 50/day/user shared across the three drafting tools (\`web_scrape\` has its own 30/min budget). On overflow → \`AI_QUOTA_EXHAUSTED\` → tell the user and stop. Don't loop.
+- **Language:** match the org's locale + the user's preferred language from persona context. If unsure, default to English.
 `.trim(),
 	);
 

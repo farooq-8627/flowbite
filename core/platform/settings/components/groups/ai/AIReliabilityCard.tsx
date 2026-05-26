@@ -32,6 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import { SettingsSection } from "../../shared/SettingsSection";
 
@@ -183,24 +184,10 @@ export function AIReliabilityCard({ orgId }: { orgId: Id<"orgs"> }) {
 												{formatMs(t.avgDurationMs)}
 											</span>
 											<span className="col-span-2 flex items-center justify-end">
-												<Tooltip>
-													<TooltipTrigger asChild>
-														<Button
-															size="sm"
-															variant="ghost"
-															className="h-6 gap-1 px-2 text-[11px]"
-															disabled
-															aria-label={`View trace for ${t.toolName} (Stage 7)`}
-														>
-															<Eye className="size-3" aria-hidden />
-															View
-														</Button>
-													</TooltipTrigger>
-													<TooltipContent side="top">
-														Trace viewer ships in Stage 7 of the AI
-														sprint.
-													</TooltipContent>
-												</Tooltip>
+												<TraceLinkButton
+													orgId={orgId}
+													toolName={t.toolName}
+												/>
 											</span>
 										</div>
 										{t.errorCount > 0 && t.topErrorReason && (
@@ -233,5 +220,81 @@ export function AIReliabilityCard({ orgId }: { orgId: Id<"orgs"> }) {
 				</p>
 			</div>
 		</SettingsSection>
+	);
+}
+
+// ─── TraceLinkButton (Stage 7) ──────────────────────────────────────────
+//
+// Per-row link to the AI tool trace viewer. Lazily fetches the most
+// recent failing conversation for the tool — when there's no failure
+// in the last 30 days, falls back to a disabled "View" button with a
+// tooltip explaining there's nothing to trace yet.
+//
+// The `getRecentFailingConversationForTool` query is cheap (single
+// indexed read on `aiToolEvents.by_org_and_tool_and_started`).
+
+interface TraceLinkButtonProps {
+	orgId: Id<"orgs">;
+	toolName: string;
+}
+
+function TraceLinkButton({ orgId, toolName }: TraceLinkButtonProps) {
+	const { fullOrgEntry: currentOrg } = useCurrentOrg();
+	const orgSlug = currentOrg?.org.slug;
+	const target = useQuery(api.ai.queries.toolTrace.getRecentFailingConversationForTool, {
+		orgId,
+		toolName,
+	});
+
+	if (!orgSlug || target === undefined) {
+		return (
+			<Button
+				size="sm"
+				variant="ghost"
+				className="h-6 gap-1 px-2 text-[11px]"
+				disabled
+				aria-label={`Loading trace for ${toolName}`}
+			>
+				<Eye className="size-3" aria-hidden />
+				View
+			</Button>
+		);
+	}
+
+	if (target === null) {
+		return (
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-6 gap-1 px-2 text-[11px]"
+						disabled
+						aria-label={`No failing trace for ${toolName}`}
+					>
+						<Eye className="size-3" aria-hidden />
+						View
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent side="top">
+					No failing call recorded for {toolName} in the last 30 days.
+				</TooltipContent>
+			</Tooltip>
+		);
+	}
+
+	return (
+		<Button
+			asChild
+			size="sm"
+			variant="ghost"
+			className="h-6 gap-1 px-2 text-[11px]"
+			aria-label={`View trace for ${toolName}`}
+		>
+			<a href={`/${orgSlug}/ai/trace/${target.conversationId}`}>
+				<Eye className="size-3" aria-hidden />
+				View
+			</a>
+		</Button>
 	);
 }

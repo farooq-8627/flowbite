@@ -178,6 +178,8 @@ export const resume = internalAction({
 			"files",
 			"timeline",
 			"notifications",
+			"analytics",
+			"creative",
 		];
 		const allTools = getToolsForRequest({
 			permissions: memberInfo.permissions,

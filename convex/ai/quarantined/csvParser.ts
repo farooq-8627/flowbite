@@ -37,6 +37,7 @@ import { z } from "zod";
 import { internal } from "../../_generated/api";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
+import { decodeCsvBytes, describeEncodingWarning } from "../../_shared/csvEncodingDetect";
 import {
 	type DedupCandidate,
 	decideDedup,
@@ -325,7 +326,27 @@ export const parseCsvImport = internalAction({
 			await failImport(["Could not load the file from storage."]);
 			return;
 		}
-		const text = await blob.text();
+		// Stage 10 — encoding-aware decode. Detect BOM (UTF-8 / UTF-16
+		// LE+BE), fall back to Latin-1 / Windows-1252 when the file
+		// has high-bit bytes that don't decode as UTF-8. Surfaces a
+		// friendly warning when decoding wasn't clean so the user
+		// can re-export with the right encoding.
+		const arrayBuffer = await blob.arrayBuffer();
+		const decode = decodeCsvBytes(new Uint8Array(arrayBuffer));
+		if (decode.encoding === "unknown") {
+			await failImport([
+				describeEncodingWarning(decode) ??
+					"Could not detect the file encoding. Re-export the CSV with UTF-8 encoding and try again.",
+			]);
+			return;
+		}
+		const text = decode.text;
+		const encodingWarning = describeEncodingWarning(decode);
+		if (encodingWarning) {
+			console.warn(
+				`[csvParser] file ${args.csvImportId} decoded as ${decode.encoding} (${decode.confidence.toFixed(2)} confidence): ${encodingWarning}`,
+			);
+		}
 
 		// 4. Deterministic tokenise.
 		const { headers, rows } = parseCsvBody(text);

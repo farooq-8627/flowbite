@@ -14,6 +14,7 @@ export { MetricStrip } from "./MetricStrip";
 export { MockDataBanner } from "./MockDataBanner";
 export { NextReminderFallback } from "./NextReminderFallback";
 export { PipelineCard } from "./PipelineCard";
+export { PipelineVelocityCard } from "./PipelineVelocityCard";
 export { RecentActivityCard } from "./RecentActivityCard";
 export { RemindersCard } from "./RemindersCard";
 export { StatTile } from "./StatTile";

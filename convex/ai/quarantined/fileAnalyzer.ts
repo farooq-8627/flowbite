@@ -30,6 +30,7 @@ import { ConvexError, v } from "convex/values";
 import { z } from "zod";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
+import { sanitiseExtractedFields } from "../../_shared/sanitiseExtractedText";
 import { decryptApiKey } from "../encryption";
 import type { ProviderId } from "../encryptionTypes";
 import { buildLanguageModel, getPlatformKey, MODEL_REGISTRY } from "../models";
@@ -200,7 +201,29 @@ export const analyzeFile = internalAction({
 				maxRetries: 1,
 			});
 
-			const extracted = res.object as Record<string, unknown>;
+			const extractedRaw = res.object as Record<string, unknown>;
+			// Stage 10 — adversarial-file sanitisation. Strip <script>,
+			// on*= handlers, and dangerous link protocols from every
+			// string field BEFORE we persist or render. The model is
+			// already instructed to treat the file as data, but a
+			// malicious upload could still smuggle a payload into
+			// `notes` / `vendor` / etc. — sanitising here closes the
+			// XSS gap for analyse_file's structured-output card. The
+			// report is logged for telemetry; the cleaned record is
+			// what hits the DB + the propose card.
+			const { record: extracted, report: sanitiseReport } =
+				sanitiseExtractedFields(extractedRaw);
+			if (
+				sanitiseReport.strippedTags +
+					sanitiseReport.strippedHandlers +
+					sanitiseReport.strippedProtocols >
+				0
+			) {
+				console.warn(
+					`[fileAnalyzer] sanitised adversarial content from ${fa.kind}`,
+					sanitiseReport,
+				);
+			}
 			const proposedPatch = buildPatchFromExtracted(fa.kind, extracted);
 
 			await patch(ctx as never, args.fileAnalysisId, {

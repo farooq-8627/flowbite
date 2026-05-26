@@ -74,6 +74,8 @@ export const WIDGET_KEYS = [
 	"deals.pipeline",
 	"deals.staleByStage",
 	"deals.renewingIn30Days",
+	// Stage 7 (SPRINT-PLAN.md) — Pipeline-velocity card.
+	"pipeline.velocity",
 	// ── Full-width AI surfaces ──────────────────────────────────────────
 	"ai.morningBriefing",
 	"ai.quickComposer",
@@ -278,6 +280,17 @@ export const WIDGETS: Record<WidgetKey, WidgetMeta> = {
 		category: "crm",
 		size: "half",
 		placeholder: true,
+	},
+	// Stage 7 (SPRINT-PLAN.md) — Pipeline-velocity card. Computes avg
+	// days-in-stage + dropoff per stage from `deals.stageEnteredAt` +
+	// `activityLogs` `stage_changed` action rows. Pure deterministic;
+	// no LLM cost. Drives the on-demand "where do leads die?" answer.
+	"pipeline.velocity": {
+		label: "Pipeline velocity",
+		description:
+			"Average days deals spend in each stage + dropoff per stage. Updates whenever a deal moves stage; no LLM call.",
+		category: "crm",
+		size: "full",
 	},
 
 	// ── Full-width AI surfaces ──────────────────────────────────────────

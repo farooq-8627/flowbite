@@ -5,7 +5,13 @@
  * Split from briefings.ts because public functions cannot live in a "use node" file.
  */
 import { v } from "convex/values";
-import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
+import {
+	orgMutation,
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../_functions/authenticated";
+import { internalMutation, internalQuery } from "../_generated/server";
 import { requireRole } from "../_shared/permissions/helpers";
 import { enforceRateLimit } from "../_shared/rateLimit";
 
@@ -105,6 +111,79 @@ export const refreshNow = orgMutation({
 			} as never,
 		);
 
+		return { scheduled: true };
+	},
+});
+
+// ─── Stage 7 (SPRINT-PLAN.md) — ForAI twins ─────────────────────────────
+//
+// Per AGENTS.md non-negotiable rule, every public query/mutation an AI
+// tool calls has a same-file `*ForAI` internal twin that takes a trusted
+// `userId` argument and bypasses `getAuthUserId` (which returns null
+// inside scheduled actions). Mirrors the public versions exactly.
+
+export const todayForUserForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const all = await ctx.db
+			.query("aiBriefings")
+			.withIndex("by_org_and_user_and_generated", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", args.userId),
+			)
+			.order("desc")
+			.take(5);
+		const briefing = all.find((b) => (b.scope ?? "daily-user") === "daily-user");
+		if (!briefing) return null;
+		if (briefing.expiresAt < Date.now()) return null;
+		return briefing;
+	},
+});
+
+export const thisWeekForOrgForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const briefing = await ctx.db
+			.query("aiBriefings")
+			.withIndex("by_org_and_scope", (q) =>
+				q.eq("orgId", args.orgId).eq("scope", "weekly-org"),
+			)
+			.order("desc")
+			.first();
+		if (!briefing) return null;
+		if (briefing.expiresAt < Date.now()) return null;
+		return briefing;
+	},
+});
+
+/**
+ * AI-callable twin of `refreshNow`. Unchanged behaviour: rate-limit 5/min,
+ * gate on `ai.briefingRefresh`, schedule `ai/briefingsActions:generate`.
+ * The trusted `userId` is supplied by the AI tool layer so the scheduler
+ * call can attribute the briefing to the right user.
+ */
+export const refreshNowForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "ai.briefingRefresh");
+		await enforceRateLimit(ctx, {
+			scope: "ai.briefing.refresh",
+			key: `${args.userId}:${args.orgId}`,
+			max: 5,
+			periodMs: 60_000,
+		});
+		await ctx.scheduler.runAfter(
+			0,
+			// biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref
+			"ai/briefingsActions:generate" as any,
+			{
+				orgId: args.orgId,
+				userId: args.userId,
+				trigger: "manual",
+			} as never,
+		);
 		return { scheduled: true };
 	},
 });

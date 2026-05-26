@@ -1,7 +1,20 @@
 /**
  * convex/ai/tools/layers/bulk.ts — Bulk operation tools (always two-step + premium).
+ *
+ * Stage 10 of `/SPRINT-PLAN.md` — bulk-progress reporting. The
+ * `commit_*` handlers now use `convex/_shared/bulkProgress.ts` to
+ * accumulate per-row failures and surface a `ToolSummary` with a
+ * row-level diff + retry chips, replacing the silent
+ * `{ succeeded, failed }` counter shipped before Stage 10.
  */
+
 import { z } from "zod";
+import {
+	createBulkStats,
+	recordBulkFailure,
+	recordBulkSuccess,
+	summariseBulkResults,
+} from "../../../_shared/bulkProgress";
 import { entityTypeEnum } from "../../../_shared/synonyms";
 import { registerTool } from "../../toolRegistry";
 import { propose, requirePermission, runTool, type ToolContext, toolMutation } from "../_shared";
@@ -85,8 +98,7 @@ registerTool({
 			const { orgId, permissions } = getCtx();
 			requirePermission(permissions, ENTITY_UPDATE_PERM[args.entityType] ?? "leads.update");
 			const mutation = ENTITY_UPDATE_MUTATION[args.entityType];
-			let succeeded = 0;
-			let failed = 0;
+			const stats = createBulkStats();
 			for (const id of args.entityIds) {
 				try {
 					await toolMutation(getCtx(), mutation, {
@@ -94,15 +106,21 @@ registerTool({
 						[`${args.entityType}Id`]: id,
 						...args.patch,
 					});
-					succeeded++;
-				} catch {
-					failed++;
+					recordBulkSuccess(stats);
+				} catch (err) {
+					recordBulkFailure(stats, id, err);
 				}
 			}
+			const { display, summary } = summariseBulkResults({
+				verb: "update",
+				entityNounPlural: `${args.entityType}s`,
+				stats,
+			});
 			return {
 				ok: true as const,
-				data: { succeeded, failed },
-				display: `✅ Bulk update: ${succeeded} succeeded, ${failed} failed.`,
+				data: { ...stats },
+				display,
+				summary,
 			};
 		}),
 });
@@ -156,20 +174,25 @@ registerTool({
 				args.outcome === "won"
 					? "crm/entities/deals/mutations:closeAsDone"
 					: "crm/entities/deals/mutations:markAsLost";
-			let succeeded = 0;
-			let failed = 0;
+			const stats = createBulkStats();
 			for (const dealId of args.dealIds) {
 				try {
 					await toolMutation(getCtx(), mutation, { orgId, dealId });
-					succeeded++;
-				} catch {
-					failed++;
+					recordBulkSuccess(stats);
+				} catch (err) {
+					recordBulkFailure(stats, dealId, err);
 				}
 			}
+			const { display, summary } = summariseBulkResults({
+				verb: args.outcome === "won" ? "close as won" : "close as lost",
+				entityNounPlural: "deals",
+				stats,
+			});
 			return {
 				ok: true as const,
-				data: { succeeded, failed },
-				display: `✅ ${succeeded} deals closed.`,
+				data: { ...stats, outcome: args.outcome },
+				display,
+				summary,
 			};
 		}),
 });

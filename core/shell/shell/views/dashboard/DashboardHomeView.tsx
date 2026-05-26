@@ -41,6 +41,7 @@ import {
 	MetricStrip,
 	MockDataBanner,
 	PipelineCard,
+	PipelineVelocityCard,
 	RemindersCard,
 	TodaySummaryCard,
 	WeeklyInsightCard,
@@ -118,9 +119,11 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 
 				{/* Stage 5 — AI Pulse Ribbon. Top-3 highest-value suggestions,
 				    dismissible per-user, rendered ABOVE the metric strip when
-				    there is at least one undismissed suggestion. Same heuristic
-				    source as AISuggestionsPanel — no extra Convex subscription. */}
-				{isEnabled("ai.pulseRibbon") && <AIPulseRibbon orgId={orgId} />}
+				    there is at least one undismissed suggestion. Stage 6 wired
+				    the ribbon to read from the materialised aiNextActions
+				    ranker (cron-rebuilt every 30 min) with `convex.ai.suggestions.list`
+				    as the warm-start fallback. */}
+				{isEnabled("ai.pulseRibbon") && <AIPulseRibbon orgId={orgId} orgSlug={orgSlug} />}
 
 				{/* Stage 5 — AI Quick Composer. Pinned mini chat textarea so the
 				    user can ask the AI without opening the side sheet first. */}
@@ -205,6 +208,11 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 						</div>
 					)}
 				</div>
+
+				{/* Row 6 — Stage 7 (SPRINT-PLAN.md) — pipeline velocity. Pure
+				    deterministic per-stage rollup; gated on `pipeline.velocity`
+				    so templates that want it can opt in. */}
+				{isEnabled("pipeline.velocity") && <PipelineVelocityCard orgId={orgId} />}
 			</div>
 			<FirstTimeTour id="dashboard-v1" steps={DASHBOARD_TOUR_STEPS} />
 		</div>

@@ -589,6 +589,7 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		"calendar.weekAhead",
 		"messages.recent",
 		"deals.renewingIn30Days",
+		"pipeline.velocity",
 	],
 
 	// ─── Custom orgRoles (Listing Agent + BD Rep) ──────────────────────────

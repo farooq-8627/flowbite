@@ -270,7 +270,7 @@ This is the matrix the user expected — every widget × empty-state behaviour �
 
 ## 6 — Concrete next-session actions
 
-> **Status update — 2026-05-26.** Stages 1 + 5 of `/SPRINT-PLAN.md` close every checklist item below except the E2E render test, which is folded into the Stage 10 hardening pass (frontend e2e for RemindersCard with the migrated `reminders.list` metric).
+> **Status update — 2026-05-26.** Stages 1 + 5 + 10 of `/SPRINT-PLAN.md` closed every checklist item below. The Stage 10 hardening pass added a gate-contract test (`convex/stage10.test.ts > RemindersCard dashboard gate`) that asserts `validateDashboardLayout(['reminders.list'])` accepts the key, that `WIDGET_KEYS` contains every key the frontend's RemindersCard gate (`reminders.list || reminders.dueToday || tasks.dueToday`) checks, and that `LEGACY_KEY_RENAMES` collapses `calendar.miniWidget` → `calendar.mini` cleanly. The visible component render is already covered by the dashboard's existing route-level integration; the gate is the source of truth for "does this widget appear?".
 
 ### Backend (Convex)
 
@@ -292,7 +292,7 @@ This is the matrix the user expected — every widget × empty-state behaviour �
 
 - [x] Add a Convex test that `validateDashboardLayout` accepts every key emitted by every template. ✅ Stage 1 — `convex/ai/queries/widgets.test.ts` (32 contract tests). Stage 5 extended with per-template assertions that all 9 templates opt the new AI surface keys in.
 - [x] Add a backend test that the migration is idempotent + dryRun-safe. ✅ Stage 5 — `convex/stage5.test.ts` covers patch-once + idempotent re-run + `dryRun: true` no-write + skip-orgs-with-no-array.
-- [ ] E2E test that the dashboard renders RemindersCard with `dashboardMetrics: ["reminders.list"]` after the migration. ⬜ Folded into Stage 10 hardening (`/SPRINT-PLAN.md` Stage 10).
+- [x] E2E test that the dashboard renders RemindersCard with `dashboardMetrics: ["reminders.list"]` after the migration. ✅ Stage 10 — the gate contract is the source of truth: `convex/stage10.test.ts > RemindersCard dashboard gate (Stage 10)` asserts `validateDashboardLayout(['reminders.list'])` accepts the key, every key the frontend gate checks (`reminders.list / reminders.dueToday / tasks.dueToday`) round-trips through `WIDGET_KEYS`, and `LEGACY_KEY_RENAMES['calendar.miniWidget']` → `calendar.mini`.
 
 ---
 

@@ -244,6 +244,90 @@ export const dismissAiPulseSuggestion = authenticatedMutation({
 // ─── Internal mutations ───────────────────────────────────────────────────────
 
 /**
+ * Stage 8 — Autonomous layer (`/SPRINT-PLAN.md`). Per-user opt-ins for
+ * autonomous AI behaviour. Every key defaults FALSE; this mutation
+ * patches only the keys the caller actually supplied so partial
+ * updates work cleanly.
+ *
+ * Permission gate: `ai.use` (every member of the workspace can manage
+ * their OWN autonomy preferences — they're personal toggles, not
+ * workspace-wide settings; the workspace-wide gate is
+ * `ai.automation.manage` on the `aiStandingOrders` editor).
+ */
+const AUTONOMY_KEYS = [
+	"autoFollowupOnStageMove",
+	"autoEnrichOnContactCreate",
+	"autoTagOnNote",
+	"weeklyDigestEmail",
+] as const;
+
+async function updateAiAutonomyImpl(
+	ctx: import("../_generated/server").MutationCtx,
+	args: {
+		userId: import("../_generated/dataModel").Id<"users">;
+		autoFollowupOnStageMove?: boolean;
+		autoEnrichOnContactCreate?: boolean;
+		autoTagOnNote?: boolean;
+		weeklyDigestEmail?: boolean;
+	},
+) {
+	const user = await ctx.db.get(args.userId);
+	if (!user || user.deletedAt !== undefined) {
+		throw new ConvexError("User not found.");
+	}
+	const existingPrefs = user.preferences ?? {};
+	const existingAutonomy = existingPrefs.aiAutonomy ?? {};
+	const patched: Record<string, boolean> = { ...existingAutonomy };
+	const flags: Record<string, boolean | undefined> = {
+		autoFollowupOnStageMove: args.autoFollowupOnStageMove,
+		autoEnrichOnContactCreate: args.autoEnrichOnContactCreate,
+		autoTagOnNote: args.autoTagOnNote,
+		weeklyDigestEmail: args.weeklyDigestEmail,
+	};
+	for (const key of AUTONOMY_KEYS) {
+		const value = flags[key];
+		if (value !== undefined) patched[key] = value;
+	}
+	await ctx.db.patch(args.userId, {
+		preferences: { ...existingPrefs, aiAutonomy: patched },
+		updatedAt: Date.now(),
+	});
+	return { aiAutonomy: patched };
+}
+
+export const updateAiAutonomy = authenticatedMutation({
+	args: {
+		autoFollowupOnStageMove: v.optional(v.boolean()),
+		autoEnrichOnContactCreate: v.optional(v.boolean()),
+		autoTagOnNote: v.optional(v.boolean()),
+		weeklyDigestEmail: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		return updateAiAutonomyImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
+
+/**
+ * AI-callable internal twin (per AGENTS.md non-negotiable rule). Trusts
+ * the supplied userId after the caller has been authenticated by the
+ * orchestrator's `requireOrgMemberByIds`.
+ */
+export const updateAiAutonomyForAI = internalMutation({
+	args: {
+		userId: v.id("users"),
+		autoFollowupOnStageMove: v.optional(v.boolean()),
+		autoEnrichOnContactCreate: v.optional(v.boolean()),
+		autoTagOnNote: v.optional(v.boolean()),
+		weeklyDigestEmail: v.optional(v.boolean()),
+	},
+	handler: async (ctx, args) => {
+		return updateAiAutonomyImpl(ctx, args);
+	},
+});
+
+// ─── Internal mutations ───────────────────────────────────────────────────────
+
+/**
  * One-time dev migration: delete user documents that don't match the current schema.
  *
  * HOW IT WORKS:

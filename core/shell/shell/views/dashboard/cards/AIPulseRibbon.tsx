@@ -1,50 +1,55 @@
 "use client";
 
 /**
- * AIPulseRibbon — Stage 5 (SPRINT-PLAN.md / DASHBOARD-AUDIT.md §4 D5).
+ * AIPulseRibbon — Stage 6 (SPRINT-PLAN.md / AI-AGENT-CAPABILITY-AUDIT.md
+ * §2.1 Milestone B).
  *
- * Top-3 highest-value AI suggestions, dismissible per-user, rendered
- * ABOVE the metric strip when there is at least one undismissed
- * suggestion. Tighter density than `<AISuggestionsPanel>` — those are
- * actionable hints that the user can choose to investigate; this is
- * the "what should I look at right now?" badge.
+ * Top-3 highest-value next actions, dismissible per-user, rendered ABOVE
+ * the metric strip. Stage 6 evolves the Stage 5 ribbon to read from the
+ * materialised `aiNextActions` ranking (cron-rebuilt every 30 min) so
+ * each row carries a stable score + explicit confidence label (Stage 6
+ * closes capability-audit gap T-4 by surfacing confidence on every
+ * suggestion).
  *
- * Pattern
- * ───────
- *   - Source: `convex.ai.suggestions.list({orgId, scope: "org"})` —
- *     same heuristic engine that drives the existing AI Suggestions
- *     Panel. No new model calls; no new index reads. Already shipped.
- *   - Per-user dismiss: `users.preferences.aiPulseDismissed` map of
- *     `{ [suggestionId]: dismissedAt }`. Persisted via
- *     `api.users.mutations.dismissAiPulseSuggestion`. Read inline from
- *     the user document via `useMe()` — no second `useQuery`.
- *   - Severity gating: critical → warning → info (same rank as the
- *     suggestions panel). Cap visible at 3 to keep the ribbon glanceable.
- *   - Dismissal is optimistic — the row is hidden immediately, the
- *     server write fires in the background. Failures don't matter
- *     here because the worst case is the row reappears next render
- *     (and the user can dismiss again).
+ * Source priority
+ * ───────────────
+ *   1. `convex.ai.queries.nextActions:listForUser` — the ranked store.
+ *      Covers reminders, stale leads, stuck deals, high-value deal
+ *      stalls. Each row has `score (0-100)`, `confidence (high|medium|low)`
+ *      and a chat-prefill `suggestedIntent`.
+ *   2. Fallback: `convex.ai.suggestions:list` — the Stage 5 heuristic
+ *      engine. Used when the cron hasn't fired yet for this user (first
+ *      ribbon render after seed) so the dashboard never feels empty.
  *
- * Empty state
- * ───────────
- * When there are 0 undismissed suggestions, the ribbon renders nothing
- * (returns `null`). The dashboard layout collapses naturally.
+ * The cron rebuild deletes a user's previous rows before inserting the
+ * fresh ranked top-100 — `listForUser` therefore always reflects the
+ * latest tick. Confidence chip colours: high → primary, medium → amber,
+ * low → muted.
  *
- * Performance
- * ───────────
- *   - Reads only from queries already running on the dashboard — no
- *     new subscriptions. `suggestions.list` is the same query the
- *     `<AISuggestionsPanel>` subscribes to; React + Convex dedup the
- *     subscription so adding the ribbon below costs nothing.
- *   - Dismiss mutation is fire-and-forget; we don't await it.
+ * Per-user dismiss
+ * ────────────────
+ * Two dismiss paths share `users.preferences.aiPulseDismissed`:
+ *   - Ranked rows → `api.ai.queries.nextActions.dismissNextAction`
+ *     (deletes the row + records the suggestion fingerprint so the
+ *     next rebuild can suppress it).
+ *   - Fallback rows → `api.users.mutations.dismissAiPulseSuggestion`
+ *     (the Stage 5 mutation, used only while the ranked store is empty).
  *
- * RTL-safe Tailwind only (`ms-`, `me-`, `ps-`, `pe-`, `start-`, `end-`).
- * Border radius via `var(--radius)`.
+ * RTL-safe Tailwind (`ms-/me-/ps-/pe-/start-/end-`); `rounded-[var(--radius)]`.
  */
 
 import { useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
-import { AlertCircle, AlertTriangle, ArrowRight, Info, Sparkles, X } from "lucide-react";
+import {
+	AlertCircle,
+	AlertTriangle,
+	ArrowRight,
+	Info,
+	ListChecks,
+	Sparkles,
+	X,
+} from "lucide-react";
+import Link from "next/link";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { api } from "@/convex/_generated/api";
@@ -54,8 +59,29 @@ import { useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 
 type SuggestionSeverity = "info" | "warning" | "critical";
+type Confidence = "high" | "medium" | "low";
 
-type Suggestion = {
+type RankedRow = {
+	id: Id<"aiNextActions">;
+	recordKind: string;
+	recordCode: string;
+	score: number;
+	confidence: Confidence;
+	reasonCode: string;
+	reasonText: string;
+	suggestedIntent: string;
+	dueAt?: number;
+	snoozedUntil?: number;
+	createdAt: number;
+};
+
+type RankedListResult = {
+	count: number;
+	generatedAt: number | null;
+	rows: RankedRow[];
+};
+
+type FallbackSuggestion = {
 	id: string;
 	kind: string;
 	headline: string;
@@ -69,6 +95,7 @@ const MAX_VISIBLE = 3;
 
 interface AIPulseRibbonProps {
 	orgId: Id<"orgs">;
+	orgSlug: string;
 	className?: string;
 }
 
@@ -78,31 +105,105 @@ function severityRank(s: SuggestionSeverity): number {
 	return 2;
 }
 
-export function AIPulseRibbon({ orgId, className }: AIPulseRibbonProps) {
+function confidenceToSeverity(c: Confidence): SuggestionSeverity {
+	if (c === "high") return "critical";
+	if (c === "medium") return "warning";
+	return "info";
+}
+
+type DisplayRow = {
+	id: string;
+	source: "ranked" | "fallback";
+	headline: string;
+	body: string;
+	severity: SuggestionSeverity;
+	confidence?: Confidence;
+	intent: string;
+	rankedActionId?: Id<"aiNextActions">;
+	fallbackSuggestionId?: string;
+};
+
+function rankedToHeadline(row: RankedRow): string {
+	const code = row.recordCode;
+	switch (row.recordKind) {
+		case "lead":
+			return `Re-engage lead ${code}`;
+		case "contact":
+			return `Reach out to ${code}`;
+		case "deal":
+			return `Move deal ${code} forward`;
+		case "company":
+			return `Check in with ${code}`;
+		case "reminder":
+			return `Follow-up ${code} needs you`;
+		default:
+			return `Act on ${code}`;
+	}
+}
+
+export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps) {
 	const me = useMe();
-	const suggestions = useQuery(anyApi.ai.suggestions.list, {
+	const ranked = useQuery(api.ai.queries.nextActions.listForUser, {
+		orgId,
+		limit: 20,
+	}) as RankedListResult | undefined;
+
+	// Fallback only fires when the ranked store is empty so that the
+	// dashboard never goes silent. We pass the same anyApi reference the
+	// existing AISuggestionsPanel uses to keep the Convex subscription
+	// table de-duped.
+	const fallbackSuggestions = useQuery(anyApi.ai.suggestions.list, {
 		orgId,
 		scope: "org",
-	}) as Suggestion[] | undefined;
+	}) as FallbackSuggestion[] | undefined;
 
-	const dismiss = useMutation(api.users.mutations.dismissAiPulseSuggestion);
+	const dismissRanked = useMutation(api.ai.queries.nextActions.dismissNextAction);
+	const dismissFallback = useMutation(api.users.mutations.dismissAiPulseSuggestion);
 
 	const dismissedMap = useMemo(() => {
 		const raw = me?.preferences?.aiPulseDismissed;
-		// Cast is safe — schema validates the shape on write. Convex
-		// returns the row exactly as it was stored.
 		return (raw ?? {}) as Record<string, number>;
 	}, [me?.preferences?.aiPulseDismissed]);
 
-	const visible = useMemo<Suggestion[]>(() => {
-		if (!suggestions) return [];
-		return [...suggestions]
+	const visible = useMemo<DisplayRow[]>(() => {
+		// Source 1: ranked store. We treat it as the source of truth.
+		if (ranked && ranked.count > 0) {
+			return ranked.rows
+				.filter((r) => {
+					const fingerprint = `${r.recordKind}:${r.recordCode}:${r.reasonCode}`;
+					return !(fingerprint in dismissedMap);
+				})
+				.slice(0, MAX_VISIBLE)
+				.map<DisplayRow>((r) => ({
+					id: `ranked:${r.id}`,
+					source: "ranked",
+					headline: rankedToHeadline(r),
+					body: r.reasonText,
+					severity: confidenceToSeverity(r.confidence),
+					confidence: r.confidence,
+					intent: r.suggestedIntent,
+					rankedActionId: r.id,
+				}));
+		}
+		// Source 2: heuristic engine. Only shown while the ranked store
+		// is still warming up.
+		if (!fallbackSuggestions) return [];
+		return [...fallbackSuggestions]
 			.filter((s) => !(s.id in dismissedMap))
 			.sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
-			.slice(0, MAX_VISIBLE);
-	}, [suggestions, dismissedMap]);
+			.slice(0, MAX_VISIBLE)
+			.map<DisplayRow>((s) => ({
+				id: `fallback:${s.id}`,
+				source: "fallback",
+				headline: s.headline,
+				body: s.body,
+				severity: s.severity,
+				intent: s.intent,
+				fallbackSuggestionId: s.id,
+			}));
+	}, [ranked, fallbackSuggestions, dismissedMap]);
 
-	if (suggestions === undefined) return null; // initial load — silently render nothing
+	if (ranked === undefined && fallbackSuggestions === undefined) return null;
 	if (visible.length === 0) return null;
 
 	return (
@@ -126,18 +227,31 @@ export function AIPulseRibbon({ orgId, className }: AIPulseRibbonProps) {
 				<span className="ms-auto text-[10px] uppercase tracking-wide text-muted-foreground/70">
 					Top {visible.length}
 				</span>
+				<Button
+					asChild
+					size="sm"
+					variant="ghost"
+					className="h-6 gap-1 px-2 text-[11px] text-muted-foreground hover:text-foreground"
+				>
+					<Link href={`/${orgSlug}/ai/next-actions`}>
+						<ListChecks className="size-3" aria-hidden />
+						All next actions
+					</Link>
+				</Button>
 			</header>
 			<ul className="grid gap-2 md:grid-cols-3">
-				{visible.map((s) => (
+				{visible.map((row) => (
 					<PulseChip
-						key={s.id}
-						suggestion={s}
+						key={row.id}
+						row={row}
 						onDismiss={() => {
-							// Fire and forget — optimistic UI handled by query
-							// auto-revalidation on the server-side write.
-							void dismiss({ suggestionId: s.id });
+							if (row.source === "ranked" && row.rankedActionId) {
+								void dismissRanked({ orgId, actionId: row.rankedActionId });
+							} else if (row.source === "fallback" && row.fallbackSuggestionId) {
+								void dismissFallback({ suggestionId: row.fallbackSuggestionId });
+							}
 						}}
-						onAct={() => sendChatPrefill(s.intent)}
+						onAct={() => sendChatPrefill(row.intent)}
 					/>
 				))}
 			</ul>
@@ -146,31 +260,36 @@ export function AIPulseRibbon({ orgId, className }: AIPulseRibbonProps) {
 }
 
 function PulseChip({
-	suggestion,
+	row,
 	onDismiss,
 	onAct,
 }: {
-	suggestion: Suggestion;
+	row: DisplayRow;
 	onDismiss: () => void;
 	onAct: () => void;
 }) {
 	return (
 		<li
 			className="group relative flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card p-2.5 shadow-xs transition-colors hover:border-ring/40"
-			data-severity={suggestion.severity}
+			data-severity={row.severity}
 		>
 			<div className="flex items-start gap-2 pe-6">
-				<SeverityIcon severity={suggestion.severity} />
+				<SeverityIcon severity={row.severity} />
 				<div className="min-w-0 flex-1">
 					<p className="line-clamp-2 text-xs font-medium leading-snug text-foreground">
-						{suggestion.headline}
+						{row.headline}
 					</p>
 					<p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-						{suggestion.body}
+						{row.body}
 					</p>
 				</div>
 			</div>
-			<div className="flex items-center justify-end">
+			<div className="flex items-center justify-between">
+				{row.confidence ? (
+					<ConfidenceBadge confidence={row.confidence} />
+				) : (
+					<span className="text-[10px] text-muted-foreground/70">heuristic</span>
+				)}
 				<Button
 					size="sm"
 					variant="ghost"
@@ -190,6 +309,25 @@ function PulseChip({
 				<X className="size-3" />
 			</button>
 		</li>
+	);
+}
+
+function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
+	const tone =
+		confidence === "high"
+			? "bg-primary/10 text-primary"
+			: confidence === "medium"
+				? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+				: "bg-muted text-muted-foreground";
+	return (
+		<span
+			className={cn(
+				"rounded-[var(--radius)] px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+				tone,
+			)}
+		>
+			{confidence} confidence
+		</span>
 	);
 }
 

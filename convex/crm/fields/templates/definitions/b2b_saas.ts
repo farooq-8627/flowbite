@@ -552,6 +552,7 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		"messages.recent",
 		"activity.recent",
 		"calendar.weekAhead",
+		"pipeline.velocity",
 	],
 
 	// ─── Custom orgRoles ──────────────────────────────────────────────────

@@ -468,7 +468,16 @@ export const fileAnalyses = defineTable({
 export const aiToolEvents = defineTable({
 	...orgScoped,
 	userId: v.id("users"),
-	conversationId: v.id("aiConversations"),
+	/**
+	 * Conversation the tool call ran inside. Optional from Stage 8 onwards
+	 * — autonomous triggers (`automation:onStageMove`, `automation:onContactCreate`)
+	 * fire from non-chat code paths, where there is no conversation. The
+	 * trace UI's `getToolTraceForConversation` already filters on a
+	 * supplied `conversationId`, so unset rows are simply absent from
+	 * conversation-scoped traces and surface on the org-wide AI changelog
+	 * surface instead.
+	 */
+	conversationId: v.optional(v.id("aiConversations")),
 	toolName: v.string(),
 	layer: v.optional(v.string()),
 	model: v.optional(v.string()),
@@ -481,10 +490,206 @@ export const aiToolEvents = defineTable({
 	inputTokens: v.optional(v.number()),
 	outputTokens: v.optional(v.number()),
 	costUsd: v.optional(v.number()),
+	/**
+	 * Stage 8 (`/SPRINT-PLAN.md`) — Autonomous layer audit trail.
+	 *
+	 * Free-form provenance string. Conventions:
+	 *   - "user:<userId>"           — default; chat-driven tool calls (may be omitted)
+	 *   - "standingOrder:<id>"      — fired by the standing-orders runner
+	 *   - "automation:<key>"        — auto-action triggered by a workspace event
+	 *                                 (e.g. "automation:onStageMove",
+	 *                                 "automation:onContactCreate")
+	 *
+	 * Threaded into `recordToolEvent` so the trace UI + AI changelog can
+	 * show a clear "the AI did this because…" attribution. Optional so
+	 * legacy rows (pre-Stage-8) validate without backfill.
+	 */
+	triggeredBy: v.optional(v.string()),
 	expiresAt: v.number(),
 })
 	.index("by_org_and_started", ["orgId", "startedAt"])
 	.index("by_org_and_tool_and_started", ["orgId", "toolName", "startedAt"])
+	.index("by_expires", ["expiresAt"]);
+
+/**
+ * Stage 8 (`/SPRINT-PLAN.md`) — `aiStandingOrders` table.
+ *
+ * Cron-driven prompts that the AI runs autonomously on a schedule.
+ * Owners (gated on `ai.automation.manage`) define one row per recurring
+ * job: a natural-language `prompt`, a closed-union `schedule`, and an
+ * `allowedTools[]` whitelist. The runner action loads the row, builds a
+ * tool subset that's the INTERSECTION of (caller permissions, requested
+ * whitelist), runs `streamText` once, and persists the model's textual
+ * summary on the row.
+ *
+ * Schedule format — closed union, NO free-form cron string (would need a
+ * parser dependency we explicitly don't ship):
+ *   - `{kind:"interval", intervalMinutes}` — every N minutes (≥ 5)
+ *   - `{kind:"daily",    utcHour, utcMinute}` — every day at HH:MM UTC
+ *   - `{kind:"weekly",   dayOfWeek, utcHour, utcMinute}` — every <day> at HH:MM UTC
+ *
+ * The cron evaluator (`convex/ai/standingOrders/evaluator.ts`) runs once
+ * per minute and computes `shouldFireNow(schedule, now, lastRunAt?)` —
+ * deterministic + side-effect-free + tested. When it returns `true` the
+ * evaluator schedules `runner.run` and bumps `lastRunAt`.
+ *
+ * `enabled = false` short-circuits the evaluator entirely.
+ *
+ * Indexes:
+ *   - by_org           — admin UI list view per workspace.
+ *   - by_org_and_user  — "my standing orders" personal list.
+ *   - by_enabled       — cron evaluator scan; only flips through enabled rows.
+ */
+export const aiStandingOrders = defineTable({
+	...orgScoped,
+	/** The user who owns this standing order. Trusted-arg for the runner. */
+	userId: v.id("users"),
+	/** Display label rendered in Settings → AI → Automation. Required, ≤ 80 chars. */
+	name: v.string(),
+	/**
+	 * Natural-language instruction passed to the model on every run.
+	 * Example: "Find all leads with no activity in 14 days, create a
+	 * follow-up reminder for each, and reply with a 3-sentence summary."
+	 * Required, ≤ 2000 chars (validated at the writer).
+	 */
+	prompt: v.string(),
+	/**
+	 * Whitelist of registered AI tool names the runner may call. Empty
+	 * means read-only — the runner builds an intersection with the user's
+	 * permissioned tool set and refuses to call anything outside the
+	 * whitelist. Required, ≤ 30 entries.
+	 */
+	allowedTools: v.array(v.string()),
+	schedule: v.union(
+		v.object({
+			kind: v.literal("interval"),
+			intervalMinutes: v.number(),
+		}),
+		v.object({
+			kind: v.literal("daily"),
+			utcHour: v.number(),
+			utcMinute: v.number(),
+		}),
+		v.object({
+			kind: v.literal("weekly"),
+			/** 0 = Sunday … 6 = Saturday (matches `Date.getUTCDay()`). */
+			dayOfWeek: v.number(),
+			utcHour: v.number(),
+			utcMinute: v.number(),
+		}),
+	),
+	/** Last successful evaluation tick for this row. */
+	lastRunAt: v.optional(v.number()),
+	/** Brief textual summary the model produced on the last run. ≤ 2000 chars. */
+	lastRunSummary: v.optional(v.string()),
+	/** "ok" | "skipped" | "error". `skipped` when no tool calls + no text. */
+	lastRunStatus: v.optional(v.string()),
+	/** Quick-toggle without deletion. Default `true` at the writer. */
+	enabled: v.boolean(),
+	createdAt: v.number(),
+	updatedAt: v.number(),
+})
+	.index("by_org", ["orgId"])
+	.index("by_org_and_user", ["orgId", "userId"])
+	.index("by_enabled", ["enabled"]);
+
+/**
+ * Stage 6 (SPRINT-PLAN.md) — `aiNextActions` table.
+ *
+ * Materialised, ranked list of "what should this user do next?" rows. The
+ * table is rebuilt every 30 minutes by the cron action
+ * `convex/ai/actions/rankNextActions:rebuildAllOrgs` (which paginates
+ * orgs and runs `rebuildForOrg` per org → calls the heuristic ranker
+ * `convex/ai/queries/nextActions:rankForUser` for every active member).
+ *
+ * The ranker is **purely heuristic** (no LLM call). It scores three
+ * record kinds per user:
+ *   - reminders (overdue / due-soon / due-this-week)
+ *   - leads (stale > 7d / stale > 14d, status not Won/Lost/Converted)
+ *   - deals (stuck >14d / stuck >21d in stage; high-value deals get a +20 boost)
+ * Each row carries a 0-100 score, a confidence label
+ * (`high | medium | low` — closes capability-audit gap T-4), a
+ * machine-readable `reasonCode`, a human-readable `reasonText`
+ * (≤200 chars), and a `suggestedIntent` (≤300 chars) the chat composer
+ * will prefill when the user clicks "Act on it".
+ *
+ * Per-user cap: 100 rows. The rebuild deletes the user's existing rows
+ * first then inserts the freshly-ranked top 100 — older signal can never
+ * hold a slot the new rebuild wants. `expiresAt` is `lastRebuiltAt + 90d`
+ * so the daily TTL purge cron can sweep rows for inactive users.
+ *
+ * UX surfaces:
+ *   - `AIPulseRibbon` reads top-3 from this table; falls back to the
+ *     heuristic `ai/suggestions:list` when the ranked store is empty
+ *     (org's first cron tick hasn't fired yet, or rebuild quota was
+ *     exhausted).
+ *   - `AINextActionsView` at `/{orgSlug}/ai/next-actions` is the
+ *     full-screen ranked list with confidence filter + Act / Dismiss /
+ *     Snooze 7d controls.
+ *   - AI tool `list_next_actions` in the always-on layer lets the model
+ *     surface them in chat ("which records should I focus on?").
+ *
+ * Indexes:
+ *   - `by_org_and_user` `[orgId, userId]` — primary read path; the user's
+ *     ribbon + view subscribes to this.
+ *   - `by_org_and_user_and_score` `[orgId, userId, score]` — descending
+ *     read for the top-N on the ribbon (the query uses `order("desc")`).
+ *   - `by_expires` `[expiresAt]` — TTL sweeper.
+ */
+export const aiNextActions = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	/** Which CRM record kind this action targets. */
+	recordKind: v.union(
+		v.literal("lead"),
+		v.literal("contact"),
+		v.literal("deal"),
+		v.literal("reminder"),
+		v.literal("company"),
+	),
+	/**
+	 * Stable code for the target record:
+	 *   - leads/contacts: `personCode` (e.g. P-001)
+	 *   - deals: `dealCode` (e.g. D-001)
+	 *   - companies: `companyCode` (e.g. C-001)
+	 *   - reminders: `followUpCode` (e.g. FU-001)
+	 *
+	 * We persist the code (not the Convex Id) so that snoozed rows
+	 * survive entity edits + the chat-composer suggestedIntent text
+	 * stays meaningful when surfaced ("Follow up with P-001").
+	 */
+	recordCode: v.string(),
+	/** Heuristic score 0..100. Higher = more urgent. */
+	score: v.number(),
+	confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+	/** Machine-readable reason for telemetry + tests. */
+	reasonCode: v.union(
+		v.literal("reminder_overdue"),
+		v.literal("reminder_due_soon"),
+		v.literal("reminder_due_this_week"),
+		v.literal("lead_stale_7d"),
+		v.literal("lead_stale_14d"),
+		v.literal("deal_stuck_14d"),
+		v.literal("deal_stuck_21d"),
+		v.literal("deal_stuck_high_value"),
+	),
+	/** Human-readable reason rendered in the ribbon + view (≤200 chars). */
+	reasonText: v.string(),
+	/** Pre-filled chat composer text on "Act on it" (≤300 chars). */
+	suggestedIntent: v.string(),
+	/** Optional due timestamp for reminder-kind rows. */
+	dueAt: v.optional(v.number()),
+	/**
+	 * Snooze 7d sets this to `now + 7d`. Read path filters out rows
+	 * where `snoozedUntil > now`. Cleared when the row is rebuilt.
+	 */
+	snoozedUntil: v.optional(v.number()),
+	/** TTL — the by_expires sweeper reaps rows whose user has gone quiet. */
+	expiresAt: v.number(),
+	createdAt: v.number(),
+})
+	.index("by_org_and_user", ["orgId", "userId"])
+	.index("by_org_and_user_and_score", ["orgId", "userId", "score"])
 	.index("by_expires", ["expiresAt"]);
 
 /**
@@ -540,3 +745,114 @@ export const aiPersonaContext = defineTable({
 	byteCount: v.number(),
 	...timestamps,
 }).index("by_org_and_user", ["orgId", "userId"]);
+
+/**
+ * Stage 7 (SPRINT-PLAN.md) — `aiInsights` table.
+ *
+ * Persisted, structured AI narrative output. Three kinds:
+ *
+ *   - `metric_analysis`     — `analyze_metric` tool result. Why a KPI
+ *     moved + the top contributors. `metric` + `range` populated.
+ *   - `deal_retrospective`  — written by the cron-scheduled
+ *     `analyzeDealClose` action when a deal closes. `recordRef`
+ *     populated with `{ entityType: "deal", entityId, code }`.
+ *   - `cohort_summary`      — narrative explanation paired with an
+ *     `aiCohortReports` row. Currently unused (Stage 7 keeps cohort
+ *     tooling deterministic), reserved for Stage 8 / 9.
+ *
+ * `body` is the zod-validated structured output (see
+ * `convex/ai/queries/insights.ts:InsightBody`). The orchestrator NEVER
+ * writes raw markdown into `body` — every write goes through a Zod
+ * parse so a model that emits invalid JSON cannot poison the table.
+ *
+ * Cost class on the producing tool decides whether the insight is
+ * memoised (cohort: 1/day, metric: 1/min, deal_retrospective: 1/deal).
+ *
+ * Indexes:
+ *   - by_org_and_kind_and_generated   — list latest insights per kind
+ *     for the AI Insights ribbon / Settings → AI changelog.
+ *   - by_org_and_recordRef_code       — sparse; deal-retrospective
+ *     fast lookup by deal code.
+ *   - by_expires                      — TTL sweeper (90 days).
+ */
+export const aiInsights = defineTable({
+	...orgScoped,
+	/** Optional — present when a user kicked off the analysis manually. */
+	userId: v.optional(v.id("users")),
+	kind: v.union(
+		v.literal("metric_analysis"),
+		v.literal("deal_retrospective"),
+		v.literal("cohort_summary"),
+	),
+	/** For metric_analysis: which KPI ("deals.pipelineValue", "leads.open", …). */
+	metric: v.optional(v.string()),
+	/** For metric_analysis / cohort: rolling window key. */
+	range: v.optional(v.union(v.literal("7d"), v.literal("30d"), v.literal("90d"))),
+	/** For deal_retrospective + (future) per-record cohort rows. */
+	recordRef: v.optional(
+		v.object({
+			entityType: v.string(), // "deal" | "lead" | …
+			entityId: v.string(),
+			code: v.optional(v.string()),
+		}),
+	),
+	/** Zod-validated structured output. See queries/insights.ts:InsightBody. */
+	body: v.object({
+		summary: v.string(),
+		findings: v.array(v.string()),
+		actionItems: v.array(
+			v.object({
+				label: v.string(),
+				intent: v.optional(v.string()),
+			}),
+		),
+		confidence: v.union(v.literal("high"), v.literal("medium"), v.literal("low")),
+	}),
+	modelUsed: v.string(),
+	inputTokens: v.optional(v.number()),
+	outputTokens: v.optional(v.number()),
+	generatedAt: v.number(),
+	expiresAt: v.number(),
+})
+	.index("by_org_and_kind_and_generated", ["orgId", "kind", "generatedAt"])
+	.index("by_org_and_recordRef_code", ["orgId", "recordRef.code"])
+	.index("by_expires", ["expiresAt"]);
+
+/**
+ * Stage 7 (SPRINT-PLAN.md) — `aiCohortReports` table.
+ *
+ * Persisted, deterministic cohort rollups. The `rebuildCohorts` cron
+ * action computes leadSource / industry / owner rollups nightly and
+ * upserts ONE row per (orgId, kind, periodEnd). The `cohort_analysis`
+ * AI tool returns the latest row by kind — no LLM cost on read.
+ *
+ * Why a separate table from aiInsights:
+ *   - aiCohortReports is purely deterministic (no LLM call).
+ *   - The schema is tabular (one row per cohort key), not narrative.
+ *   - Refresh cadence is daily, not on-demand.
+ *
+ * Indexes:
+ *   - by_org_and_kind_and_generated   — list-by-kind newest-first.
+ *   - by_expires                      — 30-day TTL sweep.
+ */
+export const aiCohortReports = defineTable({
+	...orgScoped,
+	kind: v.union(v.literal("leadSource"), v.literal("industry"), v.literal("owner")),
+	periodStart: v.number(),
+	periodEnd: v.number(),
+	rows: v.array(
+		v.object({
+			key: v.string(),
+			label: v.optional(v.string()),
+			count: v.number(),
+			convertedCount: v.number(),
+			conversionRate: v.number(),
+			avgDealValue: v.number(),
+			totalValue: v.number(),
+		}),
+	),
+	generatedAt: v.number(),
+	expiresAt: v.number(),
+})
+	.index("by_org_and_kind_and_generated", ["orgId", "kind", "generatedAt"])
+	.index("by_expires", ["expiresAt"]);

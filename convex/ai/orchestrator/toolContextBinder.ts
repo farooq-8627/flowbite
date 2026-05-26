@@ -13,8 +13,10 @@
  * `processChat.resume` — now they share `bindAllToolContexts(toolCtx)`.
  */
 import type { ToolContext } from "../tools/_shared";
+import { setAnalyticsContext } from "../tools/analytics";
 import { setCompaniesContext } from "../tools/companies";
 import { setContextBagToolContext } from "../tools/contextBag";
+import { setCreativeContext } from "../tools/creative";
 import { setCreateEntitiesContext } from "../tools/crud";
 import { setFilesContext } from "../tools/files";
 import { setAskChoiceContext } from "../tools/interaction/askChoice";
@@ -38,6 +40,7 @@ import { setNotesContext } from "../tools/notes";
 import { setNotesRemindersContext } from "../tools/notesReminders";
 import { setNotificationsContext } from "../tools/notifications";
 import { setPersonaContextToolContext } from "../tools/personaContext";
+import { setProactiveContext } from "../tools/proactive";
 import { setSchedulingContext } from "../tools/scheduling";
 import { setSearchToolContext } from "../tools/search";
 import { setTimelineContext } from "../tools/timeline";
@@ -86,4 +89,7 @@ export function bindAllToolContexts(toolCtx: ToolContext): void {
 	setFilesContext(toolCtx);
 	setTimelineContext(toolCtx);
 	setNotificationsContext(toolCtx);
+	setProactiveContext(toolCtx);
+	setAnalyticsContext(toolCtx);
+	setCreativeContext(toolCtx);
 }

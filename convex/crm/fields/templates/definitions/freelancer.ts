@@ -246,6 +246,7 @@ export const freelancerTemplate: IndustryTemplate = {
 		"today.focus",
 		"messages.recent",
 		"calendar.mini",
+		"pipeline.velocity",
 	],
 
 	customRoles: [],

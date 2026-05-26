@@ -39,6 +39,7 @@ import { ConvexError, v } from "convex/values";
 import { z } from "zod";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
+import { mapEnrichmentError } from "../../_shared/enrichmentErrorMap";
 import { decryptApiKey } from "../encryption";
 import type { ProviderId } from "../encryptionTypes";
 import { buildLanguageModel, getPlatformKey, MODEL_REGISTRY } from "../models";
@@ -189,36 +190,52 @@ export const runEnrichment = internalAction({
 					});
 				}
 			} catch (e) {
+				const friendly = mapEnrichmentError("web_search", e);
 				trace.push({
 					provider: "web_search",
 					ok: false,
 					latencyMs: Date.now() - t0,
-					error: String(e).slice(0, 300),
+					error: `[${friendly.code}] ${friendly.message}`,
+					summary: friendly.hint,
 				});
 			}
 		} else {
+			const friendly = mapEnrichmentError("web_search", {
+				data: { code: "PROVIDER_NOT_CONFIGURED" },
+			});
 			trace.push({
 				provider: "web_search",
 				ok: false,
-				error: "FIRECRAWL_API_KEY not configured — set in Convex dashboard env vars to enable",
+				error: `[${friendly.code}] ${friendly.message}`,
+				summary: friendly.hint,
 			});
 		}
 
 		// ── Provider 2: linkedin_lookup (Phase 4 — see B.14) ────────────────
-		trace.push({
-			provider: "linkedin_lookup",
-			ok: false,
-			error: "PROVIDER_NOT_CONFIGURED — Sales Navigator / Proxycurl integration ships in Phase 4. See Future-Enhancements.md §B.14.",
-			summary: "Skipped (provider not configured)",
-		});
+		{
+			const friendly = mapEnrichmentError("linkedin_lookup", {
+				data: { code: "PROVIDER_NOT_CONFIGURED" },
+			});
+			trace.push({
+				provider: "linkedin_lookup",
+				ok: false,
+				error: `[${friendly.code}] Sales Navigator / Proxycurl integration ships in Phase 4. See Future-Enhancements.md §B.14.`,
+				summary: friendly.hint ?? "Skipped (provider not configured)",
+			});
+		}
 
 		// ── Provider 3: email_finder (Phase 4 — see B.15) ───────────────────
-		trace.push({
-			provider: "email_finder",
-			ok: false,
-			error: "PROVIDER_NOT_CONFIGURED — Hunter.io / Apollo / Findymail integration ships in Phase 4. See Future-Enhancements.md §B.15.",
-			summary: "Skipped (provider not configured)",
-		});
+		{
+			const friendly = mapEnrichmentError("email_finder", {
+				data: { code: "PROVIDER_NOT_CONFIGURED" },
+			});
+			trace.push({
+				provider: "email_finder",
+				ok: false,
+				error: `[${friendly.code}] Hunter.io / Apollo / Findymail integration ships in Phase 4. See Future-Enhancements.md §B.15.`,
+				summary: friendly.hint ?? "Skipped (provider not configured)",
+			});
+		}
 
 		// ── Provider 4: domain_whois (RDAP, no key) ─────────────────────────
 		const domain = pickDomainSeed(run.beforeFields, accumulated);
@@ -248,26 +265,33 @@ export const runEnrichment = internalAction({
 						});
 					}
 				} else {
+					const friendly = mapEnrichmentError("domain_whois", {
+						data: { code: "INVALID_RESPONSE" },
+					});
 					trace.push({
 						provider: "domain_whois",
 						ok: false,
 						latencyMs: Date.now() - t0,
-						error: "RDAP returned no usable record",
+						error: `[${friendly.code}] RDAP returned no usable record`,
+						summary: friendly.hint,
 					});
 				}
 			} catch (e) {
+				const friendly = mapEnrichmentError("domain_whois", e);
 				trace.push({
 					provider: "domain_whois",
 					ok: false,
 					latencyMs: Date.now() - t0,
-					error: String(e).slice(0, 300),
+					error: `[${friendly.code}] ${friendly.message}`,
+					summary: friendly.hint,
 				});
 			}
 		} else {
 			trace.push({
 				provider: "domain_whois",
 				ok: false,
-				error: "No domain to look up",
+				error: "[NOT_FOUND] No domain to look up",
+				summary: "Add a company domain or email to the record and retry.",
 			});
 		}
 

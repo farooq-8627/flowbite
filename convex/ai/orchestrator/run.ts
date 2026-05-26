@@ -347,6 +347,8 @@ export const run = internalAction({
 			"files",
 			"timeline",
 			"notifications",
+			"analytics",
+			"creative",
 		];
 		const requestedLayers = new Set<string>(args.expandedLayers ?? []);
 		for (const l of ALL_LAYERS) requestedLayers.add(l);

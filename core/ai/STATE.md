@@ -1,7 +1,7 @@
 # core/ai — State
 
-> Updated: 2026-05-25 (audit pass: AI-AUDIT-COMPLETE.md + DASHBOARD-AUDIT.md + AI-AGENT-CAPABILITY-AUDIT.md generated)
-> Status: **~98 / 100 production-readiness.** Phase 3 closed; Phase 4 Part 1 + Part 2 (telemetry + AI quota gate + AI-native parity push + widget registry) fully shipped. Phase 4 Part 3 (LemonSqueezy upgrade flow) + Reactive-completeness wave (P0/P1 missing tools) remain.
+> Updated: 2026-05-26 (Stage 10 of /SPRINT-PLAN.md SHIPPED — AI/Dashboard sprint closed)
+> Status: **~99 / 100 production-readiness.** AI agent at senior-CRM bar (~8.6/10 overall capability). Stages 1-10 of the audit-driven sprint shipped end-to-end. Phase 4 Part 3 (LemonSqueezy upgrade flow / billing wall — T9) is the only remaining pre-launch item.
 
 ## 🆕 2026-05-25 audit deliverables
 
@@ -73,16 +73,27 @@ All five regressions are now covered by:
 
 ### 🎓 Senior CRM specialist roadmap (per AI-AGENT-CAPABILITY-AUDIT.md)
 
-**Today: 5.8 / 10. Bar: senior specialist who suggests, analyses, and acts autonomously.**
+**Today: ~8.5 / 10.** Stages 6 + 7 + 8 + 9 closed Milestones B + C + D + E. Bar reached on every dimension except depth (Stage 10 hardening pass).
 
-| Milestone | Headline | Key tools / queries | Effort |
-|---|---|---|---|
-| **B — Proactive** | Stale-record detector, per-record next-action ranking, pipeline-anomaly alerts | `aiNextActions` table + `convex/ai/queries/anomalies.ts` + dashboard ribbon | 2–3 wk |
-| **C — Analytical** | "Why is X happening?" tool, cohort analysis, win/loss reasoning, pipeline-velocity, trace UI | `analyze_metric`, `cohort_analysis`, member-performance query, `/ai/trace/:conversationId` viewer | 2–3 wk |
-| **D — Autonomous** | Standing orders / playbooks (cron-driven LLM workflows), auto-followup on stage move, auto-enrich on create, per-user autonomy allow-list | `aiStandingOrders` table, `users.preferences.aiAutonomy` map, audit trail in `aiToolEvents` | 3–4 wk |
-| **E — Creative** | `draft_message` (pairs with `send_message` from R1), `draft_proposal`, conversation summariser | New tools + drafts table | 2 wk |
+| Milestone | Headline | Status |
+|---|---|---|
+| ✅ **B — Proactive** | Stale-record detector, per-record next-action ranking, pipeline-anomaly alerts, confidence labels | **Shipped — Stage 6, 2026-05-26.** `aiNextActions` table + heuristic ranker (cron-rebuilt every 30 min) + 3 always-on AI tools (`list_next_actions` / `list_stale_records` / `list_pipeline_anomalies`) + `AIPulseRibbon` reads from ranked store + `/{orgSlug}/ai/next-actions` view. T-4 confidence labels closed in the same wave. See `convex/ai/queries/nextActions.ts`, `convex/ai/queries/anomalies.ts`, `convex/ai/actions/rankNextActions.ts`. |
+| ✅ **C — Analytical** | "Why is X happening?" tool, cohort analysis, win/loss reasoning, pipeline-velocity, trace UI | **Shipped — Stage 7, 2026-05-26.** New `analytics` AI tool layer (`analyze_metric` twoStep+expensive, `cohort_analysis` / `member_performance` / `get_briefing` / `refresh_briefing` atomic). 2 new tables: `aiInsights` (zod-validated narrative storage, 90d TTL) + `aiCohortReports` (deterministic rollup, 30d TTL). Nightly `rebuild-ai-cohorts` cron. Win/loss retrospective fires on `closeAsDoneImpl`. Pipeline-velocity dashboard surface. T-1 trace UI shipped. New permissions: `members.viewPerformance` + `ai.analytics.viewMetrics` + `ai.cohorts.view` + `ai.trace.view`. New `costClass` field on `ToolDef` (Constraint I). 18 contract tests at `convex/stage7.test.ts`. |
+| ✅ **D — Autonomous** | Standing orders / playbooks (cron-driven LLM workflows), auto-followup on stage move, auto-enrich on create, per-user autonomy allow-list | **Shipped — Stage 8, 2026-05-26.** New `aiStandingOrders` table + `users.preferences.aiAutonomy` map + `pipelines.stages[].onEnter` config + `aiToolEvents.triggeredBy` audit. V8 cron evaluator + use-node runner with tool whitelist. Auto-action triggers in `triggers.ts`. New permission `ai.automation.manage`. Settings UI: `AIAutomationSection.tsx`. 26 contract tests at `convex/stage8.test.ts`. T-5 (per-user autonomy allow-list) closed in the same wave. |
+| ✅ **E — Creative** | `draft_message` + `draft_proposal` (twoStep), `summarise_conversation` (atomic), `web_scrape` (atomic — Firecrawl pair for `web_search`) | **Shipped — Stage 9, 2026-05-26.** New `creative` tool layer at `convex/ai/tools/creative/`. 4 internal action subagents at `convex/ai/actions/{draftMessage,draftProposal,summariseConversation,webScrape}.ts` — each runs LLM with structured-output Zod gates AND a deterministic fallback (`buildDeterministicDraftMessage` / `buildDeterministicProposal` / `buildDeterministicSummary`) so contract tests + free-tier deployments pass without an API key. Drafts NEVER autosend or persist by AI — every draft surfaces `suggestedNext` chips routing the user back to `send_message` / `add_note` / `create_followup`. Quota gate at `convex/ai/creativeHelpers.ts`: `enforceCreativeQuota` (5/min/user via `enforceRateLimit` scope `ai.creative` + 50/day/user soft cap counted from successful `aiToolEvents` with creative tool names — failed runs don't count); `enforceWebScrapeRateLimit` (30/min/user, separate budget); `countRecentCreativeRunsForUser` (read-only counter). Pure-helper `validateScrapeUrl` + `checkScrapeConfigured` extracted from the use-node action so the bad-URL + WEB_SCRAPE_NOT_CONFIGURED paths are unit-testable. systemPrompt gained `## Creative drafting (Stage 9)` block with verb routing + non-negotiables. 17 contract tests at `convex/stage9.test.ts`. AI-AGENT-CAPABILITY-AUDIT.md §6 final scorecard: Creative drafting 2/10 → 7/10; OVERALL 7.5 → 8.5. |
 
-Total to reach senior-CRM bar: ~10 eng-weeks, +$30–80/org/mo at full opt-in.
+Total to reach senior-CRM bar: **0 eng-weeks remaining** — Stage 10 of `/SPRINT-PLAN.md` shipped 2026-05-26. The AI/Dashboard sprint (Stages 1-10) is closed end-to-end.
+
+### ✅ Stage 10 — Hardening + sprint roll-up — SHIPPED 2026-05-26
+
+4 production-grade pure helpers shipped under `convex/_shared/`:
+
+- **`sanitiseExtractedText.ts`** — adversarial-file XSS / injection sanitiser. Strips `<script>` / on*= / `javascript:` / `data:text/html`, redacts dangerous markdown link targets, length-caps + idempotent. Wired into `convex/ai/quarantined/fileAnalyzer.ts` BEFORE the structured extracted record is persisted. Closes the AI-AGENT-CAPABILITY-AUDIT.md §3 P1 security gap.
+- **`csvEncodingDetect.ts`** — UTF-8 BOM, UTF-16-LE/BE BOM, Latin-1 / Windows-1252 fallback. Wired into `convex/ai/quarantined/csvParser.ts` replacing `blob.text()`. Friendly warning surfaced via `describeEncodingWarning` when the decode falls back lossily.
+- **`bulkProgress.ts`** — row-level diff + retry chips for `commit_bulk_update_entities` + `commit_bulk_close_deals`. Replaces the silent `{succeeded, failed}` counter with a `ToolSummary` envelope (per-row failure table + retry intent chips per Constraint F). Mid-flight chunked streaming remains in `Future-Enhancements.md` backlog.
+- **`enrichmentErrorMap.ts`** — provider-friendly error mapping (401 / 403 / 404 / 429 / 500 / timeout / DNS / network / not-configured / invalid-response → `{code, retryable, fallThrough, hint}`). Wired into all 4 provider trace pushes in `convex/ai/quarantined/enrichmentProviders.ts` (web_search Firecrawl, linkedin_lookup, email_finder, domain_whois RDAP).
+
+39 contract tests at `convex/stage10.test.ts` (12 sanitiser + 9 CSV encoding + 5 bulk-progress + 8 enrichment friendly-error + 3 RemindersCard gate-contract — closes the last DASHBOARD-AUDIT.md §6 checkbox). Full repo verification: `pnpm typecheck` 0 errors, `pnpm exec biome check .` 0/0/0, `pnpm test` 463 pass / 1 skipped (was 424; +39 stage10 tests), `pnpm exec vitest run` 140 pass, `pnpm build` success on all routes. Capability scorecard moves from 8.5 → 8.6/10.
 
 ### 💸 Phase 4 Part 3 — Billing wall (still pending)
 

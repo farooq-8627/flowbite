@@ -21,6 +21,7 @@ import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
+import { maybeFireAutoEnrichOnContactCreate } from "../../../ai/standingOrders/triggers";
 import { sendNotification } from "../../../notifications/helpers";
 
 function normalizePhone(phone: string): string {
@@ -120,6 +121,21 @@ async function createImpl(
 		entityType: "contact",
 		entityId: contactId,
 		personCode,
+	});
+
+	// Stage 8 — autonomous layer. If the user has flipped
+	// `users.preferences.aiAutonomy.autoEnrichOnContactCreate` AND the
+	// contact has an email or phone, schedule the auto-enrichment
+	// kick-off + write an `aiToolEvents` audit row tagged
+	// `triggeredBy: "automation:onContactCreate"`. Both gates default off
+	// so existing workspaces see no behaviour change.
+	await maybeFireAutoEnrichOnContactCreate(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		contactId,
+		personCode,
+		email: args.email,
+		phone: args.phone,
 	});
 
 	return { contactId, personCode };

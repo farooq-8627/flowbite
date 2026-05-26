@@ -84,4 +84,8 @@ export default defineSchema({
 	fileAnalyses: ai.fileAnalyses,
 	aiToolEvents: ai.aiToolEvents,
 	aiPersonaContext: ai.aiPersonaContext,
+	aiNextActions: ai.aiNextActions,
+	aiInsights: ai.aiInsights,
+	aiCohortReports: ai.aiCohortReports,
+	aiStandingOrders: ai.aiStandingOrders,
 });

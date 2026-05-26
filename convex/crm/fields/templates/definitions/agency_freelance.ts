@@ -376,6 +376,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		"reminders.list",
 		"messages.recent",
 		"today.focus",
+		"pipeline.velocity",
 	],
 
 	customRoles: [

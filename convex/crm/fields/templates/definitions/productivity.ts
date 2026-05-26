@@ -207,6 +207,7 @@ export const productivityTemplate: IndustryTemplate = {
 		"activity.recent",
 		// Streak deferred to Phase 4 — registry slot reserved, renders "Coming soon" card.
 		"tasks.streak",
+		"pipeline.velocity",
 	],
 
 	customRoles: [],

@@ -225,7 +225,7 @@ registerTool({
 Read-only: list which tool layers are currently active for this turn.
 Always-on layer is implicit. Layers like 'pipelines', 'fields', 'settings',
 'bulk', 'templates', 'data', 'tags', 'views', 'categories', 'members',
-'messaging', 'files', 'timeline', 'notifications' are loaded only after a
+'messaging', 'files', 'timeline', 'notifications', 'analytics', 'creative' are loaded only after a
 successful expand_tools call. Use this BEFORE calling expand_tools so you
 don't redundantly request a layer that's already on.
   `.trim(),
@@ -257,6 +257,8 @@ don't redundantly request a layer that's already on.
 				"files",
 				"timeline",
 				"notifications",
+				"analytics",
+				"creative",
 			];
 			return {
 				ok: true as const,

@@ -201,6 +201,21 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Leave workspace",
 		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
 	},
+	{
+		// Stage 7 — analytical layer (`/SPRINT-PLAN.md` Stage 7).
+		// Gate for the `member_performance` AI tool + the upcoming
+		// per-member performance dashboard. Manager-level only — the
+		// payload exposes per-person close rate / win value / pipeline
+		// activity; non-managers should not see those numbers about their
+		// teammates. Owners + Admins by default; the Member role can
+		// still see THEIR OWN deal data through normal CRM views.
+		key: "members.viewPerformance",
+		module: "members",
+		label: "View member performance",
+		description:
+			"Per-member close rate, deals won, pipeline value, and activity counts. Owner / Admin only by default.",
+		defaultRoles: ["Owner", "Admin"],
+	},
 
 	// ── Leads ────────────────────────────────────────────────────────────────
 	{
@@ -619,6 +634,62 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Use advanced AI tool layers",
 		description: "Allow AI to load expanded tool sets (pipelines, fields, settings, bulk ops).",
 		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		// Stage 7 — analytical layer (`/SPRINT-PLAN.md` Stage 7).
+		// Gates the `analyze_metric` AI tool + the upcoming pipeline-
+		// velocity dashboard. Read-only "explain why" — distinct from
+		// `members.viewPerformance` (which exposes per-person numbers).
+		// Member-eligible by default so individual contributors can ask
+		// "why did pipeline value drop?".
+		key: "ai.analytics.viewMetrics",
+		module: "ai",
+		label: "Use AI analytical tools",
+		description:
+			"Allow AI to run analyze_metric / cohort_analysis / pipeline-velocity narrative passes.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		// Stage 7 — analytical layer. Gates the `cohort_analysis` AI tool
+		// + the cohort dashboard surface. Cohort rollups expose lead-source
+		// / industry / owner conversion rates so we keep this manager-only
+		// by default.
+		key: "ai.cohorts.view",
+		module: "ai",
+		label: "View AI cohort reports",
+		description:
+			"Lead-source / industry / owner conversion + avg-deal-value rollups generated nightly.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		// Stage 7 — analytical layer. Gates the `view_ai_trace` UI route +
+		// `getToolTraceForConversation` query. Read-only audit trail of
+		// every tool call in a conversation; matches the conversations
+		// trust-gate (org member can see conversations they own; admins
+		// can see all via `messages.viewAll` — but trace is conversation-
+		// scoped, not message-scoped, so we keep its own key).
+		key: "ai.trace.view",
+		module: "ai",
+		label: "View AI tool traces",
+		description: "See the full chain of tool calls for any AI conversation in this workspace.",
+		defaultRoles: ["Owner", "Admin", "Member"],
+	},
+	{
+		// Stage 8 — autonomous layer (`/SPRINT-PLAN.md` Stage 8). Gate
+		// for the standing-orders editor + per-user autonomy toggles +
+		// the standing-orders runner that fires LLM workflows on a
+		// schedule. Manager-only by default — these workflows can drive
+		// real CRM writes (followups, enrichments) without a human in
+		// the loop, so we restrict who can configure them. The runner
+		// itself ALSO checks the OWNER's permissions via
+		// `requireOrgMemberByIds` so autonomy never escalates beyond
+		// the user it runs as.
+		key: "ai.automation.manage",
+		module: "ai",
+		label: "Manage AI automation",
+		description:
+			"Create, edit, and toggle AI standing orders + per-user autonomous-action allow-lists.",
+		defaultRoles: ["Owner", "Admin"],
 	},
 
 	// ── Activity Logs ────────────────────────────────────────────────────────

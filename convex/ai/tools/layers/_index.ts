@@ -5,6 +5,8 @@
  * Imported from processChat.ts.
  */
 
+export { setAnalyticsContext } from "../analytics";
+export { setCreativeContext } from "../creative";
 export { setFilesContext } from "../files";
 export { setMessagingContext } from "../messaging";
 export { setNotificationsContext } from "../notifications";

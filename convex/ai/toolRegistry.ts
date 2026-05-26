@@ -32,7 +32,9 @@ export type LayerId =
 	| "messaging"
 	| "files"
 	| "timeline"
-	| "notifications";
+	| "notifications"
+	| "analytics"
+	| "creative";
 
 /**
  * Per-tool runbook strings. The system-prompt builder injects a runbook
@@ -68,6 +70,20 @@ export type ToolDef = {
 	permission: string | null;
 	/** If "premium", only expose to standard/premium-tier models. */
 	requiredCapability?: "premium";
+	/**
+	 * Stage 7 — Constraint I (`/SPRINT-PLAN.md`). Per-tool LLM cost
+	 * ceiling hint. The orchestrator's `quotaGate` reads this when
+	 * deciding whether the org has budget left for the call. Tools that
+	 * call subagents (`analyze_metric`, `analyzeDealClose`, future
+	 * `draft_proposal`) declare `expensive`. Atomic reads stay `cheap`
+	 * (or omit it). When undefined, treated as `normal`.
+	 *
+	 * The actual per-class budget is enforced inside the producing
+	 * tool's execute — declaring it here keeps the registry honest
+	 * (so `expand_tools` can warn the model when an expensive tool
+	 * has been used recently).
+	 */
+	costClass?: "cheap" | "normal" | "expensive";
 	/**
 	 * If "twoStep", AI calls propose_* first, then commit_* on approval.
 	 *
@@ -348,6 +364,10 @@ const LAYER_DESCRIPTIONS: Record<LayerId, string> = {
 	timeline: "Org-wide activity feed (list_org_timeline for 'what happened today?' questions).",
 	notifications:
 		"Per-user notifications (list_notifications, mark_notification_read for the calling user).",
+	analytics:
+		"AI analytical tools (analyze_metric, cohort_analysis, member_performance, get_briefing, refresh_briefing). Quota-gated narratives + cohort rollups + per-member rollups + briefing on demand.",
+	creative:
+		"AI creative drafting tools (draft_message, draft_proposal, summarise_conversation, web_scrape). Drafts are NEVER auto-sent — the user reviews + dispatches via send_message themselves. Quota: 5/min/user + 50/day/user (web_scrape: 30/min/user).",
 };
 
 // Registered at bottom of this file so it's always included
@@ -358,7 +378,7 @@ const expandToolsDef: ToolDef = {
 	confirmation: "none",
 	description: `
 Load a layer of advanced tools when the user's request needs them.
-Available layers: pipelines, fields, tags, views, categories, members, settings, bulk, templates, data, messaging, files, timeline, notifications.
+Available layers: pipelines, fields, tags, views, categories, members, settings, bulk, templates, data, messaging, files, timeline, notifications, analytics, creative.
 Call this BEFORE attempting an action that isn't in the always-on layer.
 This tool does NOT execute any DB operations — it only unlocks new capabilities.
 
@@ -382,6 +402,8 @@ use list_entity_fields, list_pipelines, or list_my_permissions first.
 			"files",
 			"timeline",
 			"notifications",
+			"analytics",
+			"creative",
 		]),
 		reason: z
 			.string()

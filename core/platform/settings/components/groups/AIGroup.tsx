@@ -9,6 +9,7 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
+import { AIAutomationSection } from "./ai/AIAutomationSection";
 import { AIMemorySection } from "./ai/AIMemorySection";
 import { AIPreferencesSection } from "./ai/AIPreferencesSection";
 import { AIReliabilityCard } from "./ai/AIReliabilityCard";
@@ -102,6 +103,7 @@ export function AIGroup({ orgId }: { orgId: Id<"orgs"> }) {
 			<BusinessContextSection orgId={orgId} />
 			<AIMemorySection orgId={orgId} />
 			<AIPreferencesSection />
+			<AIAutomationSection orgId={orgId} />
 			<ApiKeySection orgId={orgId} />
 			<AIUsageSection orgId={orgId} />
 			<AIReliabilityCard orgId={orgId} />

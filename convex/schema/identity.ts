@@ -58,6 +58,35 @@ export const users = defineTable({
 			// O(1). See core/shell/shell/views/dashboard/cards/AIPulseRibbon.tsx
 			// + convex/users/mutations.ts:dismissAiPulseSuggestion.
 			aiPulseDismissed: v.optional(v.record(v.string(), v.number())),
+			/**
+			 * Stage 8 — Autonomous layer (`/SPRINT-PLAN.md`). Per-user
+			 * opt-ins for autonomous AI behaviour. EVERY KEY DEFAULTS TO
+			 * FALSE — existing users see no surprise behaviour until they
+			 * explicitly toggle a flag in Settings → AI → Automation.
+			 *
+			 * Capability mapping (capability-audit `§2.3 W-*`):
+			 *   - autoFollowupOnStageMove   → W-2: when a deal hits a stage
+			 *     whose `pipelineStages.onEnter.autoFollowupTemplate` is
+			 *     set, schedule `create_followup` automatically.
+			 *   - autoEnrichOnContactCreate → W-4: when a contact is
+			 *     created with an email/domain, schedule `enrich_record`.
+			 *   - autoTagOnNote             → W-3 (subset): when a new
+			 *     note is added to an entity, run a classify-and-tag pass.
+			 *   - weeklyDigestEmail         → W-5: receive the weekly
+			 *     manager digest (deals at risk, top performers, stuck leads).
+			 *
+			 * The runner / trigger sites read these flags BEFORE
+			 * scheduling any action; if the flag is off, the trigger is
+			 * a no-op and no `aiToolEvents` row is written.
+			 */
+			aiAutonomy: v.optional(
+				v.object({
+					autoFollowupOnStageMove: v.optional(v.boolean()),
+					autoEnrichOnContactCreate: v.optional(v.boolean()),
+					autoTagOnNote: v.optional(v.boolean()),
+					weeklyDigestEmail: v.optional(v.boolean()),
+				}),
+			),
 		}),
 	),
 	...timestamps,

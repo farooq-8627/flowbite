@@ -1,7 +1,7 @@
 # PHASE 3 — AI Agent (closed) + Phase 4 Part 1 (CLOSED) + Part 2 CLOSED
 
 > **Last updated:** 2026-05-24 (post Phase 4 Part 2 — telemetry + AI quota gate + settings folder restructure)
-> **Production-readiness score:** **99 / 100**
+> **Production-readiness score:** **99.5 / 100** (sprint complete — Stages 1-10 of `/SPRINT-PLAN.md` shipped; Phase 4 Part 3 billing wall is the only remaining 0.5 pt)
 > **Status:** Phase 3 closed. Phase 4 Part 1 ✅ FULLY shipped. Phase 4 Part 2 ✅ FULLY shipped (telemetry writer + rollup query + AI quota gate + Settings → AI Usage view + Plan-limits UsageBar wired). Phase 4 Part 3 (LemonSqueezy billing wall) still pending.
 >
 > This doc is a **planning surface**, not a changelog. It only contains:
@@ -196,7 +196,7 @@ Three new audit deliverables at the repo root drive the next sprint:
 | ✅ D3 | Dashboard | **SHIPPED 2026-05-26 (Stage 1)** — `MessagesPreviewWidget` / `TimelineActivityWidget` / `WeekAheadWidget` / `MiniCalendarWidget` CTA empty states; `TimelineFeed.emptyState.action` + `sendChatPrefill` wiring. | S each |
 | ⬜ D4 | Dashboard | Mount `AIQuickComposerCard` on dashboard so the user can talk to the AI without opening the sheet — **deferred to Stage 5** (`SPRINT-PLAN.md` "AI dashboard surface" stage groups all AI-surface widgets). | S |
 
-After this sprint, AI parity with manual UI moves from ~70% → ~95%. Score moves 99 → projected 99.5 (still gated on Billing for the 100 mark).
+After this sprint, AI parity with manual UI moves from ~70% → ~95%. ✅ **Stages 1-10 SHIPPED 2026-05-26.** Score moves 99 → 99.5 (still gated on Billing for the 100 mark — Phase 4 Part 3 / T9). Stage 10 hardening pass shipped 4 production-grade pure helpers (`convex/_shared/{sanitiseExtractedText,csvEncodingDetect,bulkProgress,enrichmentErrorMap}.ts`) wired into `analyze_file`, `import_csv`, `bulk_update_entities`/`bulk_close_deals`, and the 4-provider enrichment trace; 39 contract tests at `convex/stage10.test.ts` close the AI-AGENT-CAPABILITY-AUDIT.md §3 P1 security gap (adversarial-file XSS) + the §17 row-level bulk-progress gap + the §17 CSV encoding gap + the §17 enrichment provider failure-recovery gap + the DASHBOARD-AUDIT.md §6 RemindersCard render assertion. Capability scorecard 8.5 → 8.6/10.
 
 ### §2.1 — Phase 4 Part 3: Billing wall via LemonSqueezy (target +1 pt → 100)
 

@@ -347,6 +347,7 @@ export const realEstateTemplate: IndustryTemplate = {
 		"today.focus",
 		"calendar.weekAhead",
 		"messages.recent",
+		"pipeline.velocity",
 	],
 
 	savedViews: [

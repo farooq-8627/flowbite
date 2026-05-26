@@ -45,7 +45,12 @@ export const recordToolEvent = internalMutation({
 	args: {
 		orgId: v.id("orgs"),
 		userId: v.id("users"),
-		conversationId: v.id("aiConversations"),
+		/**
+		 * Optional from Stage 8 onwards. Standing-order runs + automation
+		 * triggers (`automation:onStageMove`, `automation:onContactCreate`)
+		 * fire from non-chat code paths and have no conversation context.
+		 */
+		conversationId: v.optional(v.id("aiConversations")),
 		toolName: v.string(),
 		layer: v.optional(v.string()),
 		model: v.optional(v.string()),
@@ -57,6 +62,12 @@ export const recordToolEvent = internalMutation({
 		errorMessage: v.optional(v.string()),
 		inputTokens: v.optional(v.number()),
 		outputTokens: v.optional(v.number()),
+		/**
+		 * Stage 8 — provenance. See `convex/schema/ai.ts:aiToolEvents`
+		 * for conventions ("user:<id>", "standingOrder:<id>",
+		 * "automation:<key>"). Optional — chat-driven calls omit it.
+		 */
+		triggeredBy: v.optional(v.string()),
 	},
 	handler: async (ctx, args) => {
 		try {
@@ -82,6 +93,7 @@ export const recordToolEvent = internalMutation({
 				inputTokens: args.inputTokens,
 				outputTokens: args.outputTokens,
 				costUsd: costUsd > 0 ? costUsd : undefined,
+				triggeredBy: args.triggeredBy,
 				expiresAt: now + RETENTION_MS,
 			});
 		} catch (err) {

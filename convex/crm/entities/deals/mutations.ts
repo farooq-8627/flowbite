@@ -21,6 +21,7 @@ import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
+import { maybeFireAutoFollowupOnStageMove } from "../../../ai/standingOrders/triggers";
 import { sendNotification } from "../../../notifications/helpers";
 import { getRequiredFieldsForStage, pickMissingFields } from "../../fields/pipelines/helpers";
 
@@ -433,6 +434,20 @@ async function moveToStageImpl(
 			entityId: args.dealId,
 		});
 	}
+
+	// Stage 8 — autonomous layer. If the destination stage opted into
+	// `onEnter.autoFollowupTemplate` AND the deal-owner has flipped
+	// `users.preferences.aiAutonomy.autoFollowupOnStageMove`, schedule a
+	// follow-up reminder + write an `aiToolEvents` audit row tagged
+	// `triggeredBy: "automation:onStageMove"`. Both gates default off so
+	// existing workspaces see no behaviour change. See
+	// `convex/ai/standingOrders/triggers.ts:maybeFireAutoFollowupOnStageMove`.
+	await maybeFireAutoFollowupOnStageMove(ctx, {
+		orgId: args.orgId,
+		dealId: args.dealId,
+		deal,
+		toStage,
+	});
 }
 
 export const moveToStage = orgMutation({
@@ -586,6 +601,16 @@ async function closeAsDoneImpl(
 			},
 		});
 	}
+
+	// Stage 7 (SPRINT-PLAN.md) — schedule the win/loss retrospective.
+	// Best-effort: the action handles its own errors (LLM offline, no
+	// API key, etc.) and never throws back into this mutation.
+	await ctx.scheduler.runAfter(0, internal.ai.actions.analyzeDealClose.run, {
+		orgId: args.orgId,
+		userId: args.userId,
+		dealId: args.dealId,
+		finalType: args.finalType,
+	});
 }
 
 export const closeAsDone = orgMutation({

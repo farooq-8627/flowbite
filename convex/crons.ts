@@ -115,4 +115,71 @@ crons.interval(
 	{},
 );
 
+/**
+ * Stage 6 (SPRINT-PLAN.md) — proactive next-actions ranker.
+ *
+ * Every 30 minutes, scan every active (org, user) membership and rebuild
+ * the materialised `aiNextActions` ranked list per user. Heuristic-only —
+ * no LLM call — so the cost is bounded by the DB read budget, not token
+ * spend.
+ *
+ * The action `internal.ai.actions.rankNextActions.rebuildAllOrgs`
+ * paginates memberships and schedules a per-user `rebuildForUser`
+ * mutation per pair. Each mutation runs in its own transaction so the
+ * read cap can never be hit by a single org with many active users.
+ *
+ * Rebuild offset: 100 ms × index — even at 5,000 active members the
+ * total wall clock is ~8 minutes, well below the 30-min tick. Inactive
+ * members (lastActiveAt > 30 days) are skipped.
+ */
+crons.interval(
+	"rank-ai-next-actions",
+	{ minutes: 30 },
+	internal.ai.actions.rankNextActions.rebuildAllOrgs,
+	{},
+);
+
+/**
+ * Stage 7 (SPRINT-PLAN.md) — nightly cohort rebuild.
+ *
+ * The deterministic cohort rollup (`leadSource` / `industry` / `owner`
+ * conversion rates + avg deal value + total value per cohort key) is
+ * recomputed once a day. The action `rebuildAllOrgs` paginates active
+ * orgs and runs the per-org `rebuildForOrg` mutation in its own
+ * bounded transaction so we don't blow the per-mutation read cap on a
+ * busy workspace.
+ *
+ * No LLM cost — purely a DB scan + index write.
+ */
+crons.interval(
+	"rebuild-ai-cohorts",
+	{ hours: 24 },
+	internal.ai.actions.rebuildCohorts.rebuildAllOrgs,
+	{},
+);
+
+/**
+ * Stage 8 (SPRINT-PLAN.md) — autonomous layer evaluator.
+ *
+ * Every minute, scan every enabled `aiStandingOrders` row, compute
+ * `shouldFireNow(schedule, now, lastRunAt)` per row, and schedule
+ * `runner.run` for any whose schedule has matched. The evaluator is a
+ * V8 internalAction (no `use node`) — only the `runner.run` action that
+ * actually invokes streamText needs the Node runtime.
+ *
+ * Cost gate: the evaluator does pure scheduling — bounded, no LLM call.
+ * The runner enforces the per-org cost cap via the existing AI quota
+ * gate when it actually streams.
+ *
+ * The 1-minute cadence is chosen to match the daily/weekly schedule
+ * resolution — owners type "09:00 UTC" and expect the action to fire
+ * within a minute of that boundary.
+ */
+crons.interval(
+	"evaluate-ai-standing-orders",
+	{ minutes: 1 },
+	internal.ai.standingOrders.evaluator.tick,
+	{},
+);
+
 export default crons;

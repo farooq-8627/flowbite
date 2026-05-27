@@ -105,6 +105,23 @@ RULES
  * Heuristic shortlist used when the LLM classifier is unavailable
  * (no key, timed out, parse error). Pattern order matters: more-specific
  * rules first.
+ *
+ * Stage 3-A H1 fix (2026-05-26): the original settings rule fired on any
+ * `(create|update|...) ... (stage|pipeline|tag|...)` pair, which caught
+ * messages like *"create a followup for p-007 on this thursday for next
+ * stage work please"* — `create` matches settingsVerbs, `stage` (in "next
+ * stage work") matches settingsNouns, confidence 0.65 ≥ floor 0.6, so the
+ * heuristic locked the request to the `settings` subagent whose narrow
+ * allow-list does NOT include `create_followup`. The fix:
+ *   1. Add an explicit CRM-action heuristic BEFORE settings — followup /
+ *      remind / note / tag this / convert / move to / send msg / draft /
+ *      summarise verbs all pin to `crm_action @ 0.75` and skip the
+ *      settings heuristic entirely.
+ *   2. Tighten the settings rule: it must match a verb-noun BIGRAM that
+ *      is unambiguous (e.g. "rename pipeline", "add stage to ... pipeline",
+ *      "create new pipeline", "manage role", "delete tag") rather than a
+ *      simple disjunction. Bare nouns "stage" / "pipeline" / "tag" /
+ *      "field" no longer trigger settings on their own.
  */
 function heuristicClassify(message: string): { id: SubagentId; confidence: number } {
 	const m = message.toLowerCase();
@@ -127,12 +144,32 @@ function heuristicClassify(message: string): { id: SubagentId; confidence: numbe
 		return { id: "enrichment", confidence: 0.7 };
 	}
 
-	// Workspace-settings phrasing (admin verbs paired with config nouns).
-	const settingsVerbs = /(rename|change|set|update|edit|configure|invite|remove|create)/;
-	const settingsNouns =
-		/(label|labels|currency|timezone|pipeline|stage|workflow|field|fields|member|members|invitation|tag|saved\s*view|note\s*category|template|workspace|settings|permission|role)/;
-	if (settingsVerbs.test(m) && settingsNouns.test(m)) {
-		return { id: "settings", confidence: 0.65 };
+	// Stage 3-A H1 — CRM-action verbs pin to `crm_action` BEFORE the
+	// settings heuristic so collisions like "create a followup ... next
+	// stage" can never get routed to settings. The verbs are deliberately
+	// the high-frequency CRM gestures (follow-ups, reminders, notes,
+	// tags-on-records, conversions, stage moves, messaging, drafting,
+	// summarising). Whitespace tolerance: \b on both ends, plus optional
+	// hyphen/space between "follow" and "up".
+	if (
+		/\b(follow[\s-]?up|followup|remind\s+me|remind\s+(?:them|him|her|us|the)|set\s+a\s+reminder|create\s+a?\s*(?:followup|follow[\s-]?up|reminder)|add\s+(?:a\s+)?note|note\s+for|note\s+on|call\s+back|check\s+in\s+with|nudge|tag\s+this|attach\s+to|convert\s+(?:this|the|to)|move\s+(?:to|d-\d+|the\s+deal)|send\s+(?:a?\s*)?(?:message|msg)|dm\s+(?!sara|user|them)?|draft\s+(?:a|me)?|write\s+(?:a|me)?\s+(?:message|msg|email|note)|summari[sz]e|recap|qualify|disqualify|push\s+(?:the|my)?\s*reminder|reschedule)\b/.test(
+			m,
+		)
+	) {
+		return { id: "crm_action", confidence: 0.75 };
+	}
+
+	// Workspace-settings phrasing — verb-noun BIGRAMS only, not loose
+	// disjunctions. Each pattern is unambiguous: "rename pipeline" can ONLY
+	// mean editing the pipeline definition, never operating on a deal.
+	// Allow descriptive words between `the` and the noun: "rename the Sales
+	// pipeline to Renewals" must still match (the/Sales/pipeline tokens).
+	if (
+		/\b(rename\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:pipeline|stage|label|tag|workflow|field|role|note\s+category)|change\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:currency|timezone|workspace|org)|set\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:default\s+(?:pipeline|stage|note\s+category)|workspace|org\s+name|currency|timezone)|update\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:workspace|org\s+settings|currency|timezone|pipeline\s+definition)|edit\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:pipeline|stage|workspace|org|role|tag|label|field\s+definition|saved\s+view)|configure\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:pipeline|workspace|org|notification)|add\s+(?:a\s+|the\s+)?(?:[\w-]+\s+){0,3}(?:stage\s+to|tag\s+(?:named|called)|field\s+(?:to|named|called)|saved\s+view\s+(?:named|called)|role\s+(?:named|called)|member\b|invitation)|remove\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:stage|tag|field|saved\s+view|role|member|invitation|note\s+category)|create\s+(?:a\s+|new\s+|a\s+new\s+|the\s+)?(?:[\w-]+\s+){0,3}(?:pipeline|stage|tag|field|saved\s+view|role|note\s+category|invitation)|delete\s+(?:the\s+)?(?:[\w-]+\s+){0,3}(?:pipeline|stage|tag|field|saved\s+view|role|member|invitation|note\s+category)|invite\s+(?:a\s+|the\s+)?(?:member|user|teammate)|invite\s+\S+@\S+|manage\s+(?:role|tag|saved\s+view|member|permission)|reorder\s+(?:stages|tags|fields|note\s+categories)|apply\s+(?:the\s+)?(?:[\w-]+\s+){0,3}template)\b/.test(
+			m,
+		)
+	) {
+		return { id: "settings", confidence: 0.7 };
 	}
 
 	// Pure read questions ("what / which / who / how many / can I / show me / list").

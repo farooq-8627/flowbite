@@ -45,6 +45,7 @@ registerTool({
 	layer: "data", // re-uses an existing layer — no new LayerId migration
 	permission: "leads.update",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: `
 Find missing fields on a CRM record using a 4-step provider waterfall (web
 search → LinkedIn lookup → email finder → domain WHOIS). The user reviews

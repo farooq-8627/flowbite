@@ -33,6 +33,7 @@ registerTool({
 	layer: "files",
 	permission: "files.delete",
 	confirmation: "twoStep",
+	approvalCategory: "files",
 	description: "Soft-delete a file. Two-step — shows the file name before writing.",
 	instruction: {
 		whenToCall:

@@ -54,13 +54,7 @@ import {
 	sanitiseExtractedFields,
 	sanitiseExtractedText,
 } from "./_shared/sanitiseExtractedText";
-import {
-	LEGACY_KEY_RENAMES,
-	normalizeDashboardLayout,
-	validateDashboardLayout,
-	WIDGET_KEYS,
-	WIDGETS,
-} from "./_shared/widgetRegistry";
+import { validateDashboardLayout, WIDGET_KEYS, WIDGETS } from "./_shared/widgetRegistry";
 
 // ─── 1. Sanitiser ─────────────────────────────────────────────────────────
 
@@ -457,15 +451,16 @@ describe("RemindersCard dashboard gate (Stage 10)", () => {
 		}
 	});
 
-	it("normalizeDashboardLayout collapses the legacy calendar.miniWidget alias to canonical calendar.mini", () => {
-		// Pre-Stage-1 templates wrote `calendar.miniWidget`; the rename
-		// map in widgetRegistry.ts collapses that to `calendar.mini` so
-		// the migration + AI tool see only canonical keys.
-		expect(LEGACY_KEY_RENAMES["calendar.miniWidget"]).toBe("calendar.mini");
-		const r = normalizeDashboardLayout(["calendar.miniWidget", "reminders.list"]);
-		expect(r.keys).toContain("calendar.mini");
-		expect(r.keys).toContain("reminders.list");
-		expect(r.rejected).toEqual([]);
-		expect(r.renamed).toContainEqual({ from: "calendar.miniWidget", to: "calendar.mini" });
+	it("validateDashboardLayout rejects the legacy calendar.miniWidget alias at runtime", () => {
+		// Stage 3-A session 2 (2026-05-27) — pure-code directive. The
+		// `calendar.miniWidget` alias is no longer auto-coerced at
+		// runtime; the rename map lives ONLY inside the migration
+		// `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts`.
+		// validateDashboardLayout MUST reject the legacy key so a
+		// regression that re-introduces it as a runtime path is caught
+		// immediately.
+		const result = validateDashboardLayout(["calendar.miniWidget", "reminders.list"]);
+		expect(result.rejected).toEqual(["calendar.miniWidget"]);
+		expect(result.keys).toEqual(["reminders.list"]);
 	});
 });

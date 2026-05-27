@@ -341,6 +341,19 @@ export function isWidgetKey(key: string): key is WidgetKey {
  * because templates may legitimately reference them) plus a list of
  * keys that were rejected so the caller can surface them.
  */
+/**
+ * Validate a candidate dashboardMetrics array. Returns the cleaned
+ * list (unknown keys dropped, duplicates removed, placeholders kept
+ * because templates may legitimately reference them) plus a list of
+ * keys that were rejected so the caller can surface them.
+ *
+ * No alias / legacy-rename logic — every write goes through this
+ * function and unknown keys are rejected loudly. Stage 1's legacy
+ * `calendar.miniWidget` alias was a one-shot data migration; the
+ * alias map is now scoped INSIDE
+ * `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts` and
+ * not exposed at runtime. (Stage 3-A session 2 — pure-code directive.)
+ */
 export function validateDashboardLayout(input: string[]): {
 	keys: WidgetKey[];
 	rejected: string[];
@@ -355,50 +368,4 @@ export function validateDashboardLayout(input: string[]): {
 		else rejected.push(k);
 	}
 	return { keys, rejected };
-}
-
-/**
- * Legacy → canonical key rename map. Read by both the schema-time
- * migration `2026_05_26_normalizeDashboardMetrics.ts` AND the AI tool
- * `update_dashboard_layout` so models that still emit the old name
- * silently coerce instead of erroring. New legacy aliases must be
- * added here AND covered by a migration that rewrites existing rows.
- *
- * Aliases are NOT registered as widget keys. `validateDashboardLayout`
- * still rejects them — callers must rewrite via this map first.
- */
-export const LEGACY_KEY_RENAMES: Record<string, WidgetKey> = {
-	// `calendar.miniWidget` was used by productivity + freelancer templates
-	// before Stage 1 of the dashboard fix wave. Collapsed to canonical
-	// `calendar.mini`. The migration rewrites all existing org settings.
-	"calendar.miniWidget": "calendar.mini",
-};
-
-/**
- * Apply legacy renames + de-duplication to a candidate dashboardMetrics
- * array. Used by the migration and any future bulk-import path.
- * Idempotent — running twice is a no-op.
- */
-export function normalizeDashboardLayout(input: readonly string[]): {
-	keys: WidgetKey[];
-	rejected: string[];
-	renamed: Array<{ from: string; to: WidgetKey }>;
-} {
-	const seen = new Set<string>();
-	const keys: WidgetKey[] = [];
-	const rejected: string[] = [];
-	const renamed: Array<{ from: string; to: WidgetKey }> = [];
-	for (const raw of input) {
-		const aliasTarget = LEGACY_KEY_RENAMES[raw];
-		const candidate = aliasTarget ?? raw;
-		if (seen.has(candidate)) continue;
-		seen.add(candidate);
-		if (isWidgetKey(candidate)) {
-			keys.push(candidate);
-			if (aliasTarget) renamed.push({ from: raw, to: aliasTarget });
-		} else {
-			rejected.push(raw);
-		}
-	}
-	return { keys, rejected, renamed };
 }

@@ -105,16 +105,28 @@ export const listForOrgForAI = internalQuery({
 // ─── Cron-evaluator helpers (no permission check) ────────────────────────
 
 /**
- * List every enabled standing order across the deployment. Used by the
- * cron evaluator only — internal-only, never exposed to the public API.
+ * List enabled standing orders that are DUE to fire at `now`. Reads
+ * `withIndex("by_enabled_and_first_fire", q => q.eq("enabled", true)
+ * .lte("firstFireAt", now))` so the evaluator does ZERO work when no
+ * rows are due — fixes the Stage 3-A.B.23 concurrency hotspot where
+ * the every-minute cron used to scan every enabled row.
+ *
+ * `take(500)` caps the per-tick burst — at scale the evaluator
+ * processes 500 rows per minute, which is well below the
+ * action-runtime budget. Rows skipped on a tick will be picked up on
+ * the next tick (their `firstFireAt` hasn't moved).
+ *
+ * Internal-only — never exposed to the public API.
  */
-export const listEnabledForEvaluation = internalQuery({
-	args: {},
-	handler: async (ctx) => {
+export const listDueForEvaluation = internalQuery({
+	args: { now: v.number() },
+	handler: async (ctx, args) => {
 		const rows = await ctx.db
 			.query("aiStandingOrders")
-			.withIndex("by_enabled", (q) => q.eq("enabled", true))
-			.take(2000);
+			.withIndex("by_enabled_and_first_fire", (q) =>
+				q.eq("enabled", true).lte("firstFireAt", args.now),
+			)
+			.take(500);
 		return rows.map((r) => ({
 			id: r._id,
 			orgId: r.orgId,

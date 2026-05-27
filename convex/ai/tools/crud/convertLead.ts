@@ -26,6 +26,7 @@ registerTool({
 	layer: "always",
 	permission: "leads.convert",
 	confirmation: "twoStep",
+	approvalCategory: "convert_record",
 	description:
 		"Convert a lead into a contact. Creates a new contact row carrying the same personCode, displayName, email, phone, tags, and aiContext from the lead, and marks the lead status='converted'. Use this — NOT update_entity — when the user asks to convert / promote a lead.",
 	instruction: {

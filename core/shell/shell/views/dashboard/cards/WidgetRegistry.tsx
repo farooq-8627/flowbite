@@ -179,11 +179,10 @@ export const WIDGET_REGISTRY: Partial<Record<WidgetKey, WidgetSpec>> = {
 	"deals.lost": {
 		key: "deals.lost",
 		label: WIDGETS["deals.lost"].label,
-		get: () => "—",
+		get: (s) => s.dealsLost,
 		href: (slug) => `/${slug}/deals?stage=lost`,
 		icon: <TrendingDownIcon className="size-3.5" />,
 		accent: "text-rose-600",
-		placeholder: true,
 	},
 	"deals.invoiced.unpaid": {
 		key: "deals.invoiced.unpaid",

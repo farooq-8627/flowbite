@@ -29,7 +29,14 @@ export function MetricStrip({ stats, widgets, orgSlug }: MetricStripProps) {
 	return (
 		<div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
 			{widgets.map((w) => {
-				const value = w.placeholder ? "Soon" : w.get(stats);
+				// Stage 3-A 3A.2 hotfix — render the widget's own value
+				// even when `placeholder` is true. True placeholders
+				// (tasks.streak, tasks.thisWeek, etc.) return `"—"` from
+				// their getter, which is the intended UX. The previous
+				// substitution to literal "Soon" was a stale Stage-1
+				// stop-gap that became the dashboard bug DEALS LOST =
+				// "Soon" the user reported on 2026-05-26.
+				const value = w.get(stats);
 				return (
 					<StatTile
 						key={w.key}

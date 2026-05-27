@@ -38,6 +38,7 @@ registerTool({
 	layer: "files",
 	permission: "files.upload",
 	confirmation: "twoStep",
+	approvalCategory: "files",
 	description: "Replace the tags on a file. Two-step — shows the new tag set before writing.",
 	instruction: {
 		whenToCall:

@@ -48,6 +48,7 @@ registerTool({
 	layer: "always",
 	permission: "notes.updateOwn",
 	confirmation: "twoStep",
+	approvalCategory: "update_record",
 	description:
 		"Edit an existing note's title, content, category, or internal flag. Owner-only by default; admins with notes.deleteAny can edit any.",
 	instruction: {

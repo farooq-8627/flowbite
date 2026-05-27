@@ -26,6 +26,7 @@ registerTool({
 	layer: "always",
 	permission: "deals.create",
 	confirmation: "twoStep",
+	approvalCategory: "create_record",
 	description: "Create a new deal. Resolve personCode via search_crm — never fabricate codes.",
 	instruction: {
 		whenToCall:

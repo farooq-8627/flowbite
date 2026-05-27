@@ -31,6 +31,7 @@ registerTool({
 	layer: "always",
 	permission: "leads.create",
 	confirmation: "twoStep",
+	approvalCategory: "create_record",
 	// P1.4 — structured instruction. The model-facing `description` is
 	// auto-built from this; see toolRegistry.ts::buildToolDescription.
 	// Free-form `description` is kept as the safety fallback in case

@@ -57,15 +57,23 @@ export function useRemindersDueAndOverdue(args: { orgId?: Id<"orgs">; lookbackDa
 /**
  * Next N pending reminders strictly after today. Used by the "next
  * reminder" fallback shown when overdue + today are empty.
+ *
+ * Stage 3-A.B.23 concurrency fix: accepts an optional `enabled` flag
+ * so callers can gate the subscription on "main bucket is empty"
+ * without conditionally calling the hook (which would violate Rules
+ * of Hooks). When `enabled === false` the underlying `useQuery`
+ * receives `"skip"` and contributes zero subscription cost.
  */
 export function useRemindersNextUpcoming(args: {
 	orgId?: Id<"orgs">;
 	limit?: number;
 	horizonDays?: number;
+	enabled?: boolean;
 }) {
+	const enabled = args.enabled ?? true;
 	return useQuery(
 		api.crm.shared.reminders.queries.getNextUpcoming,
-		args.orgId
+		args.orgId && enabled
 			? {
 					orgId: args.orgId,
 					...(args.limit !== undefined ? { limit: args.limit } : {}),

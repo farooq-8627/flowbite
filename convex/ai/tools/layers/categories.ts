@@ -80,6 +80,7 @@ registerTool({
 	layer: "categories",
 	permission: "notes.categories.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Archive a note category. Existing notes keep their assignment.",
 	runbook: {
 		onSuccess: "Confirm in one short sentence.",

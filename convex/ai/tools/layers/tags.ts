@@ -97,6 +97,7 @@ registerTool({
 	layer: "tags",
 	permission: "tags.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Delete a tag from the org. Detaches from all entities.",
 	runbook: {
 		onSuccess: "Confirm and mention how many entities the tag was detached from if known.",

@@ -35,6 +35,7 @@ registerTool({
 	layer: "messaging",
 	permission: "messages.send",
 	confirmation: "twoStep",
+	approvalCategory: "send_message",
 	description: "Send a chat message to a person, deal, company, or existing conversation thread.",
 	instruction: {
 		whenToCall:

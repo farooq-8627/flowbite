@@ -65,6 +65,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "deals.close",
 	confirmation: "twoStep",
+	approvalCategory: "update_record",
 	description: "Close a deal as Won or Lost.",
 	runbook: {
 		onSuccess: "Confirm with the outcome and the deal's title in one short sentence.",
@@ -132,6 +133,7 @@ registerTool({
 	permission: "pipelines.manage",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Create a new pipeline with stages.",
 	runbook: {
 		onSuccess: "Confirm with the new pipeline's name and stage chain in one short sentence.",
@@ -196,6 +198,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "pipelines.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Add a new stage to an existing pipeline.",
 	runbook: {
 		onSuccess: "Confirm with the new stage name and where it lives in the chain.",
@@ -270,6 +273,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "pipelines.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Rename / recolour / change-code on a pipeline stage. Two-step — surfaces deal count in the propose card so the user knows the impact.",
 	instruction: {
@@ -405,6 +409,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "pipelines.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Remove a pipeline stage. Refuses if any deals are currently in the stage (move them first). The Default stage cannot be removed.",
 	instruction: {
@@ -476,6 +481,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "pipelines.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Reorder all non-default stages in a pipeline. The Default stage stays pinned at position 0 regardless.",
 	instruction: {
@@ -542,6 +548,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "pipelines.manage",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Promote a stage to be the pipeline's Default stage. NOTE: the Default stage is fixed per pipeline in this build — this tool no-ops when the target IS the current default and refuses otherwise.",
 	instruction: {
@@ -673,6 +680,7 @@ registerTool({
 	layer: "pipelines",
 	permission: "deals.close",
 	confirmation: "twoStep",
+	approvalCategory: "update_record",
 	description:
 		"Reopen a closed (won or lost) deal — clears wonAt/lostAt and restores the deal to the pipeline's Default stage. Two-step.",
 	instruction: {

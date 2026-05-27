@@ -45,6 +45,8 @@ registerTool({
 	layer: "always",
 	permission: "ai.use",
 	confirmation: "twoStep",
+	alwaysAsk: true,
+	approvalCategory: "ask_user",
 	description: `
 Ask the user to fill in a small form to provide MISSING REQUIRED DATA.
 

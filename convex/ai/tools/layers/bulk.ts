@@ -48,6 +48,7 @@ registerTool({
 	permission: null, // checked per-entityType
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "bulk",
 	description: "Update multiple entities at once. Provide entityIds (max 200) and patch.",
 	runbook: {
 		onSuccess: "Confirm with the count of records updated.",
@@ -131,6 +132,7 @@ registerTool({
 	permission: "deals.close",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "bulk",
 	description: "Close multiple deals as won or lost.",
 	runbook: {
 		onSuccess: "Confirm with the count and outcome.",

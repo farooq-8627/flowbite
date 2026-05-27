@@ -19,6 +19,7 @@ registerTool({
 	layer: "always",
 	permission: "contacts.create",
 	confirmation: "twoStep",
+	approvalCategory: "create_record",
 	description:
 		"Create a new contact (qualified person). Run search_crm first to avoid duplicates.",
 	instruction: {

@@ -14,23 +14,22 @@ Convex agent skills for common tasks can be installed by running
 
 ---
 
-# 🎯 ACTIVE SPRINT — read first
+# 🎯 ACTIVE WORK — read first
 
-> **`SPRINT-PLAN.md`** is the canonical execution surface for the current
-> audit-driven sprint. It contains 10 self-contained stages, each with a
-> drop-in prompt sized for a single AI session.
+> **Two-file system (locked 2026-05-27):**
 >
-> Before starting any feature work, check `SPRINT-PLAN.md` for the next
-> unfinished stage. Source audits the plan derives from:
-> `AI-AUDIT-COMPLETE.md` (75 tools mapped, 51 gaps), `DASHBOARD-AUDIT.md`
-> (3 stacked bugs + missing AI widgets), `AI-AGENT-CAPABILITY-AUDIT.md`
-> (senior-CRM-specialist scorecard 5.8/10 → roadmap to 9/10).
+> - **`PENDING.md`** — every pending item with full context, grouped by P0/P1/P2 priority + stage. Read this BEFORE starting any new work.
+> - **`SHIPPED.md`** — one-line changelog of every shipped scope. Read this to confirm "is X already done?".
 >
-> Each stage's prompt enforces full-repo verification (typecheck, biome,
-> test, vitest, build all green for the WHOLE repository, not just changed
-> files), the doc-cleanup rule (collapse shipped, keep pending in full),
-> and the no-backward-compat directive (rename → delete old + migrate same
-> edit).
+> Auxiliary planning surfaces:
+>
+> - **`Future-Enhancements.md`** — deferral cards (currently-disabled restrictions in §A; backlog enhancements in §B; audit-flagged items in §C; process items in §D; P3 AI tool gaps in §E; capability roadmap deferrals in §F; low-priority polish in §G). Pending only — every shipped row was migrated to `SHIPPED.md` on 2026-05-27.
+> - **`LANDING-PAGE.md`** — marketing-site spec (separate PR track, embedded at `app/(marketing)/`).
+> - **`PLATFORM-OWNER-PANEL.md`** — super-admin panel spec (separate sprint).
+>
+> Per-module architecture decisions live in `core/*/MODULE.md` and `convex/**/MODULE.md`. Architecture docs live in `docs/architecture/`. (Per-module STATE.md files were retired on 2026-05-27 — pending items consolidated into `Future-Enhancements.md` §H.)
+>
+> Every change must enforce full-repo verification (typecheck, biome, test, vitest, build all green for the WHOLE repository, not just changed files), the doc-cleanup rule (collapse shipped, keep pending in full), and the no-backward-compat directive (rename → delete old + migrate same edit).
 
 ---
 
@@ -74,7 +73,7 @@ Every time you make a design decision, architecture choice, or answer a "why" qu
    - Section (A: currently-disabled / B: backlog / C: audit-flagged / D: governance).
    - Status (Disabled / Removed / Backlog / In progress).
    - Category (Model gating / RBAC / Rate limit / Billing / UX / Performance / etc.).
-   - **Phase to ship** — when the restriction comes back on. Reference the doc that says so (e.g. `PHASE-3-AI-AUDIT.md §6 Week 6`).
+   - **Phase to ship** — when the restriction comes back on. Reference the doc that says so (e.g. `PENDING.md` P0.2 / `Future-Enhancements.md` §A).
    - Owners — module(s) responsible.
    - Risk if skipped — what breaks in production if we forget.
    - Files involved — concrete paths + line ranges when known.
@@ -87,7 +86,7 @@ Every time you make a design decision, architecture choice, or answer a "why" qu
 4. **A code comment at the disabling site** that points at the doc:
    ```ts
    // DEFERRED: see Future-Enhancements.md §A.2 (per-tool premium capability gate).
-   //          Re-enable in Phase 6 / Week 6 of PHASE-3-AI-AUDIT.md §6.
+   //          Re-enable per PENDING.md P0.2 (re-enable testing-phase restrictions before launch).
    ```
 
 ### When a user asks to add an enhancement / restriction / cleanup item
@@ -111,8 +110,8 @@ Deferred restrictions don't surface until the day they bite. By then the origina
 
 ## RULE: Doc cleanup at every commit — summarise shipped, keep pending in full (NON-NEGOTIABLE)
 
-> Tracking docs (`PHASE-*.md` audits, `STATE.md` files, `todos.md`,
-> `Future-Enhancements.md`) are **planning surfaces**, not changelogs. They
+> Tracking docs (`PENDING.md`, `SHIPPED.md`, `Future-Enhancements.md`,
+> `MODULE.md` files) are **planning surfaces**, not changelogs. They
 > exist to tell the next session what to do next. They are NOT a record of
 > what was done. Without an active cleanup rule they grow into wall-of-text
 > archives that hide the actually-pending work and force users to ask "what's
@@ -146,7 +145,7 @@ The following stay in **full text** in the doc until the **whole phase containin
 |---|---|
 | **Pending task descriptions, sub-bullets, file paths, code sketches, schemas** | Next session needs the full context to execute without re-asking |
 | **Avoid-lists / DON'T-do lists** | These are guardrails; collapsing loses the rationale |
-| **Production-platform / industry findings** (e.g. PHASE-3-AI-AUDIT §2: Anthropic, AI SDK, Attio, Salesforce, HubSpot, Clay, OWASP, Inngest) | These ARE the design rationale for every pending task; never summarise away while any related task is pending |
+| **Production-platform / industry findings** (e.g. Anthropic, AI SDK, Attio, Salesforce, HubSpot, Clay, OWASP, Inngest patterns) | These ARE the design rationale for every pending task; never summarise away while any related task is pending |
 | **Architecture diagrams** | Cheap to keep, expensive to recreate |
 | **Audit-defect tables with cross-refs to fixes** | Anchoring data — keep the rows, just flip the status column |
 | **Sequence / dependency diagrams** | Same — cheap to keep, hard to recreate |
@@ -193,7 +192,7 @@ Workflow checklist (run mentally before ending a message that included a doc edi
 - [ ] Did I keep every audit-finding row, just flipping the Status column to Implemented / Partial / Pending?
 - [ ] Did I keep avoid-lists, sequence diagrams, verification protocols verbatim?
 - [ ] If a whole phase shipped, did I roll up its per-task lines into one paragraph?
-- [ ] Did I update **every tracking doc** the change touches (typically: phase audit + module STATE.md + global todos.md)?
+- [ ] Did I update **every tracking doc** the change touches (typically: `PENDING.md` + `SHIPPED.md` + `Future-Enhancements.md` if a deferral was added or removed)?
 
 ### Why this rule exists
 
@@ -517,47 +516,31 @@ await enforceRateLimit(ctx, {
 | 23 | **EventForm is a thin wrapper around ReminderForm** with calendar-specific defaults (`source="calendar"`, midnight clicks snap to 9 AM, submit reads "Save as reminder"). One form to maintain; UX surfaces the "calendar event = reminder" model. |
 | 24 | **All scheduling write mutations gate on `RATE_LIMITS.write`** under a shared scope (`reminders.write` for `complete` / `update` / `remove`; `reminders.create` for create). Same-class limits across writes; a frantic user can't bypass by alternating verbs. |
 | 25 | **Embedded calendar panels clamp the date range to ±45 days** (90-day cap from the spec). Bounds the read set; prevents 5-year scans. The org-wide CalendarView uses `getRangeForView(viewMode, selectedDate)` which is always <= 1 month. |
+| 26 | **AI tool approval — hard-locked categories cannot be auto-approved.** `bulk`, `settings`, and `members` always require the propose/commit confirmation card regardless of any user preference (defence-in-depth). The interaction tools `ask_user_input` / `ask_user_choice` use a dedicated `alwaysAsk: true` flag with the same effect. SSOT for the category list + defaults + hard-locked set is `convex/_shared/aiApprovals.ts` — adding a new category is a one-file change there, plus tagging the relevant tools' `approvalCategory` in the registry. The gate function is `resolveNeedsApproval` in `convex/ai/toolRegistry.ts`; precedence: `alwaysAsk` → hard-lock → user `aiApprovals` override → tool-declared confirmation → function-form `needsApproval`. Per-user prefs live at `users.preferences.aiApprovals`. Org-wide override is deferred — see `Future-Enhancements.md §B.22`. |
+| 27 | **AIQuickComposerCard auto-sends on Enter.** The dashboard's pinned QuickComposer is user-typed text the human deliberately authored — Enter SENDS it through `useAIChat.send`, the side panel slides open, the response streams in. The card reuses the persisted thread (via `usePersistedConversationId(orgId)`) when one exists for continuity; only when there is no active thread does it lazy-create one through `useAIChat.createConversation`. The historic "user-in-control" guidance still applies fully to AI-INITIATED suggestions — `AIPulseRibbon`, `ChatLandingPane` Top-3 — those stay click-to-act so a user sees a confirmation pause before the AI runs. The carve-out is precisely scoped: user-typed prompts in the dashboard composer skip the prefill step; AI-suggested intents still flow through `sendChatPrefill` so the user can edit before sending. Settings → AI Approvals (decision #26) remains the SSOT for whether tool calls inside that send require a propose/commit step — auto-send affects the OUTBOUND text only, not what the AI is allowed to do once it starts thinking. |
 
 ---
 
 # 🔴 CRITICAL SESSION RULES (NON-NEGOTIABLE — read before anything else)
 
-## ⛔ RULE 0: UPDATE STATE.md BEFORE ENDING EVERY SESSION (NON-NEGOTIABLE)
+## ⛔ RULE 0: UPDATE PENDING.md / SHIPPED.md BEFORE ENDING EVERY SESSION (NON-NEGOTIABLE)
 
 > This rule fires BEFORE Rule 1. No exceptions. No skipping. Ever.
 
-**After completing ANY work in a module, you MUST:**
-- Update `STATE.md` in EVERY module you touched during the session
-- Mark completed items as ✅, add new pending items as ⬜
-- Record the new route structure, file paths, and architecture decisions
-- If a module has no `STATE.md`, create one before ending
+**After completing ANY work, you MUST:**
+- Move every shipped scope from `PENDING.md` → `SHIPPED.md` (one-line summary with date + key file paths) IN THE SAME EDIT.
+- Add any new genuinely-pending items to `PENDING.md` with full context (file paths, acceptance criteria, why deferred).
+- If a guardrail / restriction / capability was disabled or weakened, add a card to `Future-Enhancements.md` per the rule below.
+- Per-module architecture decisions go into the module's `MODULE.md` (NOT a STATE.md — those were retired on 2026-05-27).
 
-**Modules that MUST have STATE.md:**
-- `core/shell/STATE.md` — shell layout, navigation, guards
-- `core/onboarding/STATE.md` — onboarding wizard, steps, mutations
-- `core/auth/STATE.md` — auth flow, guards, OAuth
-- `core/entities/STATE.md` — entity scaffolds, list/detail/form
-- `core/ai/STATE.md` — AI tools, conversations, system prompt
-- `core/settings/STATE.md` — settings pages, RBAC gates
-- Any other `core/*/STATE.md` or `features/*/STATE.md` you worked in
+**The two-file system (locked 2026-05-27):**
+- `PENDING.md` — every pending item with full context, grouped by P0/P1/P2 + stage. Read this BEFORE starting any new work.
+- `SHIPPED.md` — one-line changelog of every shipped scope. Read this to confirm "is X already done?".
+- `Future-Enhancements.md` — deferral cards (currently-disabled restrictions, backlog enhancements, audit-flagged items, process items, P3 AI tool gaps, capability roadmap deferrals, low-priority polish, per-module deferred polish in section H).
+- `LANDING-PAGE.md` — marketing-site spec (separate PR track).
+- `PLATFORM-OWNER-PANEL.md` — super-admin panel spec (separate sprint).
 
-**Format for STATE.md:**
-```
-# [Module] — State
-> Updated: [DATE]
-> Status: [X% Complete] — [one-line summary]
-
-## ✅ Completed
-| Component | File | Notes |
-
-## ⬜ Pending
-| Task | Priority | Notes |
-
-## Architecture Notes
-[Key decisions made this session]
-```
-
-**Failure to update STATE.md = broken contract. The next AI session will have no context.**
+**Failure to update PENDING.md / SHIPPED.md = broken contract. The next AI session will not know what shipped and what's left.**
 
 ---
 

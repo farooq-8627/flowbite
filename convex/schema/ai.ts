@@ -586,12 +586,29 @@ export const aiStandingOrders = defineTable({
 	lastRunStatus: v.optional(v.string()),
 	/** Quick-toggle without deletion. Default `true` at the writer. */
 	enabled: v.boolean(),
+	/**
+	 * Stage 3-A.B.23 — `firstFireAt` is the precomputed next-fire
+	 * timestamp for an enabled row. The cron evaluator reads
+	 * `withIndex("by_enabled_and_first_fire", q => q.eq("enabled",
+	 * true).lte("firstFireAt", now))`, so when there are zero rows due
+	 * the read is a true no-op (no full-table scan). The writer
+	 * (`mutations:createImpl` / `updateImpl` / `recordRunResult`)
+	 * recomputes via `schedule:computeFirstFireAt` whenever the
+	 * schedule or `lastRunAt` changes. Disabled rows leave
+	 * `firstFireAt` set but never fire because the index also keys on
+	 * `enabled = true`. Optional in the validator so the migration
+	 * `2026_05_28_addStandingOrderFirstFireAt` can backfill existing
+	 * rows in a single pass — after the migration runs every enabled
+	 * row has `firstFireAt` set.
+	 */
+	firstFireAt: v.optional(v.number()),
 	createdAt: v.number(),
 	updatedAt: v.number(),
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_user", ["orgId", "userId"])
-	.index("by_enabled", ["enabled"]);
+	.index("by_enabled", ["enabled"])
+	.index("by_enabled_and_first_fire", ["enabled", "firstFireAt"]);
 
 /**
  * Stage 6 (SPRINT-PLAN.md) — `aiNextActions` table.

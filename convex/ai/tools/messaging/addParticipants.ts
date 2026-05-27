@@ -22,6 +22,7 @@ registerTool({
 	layer: "messaging",
 	permission: "messages.subscribe",
 	confirmation: "twoStep",
+	approvalCategory: "manage_participants",
 	description: "Add one or more members to an existing conversation thread.",
 	instruction: {
 		whenToCall:

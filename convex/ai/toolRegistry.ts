@@ -85,6 +85,27 @@ export type ToolDef = {
 	 */
 	costClass?: "cheap" | "normal" | "expensive";
 	/**
+	 * Post-sprint addition (2026-05-26). Maps the tool to a user-facing
+	 * approval category so `resolveNeedsApproval` can consult the user's
+	 * `users.preferences.aiApprovals` map. When omitted, the tool falls
+	 * back to its `confirmation` / `needsApproval` declaration unchanged
+	 * (i.e. always asks if either is set, never asks otherwise).
+	 *
+	 * See `convex/_shared/aiApprovals.ts` for the canonical list,
+	 * defaults, and the hard-locked set (bulk / settings / members ALWAYS
+	 * ask regardless of user preferences).
+	 */
+	approvalCategory?: import("../_shared/aiApprovals").ApprovalCategory;
+	/**
+	 * Post-sprint addition (2026-05-26). When `true`, the approval gate
+	 * ALWAYS fires regardless of `confirmation`, `needsApproval`,
+	 * `approvalCategory`, or any user preference. Reserved for tools whose
+	 * sole purpose IS surfacing a UI prompt to the user — currently
+	 * `ask_user_input` and `ask_user_choice`. Auto-approving them would
+	 * defeat the point.
+	 */
+	alwaysAsk?: boolean;
+	/**
 	 * If "twoStep", AI calls propose_* first, then commit_* on approval.
 	 *
 	 * @deprecated Week 3.3 — prefer `needsApproval`. Both fields are honoured
@@ -596,6 +617,11 @@ REGISTRY.set("expand_tools", expandToolsDef);
  *   - The new `needsApproval: boolean | (args)=>boolean` field.
  *   - The legacy `confirmation: "twoStep"` field (backward compat
  *     during the migration window).
+ *   - **Post-sprint (2026-05-26)** — per-user `aiApprovals` preferences
+ *     keyed by `approvalCategory`. Hard-locked categories
+ *     (`bulk` / `settings` / `members`) cannot be bypassed by user
+ *     preferences. Tools with `alwaysAsk: true` always require approval
+ *     regardless of category or preferences.
  *
  * Used by `streamLoop.ts` to decide whether to insert a pending
  * confirmation row (twoStep flow) or run `execute` immediately.
@@ -603,21 +629,71 @@ REGISTRY.set("expand_tools", expandToolsDef);
  * Always returns a boolean, never throws — a misbehaving function-form
  * `needsApproval` is treated as "approve to be safe" rather than
  * silently letting a write through.
+ *
+ * @param userAutoApprove Optional pre-resolved auto-approve map (from
+ *   `resolveEffectiveAutoApprove(prefs.aiApprovals)` in `run.ts`). When
+ *   undefined, the gate ignores preferences and falls back to the
+ *   tool's declared confirmation — same as before this feature shipped.
  */
-export function resolveNeedsApproval(toolName: string, args: Record<string, unknown>): boolean {
+export function resolveNeedsApproval(
+	toolName: string,
+	args: Record<string, unknown>,
+	userAutoApprove?: Partial<
+		Record<import("../_shared/aiApprovals").UserToggleableCategory, boolean>
+	>,
+): boolean {
 	const def = REGISTRY.get(toolName);
 	if (!def) return false; // unknown tool — let the SDK reject it
 
-	// Legacy field wins when set explicitly (existing tools).
-	if (def.confirmation === "twoStep") return true;
-
-	const na = def.needsApproval;
-	if (na === undefined) return false;
-	if (typeof na === "boolean") return na;
-	try {
-		return na(args ?? {}) === true;
-	} catch (err) {
-		console.warn(`[toolRegistry] needsApproval(${toolName}) threw — defaulting to true:`, err);
-		return true;
+	// ── HARD RULES (cannot be overridden by preferences) ──
+	// 1. ask_user_input / ask_user_choice MUST always ask.
+	if (def.alwaysAsk === true) return true;
+	// 2. Hard-locked categories always ask.
+	if (def.approvalCategory) {
+		// Lazy import dance: this file is imported by frontend code via
+		// `_generated/api`, so we cannot pull from `../_shared/aiApprovals`
+		// at module scope without breaking the build. Inline the literal
+		// set here — `aiApprovals.ts` is the SSOT but this is the cheapest
+		// possible hot-path check on every tool call.
+		if (
+			def.approvalCategory === "bulk" ||
+			def.approvalCategory === "settings" ||
+			def.approvalCategory === "members"
+		) {
+			return true;
+		}
 	}
+
+	// ── Tool didn't request approval at all → run atomically ──
+	const declaredApproval =
+		def.confirmation === "twoStep" ||
+		def.needsApproval === true ||
+		typeof def.needsApproval === "function";
+	if (!declaredApproval) return false;
+
+	// ── User preference override (only for user-toggleable categories) ──
+	if (userAutoApprove && def.approvalCategory && def.approvalCategory !== "ask_user") {
+		const cat = def.approvalCategory as import("../_shared/aiApprovals").UserToggleableCategory;
+		const userValue = userAutoApprove[cat];
+		if (userValue === true) return false; // user opted IN to auto-approve
+		if (userValue === false) return true; // user explicitly forced ask
+		// undefined → fall through to declared logic (uses default elsewhere)
+	}
+
+	// ── Function-form needsApproval (dynamic — e.g. "auto-approve under 50 rows") ──
+	const na = def.needsApproval;
+	if (typeof na === "function") {
+		try {
+			return na(args ?? {}) === true;
+		} catch (err) {
+			console.warn(
+				`[toolRegistry] needsApproval(${toolName}) threw — defaulting to true:`,
+				err,
+			);
+			return true;
+		}
+	}
+
+	// ── Static declaration says ask ──
+	return true;
 }

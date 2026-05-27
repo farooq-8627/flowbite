@@ -36,6 +36,7 @@ registerTool({
 	permission: "fieldDefinitions.manage",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Create a custom field on a CRM entity (lead / contact / deal / company).",
 	runbook: {
 		// Day 2 T1.5 (`PHASE-3-AI-AUDIT.md §6.5 E.T1.5`). Adding `preFlight`
@@ -193,6 +194,7 @@ registerTool({
 	permission: "fieldDefinitions.manage",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Update a custom field's label, options, required flag, group, or visibility (hidden).",
 	runbook: {
@@ -269,6 +271,7 @@ registerTool({
 	permission: "fieldDefinitions.manage",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Permanently delete a custom field. Existing values for that field are also deleted (cascade). Use update_field with hidden=true if you only want to hide it.",
 	runbook: {

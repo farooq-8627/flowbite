@@ -28,6 +28,7 @@ registerTool({
 	layer: "creative",
 	permission: "deals.view",
 	confirmation: "twoStep",
+	approvalCategory: "send_message",
 	costClass: "expensive",
 	description: "Stub — overridden by buildToolDescription via instruction.",
 	instruction: {

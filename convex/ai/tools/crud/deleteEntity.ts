@@ -90,6 +90,7 @@ registerTool({
 	layer: "always",
 	permission: null, // per-entity permission checked inside execute (see PERMISSION_FOR_TYPE)
 	confirmation: "twoStep",
+	approvalCategory: "delete_record",
 	description:
 		"Soft-delete any entity (lead, contact, deal, company, note, or reminder). Shows a confirmation card with cascade impact before any write.",
 	instruction: {

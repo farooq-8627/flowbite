@@ -54,6 +54,7 @@ import {
 	requireOrgMember,
 	requireOrgMemberByIds,
 } from "../../_functions/authenticated";
+import { internal } from "../../_generated/api";
 import type { Doc, Id } from "../../_generated/dataModel";
 import {
 	internalMutation,
@@ -62,6 +63,7 @@ import {
 	type QueryCtx,
 } from "../../_generated/server";
 import { requireRole } from "../../_shared/permissions/helpers";
+import { enforceRateLimit } from "../../_shared/rateLimit";
 
 // ─── Tunables (single source of truth) ───────────────────────────────────
 
@@ -503,6 +505,67 @@ export const snoozeNextAction = orgMutation({
 		const until = Date.now() + days * ONE_DAY_MS;
 		await ctx.db.patch(args.actionId, { snoozedUntil: until });
 		return { snoozedUntil: until, recordCode: row.recordCode };
+	},
+});
+
+// ─── Stage 3-A.4 — Lazy warm wrapper for AIPulseRibbon ───────────────────
+//
+// `rebuildForUser` is an `internalMutation` so it can be called from the
+// 30-min cron action AND from the AI tool layer. The dashboard's
+// AIPulseRibbon needs to fire it ONCE per session when the ranked store
+// is empty — so we expose a public `orgMutation` wrapper that schedules
+// the rebuild via `ctx.scheduler.runAfter(0, ...)`. Rate-limited at
+// 1/min per user/org so a misbehaving frontend can't spam the cron's
+// budget. Permission gate matches `listForUser` (`leads.view`) so any
+// member who can read the ribbon can also warm it.
+//
+// Scheduler-runAfter (not direct call) because the public mutation
+// completes before the rebuild starts — the dashboard can return,
+// React reactivity picks up the new rows on the next reactive cycle.
+
+export const lazyWarmForUser = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "leads.view");
+
+		await enforceRateLimit(ctx, {
+			scope: "ai.nextActions.lazyWarm",
+			key: `${userId}:${args.orgId}`,
+			max: 1,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
+		await ctx.scheduler.runAfter(0, internal.ai.queries.nextActions.rebuildForUser, {
+			orgId: args.orgId,
+			userId,
+		});
+
+		return { scheduled: true } as const;
+	},
+});
+
+export const lazyWarmForUserForAI = internalMutation({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.view");
+
+		await enforceRateLimit(ctx, {
+			scope: "ai.nextActions.lazyWarm",
+			key: `${args.userId}:${args.orgId}`,
+			max: 1,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+
+		await ctx.scheduler.runAfter(0, internal.ai.queries.nextActions.rebuildForUser, {
+			orgId: args.orgId,
+			userId: args.userId,
+		});
+
+		return { scheduled: true } as const;
 	},
 });
 

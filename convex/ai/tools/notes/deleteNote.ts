@@ -36,6 +36,7 @@ registerTool({
 	layer: "always",
 	permission: "notes.deleteOwn",
 	confirmation: "twoStep",
+	approvalCategory: "delete_record",
 	description: "Delete a single note (hard-delete; no undo).",
 	instruction: {
 		whenToCall:

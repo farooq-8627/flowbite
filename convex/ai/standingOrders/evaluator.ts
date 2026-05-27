@@ -4,31 +4,43 @@
  * Stage 8 of /SPRINT-PLAN.md (Autonomous layer). Cron-driven evaluator
  * that ticks once per minute (registered in `convex/crons.ts`).
  *
- * Architecture:
- *   crons.ts: evaluate-ai-standing-orders (every minute)
- *     → tick (internalAction, V8 runtime)
- *         → listEnabledForEvaluation (internalQuery): pull every enabled row.
- *         → for each row:
- *             - call shouldFireNow(schedule, now, lastRunAt)
- *             - if true: scheduler.runAfter(0, runner.run, { id }) AND
- *               patch row.lastRunAt = now via recordRunResult
+ * Stage 3-A.B.23 concurrency fix
+ * ──────────────────────────────
+ * Before: tick → `listEnabledForEvaluation` (full-table scan over
+ *   every enabled row) → `shouldFireNow(...)` per row → maybe schedule
+ *   runner. At 1000 enabled rows × 1 tick/min × 5 active orgs that's
+ *   300k row-reads/hr even when nothing is due. The Convex Functions
+ *   panel surfaced this as "Queries hit concurrency limit" on dev.
+ *
+ * After: tick → `listDueForEvaluation({ now })` reads via
+ *   `withIndex("by_enabled_and_first_fire", q => q.eq("enabled",
+ *   true).lte("firstFireAt", now))` — when no rows are due the read
+ *   touches ZERO documents. The evaluator schedules every returned
+ *   row (the index has already filtered to "due rows"). The runner
+ *   re-validates the row inside its own transaction so a row that
+ *   was disabled in the scheduling window is still honoured.
+ *
+ * The `firstFireAt` field is set on insert + recomputed after every
+ * run + on schedule/enabled edits via `computeFirstFireAt` — see
+ * `mutations.ts:createImpl/updateImpl/recordRunResult`. Migration
+ * `2026_05_28_addStandingOrderFirstFireAt.ts` backfills existing
+ * rows.
  *
  * Why a V8 action (not "use node"):
  *   - We don't call `streamText` here — only `runner.run` (which is `use node`)
  *     does that. Keeping the evaluator V8 means tests can drive it
  *     synchronously without the Node runtime spin-up.
- *   - Pure scheduling is bounded — even at 1000 enabled rows the loop
+ *   - Pure scheduling is bounded — even at 500 due rows the loop
  *     finishes well within the 60-second cron tick.
  *
  * Telemetry:
- *   The action returns `{ enabled, fired }` so the cron's structured
+ *   The action returns `{ due, fired }` so the cron's structured
  *   logs surface a one-line health summary every minute. `fired` is
- *   the count of rows that matched their schedule on this tick.
+ *   the count of runner.run dispatches.
  */
 
 import { internal } from "../../_generated/api";
 import { internalAction } from "../../_generated/server";
-import { shouldFireNow } from "./schedule";
 
 // biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern
 const _ref = (path: string) => path as any;
@@ -36,25 +48,24 @@ const _ref = (path: string) => path as any;
 const _anyArgs = (a: Record<string, unknown>) => a as any;
 
 /**
- * Cron entry. Fires every minute; checks every enabled standing order;
- * schedules `runner.run` for any whose schedule has matched.
+ * Cron entry. Fires every minute; reads only rows whose `firstFireAt`
+ * has elapsed; schedules `runner.run` for each one.
  *
- * The lastRunAt bump happens inside the runner — NOT here — so that a
- * row that was scheduled but failed to actually start (action runtime
- * crash, scheduler backlog) still re-fires on the next tick instead of
- * being silently skipped for a day.
+ * The runner re-loads the row inside its own transaction (via
+ * `getForRun`) and bumps `lastRunAt` + recomputes `firstFireAt` via
+ * `recordRunResult` — so a row that was disabled in the scheduling
+ * window is silently skipped, and a row that just fired won't fire
+ * again on the next tick because its `firstFireAt` has moved forward.
  */
 export const tick = internalAction({
 	args: {},
-	handler: async (ctx): Promise<{ enabled: number; fired: number }> => {
-		const rows = await ctx.runQuery(
-			internal.ai.standingOrders.queries.listEnabledForEvaluation,
-			{},
-		);
+	handler: async (ctx): Promise<{ due: number; fired: number }> => {
 		const now = Date.now();
+		const rows = await ctx.runQuery(internal.ai.standingOrders.queries.listDueForEvaluation, {
+			now,
+		});
 		let fired = 0;
 		for (const row of rows) {
-			if (!shouldFireNow(row.schedule, now, row.lastRunAt)) continue;
 			// runner.ts is a "use node" file; the generated `internal.*`
 			// reference for it isn't always available at codegen time
 			// when the runner depends on the evaluator file (cycle in
@@ -68,6 +79,6 @@ export const tick = internalAction({
 			);
 			fired += 1;
 		}
-		return { enabled: rows.length, fired };
+		return { due: rows.length, fired };
 	},
 });

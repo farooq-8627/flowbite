@@ -48,6 +48,7 @@ registerTool({
 	permission: "org.editSettings",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Apply or re-apply an industry template. Additive — never deletes existing data.",
 	runbook: {
 		onSuccess:
@@ -93,6 +94,7 @@ registerTool({
 	layer: "templates",
 	permission: "org.editSettings",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: 'Hard-delete all sample data seeded by the template (source: "template_seed").',
 	runbook: {
 		onSuccess: "Confirm with the count of records cleared.",

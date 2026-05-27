@@ -42,6 +42,7 @@ import {
 	MockDataBanner,
 	PipelineCard,
 	PipelineVelocityCard,
+	ProactiveWorkspaceSection,
 	RemindersCard,
 	TodaySummaryCard,
 	WeeklyInsightCard,
@@ -114,30 +115,40 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				/>
 
 				{/* P1.14 — Proactive AI suggestions. Pure heuristic, no model call.
-				    Hidden when there are zero suggestions (no panel = no noise). */}
-				<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
+				    Hidden when there are zero suggestions (no panel = no noise).
 
-				{/* Stage 5 — AI Pulse Ribbon. Top-3 highest-value suggestions,
-				    dismissible per-user, rendered ABOVE the metric strip when
-				    there is at least one undismissed suggestion. Stage 6 wired
-				    the ribbon to read from the materialised aiNextActions
-				    ranker (cron-rebuilt every 30 min) with `convex.ai.suggestions.list`
-				    as the warm-start fallback. */}
-				{isEnabled("ai.pulseRibbon") && <AIPulseRibbon orgId={orgId} orgSlug={orgSlug} />}
+				    Stage 3-A.5 — wrapped in ProactiveWorkspaceSection so the AI
+				    cluster reads as one logical surface ("Proactive workspace —
+				    what to do next") with a per-user collapse toggle persisted
+				    in `users.preferences.dashboardSectionsCollapsed.proactive`. */}
+				<ProactiveWorkspaceSection>
+					<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
 
-				{/* Stage 5 — AI Quick Composer. Pinned mini chat textarea so the
-				    user can ask the AI without opening the side sheet first. */}
-				{isEnabled("ai.quickComposer") && <AIQuickComposerCard />}
+					{/* Stage 5 — AI Pulse Ribbon. Top-3 highest-value suggestions,
+					    dismissible per-user, rendered ABOVE the metric strip when
+					    there is at least one undismissed suggestion. Stage 6 wired
+					    the ribbon to read from the materialised aiNextActions
+					    ranker (cron-rebuilt every 30 min) with `convex.ai.suggestions.list`
+					    as the warm-start fallback. Stage 3-A.4 added the
+					    lazy-warm + 3-row skeleton for first-paint freshness. */}
+					{isEnabled("ai.pulseRibbon") && (
+						<AIPulseRibbon orgId={orgId} orgSlug={orgSlug} />
+					)}
 
-				{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
-				    Daily on the left (per-user), Weekly on the right (org-wide).
-				    Both visible only when the template opted in via `ai.morningBriefing`. */}
-				{isEnabled("ai.morningBriefing") && (
-					<div className="grid gap-4 lg:grid-cols-2">
-						<DailyBriefingCard orgId={orgId} orgSlug={orgSlug} />
-						<WeeklyInsightCard orgId={orgId} />
-					</div>
-				)}
+					{/* Stage 5 — AI Quick Composer. Pinned mini chat textarea so the
+					    user can ask the AI without opening the side sheet first. */}
+					{isEnabled("ai.quickComposer") && <AIQuickComposerCard />}
+
+					{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
+					    Daily on the left (per-user), Weekly on the right (org-wide).
+					    Both visible only when the template opted in via `ai.morningBriefing`. */}
+					{isEnabled("ai.morningBriefing") && (
+						<div className="grid gap-4 lg:grid-cols-2">
+							<DailyBriefingCard orgId={orgId} orgSlug={orgSlug} />
+							<WeeklyInsightCard orgId={orgId} />
+						</div>
+					)}
+				</ProactiveWorkspaceSection>
 
 				{/* Row 1 — Registry-driven metric strip */}
 				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />

@@ -36,6 +36,7 @@ registerTool({
 	layer: "always",
 	permission: "companies.update",
 	confirmation: "twoStep",
+	approvalCategory: "manage_participants",
 	description: "Unlink a person from a company by code. Idempotent — safe to call twice.",
 	instruction: {
 		whenToCall:

@@ -17,6 +17,7 @@ registerTool({
 	layer: "messaging",
 	permission: "messages.subscribe",
 	confirmation: "twoStep",
+	approvalCategory: "manage_participants",
 	description: "Remove a member from a conversation thread.",
 	instruction: {
 		whenToCall:

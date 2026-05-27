@@ -51,7 +51,14 @@ interface RemindersCardProps {
 export function RemindersCard({ orgId, orgSlug }: RemindersCardProps) {
 	const me = useMe();
 	const reminders = useRemindersDueAndOverdue({ orgId });
-	const nextUpcoming = useRemindersNextUpcoming({ orgId, limit: 1 });
+	// Stage 3-A.B.23 concurrency fix — only subscribe to
+	// `getNextUpcoming` when the main bucket comes back empty. Before
+	// this gate the dashboard fired the subscription on every render,
+	// even when the fallback card was hidden behind populated rows. The
+	// subscription costs ~2 calls/min/user; gating it eliminates the
+	// dominant idle-dashboard hotspot.
+	const bucketEmpty = reminders !== undefined && reminders.length === 0;
+	const nextUpcoming = useRemindersNextUpcoming({ orgId, limit: 1, enabled: bucketEmpty });
 	const [now] = useState(() => Date.now());
 	const [drawerOpen, setDrawerOpen] = useState(false);
 

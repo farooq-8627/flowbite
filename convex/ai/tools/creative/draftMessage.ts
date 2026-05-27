@@ -39,6 +39,7 @@ registerTool({
 	layer: "creative",
 	permission: "messages.send",
 	confirmation: "twoStep",
+	approvalCategory: "send_message",
 	costClass: "expensive",
 	description: "Stub — overridden by buildToolDescription via instruction.",
 	instruction: {

@@ -168,7 +168,11 @@ function wrapToolsForApprovalSanitisation(
  *   - Plus an immediate stop after one twoStep call (UX guarantee:
  *     one approval card per turn, no stacking)
  */
-function stopOnAnyTwoStepCall() {
+function stopOnAnyTwoStepCall(
+	userAutoApprove?: Partial<
+		Record<import("../../_shared/aiApprovals").UserToggleableCategory, boolean>
+	>,
+) {
 	return ({
 		steps,
 	}: {
@@ -180,6 +184,7 @@ function stopOnAnyTwoStepCall() {
 				const isTwoStep = resolveNeedsApproval(
 					call.toolName,
 					(call.input ?? {}) as Record<string, unknown>,
+					userAutoApprove,
 				);
 				if (isTwoStep) return true;
 			}
@@ -208,6 +213,17 @@ export type StreamLoopArgs = {
 	messageHistory: Array<{ role: "user" | "assistant"; content: string }>;
 	tools: unknown;
 	expandedLayers: string[];
+	/**
+	 * Post-sprint addition (2026-05-26) — pre-resolved auto-approve map
+	 * derived from `users.preferences.aiApprovals` overlaid on the
+	 * defaults. Passed to every `resolveNeedsApproval` call so a user
+	 * who's opted in to auto-approve a category doesn't see the
+	 * propose/commit card. Hard-locked categories are still always-ask
+	 * regardless of this map.
+	 */
+	userAutoApprove?: Partial<
+		Record<import("../../_shared/aiApprovals").UserToggleableCategory, boolean>
+	>;
 };
 
 export type StreamLoopResult = {
@@ -407,7 +423,7 @@ async function runStreamLoopOnce(
 		//          (small=12, standard=20, premium=30) in Phase 6 / Week 6.
 		//          During testing every model gets the full 30-step budget so
 		//          we can shake out tool/agent bugs without artificial limits.
-		stopWhen: [stepCountIs(30), stopOnAnyTwoStepCall()],
+		stopWhen: [stepCountIs(30), stopOnAnyTwoStepCall(args.userAutoApprove)],
 		temperature: 0.2, // Low temp for tool calling reliability
 	});
 
@@ -473,6 +489,7 @@ async function runStreamLoopOnce(
 				const isTwoStep = resolveNeedsApproval(
 					toolName,
 					(toolInput ?? {}) as Record<string, unknown>,
+					args.userAutoApprove,
 				);
 
 				await setThinking("calling_tool", {

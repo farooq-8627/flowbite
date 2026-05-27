@@ -20,6 +20,7 @@ registerTool({
 	layer: "views",
 	permission: "savedViews.createPersonal",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description: "Create a new saved view (filter preset).",
 	runbook: {
 		onSuccess: "Confirm with the view's name and offer to pin it to the sidebar.",
@@ -101,6 +102,7 @@ registerTool({
 	layer: "views",
 	permission: "savedViews.delete",
 	confirmation: "twoStep",
+	approvalCategory: "delete_record",
 	description: "Delete a saved view.",
 	runbook: {
 		onSuccess: "Confirm in one short sentence.",

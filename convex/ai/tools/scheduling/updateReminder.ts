@@ -75,6 +75,7 @@ registerTool({
 	layer: "always",
 	permission: "reminders.manage",
 	confirmation: "twoStep",
+	approvalCategory: "schedule",
 	description:
 		"Edit a reminder's title, note, due date, assignee, or priority. Pass followUpCode (FU-XXX) or reminderId.",
 	instruction: {

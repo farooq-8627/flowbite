@@ -87,6 +87,60 @@ export const users = defineTable({
 					weeklyDigestEmail: v.optional(v.boolean()),
 				}),
 			),
+			/**
+			 * Post-sprint addition (2026-05-26). Per-user "auto-approve"
+			 * map for AI tool calls. Each key corresponds to one
+			 * `approvalCategory` declared by tools in `convex/ai/toolRegistry.ts`
+			 * (see `convex/_shared/aiApprovals.ts` for the canonical list +
+			 * defaults).
+			 *
+			 * Semantics:
+			 *   - `true`  → SKIP the propose/commit confirmation card; run
+			 *               the tool atomically.
+			 *   - `false` → ALWAYS show the confirmation card (overrides
+			 *               the default).
+			 *   - missing → use the default from `AUTO_APPROVE_DEFAULTS`.
+			 *
+			 * Defaults (chosen 2026-05-26 with the user):
+			 *   ON  — update_record, convert_record, send_message,
+			 *         manage_participants, schedule, files
+			 *   OFF — create_record, delete_record (so single-record creates
+			 *         + deletions still surface a preview card)
+			 *
+			 * Hard-locked categories (`bulk`, `settings`, `members`,
+			 * `ask_user`) are NOT in this map — they ALWAYS require approval
+			 * regardless of preferences. The settings UI surfaces them as
+			 * read-only "Always asks — workspace policy" rows.
+			 */
+			aiApprovals: v.optional(
+				v.object({
+					create_record: v.optional(v.boolean()),
+					update_record: v.optional(v.boolean()),
+					delete_record: v.optional(v.boolean()),
+					convert_record: v.optional(v.boolean()),
+					send_message: v.optional(v.boolean()),
+					manage_participants: v.optional(v.boolean()),
+					schedule: v.optional(v.boolean()),
+					files: v.optional(v.boolean()),
+				}),
+			),
+			/**
+			 * Stage 3-A.5 (`/SPRINT-PLAN.md`). Per-user collapse state for
+			 * named dashboard sections. Default expanded — `true` collapses
+			 * the section to its header. Adding a new section key here is
+			 * purely additive (optional) and does NOT need a migration.
+			 *
+			 * Currently honoured by:
+			 *   - `proactive` → wraps the AI cluster on the dashboard
+			 *     (AISuggestionsPanel + AIPulseRibbon + AIQuickComposerCard +
+			 *     DailyBriefingCard + WeeklyInsightCard) inside
+			 *     `<ProactiveWorkspaceSection>`.
+			 */
+			dashboardSectionsCollapsed: v.optional(
+				v.object({
+					proactive: v.optional(v.boolean()),
+				}),
+			),
 		}),
 	),
 	...timestamps,

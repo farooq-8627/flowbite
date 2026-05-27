@@ -25,9 +25,11 @@ import type * as _migrations_2026_05_24_dedupeFieldDefinitions from "../_migrati
 import type * as _migrations_2026_05_24_dropOrgAiContext from "../_migrations/2026_05_24_dropOrgAiContext.js";
 import type * as _migrations_2026_05_26_addAiDashboardWidgets from "../_migrations/2026_05_26_addAiDashboardWidgets.js";
 import type * as _migrations_2026_05_26_normalizeDashboardMetrics from "../_migrations/2026_05_26_normalizeDashboardMetrics.js";
+import type * as _migrations_2026_05_27_addAiMorningBriefingMetric from "../_migrations/2026_05_27_addAiMorningBriefingMetric.js";
 import type * as _migrations_2026_05_27_addAiNextActions from "../_migrations/2026_05_27_addAiNextActions.js";
 import type * as _migrations_2026_05_28_addAiAnalyticsTables from "../_migrations/2026_05_28_addAiAnalyticsTables.js";
 import type * as _migrations_2026_05_28_addPipelineVelocityWidget from "../_migrations/2026_05_28_addPipelineVelocityWidget.js";
+import type * as _migrations_2026_05_28_addStandingOrderFirstFireAt from "../_migrations/2026_05_28_addStandingOrderFirstFireAt.js";
 import type * as _migrations_2026_05_28_aiStandingOrders from "../_migrations/2026_05_28_aiStandingOrders.js";
 import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
@@ -45,6 +47,7 @@ import type * as _migrations_setOrgDefaultCurrency from "../_migrations/setOrgDe
 import type * as _migrations_setOrgPlan from "../_migrations/setOrgPlan.js";
 import type * as _migrations_tightenReminderSourceAndAddPriority from "../_migrations/tightenReminderSourceAndAddPriority.js";
 import type * as _platform_limits from "../_platform/limits.js";
+import type * as _shared_aiApprovals from "../_shared/aiApprovals.js";
 import type * as _shared_aiEntityPatch from "../_shared/aiEntityPatch.js";
 import type * as _shared_bulkProgress from "../_shared/bulkProgress.js";
 import type * as _shared_constants from "../_shared/constants.js";
@@ -345,9 +348,11 @@ declare const fullApi: ApiFromModules<{
   "_migrations/2026_05_24_dropOrgAiContext": typeof _migrations_2026_05_24_dropOrgAiContext;
   "_migrations/2026_05_26_addAiDashboardWidgets": typeof _migrations_2026_05_26_addAiDashboardWidgets;
   "_migrations/2026_05_26_normalizeDashboardMetrics": typeof _migrations_2026_05_26_normalizeDashboardMetrics;
+  "_migrations/2026_05_27_addAiMorningBriefingMetric": typeof _migrations_2026_05_27_addAiMorningBriefingMetric;
   "_migrations/2026_05_27_addAiNextActions": typeof _migrations_2026_05_27_addAiNextActions;
   "_migrations/2026_05_28_addAiAnalyticsTables": typeof _migrations_2026_05_28_addAiAnalyticsTables;
   "_migrations/2026_05_28_addPipelineVelocityWidget": typeof _migrations_2026_05_28_addPipelineVelocityWidget;
+  "_migrations/2026_05_28_addStandingOrderFirstFireAt": typeof _migrations_2026_05_28_addStandingOrderFirstFireAt;
   "_migrations/2026_05_28_aiStandingOrders": typeof _migrations_2026_05_28_aiStandingOrders;
   "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
@@ -365,6 +370,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/setOrgPlan": typeof _migrations_setOrgPlan;
   "_migrations/tightenReminderSourceAndAddPriority": typeof _migrations_tightenReminderSourceAndAddPriority;
   "_platform/limits": typeof _platform_limits;
+  "_shared/aiApprovals": typeof _shared_aiApprovals;
   "_shared/aiEntityPatch": typeof _shared_aiEntityPatch;
   "_shared/bulkProgress": typeof _shared_bulkProgress;
   "_shared/constants": typeof _shared_constants;

@@ -42,6 +42,7 @@ registerTool({
 	layer: "always",
 	permission: "companies.update",
 	confirmation: "twoStep",
+	approvalCategory: "manage_participants",
 	description:
 		"Link a person (lead or contact) to a company by code. Idempotent — safe to call twice.",
 	instruction: {

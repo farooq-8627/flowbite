@@ -34,6 +34,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { getDefaultPermissionsForRole } from "./_shared/permissions/derive";
 import {
+	computeFirstFireAt,
 	describeSchedule,
 	FIRE_TOLERANCE_MINUTES,
 	MIN_INTERVAL_MINUTES,
@@ -202,6 +203,49 @@ describe("Stage 8 — schedule pure helpers", () => {
 		expect(describeSchedule({ kind: "weekly", dayOfWeek: 1, utcHour: 9, utcMinute: 0 })).toBe(
 			"Weekly on Mon at 09:00 UTC",
 		);
+	});
+
+	// ─── Stage 3-A.B.23 — computeFirstFireAt ─────────────────────────────
+
+	it("computeFirstFireAt: interval — first run returns now", () => {
+		const sched: Schedule = { kind: "interval", intervalMinutes: 30 };
+		const now = Date.now();
+		expect(computeFirstFireAt(sched, now, undefined)).toBe(now);
+	});
+
+	it("computeFirstFireAt: interval — subsequent runs return lastRunAt + intervalMs", () => {
+		const sched: Schedule = { kind: "interval", intervalMinutes: 30 };
+		const lastRunAt = Date.UTC(2026, 4, 26, 9, 0, 0);
+		const now = lastRunAt + 60_000;
+		expect(computeFirstFireAt(sched, now, lastRunAt)).toBe(lastRunAt + 30 * 60_000);
+	});
+
+	it("computeFirstFireAt: interval — clamps to now for stale lastRunAt", () => {
+		const sched: Schedule = { kind: "interval", intervalMinutes: 30 };
+		const lastRunAt = Date.UTC(2025, 0, 1);
+		const now = Date.UTC(2026, 4, 26);
+		// Without the clamp the row would fire instantly on re-enable.
+		expect(computeFirstFireAt(sched, now, lastRunAt)).toBe(now);
+	});
+
+	it("computeFirstFireAt: daily — first run returns today at HH:MM if in the future", () => {
+		const sched: Schedule = { kind: "daily", utcHour: 9, utcMinute: 0 };
+		const now = Date.UTC(2026, 4, 26, 8, 30, 0);
+		expect(computeFirstFireAt(sched, now, undefined)).toBe(Date.UTC(2026, 4, 26, 9, 0, 0));
+	});
+
+	it("computeFirstFireAt: daily — rolls to next day when HH:MM has passed", () => {
+		const sched: Schedule = { kind: "daily", utcHour: 9, utcMinute: 0 };
+		const now = Date.UTC(2026, 4, 26, 12, 0, 0);
+		expect(computeFirstFireAt(sched, now, undefined)).toBe(Date.UTC(2026, 4, 27, 9, 0, 0));
+	});
+
+	it("computeFirstFireAt: weekly — finds next matching weekday", () => {
+		// Monday = day 1
+		const sched: Schedule = { kind: "weekly", dayOfWeek: 1, utcHour: 9, utcMinute: 0 };
+		// Wednesday 2026-05-27 8:30 → next Monday 2026-06-01 9:00
+		const wednesday = Date.UTC(2026, 4, 27, 8, 30, 0);
+		expect(computeFirstFireAt(sched, wednesday, undefined)).toBe(Date.UTC(2026, 5, 1, 9, 0, 0));
 	});
 });
 
@@ -509,10 +553,13 @@ describe("Stage 8 — auto-enrich-on-contact-create trigger", () => {
 // ─── 11. Cron evaluator ──────────────────────────────────────────────────
 
 describe("Stage 8 — cron evaluator", () => {
-	it("listEnabledForEvaluation only returns enabled rows", async () => {
+	it("listDueForEvaluation only returns enabled rows whose firstFireAt has elapsed", async () => {
 		const t = convexTest(schema, modules);
 		const { userId } = await seedUser(t);
 		const orgId = await seedOrgWithMember(t, userId);
+		// Stage 3-A.B.23 — interval rows always have `firstFireAt = now`
+		// at insert (first-run), so they appear in the index immediately
+		// when the evaluator queries `lte("firstFireAt", now)`.
 		await t.mutation(internal.ai.standingOrders.mutations.createForAI, {
 			orgId,
 			userId,
@@ -531,11 +578,13 @@ describe("Stage 8 — cron evaluator", () => {
 			schedule: { kind: "interval", intervalMinutes: 60 },
 			enabled: false,
 		});
-		const enabled = await t.query(
-			internal.ai.standingOrders.queries.listEnabledForEvaluation,
-			{},
-		);
-		expect(enabled.map((r) => r.lastRunAt)).toEqual([undefined]);
+		// Probe far in the future so any enabled row whose firstFireAt
+		// has been computed is included; disabled rows must not appear.
+		const due = await t.query(internal.ai.standingOrders.queries.listDueForEvaluation, {
+			now: Date.now() + 365 * 24 * 60 * 60 * 1000,
+		});
+		expect(due.length).toBe(1);
+		expect(due[0].lastRunAt).toBeUndefined();
 	});
 });
 

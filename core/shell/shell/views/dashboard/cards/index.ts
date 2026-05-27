@@ -15,6 +15,7 @@ export { MockDataBanner } from "./MockDataBanner";
 export { NextReminderFallback } from "./NextReminderFallback";
 export { PipelineCard } from "./PipelineCard";
 export { PipelineVelocityCard } from "./PipelineVelocityCard";
+export { ProactiveWorkspaceSection } from "./ProactiveWorkspaceSection";
 export { RecentActivityCard } from "./RecentActivityCard";
 export { RemindersCard } from "./RemindersCard";
 export { StatTile } from "./StatTile";

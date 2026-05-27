@@ -52,6 +52,7 @@ registerTool({
 	layer: "data",
 	permission: "data.restore",
 	confirmation: "twoStep",
+	approvalCategory: "delete_record",
 	description: "Restore a soft-deleted entity from trash.",
 	runbook: {
 		onSuccess: "Confirm with the entity's display name.",

@@ -11,25 +11,21 @@
  * `update_dashboard_layout` couldn't write them and `RemindersCard`
  * was permanently hidden for orgs whose template wrote `reminders.list`.
  *
- * This test guards against regression by enumerating every template's
- * `dashboardMetrics` array and asserting:
- *   1. zero rejected keys after `normalizeDashboardLayout`,
- *   2. zero rejected keys after `validateDashboardLayout`,
- *   3. `LEGACY_KEY_RENAMES` rewrites the `calendar.miniWidget` alias
- *      in any historical row data without rejection.
+ * Stage 3-A session 2 (2026-05-27): the runtime helpers
+ * `normalizeDashboardLayout` + `LEGACY_KEY_RENAMES` were removed per
+ * the user's "no runtime backfill, pure code only" directive. The
+ * legacy alias is now scoped INSIDE the migration file
+ * `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts`. This
+ * test guards against regression by enumerating every template's
+ * `dashboardMetrics` array and asserting zero rejected keys after
+ * `validateDashboardLayout`.
  *
  * Lives under `convex/ai/queries/` per the SPRINT-PLAN.md Stage 1 task
  * spec (the same directory the AI usage telemetry queries live in).
  */
 
 import { describe, expect, it } from "vitest";
-import {
-	LEGACY_KEY_RENAMES,
-	normalizeDashboardLayout,
-	validateDashboardLayout,
-	WIDGET_KEYS,
-	WIDGETS,
-} from "../../_shared/widgetRegistry";
+import { validateDashboardLayout, WIDGET_KEYS, WIDGETS } from "../../_shared/widgetRegistry";
 import { INDUSTRY_TEMPLATES } from "../../crm/fields/templates/registry";
 
 describe("widgetRegistry — template <-> registry contract", () => {
@@ -62,54 +58,36 @@ describe("widgetRegistry — template <-> registry contract", () => {
 			expect(result.keys.length).toBe(dedupedInput.length);
 		});
 
-		it(`template '${templateId}' normalizes idempotently`, () => {
-			const first = normalizeDashboardLayout(metrics);
-			const second = normalizeDashboardLayout(first.keys);
+		it(`template '${templateId}' validates idempotently`, () => {
+			const first = validateDashboardLayout([...metrics]);
+			const second = validateDashboardLayout([...first.keys]);
 			expect(second.keys).toEqual(first.keys);
 			expect(second.rejected).toEqual([]);
-			expect(second.renamed).toEqual([]);
 		});
 	}
 
-	it("LEGACY_KEY_RENAMES rewrites every legacy alias to a registered canonical key", () => {
-		for (const [legacy, canonical] of Object.entries(LEGACY_KEY_RENAMES)) {
-			expect(
-				WIDGET_KEYS,
-				`legacy alias '${legacy}' targets unregistered canonical '${canonical}'`,
-			).toContain(canonical);
-		}
-	});
-
-	it("normalizeDashboardLayout rewrites historical calendar.miniWidget rows", () => {
-		const result = normalizeDashboardLayout([
+	it("validateDashboardLayout rejects unknown keys + legacy aliases (no runtime fallback)", () => {
+		// Per AGENTS.md non-negotiable + the user's pure-code directive:
+		// the runtime path does not silently coerce legacy aliases. The
+		// `calendar.miniWidget` alias is rewritten ONLY by the migration
+		// `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts`.
+		const result = validateDashboardLayout([
 			"leads.open",
 			"calendar.miniWidget",
 			"today.focus",
 		]);
-		expect(result.keys).toEqual(["leads.open", "calendar.mini", "today.focus"]);
-		expect(result.rejected).toEqual([]);
-		expect(result.renamed).toEqual([{ from: "calendar.miniWidget", to: "calendar.mini" }]);
+		expect(result.keys).toEqual(["leads.open", "today.focus"]);
+		expect(result.rejected).toEqual(["calendar.miniWidget"]);
 	});
 
-	it("normalizeDashboardLayout drops unknown keys and surfaces them via rejected", () => {
-		const result = normalizeDashboardLayout([
+	it("validateDashboardLayout drops unknown keys and surfaces them via rejected", () => {
+		const result = validateDashboardLayout([
 			"leads.open",
 			"definitely.not.a.widget",
 			"deals.open",
 		]);
 		expect(result.keys).toEqual(["leads.open", "deals.open"]);
 		expect(result.rejected).toEqual(["definitely.not.a.widget"]);
-	});
-
-	it("normalizeDashboardLayout collapses duplicates after rename", () => {
-		// If a row contains both the legacy alias AND its canonical target,
-		// the canonical is kept once and the alias is treated as a duplicate.
-		const result = normalizeDashboardLayout([
-			"calendar.mini",
-			"calendar.miniWidget",
-			"calendar.mini",
-		]);
-		expect(result.keys).toEqual(["calendar.mini"]);
 	});
 
 	// Stage 5 (SPRINT-PLAN.md) — every template must opt the new AI

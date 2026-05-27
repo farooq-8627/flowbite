@@ -27,7 +27,7 @@ import { internalMutation, type MutationCtx } from "../../_generated/server";
 import { ERRORS } from "../../_shared/errors";
 import { requireRole } from "../../_shared/permissions/helpers";
 import { logActivity } from "../../activityLogs/helpers";
-import { describeSchedule, type Schedule, validateSchedule } from "./schedule";
+import { computeFirstFireAt, describeSchedule, type Schedule, validateSchedule } from "./schedule";
 
 const MAX_NAME_LENGTH = 80;
 const MAX_PROMPT_LENGTH = 2000;
@@ -131,6 +131,14 @@ async function createImpl(
 	const allowedTools = sanitizeAllowedTools(args.allowedTools);
 
 	const now = Date.now();
+	const enabled = args.enabled ?? true;
+	// Stage 3-A.B.23 — `firstFireAt` is the precomputed next-fire
+	// timestamp the cron evaluator filters on. We set it on insert (and
+	// re-derive after every run / schedule edit) so the evaluator can
+	// skip rows that aren't due via the `by_enabled_and_first_fire`
+	// index. Disabled rows still carry the value but never match the
+	// index because `enabled = false`.
+	const firstFireAt = enabled ? computeFirstFireAt(args.schedule, now, undefined) : undefined;
 	const id = await ctx.db.insert("aiStandingOrders", {
 		orgId: args.orgId,
 		userId: args.ownerUserId,
@@ -138,7 +146,8 @@ async function createImpl(
 		prompt,
 		allowedTools,
 		schedule: args.schedule,
-		enabled: args.enabled ?? true,
+		enabled,
+		firstFireAt,
 		createdAt: now,
 		updatedAt: now,
 	});
@@ -182,6 +191,16 @@ async function updateImpl(
 	if (args.enabled !== undefined) patch.enabled = args.enabled;
 	if (Object.keys(patch).length === 0) {
 		return { id: row._id, unchanged: true as const };
+	}
+	// Recompute firstFireAt whenever the schedule or enabled flag
+	// changes — keeps the index honest. Use the patched values where
+	// present, otherwise fall back to the row's existing values.
+	const nextSchedule = (patch.schedule as Schedule | undefined) ?? row.schedule;
+	const nextEnabled = (patch.enabled as boolean | undefined) ?? row.enabled;
+	if (args.schedule !== undefined || args.enabled !== undefined) {
+		patch.firstFireAt = nextEnabled
+			? computeFirstFireAt(nextSchedule, Date.now(), row.lastRunAt)
+			: undefined;
 	}
 	patch.updatedAt = Date.now();
 	await ctx.db.patch(args.standingOrderId, patch);
@@ -235,11 +254,18 @@ export const recordRunResult = internalMutation({
 	handler: async (ctx, args) => {
 		const row = await ctx.db.get(args.standingOrderId);
 		if (!row) return { ok: false, reason: "not_found" } as const;
+		const now = Date.now();
+		// Re-derive firstFireAt so the evaluator's `by_enabled_and_first_fire`
+		// index reads the correct next-fire window — without this the row
+		// would re-fire on the very next minute tick (lastRunAt is now,
+		// but firstFireAt hasn't moved forward).
+		const firstFireAt = row.enabled ? computeFirstFireAt(row.schedule, now, now) : undefined;
 		await ctx.db.patch(args.standingOrderId, {
-			lastRunAt: Date.now(),
+			lastRunAt: now,
 			lastRunSummary: args.summary.slice(0, MAX_PROMPT_LENGTH),
 			lastRunStatus: args.status,
-			updatedAt: Date.now(),
+			firstFireAt,
+			updatedAt: now,
 		});
 		return { ok: true } as const;
 	},

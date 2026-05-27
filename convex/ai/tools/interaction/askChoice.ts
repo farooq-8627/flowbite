@@ -37,6 +37,8 @@ registerTool({
 	layer: "always",
 	permission: "ai.use",
 	confirmation: "twoStep",
+	alwaysAsk: true,
+	approvalCategory: "ask_user",
 	description: `
 Ask the user to pick one option when matches are ambiguous.
 Use after search_crm returns 2+ candidates and the next action depends on

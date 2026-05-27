@@ -41,6 +41,7 @@ registerTool({
 	layer: "analytics",
 	permission: "ai.analytics.viewMetrics",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	costClass: "expensive",
 	instruction: {
 		whenToCall:

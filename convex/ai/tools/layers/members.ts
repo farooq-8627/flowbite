@@ -21,6 +21,7 @@ registerTool({
 	layer: "members",
 	permission: "members.invite",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description: "Send an invitation to join the workspace.",
 	runbook: {
 		onSuccess: "Confirm with the email and the role they were invited as.",
@@ -74,6 +75,7 @@ registerTool({
 	layer: "members",
 	permission: "members.cancelInvitation",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description: "Cancel a pending invitation.",
 	runbook: {
 		onSuccess: "Confirm in one short sentence.",
@@ -111,6 +113,7 @@ registerTool({
 	permission: "members.changeRole",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description:
 		"Change a member's role. AI cannot promote the calling user (self-promotion blocked).",
 	runbook: {
@@ -171,6 +174,7 @@ registerTool({
 	permission: "members.remove",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description: "Remove a member from the workspace.",
 	runbook: {
 		onSuccess: "Confirm in one short sentence.",
@@ -225,6 +229,7 @@ registerTool({
 	layer: "members",
 	permission: "members.invite",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description:
 		"Resend an existing pending invitation — regenerates the token, extends expiry, re-fires the email. Two-step.",
 	instruction: {
@@ -298,6 +303,7 @@ registerTool({
 	layer: "members",
 	permission: "members.changeRole",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description:
 		"Create a new custom role for the workspace. Two-step — surfaces name + permission count first.",
 	instruction: {
@@ -378,6 +384,7 @@ registerTool({
 	layer: "members",
 	permission: "members.changeRole",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description: "Update a custom role's permissions, name, colour, or default flag. Two-step.",
 	instruction: {
 		whenToCall:
@@ -450,6 +457,7 @@ registerTool({
 	layer: "members",
 	permission: "members.changeRole",
 	confirmation: "twoStep",
+	approvalCategory: "members",
 	description:
 		"Delete a custom role. Members assigned to it are reassigned to the default role. System roles refuse deletion.",
 	instruction: {

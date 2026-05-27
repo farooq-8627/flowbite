@@ -38,6 +38,7 @@ registerTool({
 	layer: "data",
 	permission: "leads.update",
 	confirmation: "twoStep",
+	approvalCategory: "bulk",
 	description: `
 Extract structured fields from an uploaded file using a vision-capable model.
 Three kinds are supported in Phase 3:

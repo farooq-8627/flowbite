@@ -200,7 +200,39 @@ function mapKnownCode(err: NormalisedError, toolName: string): FriendlyToolError
 			};
 		}
 		case "AI_TOOL_UNAUTHORIZED":
-		case "FORBIDDEN":
+		case "FORBIDDEN": {
+			// Stage 3-A H2 — distinguish "tool not in subagent scope" from
+			// the real permission gate. The router can pick a subagent whose
+			// `allowedTools` allow-list doesn't include the tool the model
+			// tried to call (e.g. router routes "create a followup ... next
+			// stage" to `settings`, then the model calls `create_followup`
+			// which is not in `settings.allowedTools`). The AI SDK rejects
+			// the call as FORBIDDEN with rawError "Model tried to call
+			// unavailable tool '<name>'. Available tools: ...". That is a
+			// ROUTING bug, not a permissions bug — translating it to "you
+			// don't have permission" is misleading and sends the user on a
+			// wild-goose chase asking an admin to grant a role they already
+			// have. Detect via the well-known phrase.
+			const msg = err.message ?? "";
+			const isSubagentScope =
+				/unavailable tool|not in available tools|not a valid function/i.test(msg);
+			if (isSubagentScope) {
+				const triedToolMatch = msg.match(/['"]([a-z0-9_]+)['"]/i);
+				const triedTool = triedToolMatch?.[1] ?? toolName;
+				return {
+					code: "SUBAGENT_SCOPE",
+					short: "Wrong specialist mode.",
+					summary: `I tried \`${triedTool}\` but I'm in the wrong specialist mode for that.`,
+					details:
+						"This usually means I picked the wrong subagent (settings vs Q&A vs CRM-action) for your request. Re-ask with a clearer verb (e.g. *follow up with*, *remind me to*, *send a message to*, *summarise*) and I'll route to the right specialist on the next turn.",
+					recoveryActions: [
+						{
+							label: "Try again with a clearer verb",
+							intent: "Retry the previous action and pick the right specialist this time",
+						},
+					],
+				};
+			}
 			return {
 				code: err.code,
 				short: "Permission denied.",
@@ -212,6 +244,7 @@ function mapKnownCode(err: NormalisedError, toolName: string): FriendlyToolError
 					"3. Return to this chat and ask me to try again.",
 				],
 			};
+		}
 		case "RATE_LIMITED":
 			return {
 				code: err.code,
@@ -324,6 +357,30 @@ function mapByMessage(err: NormalisedError, toolName: string): FriendlyToolError
 	}
 
 	if (lower.includes("permission") || lower.includes("forbidden")) {
+		// Stage 3-A H2 — same SUBAGENT_SCOPE detection as the code-keyed
+		// mapper above, applied here when the error arrives without a
+		// stable code (e.g. raw text from the AI SDK `tool-error` chunk).
+		if (
+			lower.includes("unavailable tool") ||
+			lower.includes("not in available tools") ||
+			lower.includes("not a valid function")
+		) {
+			const triedToolMatch = m.match(/['"]([a-z0-9_]+)['"]/i);
+			const triedTool = triedToolMatch?.[1] ?? toolName;
+			return {
+				code: "SUBAGENT_SCOPE",
+				short: "Wrong specialist mode.",
+				summary: `I tried \`${triedTool}\` but I'm in the wrong specialist mode for that.`,
+				details:
+					"This usually means I picked the wrong subagent (settings vs Q&A vs CRM-action) for your request. Re-ask with a clearer verb (e.g. *follow up with*, *remind me to*, *send a message to*, *summarise*) and I'll route to the right specialist on the next turn.",
+				recoveryActions: [
+					{
+						label: "Try again with a clearer verb",
+						intent: "Retry the previous action and pick the right specialist this time",
+					},
+				],
+			};
+		}
 		return {
 			code: "FORBIDDEN",
 			short: "Permission denied.",
@@ -333,6 +390,34 @@ function mapByMessage(err: NormalisedError, toolName: string): FriendlyToolError
 				"1. Open Settings → Members & Roles.",
 				"2. Ask a workspace admin to grant the relevant role.",
 				"3. Return to this chat and ask me to try again.",
+			],
+		};
+	}
+
+	// Stage 3-A H2 — even when the error never says "permission" or
+	// "forbidden" (e.g. AI SDK directly throws "Tool 'create_followup' is
+	// not registered in tools"), recognise the unavailable-tool pattern
+	// and surface SUBAGENT_SCOPE — it's the most common failure path with
+	// small models that call layer tools without expanding the layer.
+	if (
+		lower.includes("unavailable tool") ||
+		lower.includes("not in available tools") ||
+		lower.includes("not a valid function") ||
+		(lower.includes("tool") && lower.includes("not registered"))
+	) {
+		const triedToolMatch = m.match(/['"]([a-z0-9_]+)['"]/i);
+		const triedTool = triedToolMatch?.[1] ?? toolName;
+		return {
+			code: "SUBAGENT_SCOPE",
+			short: "Wrong specialist mode.",
+			summary: `I tried \`${triedTool}\` but I'm in the wrong specialist mode for that.`,
+			details:
+				"This usually means I picked the wrong subagent for your request. Re-ask with a clearer verb (e.g. *follow up with*, *remind me to*, *send a message to*, *summarise*) and I'll route correctly.",
+			recoveryActions: [
+				{
+					label: "Try again with a clearer verb",
+					intent: "Retry the previous action and pick the right specialist this time",
+				},
 			],
 		};
 	}

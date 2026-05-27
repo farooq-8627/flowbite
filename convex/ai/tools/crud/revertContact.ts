@@ -26,6 +26,7 @@ registerTool({
 	layer: "always",
 	permission: "leads.convert",
 	confirmation: "twoStep",
+	approvalCategory: "convert_record",
 	description:
 		"Revert a contact back to a lead. Soft-deletes the contact row and reopens the original lead (status='new'). Use this — NOT update_entity — when the user asks to un-convert / revert / take a contact back to lead status. Only works when the contact was originally created from a lead (carries the `leadId` link).",
 	instruction: {

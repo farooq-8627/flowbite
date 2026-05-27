@@ -62,6 +62,7 @@ registerTool({
 	layer: "bulk", // re-uses the existing layer — no new LayerId migration
 	permission: "leads.create",
 	confirmation: "twoStep",
+	approvalCategory: "bulk",
 	description: `
 Bulk import a CSV file of leads. The user must have already uploaded the file —
 pass its file id (\`fileId\`) here. The parser runs inside a quarantined LLM

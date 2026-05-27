@@ -50,6 +50,7 @@ registerTool({
 	layer: "always",
 	permission: null, // checked per entityType inside execute
 	confirmation: "twoStep",
+	approvalCategory: "update_record",
 	description: `
 Update fields on a lead, contact, deal, or company.
 

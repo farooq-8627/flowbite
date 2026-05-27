@@ -46,12 +46,14 @@ import {
 	ArrowRight,
 	Info,
 	ListChecks,
+	RefreshCw,
 	Sparkles,
 	X,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
@@ -160,6 +162,32 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	const dismissRanked = useMutation(api.ai.queries.nextActions.dismissNextAction);
 	const dismissFallback = useMutation(api.users.mutations.dismissAiPulseSuggestion);
 
+	// Stage 3-A.4 — lazy-warm the ranked store when it's empty for this
+	// user. Fires at most ONCE per session via the `warmRequestedRef`
+	// gate (per AGENTS.md "Never put hook-returned objects in useEffect
+	// deps" — the mutation is destructured + stable). The mutation is
+	// rate-limited at 1/min on the server; the ref is just a UX courtesy
+	// to avoid re-firing during reactive cycles.
+	const lazyWarm = useMutation(api.ai.queries.nextActions.lazyWarmForUser);
+	const warmRequestedRef = useRef(false);
+	const isWarming = ranked !== undefined && ranked.count === 0 && warmRequestedRef.current;
+
+	useEffect(() => {
+		if (warmRequestedRef.current) return;
+		if (ranked === undefined) return; // still loading
+		if (ranked.count > 0) return; // already populated
+		if (ranked.generatedAt !== null) return; // already generated, just empty (user dismissed all)
+		warmRequestedRef.current = true;
+		void lazyWarm({ orgId }).catch((err) => {
+			// Rate-limit rejections are expected when the user navigates
+			// quickly between tabs; swallow silently. Other errors leave
+			// the ref set so we don't retry until next session.
+			if (typeof console !== "undefined") {
+				console.warn("[AIPulseRibbon] lazyWarmForUser failed:", err);
+			}
+		});
+	}, [ranked, lazyWarm, orgId]);
+
 	const dismissedMap = useMemo(() => {
 		const raw = me?.preferences?.aiPulseDismissed;
 		return (raw ?? {}) as Record<string, number>;
@@ -204,6 +232,48 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	}, [ranked, fallbackSuggestions, dismissedMap]);
 
 	if (ranked === undefined && fallbackSuggestions === undefined) return null;
+	// Stage 3-A.4 — render a 3-row skeleton during the warm window so
+	// the user knows the AI is working. Without this the card silently
+	// disappears between "queries returning empty" and "rebuild lands".
+	if (isWarming && (fallbackSuggestions === undefined || fallbackSuggestions.length === 0)) {
+		return (
+			<section
+				aria-label="AI pulse — refreshing actions"
+				className={cn(
+					"flex flex-col gap-2 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-3",
+					className,
+				)}
+			>
+				<header className="flex items-center gap-2">
+					<span
+						aria-hidden
+						className="flex size-6 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
+					>
+						<Sparkles className="size-3.5" />
+					</span>
+					<h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+						AI Pulse
+					</h3>
+					<span className="ms-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+						<RefreshCw className="size-3 animate-spin" aria-hidden />
+						Refreshing actions…
+					</span>
+				</header>
+				<ul className="grid gap-2 md:grid-cols-3">
+					{[0, 1, 2].map((i) => (
+						<li
+							key={i}
+							className="flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card p-2.5 shadow-xs"
+						>
+							<Skeleton className="h-3 w-3/4" />
+							<Skeleton className="h-3 w-full" />
+							<Skeleton className="h-5 w-20" />
+						</li>
+					))}
+				</ul>
+			</section>
+		);
+	}
 	if (visible.length === 0) return null;
 
 	return (

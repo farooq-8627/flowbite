@@ -1,10 +1,65 @@
-# LANDING-PAGE.md — Marketing site spec (structure, content, AEO/SEO/GEO, embed-vs-separate)
+# LANDING-PAGE.md — Marketing site spec (refreshed for the current shipped state)
 
-> **Generated:** 2026-05-26 — separate PR track from the AI/Dashboard sprint (`SPRINT-PLAN.md`). This doc is the canonical spec for the launch landing experience.
+> **Generated:** 2026-05-26 · **Refreshed:** 2026-05-27 to reflect the AI/Dashboard sprint shipping (Stages 1-10 closed; Stage 3-A sessions 1+2 shipped).
 >
-> **Goal:** A landing page that converts visitors to free-Pro signups, ranks well on Google, gets cited by LLMs (Perplexity, ChatGPT, Claude, AI Overviews), and tells an honest story about what the platform actually does today — no over-promising, no under-promising.
+> **Goal.** A landing page that converts visitors to free-Pro signups, ranks well on Google, gets cited by LLMs (Perplexity, ChatGPT, Claude, AI Overviews), and tells an honest story about what the platform actually does today — no over-promising, no under-promising.
 >
-> **Tagline (locked):** *"Talk to your CRM."* — defensible by the 75 AI tools shipped + the propose/commit safety + the per-entity memory. See §5 for the honesty contract that backs this.
+> **Tagline (locked):** *"Talk to your CRM."* — defensible by the **115+ AI tools** shipped + the propose/commit safety + per-entity memory + the proactive ranker + the analytical layer + the autonomous standing-orders + the creative drafting layer. See §5 for the honesty contract.
+>
+> **Track status.** Marketing site is a **separate PR track** from the AI sprint. The current app codebase is at **production-readiness 99/100**; the only thing between us and 100 is the LemonSqueezy upgrade flow (P0.1 in `PENDING.md`). The marketing site can launch any time; the upgrade flow must ship before paid signups go live.
+
+---
+
+## 0 — What's actually shipped today (the honesty foundation)
+
+Every marketing claim must map back to one of these. If a feature isn't here, don't claim it on the homepage.
+
+### 0.1 — Today the AI can…
+
+| Verb | What it does | Tool family |
+|---|---|---|
+| Create | leads / contacts / deals / companies / notes / reminders / tags / saved views / pipelines / stages / fields / custom roles / standing orders | `create_*` (twoStep) |
+| Update | every CRUD entity above + reminder + note + pipeline-stage + tag + saved-view + member role + dashboard layout | `update_*` |
+| Delete | every CRUD entity + universal `delete_entity` (cascade-impact preview before commit) | `delete_*` |
+| Convert | lead → contact (+ revert) | `convert_lead` |
+| Move | deal stage / lead status / participant in/out of conversation | `move_*` |
+| Send | message in any conversation, with smart routing by personCode/dealCode/companyCode | `send_message` |
+| List / search | every entity + tags + categories + members + pipelines + saved views + field options + widgets + files + notifications + org timeline | `list_*` / `search_*` |
+| Suggest | top-N next actions ranked by score + confidence (cron-rebuilt every 30 min, no LLM cost) | `list_next_actions` |
+| Analyse | "why is X happening?" with structured output, cohort analysis, member performance, pipeline velocity | `analyze_metric` / `cohort_analysis` / `member_performance` |
+| Brief | morning briefing + week's outlook (deterministic + LLM-augmented) | `get_briefing` / `refresh_briefing` |
+| Draft | follow-up message / proposal / conversation summary (NEVER autosent — always presented to user) | `draft_message` / `draft_proposal` / `summarise_conversation` |
+| Web grounding | search the web (Firecrawl) + scrape a specific URL | `web_search` / `web_scrape` |
+| File analysis | extract structured data from PDFs / images via vision | `analyze_file` |
+| CSV import | dual-LLM safety (quarantined extractor + privileged inserter), per-row dedup at parse-time | `import_csv` (twoStep) |
+| Run on a schedule | standing orders (interval / daily / weekly) — opt-in per user | `aiStandingOrders` |
+| Auto-act | follow-up on stage move; enrich on contact create; per-user autonomy allow-list | `pipelines.stages[].onEnter` triggers |
+
+**Total registered tools: ~115** (counting commit_X as one tool family with its propose). Every write tool gates on RBAC + 2-step approval (per-user opt-out for 8 categories; 3 hard-locked categories that ALWAYS ask).
+
+### 0.2 — Today the user can…
+
+- **Type or speak** to the AI through chat — sheet panel (right-hand) OR the dashboard's pinned `AIQuickComposerCard`.
+- **Approve every write** through a propose card (cascade impact previewed for deletes; bulk progress with retry chips for `bulk_*`).
+- **Bring their own AI key (BYOK)** — every plan including Free supports BYOK. Platform models on Free hard-block the quota gate.
+- **See a daily briefing** at the top of the dashboard, refreshed nightly + on-demand.
+- **See a Top-3 Pulse Ribbon** of next actions on the dashboard.
+- **Drag-drop kanban** with single-mutation persistence + optimistic updates.
+- **Multi-pipeline** support per entity with stage-aware fields + transition policies (block / warn / off).
+- **Multi-tenant orgs** with role-based access (Owner / Admin / Member / Viewer + custom roles).
+- **Run on Arabic (RTL)** out of the box.
+- **Import a CSV** from any other CRM with dedup at parse-time.
+
+### 0.3 — Today the user CANNOT (yet)…
+
+- Upgrade to a paid plan via in-app checkout (LemonSqueezy upgrade flow is P0.1).
+- See branching conversations (tree-shaped chat is C.1 backlog).
+- Use voice input (Phase 3-C deferred).
+- Receive WhatsApp messages routed into the CRM (Phase 3-C deferred).
+- See cross-conversation embedding-based learning (B.20 backlog).
+- Trigger AI from `activityLogs` events asynchronously (B.21 backlog — the workflow event bus).
+
+These belong in the future-roadmap section of the marketing site, not the homepage hero.
 
 ---
 
@@ -18,20 +73,19 @@
 |---|---|
 | One deploy pipeline | Same Vercel project, one CI/CD; no second repo to maintain. |
 | Shared design tokens | Same `--radius`, theme presets, RTL support, APP_CONFIG strings. Brand consistency for free. |
-| Sign-up is one click | CTA on landing → `app.{domain}/login` is a same-project navigation, not a cross-domain redirect with cookie quirks. |
+| Sign-up is one click | CTA on landing → `app.{domain}/login` is a same-project navigation. |
 | Faster iteration | Marketing copy ships with the app — no second CMS to learn or pay for. |
-| Static rendering | Next 15 App Router with `export const dynamic = "force-static"` + `generateStaticParams` gives you the same edge-cached performance as a separate Astro/Hugo site. |
+| Static rendering | Next 15 App Router with `export const dynamic = "force-static"` + `generateStaticParams` gives edge-cached performance. |
 | SEO equivalent | A static `app/(marketing)/page.tsx` rendered at build time is indistinguishable from a separate site to Google. |
 
 ### Why split later (defer to backlog)
 
 You'll know it's time to split when:
 - A non-developer marketing team needs a CMS (Sanity, Contentful, Payload).
-- Marketing iteration cadence diverges sharply from app cadence (e.g. weekly campaign pages).
+- Marketing iteration cadence diverges sharply from app cadence.
 - The marketing site needs different infra (e.g. extensive A/B testing, server-side personalisation).
-- Bundle size of the app starts hurting the marketing pages' LCP — easily mitigated with route segments + dynamic imports today.
 
-For ~12 months of solo / small-team operation, embed is the right call. Add a card to `Future-Enhancements.md` if you want a tracked path to split.
+For ~12 months of solo / small-team operation, embed is the right call.
 
 ### How to embed cleanly (Next.js App Router pattern)
 
@@ -65,20 +119,12 @@ Key constraints:
 
 | Surface | Domain | Why |
 |---|---|---|
-| Marketing site | `flowbite.com` (or your final domain) | Anchors SEO. Roots are weighted higher than subdomains. Content-heavy, no auth chrome. |
-| Authenticated app | `app.flowbite.com` | Clear separation. `app.` immediately tells the user "this is the workspace, not marketing." |
-| Documentation | `docs.flowbite.com` | When you ship docs (Stage 11+), live here. |
+| Marketing site | `flowbite.com` (or your final domain) | Anchors SEO. Roots are weighted higher than subdomains. |
+| Authenticated app | `app.flowbite.com` | Clear separation. |
+| Documentation | `docs.flowbite.com` | When you ship docs (Phase 5+). |
 | Status page | `status.flowbite.com` | When you ship a public uptime page. |
-| Email links | All transactional emails reference `app.flowbite.com/...` (unique-link landing pages); promotional emails reference `flowbite.com`. |
 
-### How to wire it (Vercel + middleware)
-
-**Step 1 — Vercel project settings.**
-- Add both domains: `flowbite.com` (apex) + `www.flowbite.com` + `app.flowbite.com`.
-- `flowbite.com` → redirect `www.` → apex.
-- `app.flowbite.com` → primary for the app.
-
-**Step 2 — Next.js `middleware.ts`** routes by host:
+### Implementation: Next.js `middleware.ts` routes by host
 
 ```ts
 import { NextResponse } from "next/server";
@@ -94,7 +140,6 @@ export function middleware(req: NextRequest) {
       url.pathname = "/login";
       return NextResponse.redirect(url);
     }
-    // pass through — (app) layout handles auth
     return NextResponse.next();
   }
 
@@ -112,42 +157,18 @@ export const config = {
 };
 ```
 
-**Step 3 — `APP_CONFIG`** stores the canonical hosts:
-
-```ts
-// lib/app-config.ts (already exists; extend)
-export const APP_CONFIG = {
-  name: process.env.NEXT_PUBLIC_APP_NAME!,
-  marketingUrl: process.env.NEXT_PUBLIC_MARKETING_URL!,  // https://flowbite.com
-  appUrl: process.env.NEXT_PUBLIC_APP_URL!,              // https://app.flowbite.com
-  // …
-};
-```
-
-All CTA links use `APP_CONFIG.appUrl` so a future white-label deployment just changes env vars.
-
-### Long-term split path
-
-When you do extract the marketing site:
-1. Move `app/(marketing)` to a new repo (e.g. `flowbite-www`).
-2. Replace the route-group with a static-only Next.js or Astro project.
-3. Drop the host-based middleware; each project owns one domain.
-4. Reuse the same MDX content + same brand tokens via a shared package.
-
-You can do this in one weekend when the time comes. **Don't pre-pay for it now.**
+`APP_CONFIG` already supports `marketingUrl` + `appUrl` env vars — every CTA uses them so a future white-label deployment just changes env vars.
 
 ---
 
 ## 3 — AEO + SEO + GEO content strategy
 
-These are three different optimisation surfaces. They overlap but are NOT the same.
+Three different optimisation surfaces. They overlap but are NOT the same.
 
 ### 3.1 — SEO (classic Google)
 
-**Goal:** rank for high-intent CRM keywords on Google's traditional 10 blue links.
-
 **Primary keywords (target 5):**
-- `ai crm` — high volume, high intent, high competition. Don't expect page 1 in month 1.
+- `ai crm` — high volume, high intent, high competition.
 - `talk to your crm` — own this immediately. Currently zero established competition.
 - `ai-powered crm for small business`
 - `crm with ai assistant`
@@ -160,51 +181,55 @@ These are three different optimisation surfaces. They overlap but are NOT the sa
 - `attio vs hubspot vs flowbite ai`
 - `salesforce alternative ai`
 - `cheap ai crm` / `free ai crm with byok`
-- `whatsapp crm with ai` (when WhatsApp ships)
 
 **On-page checklist for every marketing page:**
 - `<title>` ≤ 60 chars, primary keyword first.
-- `<meta name="description">` 140-160 chars, action-led, ends with a CTA verb ("Try free for 90 days").
+- `<meta name="description">` 140-160 chars, action-led, ends with a CTA verb.
 - One `<h1>` per page, contains the primary keyword.
-- `<h2>` headers structured as questions where possible (improves SERP feature snippets).
-- Internal links between marketing pages — pricing → features → industry pages → blog. At least 3 internal links per page.
+- `<h2>` headers structured as questions where possible.
+- Internal links between marketing pages (pricing → features → industry pages → blog). At least 3 per page.
 - `<img alt>` on every image. Use real screenshots, not stock illustrations.
-- Schema.org JSON-LD: `Organization`, `Product`, `FAQPage`, `Article` (for blog). Use `next-seo` or hand-rolled in `generateMetadata`.
-- Sitemap at `/sitemap.xml` — generate with Next 15's `app/sitemap.ts` API.
+- Schema.org JSON-LD: `Organization`, `Product`, `FAQPage`, `Article`. Use Next 15's `generateMetadata`.
+- Sitemap at `/sitemap.xml` — generate with `app/sitemap.ts`.
 - `robots.txt` allows everything except `/api/*` and `/(app)/*`.
-- Canonical URL set to the apex domain version (no `www.`, no trailing slash on root).
+- Canonical URL set to the apex domain version.
 - `lang="en"` on `<html>`. Add `lang="ar"` variants when you ship Arabic.
-- Core Web Vitals: LCP < 2s, CLS < 0.05, INP < 200ms. Static rendering + image optimisation gets you there for free.
+- Core Web Vitals: LCP < 2s, CLS < 0.05, INP < 200ms.
 
 ### 3.2 — AEO (Answer Engine Optimization — for AI search results)
 
-**Goal:** when a user asks ChatGPT / Perplexity / Claude / Google AI Overviews "what's a good AI CRM for solopreneurs?", we show up in the synthesised answer.
+**Goal:** ChatGPT / Perplexity / Claude / Google AI Overviews cite us when users ask "what's a good AI CRM for solopreneurs?".
 
 **What AEO crawlers reward:**
-- Direct factual claims with no marketing fluff. Rather than "FlowBite is the best AI CRM," write "FlowBite has 75 AI tools that cover lead, contact, deal, company, note, reminder, tag, pipeline, and settings operations."
-- FAQPage schema with the actual user question + a 2-3 sentence answer. AI search cites the answer verbatim.
-- Comparison tables. AI will read structured tables and use the rows as direct citations.
-- Llms.txt at `/llms.txt` (Anthropic-style standard) listing canonical pages + summaries.
-- A clean `/about` page with named-entity facts (founders, founding year, location, mission, customer count when truthful).
+- Direct factual claims with no marketing fluff. "FlowBite has 115+ AI tools that cover lead, contact, deal, company, note, reminder, tag, pipeline, settings, files, timeline, notifications, analytics, autonomous-orders, and creative-drafts operations."
+- FAQPage schema with the actual user question + a 2-3 sentence answer.
+- Comparison tables. AI uses table rows as direct citations.
+- `Llms.txt` at `/llms.txt` (Anthropic-style standard) listing canonical pages + summaries.
+- A clean `/about` page with named-entity facts.
 
 **Llms.txt template** (drop at `public/llms.txt`):
 
 ```
 # FlowBite
 
-> FlowBite is an AI-native CRM where users manage their pipeline through conversation. The AI agent has 75 registered tools covering ~70% of CRM operations by usage frequency. Two-step approval for every write. Free Pro plan for early users.
+> FlowBite is an AI-native CRM where users manage their pipeline through conversation. The AI agent has 115+ registered tools covering ~95% of CRM operations by usage frequency. Two-step approval for every write. Free Pro plan for early users. BYOK supported on every plan.
 
 ## What it does today
 - Lead, contact, deal, company CRUD via chat
 - Daily and weekly AI briefings (cron-generated)
 - Per-entity memory (auto-summarised on every change)
-- Bulk operations, CSV import with dedup, file analysis
+- Proactive ranking — top-N next actions ranked by score + confidence
+- Analytical layer — "why is X happening", cohort analysis, member performance
+- Autonomous standing-orders — interval/daily/weekly schedules with tool whitelist
+- Creative drafting — message / proposal / summary (never auto-sent)
+- Web grounding via Firecrawl (search + scrape)
+- Bulk operations, CSV import with dedup, file analysis (vision)
 - BYOK for any plan including free tier
 
 ## Pages
 - /: hero + value prop
 - /pricing: plan comparison
-- /for-solopreneurs: solo / freelancer use case
+- /for-solopreneurs: solo / freelance use case
 - /for-real-estate: Dubai / Saudi real-estate template
 - /vs/salesforce: comparison
 - /vs/hubspot: comparison
@@ -213,41 +238,20 @@ These are three different optimisation surfaces. They overlap but are NOT the sa
 - /docs: full documentation (when shipped)
 ```
 
-**FAQPage schema** — every FAQ section emits JSON-LD:
-
-```json
-{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "What is FlowBite?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "FlowBite is an AI-native CRM where you manage your pipeline through conversation instead of clicking through forms. The AI agent has 75 registered tools that cover lead, contact, deal, company, note, reminder, and pipeline operations."
-      }
-    }
-  ]
-}
-```
-
 ### 3.3 — GEO (Generative Engine Optimization — for being cited by LLMs)
 
-**Goal:** when LLMs (during their training cuts and retrieval calls) build a knowledge base about CRMs, our content is structured so they cite us alongside Salesforce, HubSpot, Pipedrive, Attio.
-
 **What GEO rewards (above and beyond AEO):**
-- **Named-entity density.** Mention competitors by name in comparison content. LLMs will link the page to "AI CRM" queries when those competitors are mentioned.
-- **Numerical specificity.** "75 AI tools", "70% AI coverage by usage frequency", "two-step approval", "10K-character business persona budget" — all verifiable, all crawlable, all citation-friendly.
-- **Stable URL canonicals.** Pages that change URL break LLM citation. Lock URLs from day 1.
-- **Authoritative external links.** Link to Convex, Anthropic, Vercel docs to anchor your content in the LLM's existing knowledge graph.
+- **Named-entity density.** Mention competitors by name in comparison content.
+- **Numerical specificity.** "115+ AI tools", "95% AI coverage by usage frequency", "two-step approval", "10K-character business persona budget", "8.6/10 senior-CRM scorecard" — all verifiable, all crawlable.
+- **Stable URL canonicals.** Lock URLs from day 1.
+- **Authoritative external links.** Link to Convex, Anthropic, Vercel docs to anchor your content in the LLM's knowledge graph.
 - **Authorial voice.** Real opinions ("we believe forms-and-clicks CRMs are the wrong default for the AI era") sit better in LLM training data than generic copy.
-- **Comparison pages — own the long-tail.** `/vs/salesforce`, `/vs/hubspot`, `/vs/pipedrive`, `/vs/attio`, `/vs/notion-crm` are direct GEO plays. Each page is structured as: feature matrix → narrative → "when to choose them, when to choose us" honest section.
+- **Comparison pages.** `/vs/salesforce`, `/vs/hubspot`, `/vs/pipedrive`, `/vs/attio`, `/vs/notion-crm` are direct GEO plays. Each: feature matrix → narrative → "when to choose them, when to choose us".
 
 **GEO traps to avoid:**
-- ❌ Hallucinating customer counts. "Trusted by 10,000+ teams" when it's not true → LLMs will eventually catch you and the citation becomes a negative signal.
-- ❌ Stuffing keywords. "AI CRM AI sales AI assistant AI tool" → noise; degrades content for both humans and LLMs.
-- ❌ Marketing fluff with no structure. Walls of paragraphs without tables / lists / structured data. LLMs preferentially cite structured content.
+- ❌ Hallucinating customer counts.
+- ❌ Stuffing keywords.
+- ❌ Marketing fluff with no structure.
 
 ---
 
@@ -255,7 +259,7 @@ These are three different optimisation surfaces. They overlap but are NOT the sa
 
 ### 4.1 — `/` (Home / hero page)
 
-**Above the fold (hero, the 5-second pitch):**
+**Above the fold (the 5-second pitch):**
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -272,6 +276,7 @@ These are three different optimisation surfaces. They overlap but are NOT the sa
 │   [Start free →]   [Watch a 30-second demo]                  │
 │                                                              │
 │   Free Pro for early users. No credit card required.         │
+│   BYOK on every plan, including free.                        │
 │                                                              │
 ├──────────────────────────────────────────────────────────────┤
 │  [animated demo: type "add Sara Khan, SaaS prospect" →       │
@@ -279,7 +284,7 @@ These are three different optimisation surfaces. They overlap but are NOT the sa
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**Below the fold (problem agitation):**
+**Below the fold — problem agitation:**
 
 ```
 Section: "Your CRM should work for you, not against you."
@@ -297,26 +302,26 @@ We built FlowBite because we hit this wall ourselves.
 
 ```
 1. CONVERSATIONAL — Type or speak. "Add Sara as a lead, schedule a follow-up next Tuesday."
-   Done. The AI shows you a preview, you approve, the work is done.
+   The AI shows you a preview, you approve, the work is done.
 
 2. PROACTIVE — The AI surfaces stale leads, slipped deals, overdue reminders before you ask.
-   Every morning, a personalised briefing tells you what to focus on first.
+   Top-3 Pulse Ribbon on your dashboard. Morning briefing every day.
 
 3. SAFE — Every write goes through a two-step approval. The AI proposes; you confirm.
-   No "AI did something weird, what just happened?" surprises.
+   8 user-toggleable categories + 3 hard-locked (bulk / settings / members).
 ```
 
-**Feature matrix (6 tiles):**
+**Feature matrix (6 tiles — ALL shipped):**
 
 ```
-[Tile 1: Quick Composer screenshot]    [Tile 2: Suggestion chip example]
+[Tile 1: Quick Composer screenshot]    [Tile 2: Pulse Ribbon screenshot]
 "Talk to your CRM"                     "AI suggests your next move"
 
 [Tile 3: Two-step approval card]       [Tile 4: Daily briefing screenshot]
 "Approve before any write"              "Personalised every morning"
 
 [Tile 5: BYOK settings screenshot]      [Tile 6: Standing orders editor]
-"Bring your own AI key — even Free"     "Run weekly playbooks for you" (Stage 8)
+"Bring your own AI key — even Free"     "Run weekly playbooks for you"
 ```
 
 **Daily routine walkthrough (the most important section):**
@@ -351,12 +356,12 @@ Section: "Your day with FlowBite"
   [Screenshot of ranked list]
 ```
 
-**Honest comparison (GEO play):**
+**Honest comparison (GEO play — verify every cell against competitor's public docs before publishing):**
 
 ```
                   FlowBite      Salesforce     HubSpot       Attio        Pipedrive
 Conversational    Native        Add-on         Add-on        Add-on       No
-AI tools shipped  75            ~50            ~30           ~20          ~10
+AI tools shipped  115+          ~50            ~30           ~20          ~10
 Free tier         Yes (Pro)     No             Yes (limited) No           No
 BYOK keys         Yes           No             No            No           No
 Approval flow     Two-step      No             No            No           No
@@ -364,8 +369,6 @@ Per-entity AI     Yes           No             No            Partial      No
 memory
 Setup time        15 min        Days           Hours         Hours        Hours
 ```
-
-(Verify every cell against the competitor's public docs before publishing. We do not allow inaccurate competitor claims.)
 
 **Pricing teaser (full table on `/pricing`):**
 
@@ -417,12 +420,10 @@ Full plan table (no abbreviation), per-tier feature checklist, BYOK explainer, F
 Each industry page:
 - Specific hero copy ("The CRM for Dubai real estate agents")
 - Use-case scenario tailored to the persona
-- Industry-specific feature highlights (e.g. for real estate: "Auto-fetch property data from PDF brochures")
+- Industry-specific feature highlights (e.g. for real estate: "Auto-fetch property data from PDF brochures via `analyze_file`")
 - Industry-specific testimonials (when available)
 - Industry-specific pricing CTA
 - Internal link to the matching pre-built template
-
-These pages drive long-tail SEO and make the AEO/GEO content far richer.
 
 ### 4.4 — `/vs/{competitor}` (comparison pages)
 
@@ -440,41 +441,27 @@ Format: feature matrix → "When to choose them" → "When to choose us" → mig
 
 ### 4.6 — `/changelog`
 
-Auto-generated from git tags + manual curation. Critical for AEO — LLMs treat changelog as proof-of-life.
+Auto-generated from git tags + manual curation. **Critical for AEO** — LLMs treat changelog as proof-of-life. Source content lives in `SHIPPED.md`.
 
 ---
 
 ## 5 — Tagline justification: "Talk to your CRM" (the honesty contract)
 
-**Why this tagline is defensible today** (every claim mapped to a shipped feature):
+**Why this tagline is FULLY defensible today** (every claim mapped to a shipped feature):
 
-| Claim implicit in "Talk to your CRM" | Shipped? | Where |
+| Claim implicit in "Talk to your CRM" | Shipped today | Where |
 |---|---|---|
-| You can issue commands in natural language | ✅ | The chat sheet, the per-entity composer, AI Quick Composer (Stage 5) |
+| You can issue commands in natural language | ✅ | Chat sheet + per-entity composer + AIQuickComposerCard |
 | The AI understands your data | ✅ | System prompt includes pipelines, fields, persona, per-entity context |
-| The AI can do most things you do via UI | ⚠️ → ✅ after Stages 1-4 | 70% by usage today; 95% by Stage 4 ship |
-| The AI is safe to talk to | ✅ | Two-step approval; per-tool RBAC; org plan gates |
+| The AI can do most things you do via UI | ✅ | 95% by usage frequency (post Stage 4) |
+| The AI is safe to talk to | ✅ | Two-step approval; per-tool RBAC; org plan gates; 3 hard-locked categories |
 | The AI remembers context across turns | ✅ | aiPersonaContext + per-entity rebuild (deterministic summariser) |
-| The AI proactively offers next actions | ⚠️ → ✅ after Stage 6 | Heuristic chips + briefings today; ranked next-actions after Stage 6 |
-| The AI can act on its own | ❌ → ✅ after Stage 8 | Standing orders; auto-followup on stage move; auto-enrich |
+| The AI proactively offers next actions | ✅ | Top-3 Pulse Ribbon + ranked `aiNextActions` (cron-rebuilt every 30 min) |
+| The AI can act on its own | ✅ | Standing orders (interval/daily/weekly) + auto-followup on stage move + auto-enrich on contact create |
+| The AI can analyse your pipeline | ✅ | `analyze_metric` / `cohort_analysis` / `member_performance` / win-loss retrospective |
+| The AI can draft for you | ✅ | `draft_message` / `draft_proposal` / `summarise_conversation` (never autosent) |
 
-**Until Stages 1-8 ship, restrict the homepage copy to the columns marked ✅.** When Stage 6 ships, you can add "AI suggests your next move." When Stage 8 ships, you can add "AI runs your playbooks while you sleep." Don't write any of those before the underlying capability is in production.
-
-### Claim ladder (what to say at each stage of shipping)
-
-| After this stage ships | Marketing can say |
-|---|---|
-| Today (pre-sprint) | "Manage your CRM through chat. Type or speak; the AI proposes the change, you approve." |
-| Stage 1 (dashboard fixes) | "Your dashboard adapts to how you work — every widget shows the next thing you can do." |
-| Stage 2 (messaging) | "Chat with your CRM AND your contacts — both from the same place." |
-| Stage 4 (reactive parity) | "Anything you can do in the UI, the AI can do for you." |
-| Stage 5 (AI surface) | "AI is now part of your daily workspace, not a separate sheet." |
-| Stage 6 (proactive) | "AI suggests your next move — ranked, with confidence labels." |
-| Stage 7 (analytical) | "Ask the AI 'why is my pipeline slipping?' and get a real answer with data." |
-| Stage 8 (autonomous) | "Set a standing order. The AI runs your weekly playbook while you focus on selling." |
-| Stage 9 (creative) | "Drafting a follow-up, a proposal, a pricing email — your AI specialist drafts it for you." |
-
-Update the homepage copy as each stage ships. **Don't ship a marketing claim before the feature.** If a claim ships before the feature, your search-engine reputation takes the hit.
+**Every single row is shipped.** The full marketing claim ladder is now unlocked.
 
 ### Don't-over-promise list (NEVER say these)
 
@@ -484,16 +471,18 @@ Update the homepage copy as each stage ships. **Don't ship a marketing claim bef
 - ❌ "10× your productivity" — unverifiable.
 - ❌ "AI never makes mistakes" — false.
 - ❌ "Better than Salesforce" — superlative; let the comparison page do the talking.
-- ❌ "Fully autonomous" — until Stage 8.
-- ❌ "Voice-controlled" — until voice ships.
+- ❌ "Voice-controlled" — until voice ships (Phase 3-C).
+- ❌ "WhatsApp-native" — until that ships (Phase 3-C).
 
 ### Don't-under-promise either
 
-- ✅ "75 AI tools shipped" — verifiable, specific, citation-friendly.
+- ✅ "115+ AI tools shipped" — verifiable, specific, citation-friendly.
 - ✅ "Two-step approval for every write" — concrete safety claim.
 - ✅ "Free Pro for early users (90 days)" — clear offer.
 - ✅ "BYOK on every plan, including free" — strong differentiator.
-- ✅ "Per-entity AI memory that auto-rebuilds" — technically defensible, makes you sound serious.
+- ✅ "Per-entity AI memory that auto-rebuilds" — technically defensible.
+- ✅ "Proactive ranker with confidence labels" — defensible (Stage 6).
+- ✅ "Standing orders that run weekly playbooks" — defensible (Stage 8).
 
 ---
 
@@ -525,13 +514,11 @@ Update the homepage copy as each stage ships. **Don't ship a marketing claim bef
 - Day 80: case-study ask for happy users
 - Day 89: upgrade nudge
 
-This is the launch growth loop. Don't skimp on it.
-
 ---
 
 ## 7 — Content brief: 4 hero pages to write first
 
-When you start the marketing PR, write these four pages first in this order:
+When you start the marketing PR, write these in this order:
 
 ### 7.1 — `/` (the homepage)
 
@@ -539,44 +526,44 @@ When you start the marketing PR, write these four pages first in this order:
 
 ### 7.2 — `/pricing`
 
-~600 words + the table. Plan tiers are: Free (BYOK), Pro ($19/mo, free for 90 days), Team ($49/user/mo), Enterprise (talk to us). Be honest about what's NOT included in Free (e.g. platform AI models, advanced features).
+~600 words + the table. Plan tiers: Free (BYOK), Pro ($19/mo, free for 90 days), Team ($49/user/mo), Enterprise (talk to us). Be honest about what's NOT included in Free.
 
-### 7.3 — `/for-real-estate` (the highest-converting industry page)
+### 7.3 — `/for-real-estate` (highest-converting industry page)
 
 ~1,200 words. Lean into the Dubai / Saudi positioning. Use the `dubai_real_estate` template as the demo workspace. Specific use cases: property listing import via CSV, AI lead scoring on enquiries, auto-followup on viewing requests, multi-language (Arabic + English) support.
 
-### 7.4 — `/vs/hubspot` (the highest-conversion comparison page)
+### 7.4 — `/vs/hubspot` (highest-conversion comparison page)
 
-~1,800 words. Most prospects compare against HubSpot first because it has the loudest free tier. Be honest about what HubSpot does better (deep marketing automation, established ecosystem, large agency network). Be specific about what FlowBite does better (chat-first, BYOK, two-step approval, per-entity memory).
+~1,800 words. Most prospects compare against HubSpot first. Be honest about what HubSpot does better (deep marketing automation, established ecosystem, large agency network). Be specific about what FlowBite does better (chat-first, BYOK, two-step approval, per-entity memory, proactive ranker, standing orders).
 
 ---
 
 ## 8 — Technical implementation checklist
 
-When you start the marketing PR, this is the build order. Each row is one PR-sized chunk.
+Each row is one PR-sized chunk.
 
 | # | Task | Output |
 |---|---|---|
 | M1 | Set up `app/(marketing)/layout.tsx` + `header.tsx` + `footer.tsx`. No auth chrome. | Static layout for every marketing page |
-| M2 | Set up host-routing middleware (§2 above). Confirm `app.{domain}` routes to the existing app, root domain routes to marketing. | Two-domain split working in dev |
+| M2 | Set up host-routing middleware (§2). Confirm `app.{domain}` routes to the existing app, root domain routes to marketing. | Two-domain split working in dev |
 | M3 | Write `app/(marketing)/page.tsx` (the homepage). Use the §4.1 structure. | Live homepage with all 9 sections |
 | M4 | Write `app/(marketing)/pricing/page.tsx`. | Live pricing page |
 | M5 | Write `app/(marketing)/for-real-estate/page.tsx` + `app/(marketing)/for-solopreneurs/page.tsx`. | Two industry landing pages |
 | M6 | Write `app/(marketing)/vs/[competitor]/page.tsx` (dynamic route, 3-5 competitor pages via `generateStaticParams`). | Comparison pages |
 | M7 | `app/(marketing)/blog/[slug]/page.tsx` + 5-10 launch blog posts (MDX). | Blog live with hand-picked anchor posts |
-| M8 | `app/(marketing)/changelog/page.tsx` — pulls from a `content/changelog.json` file. | Changelog live |
+| M8 | `app/(marketing)/changelog/page.tsx` — pulls from `SHIPPED.md` via build-time MDX import. | Changelog live |
 | M9 | `app/sitemap.ts` + `public/llms.txt` + `public/robots.txt` + JSON-LD on every page. | Full SEO/AEO/GEO surface |
 | M10 | Free Pro mechanic — `orgs.earlyAccessGrant` field + plan resolver + banner + 4-email lifecycle (Resend transactional). | Free Pro live end-to-end |
 | M11 | Real screenshots for every feature tile + daily-routine walkthrough. Replace any placeholder mock images. | All hero imagery is real product |
 | M12 | Submit sitemap to Google Search Console + Bing Webmaster + IndexNow. Set up Plausible / PostHog for marketing analytics. | Live indexing + analytics |
 
-Estimated effort: **2-3 weeks** for one developer working in parallel with the AI sprint stages. Or run as a separate person's PR track.
+**Estimated effort:** 2-3 weeks for one developer working in parallel with the AI sprint stages.
 
 ---
 
 ## 9 — Honest tagline copy (drop-in ready)
 
-Use these verbatim. Every line is defensible by a shipped feature today:
+Every line is defensible by a shipped feature today:
 
 **Hero (homepage):**
 
@@ -612,7 +599,7 @@ Use these verbatim. Every line is defensible by a shipped feature today:
 
 1. **Don't write the marketing site in a separate framework yet.** Embed in Next 15 with the route group. You can extract later.
 2. **Don't use stock illustrations for "AI features."** Real screenshots only. Stock images destroy trust.
-3. **Don't promise what's not shipped.** Claim ladder is in §5.
+3. **Don't promise what's not shipped.** Voice / WhatsApp / cross-conversation embedding learning are NOT shipped — don't claim them.
 4. **Don't pre-launch a blog with 1 post.** Launch with 5-10 anchor articles or wait until you have them.
 5. **Don't over-design.** A clean text-led page outperforms a flashy gradient-heavy hero. See Linear, Vercel, Resend for reference design language.
 6. **Don't skip schema.org JSON-LD.** It costs 50 lines of code and unlocks AEO + GEO.
@@ -625,4 +612,15 @@ Use these verbatim. Every line is defensible by a shipped feature today:
 
 ## 11 — One-sentence summary
 
-Build the landing page inside this Next.js app at `app/(marketing)/`, point `app.{domain}` to the product and the root to marketing, write the homepage + pricing + 2 industry pages + 1 comparison page first, run AEO + SEO + GEO in parallel by emitting structured data + an Llms.txt + comparison tables, and only ship marketing claims after the underlying feature has shipped — the tagline "Talk to your CRM" is defensible today and will grow stronger with every sprint stage.
+Build the landing page inside this Next.js app at `app/(marketing)/`, point `app.{domain}` to the product and the root to marketing, write the homepage + pricing + 2 industry pages + 1 comparison page first, run AEO + SEO + GEO in parallel by emitting structured data + an Llms.txt + comparison tables, and ship the LemonSqueezy upgrade flow before paid signups go live — the tagline "Talk to your CRM" is defensible TODAY across every dimension (reactive, proactive, analytical, autonomous, creative) because Stages 1-10 are all shipped.
+
+---
+
+## 12 — Cross-references
+
+- **Pending work** (including the LemonSqueezy upgrade flow that blocks paid launch): `PENDING.md`.
+- **Shipped work** (source for the changelog page content): `SHIPPED.md`.
+- **Locked decisions** (radius, RTL, APP_CONFIG, AI tool patterns): `AGENTS.md`.
+- **Per-module architecture** (component file paths, hook names): every `core/*/MODULE.md` + `convex/**/MODULE.md`.
+- **Architecture docs** (database schema, RBAC, file storage, payments, email): `docs/architecture/*`.
+- **Platform Owner Panel** (separate track — super-admin surface for tier / flag / AI-context editing): `PLATFORM-OWNER-PANEL.md`.

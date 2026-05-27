@@ -27,6 +27,8 @@
 import { v } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
+// Post-sprint addition (2026-05-26) — per-user AI tool approval gate.
+import { resolveEffectiveAutoApprove } from "../../_shared/aiApprovals";
 import type { OrgPlan } from "../modelRegistry";
 import { FALLBACK_SUBAGENT_ID, getSubagent, selectToolsForSubagent } from "../subagents";
 import {
@@ -121,11 +123,13 @@ async function getUserPreferences(
 	aiAutoContextLoad?: boolean;
 	aiDefaultModel?: string | null;
 	aiDefaultProvider?: string | null;
+	aiApprovals?: Record<string, boolean>;
 }> {
 	const prefs = (await ctx.runQuery("users/queries:getPreferences", { userId })) as {
 		aiAutoContextLoad?: boolean;
 		aiDefaultModel?: string | null;
 		aiDefaultProvider?: string | null;
+		aiApprovals?: Record<string, boolean>;
 	} | null;
 	return prefs ?? {};
 }
@@ -426,6 +430,19 @@ export const run = internalAction({
 				messageHistory,
 				tools,
 				expandedLayers: effectiveExpandedLayers,
+				// Post-sprint addition (2026-05-26) — resolved auto-approve map.
+				// Hard-locked categories aren't in the map; the gate enforces the
+				// lock regardless. See `convex/_shared/aiApprovals.ts`.
+				userAutoApprove: resolveEffectiveAutoApprove(
+					prefs.aiApprovals as
+						| Partial<
+								Record<
+									import("../../_shared/aiApprovals").UserToggleableCategory,
+									boolean
+								>
+						  >
+						| undefined,
+				),
 			});
 		} catch (err) {
 			clearActiveRequestContext();

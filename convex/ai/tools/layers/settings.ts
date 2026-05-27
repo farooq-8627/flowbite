@@ -21,6 +21,7 @@ registerTool({
 	permission: "org.editSettings",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Update workspace settings (timezone, currency, badge counts, etc.). Pass the patch object.",
 	runbook: {
@@ -104,6 +105,7 @@ registerTool({
 	permission: "org.editSettings",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Rename CRM entity labels (e.g. 'Lead' → 'Inquiry'). Pass new singular/plural for any entity.",
 	runbook: {
@@ -198,6 +200,7 @@ registerTool({
 	permission: "org.manage",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Update the workspace 'About this organisation' description that the AI assistant uses as static context. Use this for industry, products, customer types, sales process — durable info the AI should always know.",
 	runbook: {
@@ -296,6 +299,7 @@ registerTool({
 	permission: "org.editSettings",
 	requiredCapability: "premium",
 	confirmation: "twoStep",
+	approvalCategory: "settings",
 	description:
 		"Set the ordered list of dashboard widget keys. Pass `keys` — an array of widget keys (see list_widgets for the catalogue). Unknown keys are rejected before write.",
 	runbook: {

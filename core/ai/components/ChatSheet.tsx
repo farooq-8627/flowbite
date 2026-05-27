@@ -21,10 +21,12 @@ import type { Id } from "@/convex/_generated/dataModel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useAIChat } from "../hooks/useAIChat";
 import { useChatRouteContext } from "../hooks/useChatRouteContext";
+import { usePersistedConversationId } from "../hooks/usePersistedConversationId";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatComposer } from "./ChatComposer";
 import { ChatContextCard } from "./ChatContextCard";
 import { ChatHistoryDropdown } from "./ChatHistoryDropdown";
+import { ChatLandingPane } from "./ChatLandingPane";
 import { ChatMessage } from "./ChatMessage";
 import { Suggestions } from "./composer/Suggestions";
 
@@ -37,7 +39,11 @@ export function ChatSheet({ onOpenSettings }: Props) {
 	const { fullOrgEntry } = useCurrentOrg();
 	const orgId = fullOrgEntry?.org._id;
 
-	const [conversationId, setConversationId] = useState<Id<"aiConversations"> | null>(null);
+	// Stage 3-A H3 — Persist active conversationId across refresh, keyed
+	// by orgId. The hook returns null until layout effect has read
+	// storage (SSR-safe) and validates against the live conversations
+	// list once it's loaded (see `validIds` plumbing below).
+	const [conversationId, setConversationId] = usePersistedConversationId(orgId);
 	const [autoContextLoad, setAutoContextLoad] = useState(true);
 	const [contextCollapsed, setContextCollapsed] = useState(false);
 
@@ -61,6 +67,25 @@ export function ChatSheet({ onOpenSettings }: Props) {
 		[conversationId, conversations],
 	);
 	const headerTitle = (activeConversation?.title ?? "").trim() || APP_CONFIG.name;
+
+	// Stage 3-A H3 — once the conversations query lands, drop a persisted
+	// conversationId that no longer exists (deleted/archived between
+	// sessions). One-shot per (orgId, conversationId) pair via a ref so
+	// we never feed conversationId back into deps and trigger a feedback
+	// loop (AGENTS.md → "RULE: Never put hook-returned objects in
+	// useEffect deps").
+	const staleCleanupRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (!conversationId) return;
+		if (conversations.length === 0) return; // query still loading or true-empty
+		const key = `${orgId ?? ""}:${conversationId}`;
+		if (staleCleanupRef.current === key) return;
+		staleCleanupRef.current = key;
+		const stillExists = conversations.some((c) => c._id === conversationId);
+		if (!stillExists) {
+			setConversationId(null);
+		}
+	}, [conversationId, conversations, orgId, setConversationId]);
 
 	const scrollViewportRef = useRef<HTMLDivElement>(null);
 
@@ -103,7 +128,7 @@ export function ChatSheet({ onOpenSettings }: Props) {
 				setConversationId(result.conversationId);
 			}
 		},
-		[orgId, send, conversationId],
+		[orgId, send, conversationId, setConversationId],
 	);
 
 	// Phase 4 Part 2 — file attach. ChatComposer needs a conversationId
@@ -117,11 +142,11 @@ export function ChatSheet({ onOpenSettings }: Props) {
 		const newId = (await createConversation({ orgId })) as Id<"aiConversations">;
 		setConversationId(newId);
 		return newId;
-	}, [orgId, conversationId, createConversation]);
+	}, [orgId, conversationId, createConversation, setConversationId]);
 
 	const handleNew = useCallback(() => {
 		setConversationId(null);
-	}, []);
+	}, [setConversationId]);
 
 	// Cancel — wired to the Stop button + global keyboard shortcut.
 	const cancelStream = useMutation(anyApi.ai.messages.cancelStream);
@@ -226,19 +251,14 @@ export function ChatSheet({ onOpenSettings }: Props) {
 			<div ref={scrollViewportRef} className="flex-1 min-h-0 chat-sheet-wrapper">
 				<ScrollArea className="h-full">
 					<div className="flex w-full min-w-0 flex-col py-2">
-						{messages.length === 0 && (
-							<div className="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center">
-								<div className="flex size-12 items-center justify-center rounded-full bg-primary/10">
-									<Bot className="size-6 text-primary" />
-								</div>
-								<div>
-									<p className="font-medium text-sm">{APP_CONFIG.name}</p>
-									<p className="mt-1 text-xs text-muted-foreground">
-										Ask me to search records, create leads, set reminders, or
-										explain your pipeline.
-									</p>
-								</div>
-							</div>
+						{messages.length === 0 && conversationId === null && (
+							<ChatLandingPane
+								orgId={orgId}
+								conversations={conversations}
+								onSelectConversation={(id) => setConversationId(id)}
+								onSend={(body) => void handleSend(body)}
+								routeContext={routeContext}
+							/>
 						)}
 						{(() => {
 							// Group the flat message list into turns. Each

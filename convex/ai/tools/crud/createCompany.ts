@@ -15,6 +15,7 @@ registerTool({
 	layer: "always",
 	permission: "companies.create",
 	confirmation: "twoStep",
+	approvalCategory: "create_record",
 	description: "Create a new company/account. Run search_crm first.",
 	instruction: {
 		whenToCall:

@@ -321,3 +321,75 @@ registerTool({
 			};
 		}),
 });
+
+// ─── reorder_field_definitions (P1.3 G-2) ──────────────────────────────────
+//
+// Setup-time gesture: re-rank the existing custom-field rows by id. The
+// position in the array becomes the field's `order`. Atomic — admins
+// drag fields around in Settings; one-shot patch is the natural shape.
+
+registerTool({
+	name: "reorder_field_definitions",
+	layer: "fields",
+	permission: "fieldDefinitions.manage",
+	confirmation: "none",
+	description:
+		"Reorder custom field definitions for the workspace. Provide every fieldId in the desired order; the array index becomes the field's `order`.",
+	instruction: {
+		whenToCall:
+			"Admin says 'reorder fields', 'put X above Y on the form', 'move <field> to the top of the form', or supplies a complete ordered list of fieldIds for one entityType.",
+		whenNotToCall:
+			"the user wants to reorder PIPELINE STAGES (use reorder_stages) OR change a single field's properties (use update_field).",
+		preflight: ["list_entity_fields"],
+		requiredClarifications: ["fieldIds"],
+		synonyms: [
+			"reorder fields",
+			"sort fields",
+			"rearrange fields",
+			"order fields",
+			"move field",
+		],
+		goodExample: {
+			description:
+				"User: 'Put the Budget field above the Address field in the deal form.' (model resolved both ids from list_entity_fields)",
+			args: {
+				fieldIds: ["k_budget_id", "k_address_id", "k_otherFieldId"],
+			},
+		},
+		badExample: {
+			description: "User: 'Move budget to the top.'",
+			args: { fieldIds: ["k_budget_id"] },
+			whyBad: "fieldIds must be the COMPLETE ordered list. A single id replaces the whole order — every other field would slip to position N.",
+		},
+	},
+	runbook: {
+		onSuccess: "Confirm in one short sentence with how many fields were reordered.",
+		onPermissionDenied:
+			"Tell the user they need fieldDefinitions.manage. Suggest contacting an admin.",
+	},
+	schema: z.object({
+		fieldIds: z
+			.array(z.string().min(1))
+			.min(1)
+			.describe(
+				"Complete ordered list of fieldDefinition _ids. The first id becomes order=0.",
+			),
+	}),
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "fieldDefinitions.manage");
+			await toolMutation(getCtx(), "crm/fields/fieldDefinitions/mutations:reorder", {
+				orgId,
+				fieldIds: args.fieldIds,
+			});
+			return {
+				ok: true as const,
+				data: { count: args.fieldIds.length },
+				display: {
+					kind: "text" as const,
+					text: `✅ Reordered ${args.fieldIds.length} fields.`,
+				},
+			};
+		}),
+});

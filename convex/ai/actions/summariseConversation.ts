@@ -21,7 +21,7 @@
  *     bullets:        string[],         // 3 short bullets, ≤200 chars each
  *     agreements:     string[],         // explicit "we'll do X" / "they agreed to Y"
  *     openQuestions:  string[],         // unresolved threads
- *     actionItems:    {body, suggestedDueDate?}[]  // pre-fillable for create_followup
+ *     actionItems:    {body, suggestedDueDate?}[]  // pre-fillable for create_task
  *   }
  *
  * Cost class: `expensive`. Quota gated upstream by enforceCreativeQuota.
@@ -131,7 +131,7 @@ Rules:
 - 3 bullets is the target — no more than 5.
 - Agreements only when concrete commitments exist; else empty array.
 - openQuestions only for genuine unresolved items; else empty array.
-- actionItems should be pre-fillable into create_followup tools — be specific.
+- actionItems should be pre-fillable into create_task tools — be specific.
 - suggestedDueDate is OPTIONAL — omit when unclear; never guess.
 - JSON only — nothing else.`;
 };

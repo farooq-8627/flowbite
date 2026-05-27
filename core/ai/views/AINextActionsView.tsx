@@ -116,7 +116,7 @@ export function AINextActionsView() {
 					<div className="min-w-0 flex-1">
 						<h1 className="text-lg font-semibold leading-tight">Next actions</h1>
 						<p className="text-sm text-muted-foreground">
-							Ranked by urgency. Updated every 30 minutes by the proactive ranker.{" "}
+							Ranked by urgency. Updated reactively as your workspace changes.{" "}
 							{orgSlug ? `Workspace: ${orgSlug}.` : ""}
 						</p>
 					</div>

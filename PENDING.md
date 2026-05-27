@@ -6,7 +6,7 @@
 >
 > **Order of work.** Sections are listed by priority — P0 must ship before public launch, P1 ships in the next sprint window, P2/P3 are backlog with full context preserved so any session can pick them up cold.
 >
-> **Cross-references kept (not deleted):** `LANDING-PAGE.md` (marketing-site spec), `PLATFORM-OWNER-PANEL.md` (super-admin panel spec), `AGENTS.md` (rules), `core/*/MODULE.md` and `convex/**/MODULE.md` (per-module architecture decisions), `docs/architecture/*` (durable architecture). Per-module STATE.md files were retired on 2026-05-27 and their pending items consolidated into `Future-Enhancements.md` §H.
+> **Cross-references kept (not deleted):** `LANDING-PAGE.md` (marketing-site spec), `AGENTS.md` (rules), `core/*/MODULE.md` and `convex/**/MODULE.md` (per-module architecture decisions), `docs/architecture/*` (durable architecture). Per-module STATE.md files were retired on 2026-05-27 and their pending items consolidated into `Future-Enhancements.md` §H. The `PLATFORM-OWNER-PANEL.md` and `INDUSTRY-TEMPLATES-DB-MIGRATION.md` spec docs were deleted on 2026-05-27 once their stages all shipped — pending Tier B/C / v2 items live as cards in `Future-Enhancements.md` §B (B.27–B.31).
 
 ---
 
@@ -118,120 +118,49 @@ streamText({ ..., stopWhen: stepCountIs(cap) });
 
 # 🟡 P1 — Next sprint window
 
-## P1.1 — Stage 3-A session 3 (Proactive UX polish closeout)
+## ✅ P1.1 — Stage 3-A session 3 (Proactive UX polish closeout) — SHIPPED 2026-05-27
 
-**Goal:** close the WHOLE Stage 3-A as ✅ shipped. Sessions 1 + 2 are done; session 3 is a polish wave with a focused 4-item scope.
-
-### P1.1.A — FirstTimeTour for ChatLandingPane (UX-5 from STAGE-3A-PROACTIVE-UX-PLAN.md)
-
-**What it does:** 3-step coachmark that fires once per device when a user first sees the new Chat Landing Pane (the empty-state with greeting + Today's Pulse + Top 3 next actions + recent thread chips).
-
-**Steps:**
-1. Point at the "Today's Pulse" block: "Your morning briefing lives here."
-2. Point at the "Top 3 Next Actions" rows: "These are the highest-priority things waiting for you."
-3. Point at the prompt chips: "Tap one of these to ask me to do it."
-
-**Files:**
-- `core/ai/components/ChatLandingPane.tsx` — mount `<FirstTimeTour id="chat-landing-v1" steps={...} />` after the existing UI.
-- Tag elements with `data-tour="landing-pulse"`, `data-tour="landing-actions"`, `data-tour="landing-chips"`.
-
-**Acceptance:** tour fires once per device; Esc / × / backdrop-click dismisses; bumping the id (`v1` → `v2`) re-fires when steps change.
-
-### P1.1.B — Drag-and-drop file attach on dashboard composer
-
-**What it does:** drop a CSV / image onto `AIQuickComposerCard`; the card lazy-creates a conversation, attaches the file, opens the chat panel with the manifest line in the body.
-
-**Why deferred from session 2:** the lazy-create-conversation-on-attach UX changes the contract slightly (file scoped to a thread that has no message yet). Session 2 already shipped `lazyWarmForUser` and the section header — adding D&D would have doubled the test surface.
-
-**Files:**
-- `core/ai/lib/uploadAttachments.ts` (NEW) — extract from `core/ai/components/composer/ChatAttachButton.tsx`. Surface: `uploadAttachments({ orgId, conversationId, files }): Promise<PendingAttachment[]>`.
-- `core/ai/components/composer/FileAttachButton.tsx` (NEW) — paperclip affordance + D&D listener that lazy-creates the conversation via an `onEnsureConversation: () => Promise<Id<"aiConversations">>` prop.
-- `core/shell/shell/views/dashboard/cards/AIQuickComposerCard.tsx` — mount `<FileAttachButton>` next to model picker; add `pendingAttachments` state; inject `[file:<id> "name"]` manifest line into body before send.
-
-**Acceptance:** drag CSV onto composer → conversation auto-created → side panel opens with first turn containing the manifest line.
-
-### P1.1.C — Final cross-template manual-smoke pass per persona
-
-For each of the 9 industry templates (`generic`, `real_estate`, `health_clinic`, `salon`, `coaching`, `event_planning`, `productivity`, `freelancer`, `agency`, `b2b_saas`), open the seeded workspace, eyeball the dashboard, confirm first-paint feels persona-appropriate. Document any gaps in `Future-Enhancements.md` if found.
-
-### P1.1.D — Closeout — collapse Stage 3-A IN-PROGRESS block to a single ship paragraph
-
-Apply the doc-cleanup contract: roll up sessions 1 + 2 + 3 into a single ✅ paragraph in `SHIPPED.md`. Move all per-session detail to git history.
+`<FirstTimeTour id="chat-landing-v1">` mounted in `ChatLandingPane.tsx` with 3 steps tagged via `data-tour="landing-pulse" / "landing-actions" / "landing-chips"`; new shared `core/ai/lib/uploadAttachments.ts` (`useUploadAttachments` hook) — `ChatAttachButton.tsx` refactored to consume it; `AIQuickComposerCard.tsx` gained `isDragging` state + `dragDepthRef` + drag handlers + dashed-border "Drop to attach" overlay so click-attach + drag-drop share one upload pipeline; cross-template smoke pass clean (9/9 industry templates use only canonical `WIDGET_KEYS`). Closes the whole Stage 3-A as ✅ — see `SHIPPED.md`.
 
 ---
 
-## P1.2 — Phase 2 deferred polish (verified pending)
+## ✅ P1.2 — Phase 2 deferred polish — SHIPPED 2026-05-27
 
-> **Note:** the prior Phase-2-progress.md listed 4 deferred polish items. A code-scan during this consolidation (2026-05-27) found 2 of them are ACTUALLY ALREADY SHIPPED but were never flipped in docs. Only the 2 items below are genuinely pending.
-
-### P1.2.A — Warn-mode banner on deal detail (MEDIUM)
-
-**What it does:** when `pipelines.stages[].onEnter.requiredFields` are missing AND `stageTransitionPolicy === "warn_only"`, show an amber pill + missing-field list + CTA on the deal detail.
-
-**Status:** schema + transition policy support it; UI doesn't render the warning.
-
-**Files:**
-- `core/entities/_entities/deals/views/DealDetailView.tsx` — add a `<WarnModeBanner>` between the header and the kanban.
-- New `core/entities/_entities/deals/components/WarnModeBanner.tsx`.
-- Reuse `convex/crm/entities/deals/queries.ts:getMissingFieldsForStage` (already exists).
-
-**Acceptance:** dragging a deal into a stage with `warn_only` policy + missing required fields renders the banner; clicking "Fill now" opens `<FillMissingFieldsDialog>` (already shipped).
-
-### P1.2.B — Per-stage advanced settings UI in PipelineEditor (MEDIUM)
-
-**What it does:** expose `staleAfterDays`, `warningAfterDays`, `isFinal`, `finalType` for editing per stage. Schema supports them; UI only reads `isFinal`.
-
-**Files:**
-- `core/platform/settings/components/groups/pipelines/PipelineEditor.tsx` — add an "Advanced" expandable per row with 4 number/select inputs.
-- `convex/crm/fields/pipelines/mutations.ts:updateStageImpl` — accepts the 4 fields already.
-
-**Acceptance:** editor saves all 4 fields; `<StaleIndicator>` (already exists) honours per-stage `staleAfterDays` from the saved value, not a hardcoded default.
+`WarnModeBanner.tsx` (NEW) mounted in `DealDetailShell.tsx` between the header and tab body — renders an amber pill + missing-field list + 'Fill now' CTA when the pipeline policy is `warn` and the deal's current stage has unfilled required fields; CTA opens the existing `FillMissingFieldsDialog`. PipelineEditor `StageRow` gained an 'Advanced settings…' menu item that opens `StageAdvancedSettingsDialog` (4 inputs: stale-days, warning-days, isFinal switch, finalType select); `updateStage` mutation + ForAI twin extended to accept `warningAfterDays` / `isFinal` / `finalType` (clears finalType when isFinal flips off).
 
 ---
 
-## P1.3 — P3 AI tool gaps from AI-TOOL-COVERAGE-AUDIT (G-1..G-7)
+## ✅ P1.3 — P3 AI tool gaps G-1..G-7 — SHIPPED 2026-05-27
 
-> **Source:** `AI-TOOL-COVERAGE-AUDIT.md §3` — function-by-function pass against the dev deployment found 7 P3 gaps. All P3, none affect the senior-CRM bar; group as a single mini-stage when the user wants polish.
-
-| ID | Tool | Effort | Notes |
-|---|---|---|---|
-| G-1 | `change_pipeline` (move D-007 between Sales / Renewals pipelines) | ~1 hr | Public `deals/mutations:changePipeline` exists; ForAI twin missing. |
-| G-2 | `reorder_field_definitions` | ~30 min | Public exists. Setup-time gesture. |
-| G-3 | `start_dm` / `start_direct_message` | ~1 hr | `conversations/mutations:ensureDirectMessage` exists. "DM Sara about Acme deal." |
-| G-4 | `manage_conversation` (rename / archive / unarchive — fold into one twoStep with `mode`) | ~1 hr | 3 public mutations exist; could be one tool. |
-| G-5 | `delete_note_category` | ~30 min | Public `noteCategories/mutations:remove` exists; UI-only today. |
-| G-6 | `move_note_to_entity` | ~30 min | Public `notes/mutations:setEntity` exists; useful when AI mis-attaches. |
-| G-7 | `mark_all_notifications_read` | ~30 min | `notifications/mutations:markAllRead` exists. |
-
-**Acceptance for the batch:** every tool has a `*ForAI` twin in the same file as the public mutation, the tool registers in the right layer, the system prompt verb-routes to it, and a contract test covers happy + auth-deny paths.
+All 7 tools shipped + system-prompt verb routes + ForAI twins. **G-1** `change_pipeline` + `commit_change_pipeline` (twoStep, layers/pipelines.ts; `changePipelineForAI` twin extracts `changePipelineImpl`). **G-2** `reorder_field_definitions` (atomic, layers/fields.ts; `reorderForAI` twin). **G-3** `start_dm` (atomic, messaging/; `ensureDirectMessageForAI` twin). **G-4** `manage_conversation` (atomic with `mode: rename|archive|unarchive`, messaging/; conversations gained `renameForAI` / `archiveForAI` / `unarchiveForAI` twins). **G-5** `delete_note_category` + `commit_delete_note_category` (twoStep, layers/categories.ts; `removeForAI` twin). **G-6** `move_note_to_entity` (atomic, notes/; `setEntityForAI` twin). **G-7** `mark_all_notifications_read` (atomic, notifications/; tenant-scoped `markAllReadForAI` twin returns `{ updated: count }`). System prompt heuristic + verb-routing blocks updated for messaging / notes / pipelines / notifications.
 
 ---
 
-## P1.4 — Capability roadmap deferrals
+## P1.4 — Capability roadmap deferrals (residual)
 
-> **Source:** `AI-AGENT-CAPABILITY-AUDIT.md §6` final scorecard. These are the 7 items that did not ship in Stages 6-9 and are tracked as backlog cards. None block the senior-CRM bar (already reached at 8.6/10).
+> **Source:** `AI-AGENT-CAPABILITY-AUDIT.md §6` final scorecard. The original 7-item list has been worked down. **D-5 (stage-template tool), `set_default_note_category` (atomic flip)** shipped 2026-05-27 — see `SHIPPED.md`. The 5 items below remain backlog because each carries a real blocker (UX decision, embedding-store infra, Resend digest scoping, streaming-patch protocol).
 
 | ID | What | Why deferred |
 |---|---|---|
 | D-4 | Auto-note from file (after `analyze_file`, write a structured note to the right entity) | Needs UX decision on "which entity" when ambiguous. |
-| D-5 | Stage-template tool (apply a 5-stage template wholesale to a new pipeline) | Needs template catalogue. |
-| W-3 | Auto-tag classifier (when a note is added, auto-suggest tags via embedding similarity) | Needs embedding store. |
-| W-5 | Weekly digest email (per-org Monday morning summary) | Needs Resend integration + template editor. |
-| P-5 | Similarity / pattern matching (find leads similar to my best closed deals) | Needs embedding store. |
-| `set_default_note_category` | Atomic tool to flip the default | Public `setDefault` mutation exists; ForAI twin trivial; defer to user request. |
-| Bulk-progress mid-flight chunked streaming | Stream `commit_bulk_*` progress as chunks while the loop runs | Needs streaming-patch protocol on `aiMessages`. |
+| W-3 | Auto-tag classifier (when a note is added, auto-suggest tags via embedding similarity) | Needs embedding store. **Design freeze: `docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md` §6.1** — ships as stage E.2. |
+| W-5 | Weekly digest email (per-org Monday morning summary) | Resend wired (used for OTP); digest body + per-org opt-in + template editor is a separate ~1-day ship with two open product questions. |
+| P-5 | Similarity / pattern matching (find leads similar to my best closed deals) | Needs embedding store. **Design freeze: `docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md` §6.2** — ships as stage E.3. |
+| Bulk-progress mid-flight chunked streaming | Stream `commit_bulk_*` progress as chunks while the loop runs | Needs streaming-patch protocol on `aiMessages` (architecture change to the patch shape). |
 
 ---
 
-## P1.5 — Low-priority polish (T11, T12, C-tier audit items)
+## P1.5 — Low-priority polish (residual)
 
-| ID | What | Effort |
-|---|---|---|
-| T11 | Reminder kinds histogram. `create_reminder.reminderType` is hardcoded to a 5-item enum. If telemetry shows custom kinds, add `list_reminder_kinds` returning a 30-day distinct histogram. | ~1 hr |
-| T12 | Permission catalog introspection. Add `list_permission_catalog` always-on read tool returning `{ key, description, category }[]` from `convex/_shared/permissions/catalog.ts`. | ~30 min |
-| C.4 | Audit propose-vs-commit schema diff for every twoStep tool. Startup check that diffs each `propose_X.schema` against `commit_X.schema` and warns when propose has fields commit doesn't. Prevents silent data loss on new twoStep tools. | ~2 hrs |
-| C.5 | Friendly errors on `streamLoop` `tool-error` chunks. Run the same `friendlyToolError` mapper on `chunk.error` before patching the tool record. Keep raw error in `output.rawError` for debugging. | ~1 hr |
-| Custom-field diff capture in `update_entity` | Capture the BEFORE/AFTER for every patched field for richer activity logs. | ~2 hrs |
+> Originally 4 rows; **T12, C.4, C.5, and the custom-field BEFORE/AFTER diff** all shipped 2026-05-27 — see `SHIPPED.md`. Section retained as a placeholder; new low-priority polish rows land here when they surface.
+
+_(no pending items)_
+
+---
+
+## ✅ P1.6 — TASKS-RENAME closeout sweep (G1–G21) — SHIPPED 2026-05-27
+
+All 21 gaps closed across A+B+C: critical runtime gaps G1–G3 + G15 shipped 2026-05-27 (see `SHIPPED.md` "TASKS-RENAME-PLAN.md retired"); G4–G14 shipped 2026-05-27 as P1.6.A+B (`autoFollowupOnStageMove` → `autoTaskOnStageMove` + idempotent rename migration; notification keys `reminder_due/_overdue` → `task_due/_overdue` + idempotent migration; legacy `followupDefaults` fallback dropped; `convex/tasks-hardening.test.ts` 30 tests + `convex/tasks-tools.test.ts` 11 tests + 2 frontend test files); G16–G21 doc/cosmetic SSOT polish shipped 2026-05-27 as P1.6.C — see `SHIPPED.md` "P1.6.C (G16–G21) doc/cosmetic SSOT polish + P1.1". `aiNextActions.reasonCode` rename remains deferred → `Future-Enhancements §F.1`.
 
 ---
 
@@ -395,7 +324,7 @@ Week 1 baseline scorer (5 tests) is the kernel. Full version: per-variant sweeps
 
 ### C.3 — Multi-tenancy: cross-org platform-admin AI (Phase 4)
 
-Reserved for super-admin operations (e.g. "show me churn risk across all paying orgs", "list orgs with > 80% plan usage"). Schema is multi-tenant from day 1; the AI layer hasn't yet been pointed at the multi-org view. **Track separately under `PLATFORM-OWNER-PANEL.md` — that doc is the canonical spec for this whole surface.**
+Reserved for super-admin operations (e.g. "show me churn risk across all paying orgs", "list orgs with > 80% plan usage"). Schema is multi-tenant from day 1; the AI layer hasn't yet been pointed at the multi-org view. Tier A of the owner panel intentionally has zero org-content access (locked decision L7); revisit only if a clear, GDPR-safe use case appears — see `Future-Enhancements.md §B.31` (Tier B/C deferrals card).
 
 ### D.1 — MODULE.md compliance audit (process)
 
@@ -425,13 +354,15 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 
 ## Platform Owner Panel
 
-**Spec:** `PLATFORM-OWNER-PANEL.md` (preserved as-is; ~24 hours of focused implementation).
+**Status:** ✅ **ALL Stages 0–7 SHIPPED 2026-05-27.** No pending owner-panel work. See `SHIPPED.md` for the rollup; the per-stage spec doc was deleted on 2026-05-27 since every section is live in the codebase.
 
-**Mount path:** `/{locale}/platform-owner` (added to `RESERVED_SLUGS`).
+**Mount path:** `/${OWNER_PANEL_SLUG}/<section>` — env-configured slug rewritten to `/xowner/<section>` by middleware. The literal segment `xowner` is added to `RESERVED_SLUGS` so no org can grab it as a workspace slug.
 
-**Triple gate:** middleware → server-component layout (platformRole === "super_admin") → Convex `requirePlatformOwner` helper + email allow-list env var.
+**Five-layer gate (all live):** middleware slug match → `convexAuthNextjsToken()` → `fetchQuery(getOwnerProfile)` (super_admin role + `PLATFORM_OWNER_EMAILS` allow-list) → email-OTP cookie (HMAC-signed, 15-minute TTL) → `requirePlatformOwner(ctx)` on every Convex handler.
 
-**Surfaces:** Overview, Org list, Org detail, AI context editor, Tool catalogue (read-only) + runbook overrides, Tiers, Billing (LemonSqueezy webhooks), Feature flags, Audit log, Env vars (read/write via Convex admin token).
+**Surfaces (Tier A v1 — all live):** Overview, Users, Tiers, Industries, Reserved slugs, Billing settings, Feature flags, AI context, AI keys, Audit log, Owner profile/settings (with Active OTP sessions + Recent logins). **Locked decision L7 — NO org-content access**, NO org list, NO impersonation.
+
+**Tier B / Tier C deferrals** (10 items) live as one consolidated card in `Future-Enhancements.md §B.31` — tool runbook overrides editor, Convex env-vars editor, LemonSqueezy / Razorpay webhook console, waitlist viewer, DB-backed owner allow-list + invite flow, TOTP / WebAuthn for owner login, cross-org analytics, Convex / Sentry insight feed inside the panel, per-user tier (subscription decoupled from org). None block public launch.
 
 ---
 
@@ -440,4 +371,4 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 1. **Anything in here is verified pending** as of 2026-05-27. If you ship a section, move its 1-line summary to `SHIPPED.md` and DELETE the section here in the SAME edit (per AGENTS.md → "RULE: Doc cleanup at every commit").
 2. **Anything not in here is shipped or out of scope.** Don't re-track work already in `SHIPPED.md`. Don't add work that contradicts a locked decision in `AGENTS.md`.
 3. **When in doubt, scan the codebase.** This file is grounded by a code-scan; if the codebase says one thing and a doc says another, trust the codebase and update the doc. The 2 docs-drift items found during this consolidation (FollowUpsPanel mounted as EntityFollowups; FillMissingFieldsDialog already at `core/entities/_entities/deals/components/`) were already silently shipped.
-4. **Cross-references retained:** `LANDING-PAGE.md`, `PLATFORM-OWNER-PANEL.md`, `AGENTS.md`, `SHIPPED.md`, every `core/*/MODULE.md`, every `convex/**/MODULE.md`, every `docs/architecture/*`. Everything else at the repo root that previously tracked progress has been collapsed into this file. Per-module STATE.md files were retired on 2026-05-27 — their pending items live in `Future-Enhancements.md` §H.
+4. **Cross-references retained:** `LANDING-PAGE.md`, `AGENTS.md`, `SHIPPED.md`, every `core/*/MODULE.md`, every `convex/**/MODULE.md`, every `docs/architecture/*`. Everything else at the repo root that previously tracked progress has been collapsed into this file. Per-module STATE.md files were retired on 2026-05-27 — their pending items live in `Future-Enhancements.md` §H. The `PLATFORM-OWNER-PANEL.md` + `INDUSTRY-TEMPLATES-DB-MIGRATION.md` spec docs were deleted on 2026-05-27 once their stages shipped.

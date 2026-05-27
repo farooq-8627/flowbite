@@ -110,6 +110,38 @@ export function DailyBriefingCard({ orgId }: Props) {
 		);
 	}
 
+	// Error briefings — when no AI key is available the action writes a
+	// row with `model: "error:no_key"` so the user sees the failure
+	// cause instead of a silent void.
+	const isErrorBriefing = briefing.model?.startsWith("error:") ?? false;
+	if (isErrorBriefing) {
+		return (
+			<div className="flex flex-col gap-3 rounded-[var(--radius)] border border-amber-300/60 bg-amber-50/60 p-4 dark:border-amber-700/40 dark:bg-amber-950/20">
+				<div className="flex items-center gap-2">
+					<Sparkles className="size-4 text-amber-700 dark:text-amber-300" />
+					<span className="font-semibold text-sm text-amber-900 dark:text-amber-100">
+						AI Morning Briefing
+					</span>
+				</div>
+				<p className="text-sm leading-relaxed text-amber-900/90 dark:text-amber-100/90 whitespace-pre-wrap">
+					{briefing.summary}
+				</p>
+				{canRefresh && (
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={handleRefresh}
+						disabled={refreshing}
+						className="self-start gap-1.5"
+					>
+						<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+						Try again
+					</Button>
+				)}
+			</div>
+		);
+	}
+
 	// Prefer the structured payload when available; fall back to legacy
 	// summary+highlights so pre-Sprint-5 rows still render.
 	const summary = briefing.payload?.summary ?? briefing.summary;

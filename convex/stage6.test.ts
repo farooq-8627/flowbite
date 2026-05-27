@@ -93,20 +93,20 @@ async function seedOrgWithMember(
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
-function fakeReminder(over: Partial<Doc<"reminders">>): Doc<"reminders"> {
+function fakeTask(over: Partial<Doc<"tasks">>): Doc<"tasks"> {
 	return {
-		_id: "r1" as unknown as Doc<"reminders">["_id"],
+		_id: "t1" as unknown as Doc<"tasks">["_id"],
 		_creationTime: Date.now(),
-		orgId: "o1" as unknown as Doc<"reminders">["orgId"],
-		followUpCode: "FU-001",
+		orgId: "o1" as unknown as Doc<"tasks">["orgId"],
+		taskCode: "T-001",
+		type: "todo",
 		personCode: "P-001",
 		entityType: "lead",
 		entityId: "e1",
 		title: "Call Sara",
 		dueAt: Date.now(),
-		assignedTo: "u1" as unknown as Doc<"reminders">["assignedTo"],
+		assignedTo: "u1" as unknown as Doc<"tasks">["assignedTo"],
 		status: "pending",
-		source: "manual",
 		createdAt: Date.now(),
 		...over,
 	};
@@ -160,11 +160,11 @@ describe("Stage 6 — pure ranker", () => {
 
 	it("scores an overdue reminder higher than a stale lead", () => {
 		const now = Date.now();
-		const overdueReminder = fakeReminder({ dueAt: now - 2 * ONE_DAY_MS });
+		const overdueTask = fakeTask({ dueAt: now - 2 * ONE_DAY_MS });
 		const staleLead = fakeLead({ updatedAt: now - 8 * ONE_DAY_MS });
 		const rows = computeRanking({
 			now,
-			reminders: [overdueReminder],
+			reminders: [overdueTask],
 			leads: [staleLead],
 			deals: [],
 			dealMedianValue: 0,
@@ -240,7 +240,7 @@ describe("Stage 6 — pure ranker", () => {
 
 	it("filters reminders flagged with excludeFromAI", () => {
 		const now = Date.now();
-		const r = fakeReminder({ dueAt: now - ONE_DAY_MS, excludeFromAI: true });
+		const r = fakeTask({ dueAt: now - ONE_DAY_MS, excludeFromAI: true });
 		const rows = computeRanking({
 			now,
 			reminders: [r],
@@ -254,9 +254,9 @@ describe("Stage 6 — pure ranker", () => {
 	it("respects the cap parameter", () => {
 		const now = Date.now();
 		const reminders = Array.from({ length: 5 }, (_, i) =>
-			fakeReminder({
-				_id: `r${i}` as unknown as Doc<"reminders">["_id"],
-				followUpCode: `FU-${String(i).padStart(3, "0")}`,
+			fakeTask({
+				_id: `t${i}` as unknown as Doc<"tasks">["_id"],
+				taskCode: `T-${String(i).padStart(3, "0")}`,
 				dueAt: now - (i + 1) * ONE_DAY_MS,
 			}),
 		);
@@ -309,9 +309,10 @@ describe("Stage 6 — rebuildForUser materialises rows", () => {
 				createdAt: now - 20 * ONE_DAY_MS,
 				updatedAt: now - 20 * ONE_DAY_MS,
 			});
-			await ctx.db.insert("reminders", {
+			await ctx.db.insert("tasks", {
 				orgId,
-				followUpCode: "FU-001",
+				taskCode: "T-001",
+				type: "todo",
 				personCode: "P-001",
 				entityType: "lead",
 				entityId: "ignored",
@@ -319,7 +320,6 @@ describe("Stage 6 — rebuildForUser materialises rows", () => {
 				dueAt: now - ONE_DAY_MS,
 				assignedTo: userId,
 				status: "pending",
-				source: "manual",
 				createdAt: now - 5 * ONE_DAY_MS,
 			});
 		});
@@ -335,7 +335,7 @@ describe("Stage 6 — rebuildForUser materialises rows", () => {
 		});
 		expect(out.count).toBe(2);
 		const codes = out.rows.map((r) => r.recordCode);
-		expect(codes).toContain("FU-001");
+		expect(codes).toContain("T-001");
 		expect(codes).toContain("P-001");
 	});
 
@@ -390,9 +390,10 @@ describe("Stage 6 — rebuildForUser materialises rows", () => {
 		const now = Date.now();
 		await t.run(async (ctx) => {
 			for (let i = 0; i < 5; i++) {
-				await ctx.db.insert("reminders", {
+				await ctx.db.insert("tasks", {
 					orgId,
-					followUpCode: `FU-${String(i).padStart(3, "0")}`,
+					taskCode: `T-${String(i).padStart(3, "0")}`,
+					type: "todo",
 					personCode: "P-001",
 					entityType: "lead",
 					entityId: "x",
@@ -400,7 +401,6 @@ describe("Stage 6 — rebuildForUser materialises rows", () => {
 					dueAt: now - (i + 1) * ONE_DAY_MS,
 					assignedTo: userId,
 					status: "pending",
-					source: "manual",
 					createdAt: now - 5 * ONE_DAY_MS,
 				});
 			}

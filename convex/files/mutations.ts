@@ -430,6 +430,118 @@ export const updateTagsForAI = internalMutation({
 });
 
 /**
+ * Re-scope an existing file row to a new (scope, scopeId) pair, optionally
+ * adding tags. Used by the AI surface to "attach this uploaded file to
+ * person P-001 / deal D-007" — the file was originally uploaded to a
+ * staging scope (chat composer typically writes scope="org"+orgId or
+ * scope="user"+userId) and the AI moves it onto the right entity tab so
+ * `list_files({ personCode: "P-001" })` surfaces it.
+ *
+ * Authz: same as `updateTags` — owner of the file OR `files.deleteAny`
+ * moderator. The mutation also validates the **new** scope/scopeId via
+ * the canonical `validateScopeId` helper (so the AI cannot attach to a
+ * non-existent record). The new scope's MIME-type policy is NOT
+ * re-evaluated here — re-attachment is a metadata-only operation; the
+ * org's max-size policy was already enforced at original upload time.
+ */
+async function attachImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		member: { permissions: string[] };
+		fileId: Id<"files">;
+		scope: string;
+		scopeId: string;
+		tags?: string[];
+	},
+) {
+	const file = await ctx.db.get(args.fileId);
+	if (!file || file.orgId !== args.orgId || file.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+
+	// Authz mirror of updateTagsImpl (re-scoping is a metadata edit, same
+	// gate). Owner of the file or a `files.deleteAny` moderator may move
+	// it; everyone else gets FORBIDDEN.
+	const isOwn = file.uploadedBy === args.userId;
+	const canEditAny = hasPermission(args.member.permissions, "files.deleteAny");
+	if (!(canEditAny || isOwn)) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	// Validate the destination — throws NOT_FOUND if the (scope, scopeId)
+	// pair doesn't resolve to an existing entity.
+	await validateScopeId(ctx, args.orgId, args.scope, args.scopeId);
+
+	// Tag merge: keep the existing tag list and union the new tags so the
+	// file remains discoverable from any prior cross-entity links (e.g. a
+	// file moved deal:D-001 → person:P-001 still surfaces under D-001 via
+	// the old tag).
+	const mergedTags = (() => {
+		const existing = file.tags ?? [];
+		const incoming = args.tags ?? [];
+		const set = new Set([...existing, ...incoming]);
+		return [...set];
+	})();
+
+	await ctx.db.patch(args.fileId, {
+		scope: args.scope,
+		scopeId: args.scopeId,
+		tags: mergedTags,
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "file_attached",
+		entityType: args.scope,
+		entityId: args.scopeId,
+		description: `File attached: ${file.name}`,
+		metadata: {
+			fileId: args.fileId,
+			previousScope: file.scope,
+			previousScopeId: file.scopeId,
+		},
+	});
+
+	return { fileId: args.fileId, scope: args.scope, scopeId: args.scopeId, tags: mergedTags };
+}
+
+export const attach = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		fileId: v.id("files"),
+		scope: v.string(),
+		scopeId: v.string(),
+		tags: v.optional(v.array(v.string())),
+	},
+	handler: async (ctx, args) => {
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "files.upload");
+		return attachImpl(ctx, { ...args, userId, member });
+	},
+});
+
+/** AI-callable internal twin. */
+export const attachForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		fileId: v.id("files"),
+		scope: v.string(),
+		scopeId: v.string(),
+		tags: v.optional(v.array(v.string())),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "files.upload");
+		return attachImpl(ctx, { ...args, member });
+	},
+});
+
+/**
  * Soft-delete a file row and purge the bytes from Convex File Storage.
  * Owner OR files.deleteAny moderator.
  */

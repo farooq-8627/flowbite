@@ -27,29 +27,61 @@
  *   - Migrations / dev `npx convex run` for one-off seeding.
  *   - Phase 3 AI tool `setup_workspace_from_template`.
  */
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { isKnownPermission } from "../../../_shared/permissions/derive";
 import { seedMockEntities } from "./mockSeeder";
-import { getTemplate } from "./registry";
 import type {
+	BriefingDefaultsSeed,
 	CodePrefixesSeed,
 	CustomRoleSeed,
 	FieldDefSeed,
 	FileUploadSeed,
-	FollowupDefaultsSeed,
 	IndustryTemplate,
 	ModuleSeed,
 	NoteCategorySeed,
 	PipelineSeed,
-	ReminderDefaultsSeed,
 	SavedViewSeed,
 	StageSeed,
 	TagSeed,
+	TaskDefaultsSeed,
 	WorkspaceDefaultsSeed,
 } from "./types";
+
+// ─── DB-backed template loader (Stage 1 of INDUSTRY-TEMPLATES-DB-MIGRATION) ─
+
+/**
+ * Fetch a template from the `platformTemplates` table and reconstruct
+ * the legacy `IndustryTemplate` shape the seeder expects (identity at
+ * top-level + every slot inline). Returns `null` when no row matches.
+ *
+ * Replaced the previous `getTemplate(id)` registry lookup in Stage 1 of
+ * INDUSTRY-TEMPLATES-DB-MIGRATION.md. Stage 3 (2026-05-27) deleted the
+ * registry + 9 TS definition files entirely — the 9 built-in template
+ * fixtures relocated to `convex/_platform/industries/builtIns/` as
+ * one-time bootstrap data. Runtime reads NEVER touch them.
+ */
+async function loadTemplateFromDB(
+	ctx: MutationCtx,
+	templateKey: string,
+): Promise<IndustryTemplate | null> {
+	const row = await ctx.db
+		.query("platformTemplates")
+		.withIndex("by_templateKey", (q) => q.eq("templateKey", templateKey))
+		.unique();
+	if (!row) return null;
+	const def = row.definition as Partial<IndustryTemplate>;
+	return {
+		id: row.templateKey,
+		label: row.label,
+		description: row.description,
+		icon: row.icon,
+		region: row.region,
+		...def,
+	} as IndustryTemplate;
+}
 
 // ─── nanoid (deterministic 12-char id used by the existing pipelines code) ──
 
@@ -222,8 +254,8 @@ async function patchOrgSettings(
 		defaults?: WorkspaceDefaultsSeed;
 		codePrefixes?: CodePrefixesSeed;
 		modules?: ModuleSeed[];
-		reminderDefaults?: ReminderDefaultsSeed;
-		followupDefaults?: FollowupDefaultsSeed;
+		taskDefaults?: TaskDefaultsSeed;
+		briefingDefaults?: BriefingDefaultsSeed;
 		fileUpload?: FileUploadSeed;
 		aiPersona?: string;
 		dashboardMetrics?: string[];
@@ -255,16 +287,16 @@ async function patchOrgSettings(
 			...args.codePrefixes,
 		};
 	}
-	if (args.reminderDefaults) {
-		newSettings.reminderDefaults = {
-			...(existingSettings.reminderDefaults ?? {}),
-			...args.reminderDefaults,
+	if (args.taskDefaults) {
+		newSettings.taskDefaults = {
+			...(existingSettings.taskDefaults ?? {}),
+			...args.taskDefaults,
 		};
 	}
-	if (args.followupDefaults) {
-		newSettings.followupDefaults = {
-			...(existingSettings.followupDefaults ?? {}),
-			...args.followupDefaults,
+	if (args.briefingDefaults) {
+		newSettings.briefingDefaults = {
+			...(existingSettings.briefingDefaults ?? {}),
+			...args.briefingDefaults,
 		};
 	}
 	if (args.fileUpload) {
@@ -555,12 +587,31 @@ export const setupWorkspaceFromTemplate = internalMutation({
 		actorUserId: v.optional(v.id("users")),
 	},
 	handler: async (ctx, args) => {
-		const t = getTemplate(args.templateId);
+		const t = await loadTemplateFromDB(ctx, args.templateId);
 		if (!t) {
-			throw new ConvexError({
-				code: "TEMPLATE_NOT_FOUND",
-				message: `Unknown industry template: ${args.templateId}`,
-			});
+			// Soft-fail (Stage 1 of INDUSTRY-TEMPLATES-DB-MIGRATION):
+			// when the platformTemplates row is missing the seeder
+			// returns a zeroed result instead of throwing. This keeps
+			// org creation working in:
+			//   - Test environments that haven't run the seed migration.
+			//   - Production deployments where the operator forgot to
+			//     run the migration (the org gets a blank workspace
+			//     that the owner can re-template via Settings →
+			//     Workspace).
+			//
+			// Callers that NEED a template seed (e.g. a future "force
+			// apply" admin action) must check `ok` on the return.
+			return {
+				ok: false as const,
+				templateId: args.templateId,
+				pipelineIds: [] as Id<"pipelines">[],
+				fieldsInserted: 0,
+				noteCategoriesInserted: 0,
+				tagsInserted: 0,
+				savedViewsInserted: 0,
+				customRolesInserted: 0,
+				mockInserted: 0,
+			};
 		}
 		const now = Date.now();
 
@@ -574,8 +625,8 @@ export const setupWorkspaceFromTemplate = internalMutation({
 				defaults: t.defaults,
 				codePrefixes: t.codePrefixes,
 				modules: t.modules,
-				reminderDefaults: t.reminderDefaults,
-				followupDefaults: t.followupDefaults,
+				taskDefaults: t.taskDefaults,
+				briefingDefaults: t.briefingDefaults,
 				fileUpload: t.fileUpload,
 				aiPersona: t.aiPersona,
 				dashboardMetrics: t.dashboardMetrics,

@@ -53,7 +53,6 @@ export const WIDGET_KEYS = [
 	"deals.open",
 	"deals.won",
 	"deals.pipelineValue",
-	"reminders.dueToday",
 	"tasks.dueToday",
 	"tasks.overdue",
 	"tasks.doneThisWeek",
@@ -64,7 +63,7 @@ export const WIDGET_KEYS = [
 	"deals.lost",
 	"deals.invoiced.unpaid",
 	// ── Section cards (rendered conditionally below the KPI strip) ──────
-	"reminders.list", // RemindersCard gate
+	"tasks.list", // TasksCard gate
 	"messages.recent", // MessagesPreviewWidget gate
 	"activity.recent", // TimelineActivityWidget gate
 	"calendar.weekAhead", // WeekAheadWidget gate (full width)
@@ -158,15 +157,10 @@ export const WIDGETS: Record<WidgetKey, WidgetMeta> = {
 		category: "crm",
 		size: "kpi",
 	},
-	"reminders.dueToday": {
-		label: "Due today",
-		description: "Reminders scheduled for today that are still pending.",
-		category: "scheduling",
-		size: "kpi",
-	},
 	"tasks.dueToday": {
 		label: "Tasks due today",
-		description: "Productivity-template variant of reminders.dueToday with task framing.",
+		description:
+			"Pending tasks scheduled for today (todo / call / email / meeting / followup).",
 		category: "productivity",
 		size: "kpi",
 	},
@@ -220,10 +214,10 @@ export const WIDGETS: Record<WidgetKey, WidgetMeta> = {
 	},
 
 	// ── Section cards (gated below the KPI strip) ───────────────────────
-	"reminders.list": {
-		label: "Reminders & follow-ups",
+	"tasks.list": {
+		label: "Tasks",
 		description:
-			"Card surfacing today's + overdue reminders with inline create. Gates the dashboard's RemindersCard.",
+			"Card surfacing today's + overdue tasks (todo / call / email / meeting / followup) with inline create. Gates the dashboard's TasksCard.",
 		category: "scheduling",
 		size: "half",
 	},

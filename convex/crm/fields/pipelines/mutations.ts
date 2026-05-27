@@ -23,7 +23,7 @@ import {
 } from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../../../_generated/server";
-import { getPlanLimits, isWithinLimit, type PlanTier } from "../../../_platform/limits";
+import { getPlanLimitsFromDb, isWithinLimit, type PlanTier } from "../../../_platform/limits";
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { logActivity } from "../../../activityLogs/helpers";
@@ -127,7 +127,7 @@ async function createImpl(
 ) {
 	const org = await ctx.db.get(args.orgId);
 	const tier: PlanTier = (org?.plan as PlanTier | undefined) ?? "free";
-	const limits = getPlanLimits(tier);
+	const limits = await getPlanLimitsFromDb(ctx, tier);
 	const existingForType = await ctx.db
 		.query("pipelines")
 		.withIndex("by_org_and_entity", (q) =>
@@ -389,6 +389,9 @@ async function updateStageImpl(
 		code?: string;
 		color?: string;
 		staleAfterDays?: number;
+		warningAfterDays?: number;
+		isFinal?: boolean;
+		finalType?: "positive" | "negative" | "neutral";
 	},
 ) {
 	const pipeline = await ctx.db.get(args.pipelineId);
@@ -406,15 +409,22 @@ async function updateStageImpl(
 		if (err) throw new ConvexError({ code: "INVALID_STAGE_CODE", message: err });
 	}
 
+	// Clearing `isFinal` clears `finalType` automatically — a non-final
+	// stage can't carry a final classification.
 	const stages = pipeline.stages.map((s) => {
 		if (s.id !== args.stageId) return s;
-		return {
+		const next = {
 			...s,
 			name: args.name ?? s.name,
 			code: args.code ?? s.code,
 			color: args.color ?? s.color,
 			staleAfterDays: args.staleAfterDays ?? s.staleAfterDays,
-		};
+			warningAfterDays: args.warningAfterDays ?? s.warningAfterDays,
+			isFinal: args.isFinal ?? s.isFinal,
+			finalType: args.finalType ?? s.finalType,
+		} as typeof s;
+		if (next.isFinal === false) next.finalType = undefined;
+		return next;
 	});
 
 	await ctx.db.patch(args.pipelineId, { stages, updatedAt: Date.now() });
@@ -429,6 +439,11 @@ export const updateStage = orgMutation({
 		code: v.optional(v.string()),
 		color: v.optional(v.string()),
 		staleAfterDays: v.optional(v.number()),
+		warningAfterDays: v.optional(v.number()),
+		isFinal: v.optional(v.boolean()),
+		finalType: v.optional(
+			v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+		),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
@@ -448,6 +463,11 @@ export const updateStageForAI = internalMutation({
 		code: v.optional(v.string()),
 		color: v.optional(v.string()),
 		staleAfterDays: v.optional(v.number()),
+		warningAfterDays: v.optional(v.number()),
+		isFinal: v.optional(v.boolean()),
+		finalType: v.optional(
+			v.union(v.literal("positive"), v.literal("negative"), v.literal("neutral")),
+		),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);

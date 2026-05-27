@@ -49,7 +49,6 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { logActivity } from "../activityLogs/helpers";
 import { logFieldUpdates } from "./fieldUpdateLog";
 import { normaliseCode } from "./synonyms";
 
@@ -317,6 +316,29 @@ export async function applyEntityPatchByCodeImpl(
 		definitionsByName: defByName,
 	});
 
+	// BEFORE/AFTER capture for custom fields — pre-read every existing
+	// `fieldValues` row for this entity in one indexed query so we can
+	// emit per-field activity logs (instead of a single "custom fields
+	// updated: x, y, z" line). The `by_entity` index is keyed on
+	// (orgId, entityType, entityId) so the read cost is bounded by the
+	// number of custom values already on the row.
+	const previousFieldValueRows =
+		split.customFields.length > 0
+			? await ctx.db
+					.query("fieldValues")
+					.withIndex("by_entity", (q) =>
+						q
+							.eq("orgId", args.orgId)
+							.eq("entityType", args.entityType)
+							.eq("entityId", resolved.row._id as unknown as string),
+					)
+					.collect()
+			: [];
+	const prevCustomValuesByName = new Map<string, unknown>();
+	for (const row of previousFieldValueRows) {
+		prevCustomValuesByName.set(row.fieldName, row.value);
+	}
+
 	const before = resolved.row as unknown as Record<string, unknown>;
 	const now = Date.now();
 	const rowPatch: Record<string, unknown> = { ...split.columnPatch };
@@ -377,16 +399,35 @@ export async function applyEntityPatchByCodeImpl(
 	}
 
 	if (split.customFields.length > 0) {
-		await logActivity(ctx, {
+		// Per-field activity logs for custom fields — mirrors the
+		// `logFieldUpdates` shape so the timeline can render each
+		// custom-field change with the same headline + metadata it
+		// uses for column-field changes. Pre-fetched
+		// `prevCustomValuesByName` provides the BEFORE values; new
+		// values come from `split.customFields`.
+		const customBefore: Record<string, unknown> = {};
+		const customAfter: Record<string, unknown> = {};
+		const customFieldNames: string[] = [];
+		for (const cf of split.customFields) {
+			customFieldNames.push(cf.name);
+			customBefore[cf.name] = prevCustomValuesByName.get(cf.name);
+			customAfter[cf.name] = cf.value;
+		}
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId: args.userId,
-			action: "field_updated",
 			entityType: args.entityType,
 			entityId: resolved.row._id as never,
 			personCode: (resolved.row as { personCode?: string }).personCode,
-			description: `${args.entityType} custom fields updated: ${split.customFields
-				.map((f) => f.name)
-				.join(", ")}`,
+			displayName:
+				(resolved.row as { displayName?: string; title?: string; name?: string })
+					.displayName ??
+				(resolved.row as { title?: string }).title ??
+				(resolved.row as { name?: string }).name ??
+				"",
+			before: customBefore,
+			after: customAfter,
+			fields: customFieldNames,
 		});
 	}
 
@@ -432,6 +473,23 @@ export async function applyCustomFieldsForRecordImpl(
 		if (!defByName.has(def.name)) defByName.set(def.name, def);
 	}
 
+	// Pre-fetch existing field values so we can emit per-field BEFORE/AFTER
+	// activity logs. For freshly-created records most BEFOREs will be
+	// undefined (`—` in the timeline) — still useful for the headline.
+	const previousFieldValueRows = await ctx.db
+		.query("fieldValues")
+		.withIndex("by_entity", (q) =>
+			q
+				.eq("orgId", args.orgId)
+				.eq("entityType", args.entityType)
+				.eq("entityId", args.entityId),
+		)
+		.collect();
+	const prevValuesByName = new Map<string, unknown>();
+	for (const row of previousFieldValueRows) {
+		prevValuesByName.set(row.fieldName, row.value);
+	}
+
 	const applied: Array<{ name: string; value: unknown }> = [];
 	const unknown: string[] = [];
 	for (const [name, value] of Object.entries(args.customFields)) {
@@ -453,15 +511,25 @@ export async function applyCustomFieldsForRecordImpl(
 	}
 
 	if (applied.length > 0) {
-		await logActivity(ctx, {
+		// Per-field BEFORE/AFTER activity logs — same shape as the
+		// column-field path so the timeline reads identically across
+		// canonical column changes and custom-field changes.
+		const customBefore: Record<string, unknown> = {};
+		const customAfter: Record<string, unknown> = {};
+		const fieldNames: string[] = [];
+		for (const cf of applied) {
+			fieldNames.push(cf.name);
+			customBefore[cf.name] = prevValuesByName.get(cf.name);
+			customAfter[cf.name] = cf.value;
+		}
+		await logFieldUpdates(ctx, {
 			orgId: args.orgId,
 			userId: args.userId,
-			action: "field_updated",
 			entityType: args.entityType,
-			entityId: args.entityId as never,
-			description: `${args.entityType} custom fields updated: ${applied
-				.map((f) => f.name)
-				.join(", ")}`,
+			entityId: args.entityId,
+			before: customBefore,
+			after: customAfter,
+			fields: fieldNames,
 		});
 	}
 

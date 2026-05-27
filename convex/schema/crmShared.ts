@@ -313,33 +313,26 @@ export const messages = defineTable({
 	.index("by_replyTo", ["replyToId"])
 	.index("by_org_and_idempotency", ["orgId", "conversationId", "idempotencyKey"]);
 
-// ─── Reminders ────────────────────────────────────────────────────────────────
+// ─── Tasks ────────────────────────────────────────────────────────────────────
 
 /**
- * Follow-up reminders. followUpCode auto-generated (FU-001).
- *
- * Doctrine (locked 2026-05-19):
- *   - There is NO separate `followUps` table. Every reminder carries a
- *     `followUpCode` AND a `source`. The "Follow-ups" UI surface is a
- *     reminders subset where `source === "followup"` — see
- *     CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
- *
- * 2026-05-19 schema additions (all backwards-compatible — optional fields,
- * additive index, source narrowed via migration):
- *   - `source` narrowed from free-form `v.string()` to a closed `v.union`.
- *     Migration `_migrations/tightenReminderSourceAndAddPriority.ts` maps
- *     legacy values onto the new literals.
- *   - `priority` (optional) — used by the Follow-ups view for triage.
- *   - `updatedAt` (optional) — pre-existing rows pass without it; the
- *     migration backfills `updatedAt = createdAt` so optimistic-update
- *     consumers can rely on the field.
- *   - New index `by_org_and_source_and_due` powers the Follow-ups filter
- *     without scanning the whole reminders table.
+ * The canonical scheduling table. Replaces the legacy `reminders` +
+ * `followups` UX per TASKS-RENAME-PLAN.md (Stage 4D landed the schema
+ * removal). One table, one `type` discriminator
+ * (`todo`/`call`/`email`/`meeting`/`followup`), one auto-generated
+ * public code (`T-001`).
  */
-export const reminders = defineTable({
+export const tasks = defineTable({
 	...orgScoped,
-	followUpCode: v.string(),
-	personCode: v.string(),
+	taskCode: v.string(),
+	type: v.union(
+		v.literal("todo"),
+		v.literal("call"),
+		v.literal("email"),
+		v.literal("meeting"),
+		v.literal("followup"),
+	),
+	personCode: v.optional(v.string()),
 	dealCode: v.optional(v.string()),
 	entityType: v.string(),
 	entityId: v.string(),
@@ -347,44 +340,20 @@ export const reminders = defineTable({
 	note: v.optional(v.string()),
 	dueAt: v.number(),
 	assignedTo: v.id("users"),
-	status: v.string(),
+	status: v.union(v.literal("pending"), v.literal("completed")),
 	completedAt: v.optional(v.number()),
-	/**
-	 * How this reminder was created. Closed union — drives:
-	 *   - the Follow-ups view filter (`source === "followup"`)
-	 *   - the calendar event-source colour palette
-	 *   - the AI tool-to-source mapping (`create_followup` → "followup",
-	 *     `create_reminder` → "manual", etc.)
-	 */
-	source: v.union(
-		v.literal("manual"), // user typed it directly
-		v.literal("followup"), // created from a "follow up with X" affordance
-		v.literal("calendar"), // created from a calendar slot click
-		v.literal("ai"), // created by an AI tool
-		v.literal("note"), // created from a note's "Set reminder" menu
-		v.literal("system"), // created by an automation rule / system
-	),
-	/**
-	 * Optional triage priority. The Reminders surface ignores this; the
-	 * Follow-ups surface uses it for sort order + chip color.
-	 */
 	priority: v.optional(
 		v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent")),
 	),
 	createdAt: v.number(),
-	/**
-	 * Optional — backfilled by the 2026-05-19 migration to `createdAt` for
-	 * legacy rows. Mutations keep this fresh going forward.
-	 */
 	updatedAt: v.optional(v.number()),
 	...aiExcluded,
 })
 	.index("by_org_and_person", ["orgId", "personCode"])
 	.index("by_org_and_due", ["orgId", "dueAt"])
-	.index("by_org_and_status", ["orgId", "status"])
 	.index("by_org_and_status_and_due", ["orgId", "status", "dueAt"])
-	.index("by_org_and_source_and_due", ["orgId", "source", "dueAt"])
-	.index("by_org_and_followUpCode", ["orgId", "followUpCode"])
+	.index("by_org_and_taskCode", ["orgId", "taskCode"])
+	.index("by_org_and_type_and_due", ["orgId", "type", "dueAt"])
 	.index("by_user_and_due", ["assignedTo", "dueAt"]);
 
 // ─── Tags / entityTags / savedViews / companyMembers ─────────────────────────

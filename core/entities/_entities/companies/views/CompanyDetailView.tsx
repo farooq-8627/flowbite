@@ -79,7 +79,7 @@ import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
 import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
-import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
+import { TasksPanel } from "@/core/scheduling/tasks/panels/TasksPanel";
 import { useCurrentOrg, useOrgMemberMap } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityHref } from "@/core/shell/shared/hooks/useEntityHref";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
@@ -284,7 +284,11 @@ function CompanyShell({ orgSlug, company, orgId }: CompanyShellProps) {
 				)}
 				{activeTab === "followups" && (
 					<div className="p-3 sm:p-4">
-						<EntityFollowups entityType="company" entityId={company.companyCode} />
+						<TasksPanel
+							entityType="company"
+							entityId={company.companyCode}
+							type="followup"
+						/>
 					</div>
 				)}
 				{activeTab === "calendar" && (
@@ -500,7 +504,11 @@ function CompanyOverviewTab({ company, orgId, assignee }: CompanyOverviewTabProp
 						<CardTitle className="text-sm">Open follow-ups</CardTitle>
 					</CardHeader>
 					<CardContent>
-						<EntityFollowups entityType="company" entityId={company.companyCode} />
+						<TasksPanel
+							entityType="company"
+							entityId={company.companyCode}
+							type="followup"
+						/>
 					</CardContent>
 				</Card>
 

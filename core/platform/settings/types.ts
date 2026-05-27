@@ -24,7 +24,7 @@ export type OrgSettings = {
 			person?: string;
 			deal?: string;
 			company?: string;
-			followup?: string;
+			task?: string;
 		};
 		modules?: Array<{
 			slot: string;
@@ -37,26 +37,27 @@ export type OrgSettings = {
 			boardGroupBy?: string;
 		}>;
 		badgeCountsVisible?: boolean;
-		reminderDefaults?: {
-			followUpWindowHours?: number;
-			staleAlertDays?: number;
-			morningBriefingEnabled?: boolean;
-			morningBriefingTime?: string;
-			rentAlertDays?: number;
-			rentAlertEnabled?: boolean;
-		};
 		/**
-		 * Follow-up cadence defaults — apply to reminders with
-		 * `source === "followup"` only. See
-		 * CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
+		 * Task cadence defaults — apply to tasks with
+		 * `type === "followup"` only. Replaces the legacy
+		 * `followupDefaults` block.
 		 */
-		followupDefaults?: {
+		taskDefaults?: {
 			defaultDueOffsetDays?: number;
 			defaultPriority?: "low" | "normal" | "high" | "urgent";
 			autoCloseAfterDays?: number;
 			notifyAssignee?: boolean;
 			requireDealCode?: boolean;
 			reminderBeforeHours?: number;
+		};
+		/**
+		 * Workspace toggle + hour for the AI morning briefing.
+		 * Stage 4D split this out of the dropped `reminderDefaults`
+		 * block so it lives next to the briefing surfaces that consume it.
+		 */
+		briefingDefaults?: {
+			morningBriefingEnabled?: boolean;
+			morningBriefingTime?: string;
 		};
 		/**
 		 * File upload policy. Controls which file categories are accepted

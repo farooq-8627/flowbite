@@ -43,7 +43,7 @@ const DEFAULT_INTERVAL_MINUTES = 60;
 
 const AUTONOMY_FIELDS: Array<{
 	key:
-		| "autoFollowupOnStageMove"
+		| "autoTaskOnStageMove"
 		| "autoEnrichOnContactCreate"
 		| "autoTagOnNote"
 		| "weeklyDigestEmail";
@@ -51,10 +51,10 @@ const AUTONOMY_FIELDS: Array<{
 	description: string;
 }> = [
 	{
-		key: "autoFollowupOnStageMove",
-		label: "Auto-followup on stage move",
+		key: "autoTaskOnStageMove",
+		label: "Auto follow-up task on stage move",
 		description:
-			"When a deal moves to a stage that has a default follow-up template, automatically schedule the follow-up reminder.",
+			"When a deal moves to a stage that has a default follow-up template, automatically schedule a follow-up task.",
 	},
 	{
 		key: "autoEnrichOnContactCreate",
@@ -83,7 +83,7 @@ function AutonomyTogglesCard({ orgId }: { orgId: Id<"orgs"> }) {
 
 	async function toggle(
 		key:
-			| "autoFollowupOnStageMove"
+			| "autoTaskOnStageMove"
 			| "autoEnrichOnContactCreate"
 			| "autoTagOnNote"
 			| "weeklyDigestEmail",

@@ -3,42 +3,19 @@
 /**
  * CalendarView — org-wide calendar page.
  *
- * STATUS: IMPLEMENTED.
- *
- * Architecture (per SCHEDULING-IMPLEMENTATION.md §1.1, §4.1):
+ * Architecture:
  *   - ONE Convex subscription: `useCalendarEvents({ orgId, rangeStart,
  *     rangeEnd, scope: "org", sources })`. Range is computed locally by
  *     `getRangeForView` so the subscription tracks the visible window
  *     only.
  *   - Sidebar + Main grid + Filters all derive from the same array.
- *   - Reminder mutations (complete/delete) re-use the optimistic-update
- *     hooks from the reminders module, so state updates feel instant.
- *
- * Layout:
- *   ┌─────────────────────────────────────────────────────────┐
- *   │                                              CalendarToolbar
- *   ├──────────────┬──────────────────────────────────────────┤
- *   │ Sidebar      │ CalendarMain                             │
- *   │ (mini-cal +  │ (month / week / day / list)              │
- *   │  filters +   │                                          │
- *   │  + add)      │                                          │
- *   └──────────────┴──────────────────────────────────────────┘
+ *   - Task mutations (complete/delete/update) re-use the optimistic-
+ *     update hooks from the tasks module, so state updates feel instant.
  *
  * Permissions:
- *   - `reminders.view` is checked server-side in the calendar query.
- *     The sidebar is visible to anyone who reaches this page.
- *   - `reminders.create` gates the "+ New event" button.
- *   - `reminders.manage` gates the in-popover Complete/Edit/Delete
- *     buttons; the parent passes `canManageReminder` through to
- *     `<CalendarMain>`.
- *
- * UX notes (one-click low friction):
- *   - Clicking any day in the month grid both selects it AND auto-opens
- *     the new-event drawer with that date pre-filled.
- *   - The mini-cal in the sidebar mirrors `selectedDate`.
- *   - Today button + view-mode tabs let the user pivot without a reload.
- *   - Search filters the visible window (client-side text match on
- *     title) — the Convex query stays the same.
+ *   - `tasks.view` is checked server-side in the calendar query.
+ *   - `tasks.create` gates the "+ New event" button.
+ *   - `tasks.manage` gates the in-popover Complete/Edit/Delete buttons.
  */
 
 import { useConvex } from "convex/react";
@@ -60,11 +37,7 @@ import {
 	useCalendarFilters,
 	useCalendarViewMode,
 } from "@/core/scheduling/calendar/hooks/useCalendarViewMode";
-import {
-	useCompleteReminder,
-	useDeleteReminder,
-	useUpdateReminder,
-} from "@/core/scheduling/reminders/hooks";
+import { useCompleteTask, useDeleteTask, useUpdateTask } from "@/core/scheduling/tasks/hooks";
 import { useCurrentOrg, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 import { CalendarMain } from "../components/CalendarMain";
@@ -76,8 +49,8 @@ import { getRangeForView } from "../lib/calendar-grid";
 export function CalendarView() {
 	const { orgId } = useCurrentOrg();
 	const permissions = useOrgPermissions();
-	const canCreate = permissions.includes("reminders.create");
-	const canManage = permissions.includes("reminders.manage");
+	const canCreate = permissions.includes("tasks.create");
+	const canManage = permissions.includes("tasks.manage");
 
 	const { viewMode, setViewMode, selectedDate, setSelectedDate, today } = useCalendarViewMode();
 	const { sources } = useCalendarFilters();
@@ -104,7 +77,7 @@ export function CalendarView() {
 
 	// ── Form state (create + edit) ───────────────────────────────────
 	const [formOpen, setFormOpen] = useState(false);
-	const [editingReminder, setEditingReminder] = useState<Doc<"reminders"> | null>(null);
+	const [editingTask, setEditingTask] = useState<Doc<"tasks"> | null>(null);
 	const [createDefaults, setCreateDefaults] = useState<{
 		startsAt?: number;
 		personCode?: string;
@@ -115,16 +88,16 @@ export function CalendarView() {
 	} | null>(null);
 
 	const openCreate = useCallback((date?: Date) => {
-		setEditingReminder(null);
+		setEditingTask(null);
 		setCreateDefaults(date ? { startsAt: date.getTime() } : null);
 		setFormOpen(true);
 	}, []);
 
-	// ── Reminder action handlers (Complete / Edit / Delete from popover) ─
-	const completeReminder = useCompleteReminder();
-	const deleteReminder = useDeleteReminder();
-	const updateReminder = useUpdateReminder();
-	const [deletingReminderId, setDeletingReminderId] = useState<Id<"reminders"> | null>(null);
+	// ── Task action handlers (Complete / Edit / Delete from popover) ─
+	const completeTask = useCompleteTask();
+	const deleteTask = useDeleteTask();
+	const updateTask = useUpdateTask();
+	const [deletingTaskId, setDeletingTaskId] = useState<Id<"tasks"> | null>(null);
 	const [deletingTitle, setDeletingTitle] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
 
@@ -132,64 +105,63 @@ export function CalendarView() {
 	const handleReschedule = useCallback(
 		async (event: { id: string; startsAt: number }, newDate: Date) => {
 			if (!orgId) return;
-			const reminderId = parseReminderIdFromDtoId(event.id);
-			if (!reminderId) return;
-			// Preserve the original time-of-day, just change the date.
+			const taskId = parseTaskIdFromDtoId(event.id);
+			if (!taskId) return;
 			const original = new Date(event.startsAt);
 			const newDueAt = new Date(newDate);
 			newDueAt.setHours(original.getHours(), original.getMinutes(), 0, 0);
 			try {
-				await updateReminder({
+				await updateTask({
 					orgId,
-					reminderId: reminderId as Id<"reminders">,
+					taskId: taskId as Id<"tasks">,
 					dueAt: newDueAt.getTime(),
 				});
-				toast.success("Reminder rescheduled");
+				toast.success("Task rescheduled");
 			} catch (err) {
 				toast.mutationError(err, "Couldn't reschedule");
 			}
 		},
-		[orgId, updateReminder],
+		[orgId, updateTask],
 	);
 
 	const handleCompleteFromPopover = useCallback(
 		async (event: { id: string; meta?: Record<string, unknown> }) => {
 			if (!orgId) return;
-			const reminderId = parseReminderIdFromDtoId(event.id);
-			if (!reminderId) return;
+			const taskId = parseTaskIdFromDtoId(event.id);
+			if (!taskId) return;
 			try {
-				await completeReminder({ orgId, reminderId: reminderId as Id<"reminders"> });
-				toast.success("Reminder completed");
+				await completeTask({ orgId, taskId: taskId as Id<"tasks"> });
+				toast.success("Task completed");
 			} catch (err) {
-				toast.mutationError(err, "Couldn't complete reminder");
+				toast.mutationError(err, "Couldn't complete task");
 			}
 		},
-		[orgId, completeReminder],
+		[orgId, completeTask],
 	);
 
-	// To edit a reminder from the calendar, fetch the full doc on demand.
+	// To edit a task from the calendar, fetch the full doc on demand.
 	const convex = useConvex();
 	const handleEditFromPopover = useCallback(
 		async (event: { id: string; meta?: Record<string, unknown> }) => {
 			if (!orgId) return;
-			const reminderId = parseReminderIdFromDtoId(event.id);
-			if (!reminderId) {
-				toast.info("Only reminders can be edited from the calendar.");
+			const taskId = parseTaskIdFromDtoId(event.id);
+			if (!taskId) {
+				toast.info("Only tasks can be edited from the calendar.");
 				return;
 			}
 			try {
-				const doc = await convex.query(api.crm.shared.reminders.queries.getById, {
+				const doc = await convex.query(api.crm.shared.tasks.queries.getById, {
 					orgId,
-					reminderId: reminderId as Id<"reminders">,
+					taskId: taskId as Id<"tasks">,
 				});
 				if (!doc) {
-					toast.error("Reminder not found");
+					toast.error("Task not found");
 					return;
 				}
-				setEditingReminder(doc as Doc<"reminders">);
+				setEditingTask(doc as Doc<"tasks">);
 				setFormOpen(true);
 			} catch {
-				toast.error("Couldn't load reminder for editing");
+				toast.error("Couldn't load task for editing");
 			}
 		},
 		[orgId, convex],
@@ -197,24 +169,24 @@ export function CalendarView() {
 
 	const handleDeleteFromPopover = useCallback(
 		(event: { id: string; title: string; meta?: Record<string, unknown> }) => {
-			const reminderId = parseReminderIdFromDtoId(event.id);
-			if (!reminderId) return;
-			setDeletingReminderId(reminderId as Id<"reminders">);
+			const taskId = parseTaskIdFromDtoId(event.id);
+			if (!taskId) return;
+			setDeletingTaskId(taskId as Id<"tasks">);
 			setDeletingTitle(event.title);
 		},
 		[],
 	);
 
 	async function confirmDelete() {
-		if (!deletingReminderId || !orgId) return;
+		if (!deletingTaskId || !orgId) return;
 		setDeleting(true);
 		try {
-			await deleteReminder({ orgId, reminderId: deletingReminderId });
-			toast.success("Reminder deleted");
-			setDeletingReminderId(null);
+			await deleteTask({ orgId, taskId: deletingTaskId });
+			toast.success("Task deleted");
+			setDeletingTaskId(null);
 			setDeletingTitle(null);
 		} catch (err) {
-			toast.mutationError(err, "Couldn't delete reminder");
+			toast.mutationError(err, "Couldn't delete task");
 		} finally {
 			setDeleting(false);
 		}
@@ -237,7 +209,6 @@ export function CalendarView() {
 			/>
 
 			<div className="grid h-full min-h-0 min-w-0 flex-1 grid-cols-1 xl:grid-cols-[18rem_1fr]">
-				{/* Sidebar — collapses on small viewports */}
 				<div className="hidden xl:block">
 					<CalendarSidebar
 						selectedDate={selectedDate}
@@ -247,7 +218,6 @@ export function CalendarView() {
 					/>
 				</div>
 
-				{/* Grid */}
 				<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 					<CalendarMain
 						viewMode={viewMode}
@@ -268,24 +238,24 @@ export function CalendarView() {
 			<EventForm
 				open={formOpen}
 				onOpenChange={setFormOpen}
-				reminder={editingReminder}
+				task={editingTask}
 				defaults={createDefaults ?? undefined}
 			/>
 
 			<AlertDialog
-				open={!!deletingReminderId}
+				open={!!deletingTaskId}
 				onOpenChange={(v) => {
 					if (!v) {
-						setDeletingReminderId(null);
+						setDeletingTaskId(null);
 						setDeletingTitle(null);
 					}
 				}}
 			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete this reminder?</AlertDialogTitle>
+						<AlertDialogTitle>Delete this task?</AlertDialogTitle>
 						<AlertDialogDescription>
-							{deletingTitle ?? "Reminder"}. This can't be undone.
+							{deletingTitle ?? "Task"}. This can't be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
@@ -307,8 +277,9 @@ export function CalendarView() {
 	);
 }
 
-/** DTO ids look like "reminder:<convexId>". Strip the prefix for mutations. */
-function parseReminderIdFromDtoId(id: string): string | null {
-	if (!id.startsWith("reminder:")) return null;
-	return id.slice("reminder:".length);
+/** DTO ids look like "task:<convexId>". Strip the prefix for mutations. */
+function parseTaskIdFromDtoId(id: string): string | null {
+	if (id.startsWith("task:")) return id.slice("task:".length);
+	if (id.startsWith("reminder:")) return id.slice("reminder:".length);
+	return null;
 }

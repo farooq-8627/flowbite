@@ -17,12 +17,12 @@
  *   - `entityType` is a closed union of the six trash-aware entities.
  *   - `entityCode` covers lead/contact/deal/company (P-XXX, D-XXX, C-XXX
  *     prefixes — interpreted via `_shared/recordCodes.ts`).
- *   - `followUpCode` covers reminder (FU-XXX).
+ *   - `taskCode` covers task (T-XXX).
  *   - `noteId` covers note (raw Convex id — notes have no public code).
  *
  * The propose path resolves the lookup via
  * `getEntityCascadeImpact` (read-only), surfaces the cascade summary
- * ("this will trash 3 deals + 2 notes + 1 reminder"), and returns a
+ * ("this will trash 3 deals + 2 notes + 1 task"), and returns a
  * confirmation payload. The commit path calls the matching
  * `softDeleteForAI` mutation. We deliberately re-resolve at commit time
  * (instead of forwarding the resolved id from propose) so the soft-
@@ -35,7 +35,7 @@
  *   - deal     → deals.delete
  *   - company  → companies.delete
  *   - note     → notes.deleteOwn (own) OR notes.deleteAny (admin)
- *   - reminder → assignee OR reminders.manage
+ *   - task     → assignee OR tasks.manage
  *
  * Per-tool rate limit is the same one the underlying mutation enforces;
  * a separate `entity.delete` budget would just shadow it without adding
@@ -49,7 +49,7 @@ import { registerTool } from "../../toolRegistry";
 import { optionalString, propose, requirePermission, runTool, toolMutation } from "../_shared";
 import { getCrudCtx } from "./_context";
 
-const ENTITY_TYPE_ENUM = z.enum(["lead", "contact", "deal", "company", "note", "reminder"]);
+const ENTITY_TYPE_ENUM = z.enum(["lead", "contact", "deal", "company", "note", "task"]);
 
 type DeletableEntityType = z.infer<typeof ENTITY_TYPE_ENUM>;
 
@@ -58,18 +58,8 @@ const PERMISSION_FOR_TYPE: Record<DeletableEntityType, string> = {
 	contact: "contacts.delete",
 	deal: "deals.delete",
 	company: "companies.delete",
-	// Notes are gated by the underlying mutation — owner with notes.deleteOwn
-	// or admin with notes.deleteAny. The expand_tools surface still wants a
-	// single permission key to filter on; `notes.deleteOwn` is the
-	// most-permissive seed-default that any note-creator already holds.
 	note: "notes.deleteOwn",
-	// Reminders: the underlying mutation accepts the assignee OR a member
-	// with `reminders.manage`. Same logic — `reminders.manage` is the
-	// admin-grant; surfacing the tool to assignees too would require a
-	// runtime member check, so we filter on the strongest gate at the
-	// tool level. The mutation still permits the assignee path at
-	// execute time.
-	reminder: "reminders.manage",
+	task: "tasks.manage",
 };
 
 function describeCascade(cascade: CascadeImpactResult & { kind: "found" }): string {
@@ -77,8 +67,7 @@ function describeCascade(cascade: CascadeImpactResult & { kind: "found" }): stri
 	const parts: string[] = [];
 	if (c.deals && c.deals > 0) parts.push(`${c.deals} open deal${c.deals === 1 ? "" : "s"}`);
 	if (c.notes && c.notes > 0) parts.push(`${c.notes} note${c.notes === 1 ? "" : "s"}`);
-	if (c.reminders && c.reminders > 0)
-		parts.push(`${c.reminders} reminder${c.reminders === 1 ? "" : "s"}`);
+	if (c.tasks && c.tasks > 0) parts.push(`${c.tasks} task${c.tasks === 1 ? "" : "s"}`);
 	if (c.memberLinks && c.memberLinks > 0)
 		parts.push(`${c.memberLinks} person link${c.memberLinks === 1 ? "" : "s"}`);
 	if (parts.length === 0) return "Nothing else will be affected.";
@@ -92,13 +81,13 @@ registerTool({
 	confirmation: "twoStep",
 	approvalCategory: "delete_record",
 	description:
-		"Soft-delete any entity (lead, contact, deal, company, note, or reminder). Shows a confirmation card with cascade impact before any write.",
+		"Soft-delete any entity (lead, contact, deal, company, note, or task). Shows a confirmation card with cascade impact before any write.",
 	instruction: {
 		whenToCall:
 			"User asks to delete / remove / trash any entity. Always call this — never the bulk-update workaround. Soft-delete only; the row goes to trash and can be restored via restore_entity.",
 		whenNotToCall:
 			"the user wants to permanently purge data (not supported — trash auto-purges via the org's retention setting) OR wants to convert/archive instead of delete (use the convert / archive flow for the relevant entity).",
-		preflight: ["search_crm", "list_followups_for_person"],
+		preflight: ["search_crm", "list_tasks_for_person"],
 		requiredClarifications: ["entityType"],
 		synonyms: ["delete", "remove", "trash", "throw away", "drop", "kill", "scrap"],
 		goodExample: {
@@ -114,7 +103,7 @@ registerTool({
 	},
 	runbook: {
 		onSuccess:
-			"Reply with ONE concise sentence ('Deleted L-014 (Sara Khan). 2 notes + 1 reminder went to trash too.'). Mention the cascade only if non-zero. Don't restate the propose card.",
+			"Reply with ONE concise sentence ('Deleted L-014 (Sara Khan). 2 notes + 1 task went to trash too.'). Mention the cascade only if non-zero. Don't restate the propose card.",
 		onValidationError:
 			"If the code/id doesn't resolve, do NOT retry — call search_crm to find the right record first.",
 		onPermissionDenied:
@@ -127,17 +116,17 @@ registerTool({
 			entityCode: optionalString().describe(
 				"Public code for lead/contact/deal/company (P-XXX / D-XXX / C-XXX).",
 			),
-			followUpCode: optionalString().describe("FU-XXX code for entityType=reminder."),
+			taskCode: optionalString().describe("T-XXX code for entityType=task."),
 			noteId: optionalString().describe("Raw Convex id for entityType=note."),
 		})
 		.refine(
 			(v) =>
 				(["lead", "contact", "deal", "company"].includes(v.entityType) && !!v.entityCode) ||
-				(v.entityType === "reminder" && !!v.followUpCode) ||
+				(v.entityType === "task" && !!v.taskCode) ||
 				(v.entityType === "note" && !!v.noteId),
 			{
 				message:
-					"Pass entityCode for lead/contact/deal/company, followUpCode for reminder, or noteId for note.",
+					"Pass entityCode for lead/contact/deal/company, taskCode for task, or noteId for note.",
 			},
 		),
 	execute: async (args) => {
@@ -155,7 +144,7 @@ registerTool({
 					userId: tc.userId,
 					entityType,
 					...(args.entityCode ? { entityCode: args.entityCode } : {}),
-					...(args.followUpCode ? { followUpCode: args.followUpCode } : {}),
+					...(args.taskCode ? { taskCode: args.taskCode } : {}),
 					...(args.noteId
 						? {
 								noteId: args.noteId as never, // narrowed by schema refine
@@ -202,7 +191,7 @@ registerTool({
 	schema: z.object({
 		entityType: ENTITY_TYPE_ENUM,
 		entityCode: optionalString(),
-		followUpCode: optionalString(),
+		taskCode: optionalString(),
 		noteId: optionalString(),
 	}),
 	execute: async (args) =>
@@ -221,7 +210,7 @@ registerTool({
 					userId: tc.userId,
 					entityType,
 					...(args.entityCode ? { entityCode: args.entityCode } : {}),
-					...(args.followUpCode ? { followUpCode: args.followUpCode } : {}),
+					...(args.taskCode ? { taskCode: args.taskCode } : {}),
 					...(args.noteId ? { noteId: args.noteId as never } : {}),
 				},
 			)) as CascadeImpactResult;
@@ -272,10 +261,10 @@ registerTool({
 						noteId: impact.entityId,
 					});
 					break;
-				case "reminder":
-					await toolMutation(tc, "crm/shared/reminders/mutations:remove", {
+				case "task":
+					await toolMutation(tc, "crm/shared/tasks/mutations:remove", {
 						orgId: tc.orgId,
-						reminderId: impact.entityId,
+						taskId: impact.entityId,
 					});
 					break;
 			}

@@ -43,7 +43,7 @@ import {
 	PipelineCard,
 	PipelineVelocityCard,
 	ProactiveWorkspaceSection,
-	RemindersCard,
+	TasksCard,
 	TodaySummaryCard,
 	WeeklyInsightCard,
 } from "./cards";
@@ -128,7 +128,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					    dismissible per-user, rendered ABOVE the metric strip when
 					    there is at least one undismissed suggestion. Stage 6 wired
 					    the ribbon to read from the materialised aiNextActions
-					    ranker (cron-rebuilt every 30 min) with `convex.ai.suggestions.list`
+					    ranker (rebuilt reactively on every lead/deal/task change) with `convex.ai.suggestions.list`
 					    as the warm-start fallback. Stage 3-A.4 added the
 					    lazy-warm + 3-row skeleton for first-paint freshness. */}
 					{isEnabled("ai.pulseRibbon") && (
@@ -153,18 +153,16 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				{/* Row 1 — Registry-driven metric strip */}
 				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />
 
-				{/* Row 2 — Reminders + Pipeline.
-				    `reminders.list` is the canonical section-card key (added in
-				    Stage 1 of DASHBOARD-AUDIT.md fixes — the user's "reminders
-				    not showing" bug). KPI-shaped variants (`reminders.dueToday`
-				    / `tasks.dueToday`) also enable the card so existing
-				    templates keep rendering it without a forced migration. */}
+				{/* Row 2 — Tasks + Pipeline.
+				    `tasks.list` is the canonical section-card key (Stage 4D
+				    of TASKS-RENAME-PLAN.md). The KPI-shaped `tasks.dueToday`
+				    variant also gates the card so productivity templates
+				    that lead with the KPI strip still render the panel
+				    underneath. */}
 				<div className="grid gap-4 lg:grid-cols-12">
-					{(isEnabled("reminders.list") ||
-						isEnabled("reminders.dueToday") ||
-						isEnabled("tasks.dueToday")) && (
+					{(isEnabled("tasks.list") || isEnabled("tasks.dueToday")) && (
 						<div className="lg:col-span-7">
-							<RemindersCard orgId={orgId} orgSlug={orgSlug} />
+							<TasksCard orgId={orgId} orgSlug={orgSlug} />
 						</div>
 					)}
 					{isEnabled("deals.pipelineValue") && pipelineStats && (

@@ -143,9 +143,9 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const staleness = useMemo(
 		() => ({
 			staleAfterDays: org?.settings?.leadStaleAfterDays,
-			warningAfterDays: org?.settings?.reminderDefaults?.staleAlertDays,
+			warningAfterDays: undefined,
 		}),
-		[org?.settings?.leadStaleAfterDays, org?.settings?.reminderDefaults?.staleAlertDays],
+		[org?.settings?.leadStaleAfterDays],
 	);
 
 	const [addOpen, setAddOpen] = useState(false);

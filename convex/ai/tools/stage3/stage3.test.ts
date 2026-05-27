@@ -359,9 +359,9 @@ describe("notes ForAI twins (Stage 3)", () => {
 	});
 });
 
-// ─── reminders.update / remove ForAI ────────────────────────────────────────
+// ─── tasks.update / remove ForAI (Stage 4D rename) ──────────────────────────
 
-describe("reminders ForAI twins (Stage 3)", () => {
+describe("tasks ForAI twins (Stage 4D)", () => {
 	it("updateForAI patches title + dueAt + bumps updatedAt", async () => {
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
@@ -369,11 +369,11 @@ describe("reminders ForAI twins (Stage 3)", () => {
 
 		const { personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
 			orgId,
-			displayName: "ReminderAnchor",
+			displayName: "TaskAnchor",
 			source: "manual",
 		});
 
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode,
 			entityType: "person",
@@ -381,34 +381,34 @@ describe("reminders ForAI twins (Stage 3)", () => {
 			title: "Old title",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: userId,
-			source: "manual",
+			type: "todo",
 		});
 
 		const newDue = Date.now() + 7 * 86_400_000;
-		await t.mutation(internal.crm.shared.reminders.mutations.updateForAI, {
+		await t.mutation(internal.crm.shared.tasks.mutations.updateForAI, {
 			orgId,
 			userId,
-			reminderId,
+			taskId,
 			title: "New title",
 			dueAt: newDue,
 		});
 
-		const reminder = await t.run(async (ctx) => ctx.db.get(reminderId));
-		expect(reminder?.title).toBe("New title");
-		expect(reminder?.dueAt).toBe(newDue);
+		const task = await t.run(async (ctx) => ctx.db.get(taskId));
+		expect(task?.title).toBe("New title");
+		expect(task?.dueAt).toBe(newDue);
 	});
 
-	it("removeForAI deletes the reminder", async () => {
+	it("removeForAI deletes the task", async () => {
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
 		const orgId = await seedOrg(t, userId);
 
 		const { personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
 			orgId,
-			displayName: "ReminderAnchor2",
+			displayName: "TaskAnchor2",
 			source: "manual",
 		});
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode,
 			entityType: "person",
@@ -416,17 +416,17 @@ describe("reminders ForAI twins (Stage 3)", () => {
 			title: "Doomed",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: userId,
-			source: "manual",
+			type: "todo",
 		});
 
-		await t.mutation(internal.crm.shared.reminders.mutations.removeForAI, {
+		await t.mutation(internal.crm.shared.tasks.mutations.removeForAI, {
 			orgId,
 			userId,
-			reminderId,
+			taskId,
 		});
 
-		const reminder = await t.run(async (ctx) => ctx.db.get(reminderId));
-		expect(reminder).toBeNull();
+		const task = await t.run(async (ctx) => ctx.db.get(taskId));
+		expect(task).toBeNull();
 	});
 
 	it("updateForAI refuses non-assignee non-manager callers", async () => {
@@ -434,8 +434,8 @@ describe("reminders ForAI twins (Stage 3)", () => {
 		const { userId, asUser } = await seedUser(t);
 		const orgId = await seedOrg(t, userId);
 
-		// Seed an additional VIEWER member who has no reminders.manage and
-		// is not the assignee — should be denied.
+		// Seed an additional VIEWER member who has no tasks.manage and is
+		// not the assignee — should be denied.
 		const { userId: viewerId } = await seedUser(t, "viewer@example.com");
 		await t.run(async (ctx) => {
 			const role = await ctx.db.insert("orgRoles", {
@@ -457,10 +457,10 @@ describe("reminders ForAI twins (Stage 3)", () => {
 
 		const { personCode } = await asUser.mutation(api.crm.entities.leads.mutations.create, {
 			orgId,
-			displayName: "ReminderAnchor3",
+			displayName: "TaskAnchor3",
 			source: "manual",
 		});
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode,
 			entityType: "person",
@@ -468,14 +468,14 @@ describe("reminders ForAI twins (Stage 3)", () => {
 			title: "Owner-assigned",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: userId, // assigned to the OWNER, not the viewer
-			source: "manual",
+			type: "todo",
 		});
 
 		await expect(
-			t.mutation(internal.crm.shared.reminders.mutations.updateForAI, {
+			t.mutation(internal.crm.shared.tasks.mutations.updateForAI, {
 				orgId,
 				userId: viewerId,
-				reminderId,
+				taskId,
 				title: "should fail",
 			}),
 		).rejects.toThrow();

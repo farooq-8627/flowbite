@@ -10,9 +10,11 @@
  *
  * Stage 3 of SPRINT-PLAN.md (2026-05-26).
  */
+import "./addNote";
 import "./updateNote";
 import "./deleteNote";
 import "./pinNote";
 import "./setNoteCategory";
+import "./moveNoteToEntity";
 
 export { setNotesContext } from "./_context";

@@ -451,10 +451,10 @@ describe("Stage 8 — updateAiAutonomy", () => {
 
 		await t.mutation(internal.users.mutations.updateAiAutonomyForAI, {
 			userId,
-			autoFollowupOnStageMove: true,
+			autoTaskOnStageMove: true,
 		});
 		const u1 = await t.run(async (ctx) => ctx.db.get(userId));
-		expect(u1?.preferences?.aiAutonomy?.autoFollowupOnStageMove).toBe(true);
+		expect(u1?.preferences?.aiAutonomy?.autoTaskOnStageMove).toBe(true);
 		expect(u1?.preferences?.aiAutonomy?.autoEnrichOnContactCreate).toBeUndefined();
 
 		await t.mutation(internal.users.mutations.updateAiAutonomyForAI, {
@@ -462,7 +462,7 @@ describe("Stage 8 — updateAiAutonomy", () => {
 			autoEnrichOnContactCreate: true,
 		});
 		const u2 = await t.run(async (ctx) => ctx.db.get(userId));
-		expect(u2?.preferences?.aiAutonomy?.autoFollowupOnStageMove).toBe(true);
+		expect(u2?.preferences?.aiAutonomy?.autoTaskOnStageMove).toBe(true);
 		expect(u2?.preferences?.aiAutonomy?.autoEnrichOnContactCreate).toBe(true);
 	});
 

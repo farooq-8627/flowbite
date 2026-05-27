@@ -93,3 +93,103 @@ describe("buildToolDescription", () => {
 		expect(idx("Good example")).toBeLessThan(idx("Bad example"));
 	});
 });
+
+// ─── C.4 — propose/commit schema audit ──────────────────────────────────────
+
+import { z } from "zod";
+import { registerTool, runProposeCommitSchemaAudit } from "./toolRegistry";
+
+describe("runProposeCommitSchemaAudit (C.4)", () => {
+	it("flags propose-only fields the commit schema doesn't accept", () => {
+		// Register a deliberately-broken pair. The audit is force-run so
+		// the singleton flag from earlier tests / app boot doesn't hide
+		// the result.
+		registerTool({
+			name: "demo_audit_lossy",
+			description: "Test propose with lossy field",
+			layer: "always",
+			permission: null,
+			confirmation: "twoStep",
+			schema: z.object({
+				code: z.string(),
+				notes: z.string().describe("Lost on commit — the audit must catch this."),
+			}),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+		registerTool({
+			name: "commit_demo_audit_lossy",
+			description: "Test commit (missing notes)",
+			layer: "always",
+			permission: null,
+			confirmation: "none",
+			schema: z.object({
+				code: z.string(),
+			}),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+
+		const findings = runProposeCommitSchemaAudit(true);
+		const offender = findings.find((f) => f.pair.startsWith("demo_audit_lossy"));
+		expect(offender).toBeDefined();
+		expect(offender?.proposeOnly).toContain("notes");
+		expect(offender?.commitOnly).toEqual([]);
+	});
+
+	it("does not flag a clean propose/commit pair", () => {
+		registerTool({
+			name: "demo_audit_clean",
+			description: "Clean propose",
+			layer: "always",
+			permission: null,
+			confirmation: "twoStep",
+			schema: z.object({ code: z.string() }),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+		registerTool({
+			name: "commit_demo_audit_clean",
+			description: "Clean commit",
+			layer: "always",
+			permission: null,
+			confirmation: "none",
+			schema: z.object({ code: z.string() }),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+
+		const findings = runProposeCommitSchemaAudit(true);
+		const clean = findings.find((f) => f.pair.startsWith("demo_audit_clean ↔"));
+		expect(clean).toBeUndefined();
+	});
+
+	it("treats propose-only display fields as findings (agent-author triages each)", () => {
+		// Mirror the real `archive_note_category` pattern — propose
+		// carries `name` for the propose card, commit doesn't need it.
+		// The audit warns; the agent author triages. Documented in the
+		// audit function's caveats.
+		registerTool({
+			name: "demo_audit_display_only",
+			description: "Propose with display-only field",
+			layer: "always",
+			permission: null,
+			confirmation: "twoStep",
+			schema: z.object({
+				categoryId: z.string(),
+				name: z.string().describe("For the propose card"),
+			}),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+		registerTool({
+			name: "commit_demo_audit_display_only",
+			description: "Commit without display field",
+			layer: "always",
+			permission: null,
+			confirmation: "none",
+			schema: z.object({ categoryId: z.string() }),
+			execute: async () => ({ ok: true as const, data: {} }),
+		});
+
+		const findings = runProposeCommitSchemaAudit(true);
+		const offender = findings.find((f) => f.pair.startsWith("demo_audit_display_only"));
+		expect(offender).toBeDefined();
+		expect(offender?.proposeOnly).toEqual(["name"]);
+	});
+});

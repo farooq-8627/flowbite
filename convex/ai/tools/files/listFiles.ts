@@ -9,6 +9,15 @@
  *   - `scope` + `scopeId`                       → listByScopeForAI
  *
  * Atomic — no propose / commit. Permission gate: `files.view`.
+ *
+ * 2026-05-27 — Code-existence pre-flight (user-reported `P-005` bug).
+ *   When a `personCode` / `dealCode` / `companyCode` is supplied, we first
+ *   call the appropriate `getByXxxCodeForAI` query to confirm the record
+ *   exists. If it doesn't, we return `ok: false` with a clear "no <entity>
+ *   with code X exists" message instead of the previous misleading
+ *   "No files attached to Person P-005" headline (which made it look like
+ *   the person existed but had no files). The raw `(scope, scopeId)`
+ *   escape-hatch path skips this check — it's a power-user surface.
  */
 import { z } from "zod";
 import { registerTool } from "../../toolRegistry";
@@ -107,6 +116,48 @@ registerTool({
 			requirePermission(tc.permissions, "files.view");
 
 			const cap = args.limit ?? 20;
+
+			// ── Entity-existence pre-flight (2026-05-27 fix) ────────────
+			// When the caller specifies a code (personCode / dealCode /
+			// companyCode), we first verify that record exists. Without
+			// this check the query just returns 0 files for a non-existent
+			// scopeId, and the AI/user thinks "the person exists but has
+			// no files attached" — which is misleading.
+			if (args.personCode) {
+				const person = await toolQuery(tc, "crm/people/queries:getByPersonCode", {
+					orgId: tc.orgId,
+					personCode: args.personCode,
+				}).catch(() => null);
+				if (!person) {
+					return {
+						ok: false as const,
+						error: `No person found with code ${args.personCode}. Use search_crm to find the right code, or ask the user to confirm the personCode.`,
+					};
+				}
+			} else if (args.dealCode) {
+				const deal = await toolQuery(tc, "crm/entities/deals/queries:getByDealCode", {
+					orgId: tc.orgId,
+					dealCode: args.dealCode,
+				}).catch(() => null);
+				if (!deal) {
+					return {
+						ok: false as const,
+						error: `No deal found with code ${args.dealCode}. Use search_crm to find the right code, or ask the user to confirm the dealCode.`,
+					};
+				}
+			} else if (args.companyCode) {
+				const company = await toolQuery(
+					tc,
+					"crm/entities/companies/queries:getByCompanyCode",
+					{ orgId: tc.orgId, companyCode: args.companyCode },
+				).catch(() => null);
+				if (!company) {
+					return {
+						ok: false as const,
+						error: `No company found with code ${args.companyCode}. Use search_crm to find the right code, or ask the user to confirm the companyCode.`,
+					};
+				}
+			}
 
 			let rows: FileRow[];
 			if (args.personCode) {

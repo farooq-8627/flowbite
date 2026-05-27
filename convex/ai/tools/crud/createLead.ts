@@ -80,7 +80,7 @@ registerTool({
 			"Group failed fields and call ask_user_input ONCE for ALL of them. Never retry with the same args.",
 		onPermissionDenied:
 			"Tell the user they need leads.create permission. Suggest contacting an admin.",
-		suggestNext: "create_followup",
+		suggestNext: "create_task",
 	},
 	schema: z.object({
 		displayName: z.string().min(1).describe("Full name of the lead. Required."),

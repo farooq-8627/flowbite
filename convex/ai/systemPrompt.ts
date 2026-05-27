@@ -156,26 +156,18 @@ export async function buildSystemPrompt(
 `.trim(),
 	);
 
-	// ── Code prefixes (P-/D-/C-/FU- by default; configurable per org) ──
+	// ── Code prefixes (P-/D-/C-/T- by default; configurable per org) ──
 	const codePrefixes = org.settings?.codePrefixes as
-		| { person?: string; deal?: string; company?: string; followup?: string }
+		| { person?: string; deal?: string; company?: string; task?: string }
 		| undefined;
 	if (codePrefixes && Object.values(codePrefixes).some((v) => typeof v === "string" && v)) {
 		parts.push(
-			`\n**Code prefixes:** person=${codePrefixes.person ?? "P-"}, deal=${codePrefixes.deal ?? "D-"}, company=${codePrefixes.company ?? "C-"}, followup=${codePrefixes.followup ?? "FU-"}`,
+			`\n**Code prefixes:** person=${codePrefixes.person ?? "P-"}, deal=${codePrefixes.deal ?? "D-"}, company=${codePrefixes.company ?? "C-"}, task=${codePrefixes.task ?? "T-"}`,
 		);
 	}
 
-	// ── Reminder + follow-up defaults (so AI doesn't guess cadence) ────
-	const reminderDefaults = org.settings?.reminderDefaults as
-		| {
-				followUpWindowHours?: number;
-				staleAlertDays?: number;
-				morningBriefingTime?: string;
-				morningBriefingEnabled?: boolean;
-		  }
-		| undefined;
-	const followupDefaults = org.settings?.followupDefaults as
+	// ── Task cadence defaults (so AI doesn't guess cadence) ─────────────
+	const taskDefaults = org.settings?.taskDefaults as
 		| {
 				defaultDueOffsetDays?: number;
 				defaultPriority?: string;
@@ -185,33 +177,22 @@ export async function buildSystemPrompt(
 		  }
 		| undefined;
 	const reminderBits: string[] = [];
-	if (reminderDefaults) {
-		if (reminderDefaults.followUpWindowHours)
-			reminderBits.push(`follow-up window ${reminderDefaults.followUpWindowHours}h`);
-		if (reminderDefaults.staleAlertDays)
-			reminderBits.push(`stale after ${reminderDefaults.staleAlertDays}d`);
-		if (
-			reminderDefaults.morningBriefingEnabled !== false &&
-			reminderDefaults.morningBriefingTime
-		)
-			reminderBits.push(`morning briefing at ${reminderDefaults.morningBriefingTime}`);
-	}
-	if (followupDefaults) {
-		if (followupDefaults.defaultDueOffsetDays !== undefined)
+	if (taskDefaults) {
+		if (taskDefaults.defaultDueOffsetDays !== undefined)
 			reminderBits.push(
-				`new follow-ups default to +${followupDefaults.defaultDueOffsetDays}d`,
+				`new follow-up tasks default to +${taskDefaults.defaultDueOffsetDays}d`,
 			);
-		if (followupDefaults.defaultPriority)
-			reminderBits.push(`default priority ${followupDefaults.defaultPriority}`);
-		if (followupDefaults.autoCloseAfterDays)
-			reminderBits.push(`auto-close after ${followupDefaults.autoCloseAfterDays}d overdue`);
-		if (followupDefaults.requireDealCode === true)
-			reminderBits.push("follow-ups MUST link to a deal");
-		if (followupDefaults.reminderBeforeHours)
-			reminderBits.push(`pre-notify ${followupDefaults.reminderBeforeHours}h before due`);
+		if (taskDefaults.defaultPriority)
+			reminderBits.push(`default priority ${taskDefaults.defaultPriority}`);
+		if (taskDefaults.autoCloseAfterDays)
+			reminderBits.push(`auto-close after ${taskDefaults.autoCloseAfterDays}d overdue`);
+		if (taskDefaults.requireDealCode === true)
+			reminderBits.push("follow-up tasks MUST link to a deal");
+		if (taskDefaults.reminderBeforeHours)
+			reminderBits.push(`pre-notify ${taskDefaults.reminderBeforeHours}h before due`);
 	}
 	if (reminderBits.length > 0) {
-		parts.push(`\n**Reminder/follow-up defaults:** ${reminderBits.join("; ")}.`);
+		parts.push(`\n**Task defaults:** ${reminderBits.join("; ")}.`);
 	}
 
 	// ── Soft-delete retention ──────────────────────────────────────────
@@ -258,7 +239,7 @@ export async function buildSystemPrompt(
 	// ── File-attach convention (static — informs the model how to read
 	// file references the composer injects into user messages). ────────
 	parts.push(
-		`\n**File attachments in chat:** When a user message starts with one or more \`[file:<fileId> "name" (mime, size)]\` markers, those are real fileIds the user uploaded via the chat composer. Treat each marker as an attached file. Call \`analyze_file\` with the fileId when extraction is in scope. Do NOT echo the marker syntax back to the user — refer to the file by name.`,
+		`\n**File attachments in chat:** When a user message starts with one or more \`[file:<fileId> "name" (mime, size)]\` markers, those are real fileIds the user uploaded via the chat composer. Treat each marker as an attached file. Call \`analyze_file\` with the fileId when extraction is in scope. Call \`attach_file\` when the user asks to put / add / move the file onto a person / deal / company. Do NOT echo the marker syntax back to the user — refer to the file by name.`,
 	);
 
 	// ── Persona rows (P1.12 + 2026-05-24 identity consolidation) ───────────
@@ -360,26 +341,26 @@ export async function buildSystemPrompt(
 		parts.push(`\n**You are assisting:** ${user.name}`);
 	}
 
-	// ── Per-user follow-up snapshot ─────────────────────────────────────────
+	// ── Per-user task snapshot ──────────────────────────────────────────────
 	// One-line awareness of this user's pending workload so the model can
-	// open with relevant prompts ("you have 3 overdue follow-ups…"). Heavy
-	// detail stays in `list_followups` tool calls.
+	// open with relevant prompts ("you have 3 overdue tasks…"). Heavy
+	// detail stays in `list_tasks` tool calls.
 	const now = Date.now();
-	const userReminders = await ctx.db
-		.query("reminders")
+	const userTasks = await ctx.db
+		.query("tasks")
 		.withIndex("by_user_and_due", (q) => q.eq("assignedTo", args.userId))
 		.take(200);
-	const myOpen = userReminders.filter((r) => r.orgId === args.orgId && r.status === "pending");
+	const myOpen = userTasks.filter((r) => r.orgId === args.orgId && r.status === "pending");
 	const myOverdue = myOpen.filter((r) => r.dueAt < now).length;
 	const myDueToday = myOpen.filter(
 		(r) => r.dueAt >= now && r.dueAt < now + 24 * 60 * 60 * 1000,
 	).length;
 	if (myOpen.length > 0) {
 		parts.push(
-			`\n**Your open follow-ups:** ${myOpen.length} pending` +
+			`\n**Your open tasks:** ${myOpen.length} pending` +
 				(myOverdue > 0 ? `, ${myOverdue} overdue` : "") +
 				(myDueToday > 0 ? `, ${myDueToday} due in next 24 h` : "") +
-				`. Call \`list_followups\` for the full list.`,
+				`. Call \`list_tasks\` for the full list.`,
 		);
 	}
 
@@ -549,7 +530,9 @@ You're running on a lightweight model. You DO have access to every tool the user
 			name === "add_participants" ||
 			name === "commit_add_participants" ||
 			name === "remove_participant" ||
-			name === "commit_remove_participant"
+			name === "commit_remove_participant" ||
+			name === "start_dm" ||
+			name === "manage_conversation"
 		) {
 			liveLayerNames.add("messaging");
 		}
@@ -558,14 +541,20 @@ You're running on a lightweight model. You DO have access to every tool the user
 			name === "update_file_tags" ||
 			name === "commit_update_file_tags" ||
 			name === "remove_file" ||
-			name === "commit_remove_file"
+			name === "commit_remove_file" ||
+			name === "attach_file" ||
+			name === "commit_attach_file"
 		) {
 			liveLayerNames.add("files");
 		}
 		if (name === "list_org_timeline") {
 			liveLayerNames.add("timeline");
 		}
-		if (name === "list_notifications" || name === "mark_notification_read") {
+		if (
+			name === "list_notifications" ||
+			name === "mark_notification_read" ||
+			name === "mark_all_notifications_read"
+		) {
 			liveLayerNames.add("notifications");
 		}
 		// Stage 7 — analytical layer (analyze_metric / cohort_analysis /
@@ -645,7 +634,7 @@ The blank line between the row and the prose is REQUIRED — without it the rend
 
 	// ── Messaging (Stage 2 of SPRINT-PLAN.md) ───────────────────────────────
 	// Steady-state policy block telling the model when to call send_message
-	// vs add_note vs create_followup. The verb-based routing matters because
+	// vs add_note vs create_task. The verb-based routing matters because
 	// (a) "send X" and "log a note about X" produce different rows in
 	// different tables and (b) the user's mental model is verb-driven.
 	parts.push(
@@ -656,7 +645,7 @@ Verb-driven routing — use the right tool for the user's verb:
 
 - **"send / message / tell / reply / DM / write to / ping"** → \`send_message\`. Posts to the conversation thread; recipients get a notification. NEVER use \`add_note\` for these verbs.
 - **"add a note / record that / log / annotate"** → \`add_note\`. Internal record on the entity; doesn't notify other members.
-- **"remind me / follow up / schedule"** → \`create_followup\` (or \`update_reminder\`).
+- **"remind me / follow up / schedule"** → \`create_task\` (or \`update_task\`).
 
 Targeting:
 - Pass exactly one of \`personCode\` (P-XXX), \`dealCode\` (D-XXX), \`companyCode\` (C-XXX), or \`conversationId\` (raw Convex id, only when the chat originated from a thread).
@@ -670,6 +659,12 @@ Reading threads (\`list_messages\`):
 Participants (\`add_participants\` / \`remove_participant\`):
 - Always pre-flight with \`list_members\` to resolve names to userIds. Never guess userIds.
 - Self-leave is allowed without the messages.subscribe permission.
+
+Direct messages (\`start_dm\`):
+- **"DM <member> / open a chat with / message <name> privately"** → \`start_dm\` (atomic). Pre-flight \`list_members\` to resolve the targetUserId. Idempotent — repeated calls return the same conversation.
+
+Conversation lifecycle (\`manage_conversation\`):
+- **"rename this thread to X / archive the thread / unarchive / restore the chat"** → \`manage_conversation\` (atomic). Pass \`mode: "rename" | "archive" | "unarchive"\`. Rename requires a 1–100 char title; archive/unarchive need \`conversations.archive\` permission (Admin / Owner).
 
 When in doubt about target or content, call \`ask_user_input\` before proposing the send. Do NOT guess message bodies.
 `.trim(),
@@ -691,18 +686,31 @@ Verb-driven routing for note tools:
 - **"edit / fix / amend / rewrite / correct"** a note → \`update_note\` (twoStep). Surface the before/after for user confirmation. NEVER use add_note when the user is editing — add_note creates a new note, hiding the typo instead of fixing it.
 - **"pin / unpin / star / highlight"** a note → \`pin_note\` (atomic, no confirmation).
 - **"recategorize / move column / reclassify"** → \`set_note_category\` (atomic). Run \`list_categories\` first to resolve the categoryId.
+- **"reattach / move note / put that note under <other entity>"** → \`move_note_to_entity\` (atomic). Pass \`entityType\` + \`entityId\` (Convex _id) of the new target. Use \`entityType: "org"\` with the orgSlug to detach back to the org-wide bucket.
+- **"make X the default category / use X as default for new notes"** → \`set_default_note_category\` (atomic, admin-only). Run \`list_categories\` first to resolve the categoryId. Reversible by setting a different default.
 - **"delete / remove / trash"** a note → \`delete_note\` (twoStep) OR \`delete_entity\` with \`entityType: "note"\` (twoStep). Both work; prefer delete_entity for free-form "delete this thing" prompts that span entity types.
 
 Notes are hard-deleted (no trash) — there's no undo. The propose card already says so; don't re-warn the user in prose.
 
-## Reminders — edit / push / cancel
+## Tasks — create / edit / complete / cancel
 
-- **"push / postpone / reschedule / change / reassign / re-prioritise"** a reminder → \`update_reminder\` (twoStep). Pass \`followUpCode\` (FU-XXX, preferred) or \`reminderId\`. NEVER use update_entity for reminders — \`update_entity\` is for lead/contact/deal/company only.
-- **"mark done / completed"** → \`complete_reminder\` (raw id) OR \`complete_followup_by_code\` (FU-XXX).
-- **"cancel / drop"** → \`cancel_followup_by_code\` (FU-XXX) — permanent, no undo. The propose card warns; don't re-warn.
-- **"delete the reminder"** → \`delete_entity\` with \`entityType: "reminder"\` and \`followUpCode\`. Same destructive behaviour as cancel; the propose card surfaces it consistently with other deletes.
+The canonical scheduling surface. ONE \`create_task\` tool covers calls / emails / meetings / follow-ups / generic to-dos via the \`type\` discriminator. Public code prefix is **T-** (e.g. T-007).
 
-When the user says "remind me to do X next Tuesday", that's a CREATE intent — call \`create_followup\` (preferred for person-tied) or \`create_reminder\` (org-internal), not \`update_reminder\`.
+- **"remind me / follow up / schedule / call / email / meeting / task"** → \`create_task\`. Pick the right \`type\`:
+  - \`type: "todo"\` — generic to-do, the default.
+  - \`type: "call"\` — phone call.
+  - \`type: "email"\` — outbound email.
+  - \`type: "meeting"\` — scheduled meeting.
+  - \`type: "followup"\` — CRM cadence touch (REQUIRES personCode; pulls org-default offset/priority when dueAt omitted).
+- **"push / postpone / reschedule / change / reassign / re-prioritise"** a task → \`update_task\` (twoStep). Pass \`taskCode\` (T-XXX, preferred) or \`taskId\`. NEVER use update_entity for tasks — \`update_entity\` is for lead/contact/deal/company only.
+- **"mark done / completed"** → \`complete_task\` (raw id) OR \`complete_task_by_code\` (T-XXX).
+- **"cancel / drop"** → \`cancel_task_by_code\` (T-XXX) — permanent, no undo. The propose card warns; don't re-warn.
+- **"delete the task"** → \`delete_entity\` with \`entityType: "task"\` and \`taskCode\`. Same destructive behaviour as cancel; the propose card surfaces it consistently with other deletes.
+
+Reading tasks:
+- **"what tasks do I have?"** → \`list_tasks\` (org-wide, optional \`type\` / \`status\` filters).
+- **"<person>'s tasks / follow-ups"** → \`list_tasks_for_person\` with \`personCode\` (P-XXX).
+- **"what's T-007 about?"** → \`get_task_by_code\` with \`taskCode\` (the canonical drill-down).
 
 ## Companies — link / unlink people
 
@@ -734,12 +742,15 @@ Verb-driven routing for pipeline tools (layer: \`pipelines\`):
 - **"set default / make default / promote stage"** → \`set_default_pipeline\` (twoStep). NOTE: the Default stage is fixed in this build — the tool no-ops if the target IS already the default and refuses otherwise. Use \`update_pipeline_stage\` to rename the existing Default stage instead.
 - **Lead status moves** (\`new\` / \`contacted\` / \`qualified\` / \`unqualified\`) → \`move_lead_status\` (atomic). Mirrors \`move_deal_stage\` for verb shape; "qualify L-007" is the canonical phrasing. To convert a lead to a contact, use \`convert_lead\`, not move_lead_status.
 - **"reopen / restart / un-close"** a closed deal → \`reopen_deal\` (twoStep). Clears wonAt/lostAt, restores to the Default stage, rebalances org counters.
+- **"change pipeline / move to <Pipeline> / switch pipeline / transfer to renewals"** → \`change_pipeline\` (twoStep). Moves a deal between PIPELINES (e.g. Sales → Renewals); lands at the first non-final stage of the target. Closed deals must be reopened first via \`reopen_deal\`. NEVER use this for moving between STAGES (use \`move_deal_stage\`).
+- **"set up a pipeline like <X> / spin up a SaaS pipeline / use the real-estate template / agency starter"** → \`apply_stage_template\` (twoStep). Curated catalogue of 4 starter templates: \`b2b-saas\`, \`real-estate\`, \`productivity\`, \`agency-services\`. Call \`list_stage_templates\` first when the user is undecided. NEVER use this when the user wants a CUSTOM stage chain — call \`create_pipeline\` directly with explicit stages.
 
-## Files — list / tag / remove (layer: \`files\`)
+## Files — list / attach / tag / remove (layer: \`files\`)
 
-The AI cannot upload files (UI-only). It can only manage already-uploaded files.
+The AI cannot upload raw bytes (the chat composer or the entity's Files-tab UI does that). Once a file is in the workspace, the AI can list, attach, tag, or remove it.
 
-- **"show / list files / attachments / documents"** → \`list_files\`. Pass exactly one of \`personCode\` / \`dealCode\` / \`companyCode\`, OR a raw \`(scope, scopeId)\` pair.
+- **"show / list files / attachments / documents"** → \`list_files\`. Pass exactly one of \`personCode\` / \`dealCode\` / \`companyCode\`, OR a raw \`(scope, scopeId)\` pair. If the code doesn't resolve to an existing record, the tool returns a clear "no <entity> with code X exists" error — surface that verbatim and ask the user to confirm.
+- **"attach / add / put / move this file to <person/deal/company>"** → \`attach_file\` (twoStep). Use this when the user uploaded a file via the chat composer (the user message will contain a \`[file:<id> "name" (mime, size)]\` marker) and wants it on a specific record's Files tab. Pass the marker's fileId + exactly one of personCode / dealCode / companyCode. The pre-flight rejects non-existent codes with "no <entity> with code X" before the propose card goes to the user.
 - **"tag / categorise / retag"** a file → \`update_file_tags\` (twoStep). The mutation REPLACES the entire tag list — pre-compute the desired final state.
 - **"delete / remove / discard"** a file → \`remove_file\` (twoStep). Soft-delete; the bytes are best-effort purged from storage.
 
@@ -760,6 +771,7 @@ For raw bytes / extracted text, use \`analyze_file\` instead — it's a differen
 
 - **"my notifications / inbox / unread alerts"** → \`list_notifications\` (atomic). Optionally pass \`onlyUnread: true\`.
 - **"mark X as read / dismiss / acknowledge"** → \`mark_notification_read\` (atomic, idempotent).
+- **"mark all read / clear all / dismiss all / inbox zero"** → \`mark_all_notifications_read\` (atomic, idempotent). Tenant-scoped — only affects the active workspace's notifications. Capped at 200 per call.
 
 For org-wide messages NOT addressed to the user, \`list_messages\` with \`inbox: true\` is the right tool — notifications are user-scoped, messages are conversation-scoped.
 
@@ -804,7 +816,7 @@ The workspace can run AI tasks WITHOUT a person watching. Two surfaces:
 
 - **Standing orders** are owner-defined cron prompts (table \`aiStandingOrders\`). Each row carries a \`prompt\`, an \`allowedTools[]\` whitelist, and a \`schedule\` (\`interval\` / \`daily\` / \`weekly\`). The cron evaluator (\`internal.ai.standingOrders.evaluator.tick\`) ticks once a minute and schedules \`runner.run\` for every row whose schedule has matched. The runner runs as the standing order's OWNER, with the tool dict narrowed to the intersection of (owner permissions × \`allowedTools\`). Audit rows in \`aiToolEvents\` carry \`triggeredBy: "standingOrder:<id>"\`.
 - **Auto-actions** are reactive triggers fired from public mutations:
-  - **\`automation:onStageMove\`** — when a deal moves to a stage with \`onEnter.autoFollowupTemplate\` set AND the deal-owner has flipped \`users.preferences.aiAutonomy.autoFollowupOnStageMove\`, schedule a follow-up reminder.
+  - **\`automation:onStageMove\`** — when a deal moves to a stage with \`onEnter.autoFollowupTemplate\` set AND the deal-owner has flipped \`users.preferences.aiAutonomy.autoTaskOnStageMove\`, schedule a follow-up task.
   - **\`automation:onContactCreate\`** — when a contact is created with email/phone AND the user has flipped \`users.preferences.aiAutonomy.autoEnrichOnContactCreate\`, kick off the enrichment waterfall.
 
 Verb routing in chat:
@@ -828,7 +840,7 @@ The creative layer turns the AI from a logistics partner into a writing partner.
 
 - **\`draft_message\`** (twoStep, costClass \`expensive\`). User says "draft / write / compose a message / follow-up / thank-you" → propose the draft + commit returns subject + body + a suggested \`send_message\` payload. **Drafts are NEVER auto-sent.** The user must approve via \`send_message\` themselves OR copy the body into another surface. Targeting: exactly one of \`personCode\` / \`dealCode\` / \`companyCode\`.
 - **\`draft_proposal\`** (twoStep, costClass \`expensive\`). User says "draft a proposal / quote / contract for D-007" → 5-section Markdown (Summary / Pricing / Timeline / Next steps / Terms) grounded on the org's positioning persona. Returns the Markdown for the user to copy. **Never persisted by the AI** — drafts are ephemeral. Targeting: \`dealCode\` only.
-- **\`summarise_conversation\`** (atomic, costClass \`expensive\`). User says "summarise / recap / what did we agree" → routes to Stage 2's \`listForXForAI\` queries, runs the summariser, returns a 1-3 sentence summary + bullets + agreements + open questions + action items. Action items are pre-fillable into \`create_followup\`. Targeting: exactly one of \`conversationId\` / \`personCode\` / \`dealCode\` / \`companyCode\`.
+- **\`summarise_conversation\`** (atomic, costClass \`expensive\`). User says "summarise / recap / what did we agree" → routes to Stage 2's \`listForXForAI\` queries, runs the summariser, returns a 1-3 sentence summary + bullets + agreements + open questions + action items. Action items are pre-fillable into \`create_task\`. Targeting: exactly one of \`conversationId\` / \`personCode\` / \`dealCode\` / \`companyCode\`.
 - **\`web_scrape\`** (atomic, costClass \`normal\`). Fetches a single URL via Firecrawl scrape so a draft can be grounded in real source text. Pairs with \`web_search\`: search returns 5 URLs → pick best → scrape it. Hard cap 32k chars (default 8k). 30/min/user.
 
 Verb routing:

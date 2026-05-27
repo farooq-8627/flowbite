@@ -7,7 +7,7 @@
  *   get_dashboard_summary — stats overview for the org
  */
 import { z } from "zod";
-import { entityTypeEnum } from "../../_shared/synonyms";
+import { internal } from "../../_generated/api";
 import { registerTool } from "../toolRegistry";
 import { coerceInt, requirePermission, runTool, type ToolContext, toolQuery } from "./_shared";
 
@@ -48,7 +48,7 @@ registerTool({
 		onSuccess:
 			"Render the result list (already a live entity-list card). If exactly one match: confirm in one short sentence. If 2-8 matches and the next action depends on knowing which: call ask_user_choice.",
 		onEmpty:
-			"Tell the user nothing matched and offer to broaden the search (try a partial name, or remove the entity-type filter).",
+			"Tell the user nothing matched and offer to broaden the search (try a partial name, or remove the entity-type filter). If the query LOOKS like an entity code (matches /^[A-Z]+-\\d+$/) and zero results came back, say plainly 'no record with code <X> exists in this workspace' instead of 'no matches' — the user typed the code expecting it to exist. Do NOT retry by stripping characters off the code (e.g. 'P-005' → 'P-00' → '5') — that's brute-force fishing and produces irrelevant matches. Use get_entity_detail for definitive code lookups.",
 		onValidationError:
 			"Re-issue the call with a stricter, shorter query string. Do not retry with the same arguments.",
 	},
@@ -150,6 +150,29 @@ registerTool({
 
 			const total = Object.values(results).reduce((s, a) => s + a.length, 0);
 
+			// Code-shape detection — when the user typed a code-looking
+			// query like "P-005" / "D-042" / "C-007" and the search came
+			// back empty, surface a definitive "no record with that code
+			// exists" headline. This blocks the failure mode we saw on
+			// 2026-05-27 where the model panicked on 0 results and
+			// fished by stripping characters off the code (P-005 → P-00
+			// → 5), producing nonsense matches that wasted tool calls.
+			const codeShape = /^[A-Z]+-\d+$/i;
+			const isCodeShaped = codeShape.test(query.trim());
+			if (total === 0 && isCodeShaped) {
+				return {
+					ok: true as const,
+					data: { ...results, total, query },
+					summary: {
+						headline: `No record with code ${query.trim().toUpperCase()} exists in this workspace.`,
+						facts: [
+							"For code lookups prefer get_entity_detail — it returns a definitive answer per code.",
+							"Do not retry by stripping characters off the code; that produces irrelevant substring matches.",
+						],
+					},
+				};
+			}
+
 			// Sprint 3 doctrine: when the search was scoped to one entity
 			// type, surface the matches as a live <EntityListResultCard>
 			// stack. The user gets click-to-navigate cards instead of an
@@ -210,19 +233,27 @@ Returns all fields, recent notes, linked records, and AI context summary.
 			"Tell the user they need <entity>.view permission. Suggest contacting an admin.",
 	},
 	schema: z.object({
-		entityType: entityTypeEnum(),
+		// Wider than the standard `entityTypeEnum()` — `get_entity_detail`
+		// is the canonical drill-down for ANY public code in the
+		// workspace, including the public T-XXX task code. Carries
+		// forward the FU-004 fix from PHASE-3-AI-AUDIT.md §6 row 4 — the
+		// model can now resolve "open T-007" without a workaround.
+		entityType: z.enum(["lead", "contact", "deal", "company", "task"]),
 		code: z
 			.string()
-			.describe("Entity code: personCode (P-XXX), dealCode (D-XXX), or companyCode (C-XXX)."),
+			.describe(
+				"Entity code: personCode (P-XXX), dealCode (D-XXX), companyCode (C-XXX), or taskCode (T-XXX).",
+			),
 	}),
 	execute: async ({ entityType, code }) => {
 		return runTool(async () => {
-			const { orgId, permissions } = getCtx();
+			const { orgId, userId, permissions } = getCtx();
 			const permMap: Record<string, string> = {
 				lead: "leads.view",
 				contact: "contacts.view",
 				deal: "deals.view",
 				company: "companies.view",
+				task: "tasks.view",
 			};
 			requirePermission(permissions, permMap[entityType] ?? "leads.view");
 
@@ -246,6 +277,18 @@ Returns all fields, recent notes, linked records, and AI context summary.
 						companyCode: code,
 					},
 				).catch(() => null)) as { excludeFromAI?: boolean } | null;
+			} else if (entityType === "task") {
+				// Routes through the task by-code internal twin. `userId` is
+				// trusted (set by the orchestrator); the twin re-validates
+				// orgMember by ids per AGENTS.md ForAI rule.
+				const tc = getCtx();
+				record = (await tc.ctx
+					.runQuery(internal.crm.shared.tasks.queries.getByTaskCodeForAI, {
+						orgId,
+						userId,
+						taskCode: code,
+					})
+					.catch(() => null)) as { excludeFromAI?: boolean } | null;
 			}
 
 			if (!record)
@@ -266,11 +309,13 @@ Returns all fields, recent notes, linked records, and AI context summary.
 			// `_id` always exists because every Convex doc has one.
 			const recordId = (record as { _id?: string })._id;
 			const display = recordId
-				? {
-						kind: "entity" as const,
-						entityType,
-						entityId: recordId,
-					}
+				? entityType === "task"
+					? { kind: "task" as const, taskId: recordId }
+					: {
+							kind: "entity" as const,
+							entityType: entityType as "lead" | "contact" | "deal" | "company",
+							entityId: recordId,
+						}
 				: undefined;
 
 			return {

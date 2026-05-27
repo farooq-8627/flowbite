@@ -41,7 +41,7 @@ registerTool({
 		whenToCall:
 			"Use when the user asks to send / message / tell / reply / DM / write to someone. Shows a preview card with the target thread + message body and waits for approval before posting.",
 		whenNotToCall:
-			"the user wants to attach a private note (use add_note) OR schedule a follow-up reminder (use create_followup) OR draft something for later editing (drafts not supported yet).",
+			"the user wants to attach a private note (use add_note) OR schedule a follow-up reminder (use create_task) OR draft something for later editing (drafts not supported yet).",
 		preflight: ["search_crm"],
 		requiredClarifications: ["target", "content"],
 		synonyms: ["send a message", "DM", "message", "reply", "text", "ping", "write to", "tell"],
@@ -66,7 +66,7 @@ registerTool({
 			"Group all failed fields and call ask_user_input ONCE for ALL of them. Never retry with the same args.",
 		onPermissionDenied:
 			"Tell the user they need messages.send permission and suggest contacting an admin.",
-		suggestNext: "create_followup",
+		suggestNext: "create_task",
 	},
 	schema: z
 		.object({

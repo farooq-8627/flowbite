@@ -33,7 +33,7 @@ export type TimelineActivityEntry = Doc<"activityLogs"> &
 export type TimelineNoteEntry = Doc<"notes"> &
 	BaseTimelineEntry & { _entryType: "note"; _kind: "card" };
 
-export type TimelineReminderEntry = Doc<"reminders"> &
+export type TimelineReminderEntry = Doc<"tasks"> &
 	BaseTimelineEntry & { _entryType: "reminder"; _kind: "card" };
 
 export type TimelineEntry = TimelineActivityEntry | TimelineNoteEntry | TimelineReminderEntry;

@@ -6,7 +6,7 @@
  * entityCodes are per-type counters (dealCode, companyCode, etc.).
  *
  * Format: {PREFIX}-{ZERO_PADDED_NUMBER}
- * Examples: P-001, D-042, CO-007, FU-003
+ * Examples: P-001, D-042, CO-007, T-003
  *
  * Prefixes are customizable per org via orgs.settings.codePrefixes.
  * Numbers are permanent — only prefixes change on rename.
@@ -21,7 +21,6 @@ const DEFAULT_PREFIXES: Record<string, string> = {
 	person: "P",
 	deal: "D",
 	company: "CO",
-	followup: "FU",
 	project: "PJ",
 	task: "T",
 };
@@ -67,15 +66,15 @@ export async function generatePersonCode(ctx: MutationCtx, orgId: Id<"orgs">): P
 }
 
 /**
- * generateEntityCode — called for deals, companies, follow-ups, projects, tasks.
+ * generateEntityCode — called for deals, companies, projects, tasks.
  * Each entity type has its own counter.
  *
- * @example "D-001", "CO-007", "FU-003"
+ * @example "D-001", "CO-007", "T-003"
  */
 export async function generateEntityCode(
 	ctx: MutationCtx,
 	orgId: Id<"orgs">,
-	entityType: "deal" | "company" | "followup" | "project" | "task",
+	entityType: "deal" | "company" | "project" | "task",
 ): Promise<string> {
 	const org = await ctx.db.get(orgId);
 	const prefix =

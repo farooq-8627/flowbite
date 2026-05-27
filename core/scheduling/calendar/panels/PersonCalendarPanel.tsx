@@ -36,7 +36,7 @@ import {
 	useCalendarFilters,
 	useCalendarViewMode,
 } from "@/core/scheduling/calendar/hooks/useCalendarViewMode";
-import { useCompleteReminder, useDeleteReminder } from "@/core/scheduling/reminders/hooks";
+import { useCompleteTask, useDeleteTask } from "@/core/scheduling/tasks/hooks";
 import { useCurrentOrg, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 import { CalendarFilters } from "../components/CalendarFilters";
@@ -54,8 +54,8 @@ const PANEL_WINDOW_DAYS = 45; // half of the 90-day cap
 export function PersonCalendarPanel({ personCode, className }: PersonCalendarPanelProps) {
 	const { orgId } = useCurrentOrg();
 	const permissions = useOrgPermissions();
-	const canCreate = permissions.includes("reminders.create");
-	const canManage = permissions.includes("reminders.manage");
+	const canCreate = permissions.includes("tasks.create");
+	const canManage = permissions.includes("tasks.manage");
 
 	const { viewMode, setViewMode, selectedDate, setSelectedDate, today } = useCalendarViewMode();
 	const { sources } = useCalendarFilters();
@@ -78,45 +78,45 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 
 	// ── Form state ───────────────────────────────────────────────────
 	const [formOpen, setFormOpen] = useState(false);
-	const [editingReminder, setEditingReminder] = useState<Doc<"reminders"> | null>(null);
+	const [editingTask, setEditingTask] = useState<Doc<"tasks"> | null>(null);
 	const [createDefaults, setCreateDefaults] = useState<{ startsAt?: number } | null>(null);
 
 	const openCreate = useCallback((date?: Date) => {
-		setEditingReminder(null);
+		setEditingTask(null);
 		setCreateDefaults(date ? { startsAt: date.getTime() } : null);
 		setFormOpen(true);
 	}, []);
 
-	// ── Reminder action handlers ─────────────────────────────────────
-	const completeReminder = useCompleteReminder();
-	const deleteReminder = useDeleteReminder();
-	const [deletingId, setDeletingId] = useState<Id<"reminders"> | null>(null);
+	// ── Task action handlers ─────────────────────────────────────
+	const completeTask = useCompleteTask();
+	const deleteTask = useDeleteTask();
+	const [deletingId, setDeletingId] = useState<Id<"tasks"> | null>(null);
 	const [deletingTitle, setDeletingTitle] = useState<string | null>(null);
 	const [deleting, setDeleting] = useState(false);
 
 	const onCompleteFromPopover = useCallback(
 		async (event: { id: string }) => {
 			if (!orgId) return;
-			const reminderId = parseReminderIdFromDtoId(event.id);
-			if (!reminderId) return;
+			const taskId = parseTaskIdFromDtoId(event.id);
+			if (!taskId) return;
 			try {
-				await completeReminder({ orgId, reminderId: reminderId as Id<"reminders"> });
-				toast.success("Reminder completed");
+				await completeTask({ orgId, taskId: taskId as Id<"tasks"> });
+				toast.success("Task completed");
 			} catch (err) {
-				toast.mutationError(err, "Couldn't complete reminder");
+				toast.mutationError(err, "Couldn't complete task");
 			}
 		},
-		[orgId, completeReminder],
+		[orgId, completeTask],
 	);
 
 	const onEditFromPopover = useCallback((_event: { id: string }) => {
-		toast.info("Open the reminder from the Reminders page to edit.");
+		toast.info("Open the task from the Tasks page to edit.");
 	}, []);
 
 	const onDeleteFromPopover = useCallback((event: { id: string; title: string }) => {
-		const reminderId = parseReminderIdFromDtoId(event.id);
-		if (!reminderId) return;
-		setDeletingId(reminderId as Id<"reminders">);
+		const taskId = parseTaskIdFromDtoId(event.id);
+		if (!taskId) return;
+		setDeletingId(taskId as Id<"tasks">);
 		setDeletingTitle(event.title);
 	}, []);
 
@@ -124,12 +124,12 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 		if (!deletingId || !orgId) return;
 		setDeleting(true);
 		try {
-			await deleteReminder({ orgId, reminderId: deletingId });
-			toast.success("Reminder deleted");
+			await deleteTask({ orgId, taskId: deletingId });
+			toast.success("Task deleted");
 			setDeletingId(null);
 			setDeletingTitle(null);
 		} catch (err) {
-			toast.mutationError(err, "Couldn't delete reminder");
+			toast.mutationError(err, "Couldn't delete task");
 		} finally {
 			setDeleting(false);
 		}
@@ -172,9 +172,9 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 			<EventForm
 				open={formOpen}
 				onOpenChange={setFormOpen}
-				reminder={editingReminder}
+				task={editingTask}
 				defaults={
-					editingReminder
+					editingTask
 						? undefined
 						: {
 								startsAt: createDefaults?.startsAt,
@@ -196,10 +196,8 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 			>
 				<AlertDialogContent>
 					<AlertDialogHeader>
-						<AlertDialogTitle>Delete this reminder?</AlertDialogTitle>
-						<AlertDialogDescription>
-							{deletingTitle ?? "Reminder"}.
-						</AlertDialogDescription>
+						<AlertDialogTitle>Delete this task?</AlertDialogTitle>
+						<AlertDialogDescription>{deletingTitle ?? "Task"}.</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>
 						<AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
@@ -220,7 +218,7 @@ export function PersonCalendarPanel({ personCode, className }: PersonCalendarPan
 	);
 }
 
-function parseReminderIdFromDtoId(id: string): string | null {
-	if (!id.startsWith("reminder:")) return null;
-	return id.slice("reminder:".length);
+function parseTaskIdFromDtoId(id: string): string | null {
+	if (!id.startsWith("task:")) return null;
+	return id.slice("task:".length);
 }

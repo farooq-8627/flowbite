@@ -102,11 +102,11 @@ export const pipelines = defineTable({
 			 * Stage 8 — Autonomous layer (`/SPRINT-PLAN.md`). Optional
 			 * per-stage automation block. When `autoFollowupTemplate` is
 			 * set AND the deal-owner has flipped
-			 * `users.preferences.aiAutonomy.autoFollowupOnStageMove` on,
-			 * `moveToStageImpl` schedules a follow-up reminder via
-			 * `internal.crm.shared.reminders.mutations.createForAI` after
-			 * the move lands. The follow-up's due date is `now +
-			 * (autoFollowupAfterDays ?? 3)` days, source: "system",
+			 * `users.preferences.aiAutonomy.autoTaskOnStageMove` on,
+			 * `moveToStageImpl` schedules a follow-up task via
+			 * `internal.crm.shared.tasks.mutations.createForAI` after
+			 * the move lands. The task's due date is `now +
+			 * (autoFollowupAfterDays ?? 3)` days, type: "followup",
 			 * priority: "normal". Audit row written with
 			 * `triggeredBy: "automation:onStageMove"`.
 			 *

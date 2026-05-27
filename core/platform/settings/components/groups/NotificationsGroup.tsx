@@ -73,19 +73,19 @@ const NOTIF_GROUPS: NotifGroupDef[] = [
 		],
 	},
 	{
-		id: "reminders",
-		title: "Reminders",
-		description: "Notifications for follow-up reminders.",
+		id: "tasks",
+		title: "Tasks",
+		description: "Notifications for tasks (calls, emails, meetings, follow-ups, to-dos).",
 		items: [
 			{
-				key: "reminder_due",
-				label: () => "Reminder due",
-				description: "When a reminder is due.",
+				key: "task_due",
+				label: () => "Task due",
+				description: "When a task is due.",
 			},
 			{
-				key: "reminder_overdue",
-				label: () => "Reminder overdue",
-				description: "When a reminder is past its due date.",
+				key: "task_overdue",
+				label: () => "Task overdue",
+				description: "When a task is past its due date.",
 			},
 		],
 	},

@@ -430,27 +430,165 @@ streamText({ ..., stopWhen: stepCountIs(cap) });
 
 ---
 
-## B.26 — `AIQuickComposerCard` file attach (lazy-create-on-attach UX)
+## B.26 — `AIQuickComposerCard` file attach (lazy-create-on-attach UX) — ✅ Implemented 2026-05-27
+
+Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now embeds `<ChatAttachButton>` directly, with `ensureConversation` callback for lazy-create and `[file:<id> "name"]` manifest-line prepending on send. Attachment chips render above the textarea with per-file remove. Closed without extracting a separate `uploadAttachments.ts` helper — the existing `ChatAttachButton` was reusable as-is. See `core/shell/shell/views/dashboard/cards/AIQuickComposerCard.tsx`.
+
+---
+
+## B.27 — Per-org "Re-apply latest template" action
 
 | Field           | Value                                                                              |
 |-----------------|------------------------------------------------------------------------------------|
 | Status          | Backlog                                                                            |
-| Category        | UX / AI                                                                            |
-| Phase to ship   | Stage 3-A session 3 OR Stage 3-B                                                   |
-| Owners          | `core/shell/shell/views/dashboard/cards/AIQuickComposerCard.tsx`, `core/ai/components/composer/ChatAttachButton.tsx`, `core/ai/lib/uploadAttachments.ts` (NEW — extract helper) |
-| Risk if skipped | Low. The dashboard QuickComposer ships in Stage 3-A session 1 without file attach. Users who want to attach files first open the chat panel and use the paperclip there — that already works. |
-| Files involved  | `core/ai/lib/uploadAttachments.ts` (NEW), `core/ai/components/composer/FileAttachButton.tsx` (NEW), `AIQuickComposerCard.tsx` |
+| Category        | Industry templates / data-migration UX                                             |
+| Phase to ship   | Phase 5+                                                                           |
+| Owners          | `convex/_platform/industries/`, `core/platform/settings/components/groups/workspace/` |
+| Risk if skipped | Owners who edit a built-in template via `/xowner/industries/<key>` see the changes apply only to NEW orgs that pick the template afterwards. Existing orgs keep their old shape. The owner has no in-product way to push curated changes (e.g. a new "Closed-Won-Refund" stage) to existing customers without writing a one-off migration. |
+| Files involved  | `convex/_platform/industries/mutations.ts` (add `reapplyLatestToOrg`), `convex/orgs/mutations.ts::applyTemplate` (extend with `merge: "skip-if-exists" | "overwrite"`), `core/platform/settings/components/groups/workspace/WorkspaceTemplateSection.tsx` (add "Re-apply latest" CTA + diff preview). |
 
-**Why we deferred.** The QuickComposer doesn't have a conversationId locally on first paint — it's lazy-created on first send. Adding file attach means lazy-creating on first attach instead, which changes the UX contract slightly.
+**Why we deferred.** Per locked decision L6 in `INDUSTRY-TEMPLATES-DB-MIGRATION.md` — re-applying risks stomping per-org customisations (added pipelines, edited field labels, removed stages). The only safe path is a structured diff-and-merge UI that the org admin sees before approving, which is a multi-week project on its own. v1 ships "edits affect new orgs only".
+
+**Benefits when reinstated.**
+- Owners can ship template improvements (new field, renamed stage, new AI persona overlay) to every org on that template — no manual per-org work.
+- Customer trust — customers see live template improvements without a forced re-onboarding.
+- Platform velocity — feature rollout via template edit becomes the default workflow once this lands.
+
+**Use cases / who it protects.** Real-estate brokerages on `real-estate-dubai` adopting a new RERA field; B2B SaaS orgs adopting a new MEDDIC stage.
 
 **Implementation sketch.**
-1. Extract `uploadAttachments(orgId, conversationId, files): Promise<PendingAttachment[]>` from `ChatAttachButton`.
-2. New `FileAttachButton` component that takes an `onEnsureConversation` prop (lazy-create) + uses the helper.
-3. Mount on `AIQuickComposerCard` next to the model picker.
-4. Reuse the `[file:<id> "name"]` manifest line injection — body is rebuilt on send with `attachments` prepended.
-5. Add a `<PendingAttachmentChips />` row above the textarea so the user can see + remove attachments before sending.
+1. New `reapplyLatestToOrg(orgId, templateKey)` internal action that:
+   - Reads the current `platformTemplates` row.
+   - Reads the org's existing pipelines / fields / modules / etc.
+   - Computes a 4-way diff: ADD (new in template, missing in org), REMOVE (removed from template, exists in org — usually skip), RENAME (matched by code/name), KEEP (org customisation, untouched).
+2. Returns the diff as a structured payload for the UI.
+3. Settings UI lets the org admin tick which ADDs to apply, then commits.
+4. Audit log gets `org.template.reapply` rows for each entity touched.
 
-**Verification.** Vitest cases for `uploadAttachments` helper (mock fetch + the `attach` mutation). Manual: drag a CSV onto the dashboard composer, type "import this", press Enter — the side panel opens with the manifest in the first turn.
+**Verification.** Two-org integration test where org-A has the old template + a custom pipeline; the owner edits the template; the org admin runs re-apply; org-A's custom pipeline survives, the new template stage is added.
+
+---
+
+## B.28 — AI-generated custom industry templates from chat
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | AI / industry templates                                                            |
+| Phase to ship   | Phase 5+                                                                           |
+| Owners          | `convex/_platform/industries/`, `convex/ai/tools/`                                 |
+| Risk if skipped | Onboarding flow remains constrained to the 9 built-in templates + admin clones. New industries (e.g. "veterinary clinic", "construction subcontractor") need a platform-admin to either clone from `generic` and customise OR seed a brand-new template by hand. AI could do this conversationally. |
+| Files involved  | `convex/_platform/industries/mutations.ts` (already has `cloneTemplate` + `createTemplate`), new `convex/ai/tools/industries/createCustomTemplate.ts` ForAI tool. |
+
+**Why we deferred.** Per locked decision L10 in `INDUSTRY-TEMPLATES-DB-MIGRATION.md` — out of scope for the v1 migration. The schema column `createdBy` is on `platformTemplates` from day 1 so this card is purely additive: write the AI tool, the table is ready.
+
+**Benefits when reinstated.**
+- Long-tail coverage. The 9 built-ins capture our launch ICPs; AI-generated templates cover everything else without the team writing custom YAML.
+- Faster time-to-value for niche industries — operator pastes a one-paragraph description, AI proposes pipeline + fields + AI persona, operator approves.
+- Compounding leverage — each accepted AI template can be promoted to "built-in" with a click.
+
+**Use cases / who it protects.** Niche B2B verticals signing up via the marketing site without an existing template fit.
+
+**Implementation sketch.**
+1. New AI tool `createCustomTemplate` (twoStep) that:
+   - Takes `{ description, region?, sourceTemplateKey? }` as args.
+   - Generates pipeline, fields, modules, AI persona via a constrained-output LLM call (zod schema mirrors `IndustryTemplate`).
+   - Calls `_platform.industries.mutations:cloneTemplate` (when `sourceTemplateKey` set) or `createTemplate` (when blank) with the generated definition.
+   - Records `createdBy = userId` so the platform owner can audit AI-generated templates separately.
+2. UI surface: chat command "create me a new template for veterinary clinics" → propose card with the generated definition + per-slot edit affordance → commit.
+3. Generated templates carry `isBuiltIn: false` (informational); owner can promote to built-in by toggling the flag in `/xowner/industries/<key>`.
+
+**Verification.** Scorer test where the user types "I run a veterinary clinic, set me up" → AI generates a template with vet-specific stages (e.g. "Initial visit" → "Treatment" → "Follow-up") + fields (species, breed, vaccine status); operator approves; the new template seeds the workspace.
+
+---
+
+## B.29 — Mock-data editor v2 (cross-reference dropdown editor inside `/xowner/industries/<key>`)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Owner panel UX / industry templates                                                |
+| Phase to ship   | Phase 5+                                                                           |
+| Owners          | `owner/views/industries/`, `convex/_platform/industries/`                          |
+| Risk if skipped | Mock data is read-only in the v1 owner editor (see `MockDataPreview.tsx`). Tweaking sample leads/contacts/deals/notes/tasks for a built-in template requires editing the template's `definition.mockData` JSON directly via `JsonSlotEditor` — error-prone because cross-references (`mockData.deals[].stageCode`, `mockData.deals[].companyKey`, `mockData.notes[].anchorTo`) must stay valid. |
+| Files involved  | `owner/views/industries/_components/MockDataPreview.tsx` (replace), new `owner/views/industries/_components/MockDataEditor.tsx`, `convex/_platform/industries/validators.ts` (already cross-checks). |
+
+**Why we deferred.** Per locked decision L3 in `INDUSTRY-TEMPLATES-DB-MIGRATION.md` — user explicitly confirmed v1 ships read-only. v1 still ships mock data through the seed migration; the editor is purely a quality-of-life upgrade for owners.
+
+**Benefits when reinstated.**
+- Owners can iterate on mock data without writing JSON. Adding a new sample lead becomes a 4-field form.
+- Cross-reference dropdowns prevent invalid references (every `companyKey` field is a `<select>` populated from `mockData.companies[].key`).
+- Lowers the bar for non-technical platform admins to maintain templates.
+
+**Use cases / who it protects.** Platform-admin team without TypeScript fluency; future "growth" team members tweaking templates for marketing experiments.
+
+**Implementation sketch.**
+1. `MockDataEditor.tsx` — 5 sub-tabs: Companies / Leads / Contacts / Deals / Notes / Tasks.
+2. Each tab: paginated table + "+ add" inline form. Foreign-key fields use `<select>` populated from sibling-tab data.
+3. Save path: build a fresh `definition.mockData` object → submit through `updateTemplate.patch.definition` (server still runs `validateDefinition`).
+4. Bonus: live preview tile that shows the mock workspace as a new org would see it.
+
+**Verification.** Manual: open `/xowner/industries/real-estate-dubai`, switch to Mock Data tab, add a new lead with a company-link via dropdown, save; verify the template's seed-migration output reflects the change after a fresh org onboarding.
+
+---
+
+## B.30 — Template versioning + restore-prior-version
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Owner panel / data-safety                                                          |
+| Phase to ship   | Phase 5+ (after B.27 — re-apply latest)                                            |
+| Owners          | `convex/_platform/industries/`, `convex/_platform/audit/`                          |
+| Risk if skipped | `platformAuditLogs` already captures the before/after diff on every `updateTemplate` call (with `definition: "[blob]"` in the audit row to keep size sane). The full prior `definition` is recoverable only by hand-writing a Convex query against the audit row. There's no UI to browse versions / restore one. |
+| Files involved  | `convex/_platform/industries/mutations.ts` (add `restoreTemplateVersion`), new `convex/_platform/industries/queries.ts:listTemplateVersions`, new `owner/views/industries/_components/VersionHistory.tsx`, schema: extend `platformAuditLogs` to keep the FULL `definition` blob on `owner.industries.template.update` rows (currently it's `"[blob:updated]"`). |
+
+**Why we deferred.** Per non-goal #6 in `INDUSTRY-TEMPLATES-DB-MIGRATION.md §1.2` — audit log captures before/after; time-travel restore is a v2. Most edits are forward-only and the owner can clone the template before risky changes. The "I broke it, restore the v3 from yesterday" use case is a real but infrequent operator need.
+
+**Benefits when reinstated.**
+- Operator confidence. Risky template edits become reversible.
+- Forensic clarity. "When did the AI persona for B2B SaaS change to mention MEDDIC?" gets a one-click answer.
+- Compliance — for platforms operating in regulated verticals, "show me the template the org onboarded onto" is a genuine audit need.
+
+**Use cases / who it protects.** Platform owner reverting a botched bulk-edit; compliance team responding to a customer dispute.
+
+**Implementation sketch.**
+1. Schema: extend `platformAuditLogs` rows for `owner.industries.template.update` to store the FULL `before.definition` (no `[blob]` mask). Trade-off: audit row size goes from ~2 KB to ~30 KB per template-edit. Acceptable given low frequency.
+2. New query `listTemplateVersions(templateKey)` returns the audit-log row series for a template's lifetime.
+3. New mutation `restoreTemplateVersion({ templateKey, auditRowId })` reads the row's `before.definition`, runs `validateDefinition`, writes back via `updateTemplate.patch.definition`. Audit verb: `owner.industries.template.restore`.
+4. UI: "Versions" tab inside `TemplateEditorView` listing `(timestamp, actor, summary)` per row + "Restore this version" button with typed-confirm.
+
+**Verification.** Edit a template's pipelines tab; visit Versions tab; restore the prior version; confirm the row's `definition.pipelines` reverts; re-apply to a new org confirms behaviour matches the prior version.
+
+---
+
+## B.31 — Platform Owner Panel Tier B/C deferrals (10 items)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Owner panel — Tier B / Tier C                                                      |
+| Phase to ship   | Post-launch (none block Tier A v1 — Stages 0–7 SHIPPED 2026-05-27)                 |
+| Owners          | `convex/_platform/`, `owner/`, `app/xowner/`                                       |
+| Risk if skipped | None for launch — Tier A panel covers every must-have surface (overview, users, tiers, billing settings, flags, AI context, AI keys, industries, reserved slugs, audit, settings). These 10 items are quality-of-life upgrades discovered while shipping the spec; each can ship independently when there's user-pull. |
+| Files involved  | See per-item sketches below.                                                       |
+
+**Why we deferred.** Per locked decision L11 in `PLATFORM-OWNER-PANEL.md` — Tier A only for v1. Tier B / Tier C items came up during the spec write-up but were explicitly out of scope.
+
+**Items (each can ship as its own card if it picks up momentum):**
+
+1. **Tool runbook overrides editor** — UI to edit the AI runbook catalog without redeploying. Depends on AI Sprint 4. Files: `convex/_platform/runbooks/` (new), `owner/views/runbooks/` (new).
+2. **Convex env-vars editor in the panel** — currently the operator uses the Convex dashboard. Adding this would require an admin-token round-trip — high blast radius for marginal gain. Files: `convex/_platform/env/` (new), `owner/views/env/` (new).
+3. **LemonSqueezy / Razorpay webhook console + replay** — currently the operator uses the provider dashboards. Useful for incident response. Files: `convex/_platform/webhooks/` (new), `owner/views/webhooks/` (new).
+4. **Waitlist viewer** — depends on the waitlist table from `LANDING-PAGE.md`. Files: `convex/marketing/waitlist/` (will exist after landing page ships), `owner/views/waitlist/` (new).
+5. **DB-backed owner allow-list + invite flow** — replaces the `PLATFORM_OWNER_EMAILS` env-list. Per L2 we deferred — env-only is enough for ≤5 owners. Files: new `platformOwners` table, `owner/views/owners/` (new).
+6. **TOTP via authenticator app (replaces email OTP)** — stronger second factor; email OTP is good enough for v1 because the email account itself is a hardware-key-protected Google account (per recommendation S1). Files: `convex/_platform/totp/` (new).
+7. **WebAuthn / passkey for owner login** — no native Convex Auth support yet; revisit when upstream ships. Files: `convex/auth.ts`.
+8. **Cross-org analytics that read content (still aggregated)** — locked decision L7 says "no org content access". Revisit only if a clear, GDPR-safe use case appears. Files: new aggregation pipeline; not yet sketched.
+9. **Convex / Sentry insight feed inside the panel** — surfaces the existing MCP feeds inline. Files: `owner/views/overview/InsightFeed.tsx` (new).
+10. **Per-user tier (subscription decoupled from org)** — schema change (currently tier lives on the org). Files: `convex/schema/identity.ts`, `convex/_platform/tiers/`, `convex/_platform/users/`.
+
+**Verification.** Each item ships its own card-fields when it gets prioritised. Until then this consolidated card is the durable record that they were considered + intentionally deferred.
 
 ---
 
@@ -481,18 +619,6 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 **Why this card exists.** The 2026-05-24 incident in `convex/ai/tools/crud/createLead.ts` was the first symptom — the propose carried `notes`, the commit dropped it, and the underlying mutation rejected it as an unknown arg. Same shape risk exists for any future twoStep that adds preview-only fields to its propose schema.
 
 **Implementation sketch.** Add a startup check that diffs each `propose_X.schema` against `commit_X.schema` and warns (not fails) when propose has fields commit doesn't. The strip-on-resume already guarantees correctness at runtime; this would catch the silent-loss case at the agent-author moment.
-
-## C.5 — `streamLoop.ts` should also surface friendly errors on `tool-error` chunks
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | Backlog                                                                            |
-| Category        | UX                                                                                 |
-| Phase to ship   | Phase 4 — alongside markdown / streaming polish                                    |
-| Owners          | `convex/ai/orchestrator/streamLoop.ts` `case "tool-error"`                         |
-| Risk if skipped | Tool failures inside the model's run loop currently render the raw error text in the timeline row. The model still recovers, but the user-visible expanded error is verbose. |
-
-**Implementation sketch.** Run the same `friendlyToolError` mapper on the `chunk.error` value before patching the tool record's output. Keep the raw error in `output.rawError` for debugging, but surface `friendly.markdown` to the timeline rendering layer.
 
 ---
 
@@ -528,16 +654,51 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 
 > **Source.** Senior-CRM-specialist scorecard (final scorecard 8.6/10 reached at Stage 10). These are the items that did not ship in Stages 6-9 and remain backlog. None block the senior-CRM bar.
 
+## F.1 — `aiNextActions.reasonCode` literals still use `reminder_*` (deferred for ABI continuity)
+
+| Field | Value |
+|---|---|
+| Status | Backlog |
+| Category | API surface / data ABI |
+| Phase to ship | Whenever the next `aiNextActions` schema migration ships (no separate window) |
+| Owners | `convex/ai/queries/nextActions.ts`, `convex/schema/ai.ts` |
+| Risk if skipped | None at runtime — these strings never surface in user-facing copy. They're persisted in `aiSuggestion` rows, asserted in `convex/stage6.test.ts`, and stay opaque to the model (the system prompt advertises only the user-readable `reasonText`). The cost of skipping is a stylistic inconsistency with Decision #5 (ONE verb family — `task_*`). |
+| Files involved | `convex/schema/ai.ts:697-699` (validator literals), `convex/ai/queries/nextActions.ts:86-88,153,164,182` (writers), `convex/stage6.test.ts:173` (asserter) |
+
+**Why we deferred:** The Stage 4D SHIPPED row chose to keep `recordKind: "reminder"` for ABI continuity on already-persisted `aiSuggestion` rows. The same logic applies to the `reasonCode` literals: they are an internal classification key, not a user-facing string, and renaming them requires walking every persisted `aiSuggestion` row plus rebaseling the test. The reasonCode is opaque to the model — the prompt advertises `reasonText` ("Reminder X is overdue") which is independent of the codename.
+
+**Benefits when reinstated:**
+- Single verb family across the whole repo (Decision #5 fully satisfied).
+- Stylistic consistency for future grep audits.
+
+**Use cases / who it protects:** Future agents running the cross-cutting "verb family audit" — anyone writing a fresh nextActions consumer who has to re-learn that `reminder_overdue` here != `reminder_overdue` in the dropped notification keys.
+
+**Implementation sketch when re-enabling:**
+
+```ts
+// 1. Flip the literal union in convex/schema/ai.ts:697-699:
+//      "reminder_overdue"        → "task_overdue"
+//      "reminder_due_soon"       → "task_due_soon"
+//      "reminder_due_this_week"  → "task_due_this_week"
+// 2. Flip writer constants in convex/ai/queries/nextActions.ts:86-88,
+//    153,164,182.
+// 3. Idempotent migration that walks `aiSuggestion` rows and rewrites
+//    reasonCode in-place; size of table is bounded by per-user TTL so the
+//    walk is cheap.
+// 4. Rebaseline convex/stage6.test.ts:173 to expect "task_overdue".
+```
+
+**Verification:** `pnpm typecheck` 0 + the migration's dry-run reports the expected number of patched rows + `pnpm test convex/stage6.test.ts` green after rebaseline.
+
+---
+
 | ID | What | Why deferred |
 |---|---|---|
-| D-4 | Auto-note from file (after `analyze_file`, write a structured note to the right entity) | Needs UX decision on "which entity" when ambiguous. |
-| D-5 | Stage-template tool (apply a 5-stage template wholesale to a new pipeline) | Needs template catalogue. |
-| W-3 | Auto-tag classifier (when a note is added, auto-suggest tags via embedding similarity) | Needs embedding store. |
-| W-5 | Weekly digest email (per-org Monday morning summary) | Needs Resend integration + template editor. |
-| P-5 | Similarity / pattern matching (find leads similar to my best closed deals) | Needs embedding store. |
-| `set_default_note_category` | Atomic tool to flip the default | Public `setDefault` mutation exists; ForAI twin trivial; defer to user request. |
-| Bulk-progress mid-flight chunked streaming | Stream `commit_bulk_*` progress as chunks while the loop runs | Needs streaming-patch protocol on `aiMessages`. |
-| Custom-field diff capture in `update_entity` | Capture BEFORE/AFTER for every patched field for richer activity logs. | ~2 hrs work. |
+| D-4 | Auto-note from file (after `analyze_file`, write a structured note to the right entity) | Needs UX decision on "which entity" when ambiguous (the file may match multiple records). Flag this for the next product session before scoping. |
+| W-3 | Auto-tag classifier (when a note is added, auto-suggest tags via embedding similarity) | Needs embedding store. **Design freeze: see [`docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md`](../docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md) §6.1 — ships as stage E.2 (~1 day after E.1 schema lands).** |
+| W-5 | Weekly digest email (per-org Monday morning summary) | Resend is wired (used for owner OTP); the digest content + per-org opt-in surface + template editor is a separate ~1-day ship. Two open questions: (a) what goes in the digest body — pipeline movement, hot leads, overdue tasks?; (b) is the template user-editable or fixed? Defer until product decision. |
+| P-5 | Similarity / pattern matching (find leads similar to my best closed deals) | Needs embedding store. **Design freeze: see [`docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md`](../docs/architecture/17-EMBEDDING-STORE-PROPOSAL.md) §6.2 — ships as stage E.3 (~1 day after E.1 schema lands), parallel with E.2.** |
+| Bulk-progress mid-flight chunked streaming | Stream `commit_bulk_*` progress as chunks while the loop runs | Needs streaming-patch protocol on `aiMessages` — current `bulkProgress` helper writes a final summary, not interim chunks. Architecture-level change to the patch protocol; defer to a dedicated streaming session. |
 
 ---
 
@@ -546,7 +707,6 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | ID | What | Effort |
 |---|---|---|
 | T11 | Reminder kinds histogram. `create_reminder.reminderType` is hardcoded to a 5-item enum; if telemetry shows custom kinds, add `list_reminder_kinds` returning a 30-day distinct histogram. Tool would live in `convex/ai/tools/introspect.ts`. | ~1 hr |
-| T12 | Permission catalog introspection. The list of available permission keys is at `convex/_shared/permissions/catalog.ts`. Today the AI sees the user's OWN permissions but can't enumerate the catalog. Add `list_permission_catalog` always-on read tool returning `{ key, description, category }[]`. | ~30 min |
 
 ---
 
@@ -571,14 +731,21 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-24 | AI            | B.20 — Cross-conversation AI learning (embedding-based memory)  | B       |
 | 2026-05-24 | AI            | B.21 — AI workflow integration (Inngest + activityLogs bus)     | B       |
 | 2026-05-24 | AI (audit)    | C.4 — Audit propose-vs-commit schema diff for every twoStep     | C       |
-| 2026-05-24 | UX            | C.5 — Friendly errors in streamLoop tool-error chunk            | C       |
 | 2026-05-26 | RBAC          | B.22 — Org-wide approval-policy override                        | B       |
 | 2026-05-26 | UX            | B.24 — Dashboard industry-awareness pass                        | B       |
 | 2026-05-26 | UX            | B.25 — Per-widget action shortcuts                              | B       |
-| 2026-05-26 | UX            | B.26 — `AIQuickComposerCard` file attach                        | B       |
+| 2026-05-26 | UX            | B.26 — `AIQuickComposerCard` file attach (✅ shipped 2026-05-27) | B       |
 | 2026-05-26 | AI (gap)      | G-1 .. G-7 — 7 P3 AI tool gaps from coverage audit              | E       |
 | 2026-05-27 | Doc cleanup   | This file rewritten — every shipped row migrated to SHIPPED.md  | —       |
 | 2026-05-27 | Module polish | H.1 .. H.12 — per-module deferred polish migrated from 17 STATE.md files (then STATE.md files deleted) | H |
+| 2026-05-27 | Dashboard AI  | Dashboard AI fixes + Platform AI Keys owner panel (chatPrefill, AIQuickComposer rewrite + file uploader, ProactiveWorkspaceSection refresh button, useTaskMutations aiNextActions patch, briefing BYOK fallback + error rows, `platformAiKeys` table + `/xowner/ai-keys` UI) | — |
+| 2026-05-27 | AI Pulse      | Reactive AI Pulse — event-driven rebuild on every relevant lead/deal/task mutation (replaces cron-only model). New `nextActionsTrigger.ts` helper + `aiNextActionsCache.ts` shared optimistic-patch utility | — |
+| 2026-05-27 | Templates     | B.27 — Per-org "Re-apply latest template" action                | B       |
+| 2026-05-27 | Templates / AI| B.28 — AI-generated custom industry templates from chat        | B       |
+| 2026-05-27 | Owner UX      | B.29 — Mock-data editor v2 (cross-reference dropdown editor)    | B       |
+| 2026-05-27 | Data safety   | B.30 — Template versioning + restore-prior-version              | B       |
+| 2026-05-27 | Owner panel   | B.31 — Platform Owner Panel Tier B/C deferrals (10 items)       | B       |
+| 2026-05-27 | API surface   | F.1 — `aiNextActions.reasonCode` literals still `reminder_*` (G10 of P1.6.A — deferred for ABI continuity) | F       |
 
 ---
 

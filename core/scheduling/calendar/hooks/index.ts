@@ -1,14 +1,11 @@
 /**
  * Calendar hooks — wrap the unified `getEvents` query.
  *
- * Reminders + activityLogs (meetings/calls/demos) + deal close dates are
- * server-merged into a `CalendarEvent[]` shape per `CORE-FEATURES-ARCHITECTURE.md` §3.5.
+ * Tasks + activityLogs (meetings/calls/demos) + deal close dates are
+ * server-merged into a `CalendarEvent[]` shape.
  *
- * "Create event" = create a reminder. We re-export `useCreateReminder` from
- * `core/scheduling/reminders` so a single calendar import gives the consumer
- * everything they need.
- *
- * Status: IMPLEMENTED (Phase 2 backend); UI pending.
+ * "Create event" = create a task. We re-export `useCreateTask` so a
+ * single calendar import gives the consumer everything they need.
  */
 "use client";
 
@@ -16,11 +13,11 @@ import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-export { useCreateReminder as useCreateEventFromCalendar } from "@/core/scheduling/reminders/hooks";
+export { useCreateTask as useCreateEventFromCalendar } from "@/core/scheduling/tasks/hooks";
 
 /**
  * Get every calendar event in [rangeStart, rangeEnd].
- * Source filter: reminders + activity logs + deal close dates.
+ * Source filter: tasks + activity logs + deal close dates.
  */
 export function useCalendarEvents(args: {
 	orgId?: Id<"orgs">;

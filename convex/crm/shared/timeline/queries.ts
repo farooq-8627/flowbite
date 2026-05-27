@@ -81,7 +81,7 @@ export const getForPerson = orgQuery({
 
 		const cap = args.limit ?? 50;
 
-		const [activityLogs, notes, reminders] = await Promise.all([
+		const [activityLogs, notes, tasks] = await Promise.all([
 			// Activity logs indexed by personCode — no full org scan
 			ctx.db
 				.query("activityLogs")
@@ -103,7 +103,7 @@ export const getForPerson = orgQuery({
 				),
 			// Reminders for this person
 			ctx.db
-				.query("reminders")
+				.query("tasks")
 				.withIndex("by_org_and_person", (q) =>
 					q.eq("orgId", args.orgId).eq("personCode", args.personCode),
 				)
@@ -124,7 +124,7 @@ export const getForPerson = orgQuery({
 				_kind: "card" as TimelineEntryKind,
 				_color: "#eab308", // yellow
 			})),
-			...reminders.map((r) => ({
+			...tasks.map((r) => ({
 				...r,
 				_entryType: "reminder" as TimelineEntryType,
 				_kind: "card" as TimelineEntryKind,
@@ -222,7 +222,7 @@ export const getForEntity = orgQuery({
 
 		const cap = args.limit ?? 100;
 
-		const [activityLogs, notes, reminders] = await Promise.all([
+		const [activityLogs, notes, tasks] = await Promise.all([
 			ctx.db
 				.query("activityLogs")
 				.withIndex("by_entityType_and_entityId", (q) =>
@@ -242,7 +242,7 @@ export const getForEntity = orgQuery({
 				.take(cap)
 				.then((rows) => rows.filter((r) => canViewInternal || !r.isInternal)),
 			ctx.db
-				.query("reminders")
+				.query("tasks")
 				.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 				.collect()
 				.then((rows) =>
@@ -268,7 +268,7 @@ export const getForEntity = orgQuery({
 				_kind: "card" as TimelineEntryKind,
 				_color: "#eab308",
 			})),
-			...reminders.map((r) => ({
+			...tasks.map((r) => ({
 				...r,
 				_entryType: "reminder" as TimelineEntryType,
 				_kind: "card" as TimelineEntryKind,
@@ -417,17 +417,17 @@ export const getForScope = orgQuery({
 		const remindersQuery = (() => {
 			if (scope.kind === "person") {
 				return ctx.db
-					.query("reminders")
+					.query("tasks")
 					.withIndex("by_org_and_person", (q) =>
 						q.eq("orgId", args.orgId).eq("personCode", scope.personCode),
 					);
 			}
 			return ctx.db
-				.query("reminders")
+				.query("tasks")
 				.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId));
 		})();
 
-		const reminders = await remindersQuery
+		const tasks = await remindersQuery
 			.order("desc")
 			.take(args.paginationOpts.numItems * 2)
 			.then((rows) =>
@@ -456,7 +456,7 @@ export const getForScope = orgQuery({
 				_kind: "card" as TimelineEntryKind,
 				_color: "#eab308",
 			})),
-			...reminders.map((r) => ({
+			...tasks.map((r) => ({
 				...r,
 				_entryType: "reminder" as TimelineEntryType,
 				_kind: "card" as TimelineEntryKind,

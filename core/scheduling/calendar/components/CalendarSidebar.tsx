@@ -18,7 +18,7 @@
  *   │ ☑ ● Meetings & calls │
  *   │ ☑ ● Deal close dates │
  *   │                      │
- *   │ Today's reminders    │   ← optional teaser; reuses <ReminderCard>
+ *   │ Today's reminders    │   ← optional teaser; reuses <TaskCard>
  *   │ ◯ Follow up Acme...  │
  *   │ ◯ Demo for Tara...   │
  *   └──────────────────────┘

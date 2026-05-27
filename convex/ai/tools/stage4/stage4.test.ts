@@ -423,6 +423,138 @@ describe("files removeForAI / updateTagsForAI (Stage 4)", () => {
 		const row = await t.run(async (ctx) => ctx.db.get(fileId));
 		expect(row?.deletedAt).toBeGreaterThan(0);
 	});
+
+	// ─── files.attachForAI (2026-05-27) ──────────────────────────────────
+	// Re-scopes a file from its staging scope (org/user) to a target
+	// entity (lead/contact/deal/company). The user-reported "P-005" bug:
+	// previously there was no AI tool for "add this file to person X" —
+	// only update_file_tags, which doesn't move the file between Files
+	// tabs.
+
+	it("attachForAI re-scopes a file onto a person + merges tags", async () => {
+		const t = convexTest(schema, modules);
+		const { userId } = await seedUser(t);
+		const orgId = await seedOrg(t, userId);
+
+		// Seed a lead so the destination personCode resolves.
+		const personCode = "P-001";
+		await t.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("leads", {
+				orgId: orgId as never,
+				personCode,
+				displayName: "Sarah Khan",
+				status: "new",
+				source: "manual",
+				assignedTo: userId as never,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		// File starts in org scope (staging — chat-composer upload).
+		const fileId = await t.run(async (ctx) => {
+			const now = Date.now();
+			const storageId = await ctx.storage.store(new Blob(["video bytes"]));
+			return ctx.db.insert("files", {
+				orgId: orgId as never,
+				storageId,
+				scope: "org",
+				scopeId: orgId,
+				name: "intro.mp4",
+				size: 11,
+				mimeType: "video/mp4",
+				uploadedBy: userId as never,
+				tags: ["uploaded-via-chat"],
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		await t.mutation(internal.files.mutations.attachForAI, {
+			orgId,
+			userId,
+			fileId,
+			scope: "person",
+			scopeId: personCode,
+			tags: ["onboarding"],
+		});
+
+		const row = await t.run(async (ctx) => ctx.db.get(fileId));
+		expect(row?.scope).toBe("person");
+		expect(row?.scopeId).toBe(personCode);
+		// Existing tag preserved + new tag added (set union).
+		expect(row?.tags).toEqual(expect.arrayContaining(["uploaded-via-chat", "onboarding"]));
+	});
+
+	it("attachForAI rejects when the destination personCode does not exist", async () => {
+		const t = convexTest(schema, modules);
+		const { userId } = await seedUser(t);
+		const orgId = await seedOrg(t, userId);
+
+		// File exists, but no lead/contact with personCode P-999 — the
+		// validateScopeId call inside attachImpl must throw NOT_FOUND.
+		const fileId = await t.run(async (ctx) => {
+			const now = Date.now();
+			const storageId = await ctx.storage.store(new Blob(["x"]));
+			return ctx.db.insert("files", {
+				orgId: orgId as never,
+				storageId,
+				scope: "org",
+				scopeId: orgId,
+				name: "stranded.txt",
+				size: 1,
+				mimeType: "text/plain",
+				uploadedBy: userId as never,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		await expect(
+			t.mutation(internal.files.mutations.attachForAI, {
+				orgId,
+				userId,
+				fileId,
+				scope: "person",
+				scopeId: "P-999",
+			}),
+		).rejects.toThrow();
+	});
+
+	it("attachForAI rejects when caller userId is not an org member", async () => {
+		const t = convexTest(schema, modules);
+		const { userId } = await seedUser(t);
+		const orgId = await seedOrg(t, userId);
+		const { userId: outsiderId } = await seedUser(t, "outsider@example.com");
+
+		const fileId = await t.run(async (ctx) => {
+			const now = Date.now();
+			const storageId = await ctx.storage.store(new Blob(["x"]));
+			return ctx.db.insert("files", {
+				orgId: orgId as never,
+				storageId,
+				scope: "org",
+				scopeId: orgId,
+				name: "x.txt",
+				size: 1,
+				mimeType: "text/plain",
+				uploadedBy: userId as never,
+				createdAt: now,
+				updatedAt: now,
+			});
+		});
+
+		await expect(
+			t.mutation(internal.files.mutations.attachForAI, {
+				orgId,
+				userId: outsiderId,
+				fileId,
+				scope: "org",
+				scopeId: orgId,
+			}),
+		).rejects.toThrow();
+	});
 });
 
 // ─── orgRoles.createForAI / removeForAI ──────────────────────────────────────

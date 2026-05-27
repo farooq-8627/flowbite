@@ -6,7 +6,8 @@
  *
  * Top-3 highest-value next actions, dismissible per-user, rendered ABOVE
  * the metric strip. Stage 6 evolves the Stage 5 ribbon to read from the
- * materialised `aiNextActions` ranking (cron-rebuilt every 30 min) so
+ * materialised `aiNextActions` ranking (rebuilt reactively on every
+ * relevant lead/deal/task mutation — see `nextActionsTrigger.ts`) so
  * each row carries a stable score + explicit confidence label (Stage 6
  * closes capability-audit gap T-4 by surfacing confidence on every
  * suggestion).

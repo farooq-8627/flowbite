@@ -1,9 +1,9 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { Briefcase, Building2, CheckCircle2, Rocket } from "lucide-react";
+import { Briefcase, Building2, CheckCircle2, Loader2, Rocket } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -22,91 +22,6 @@ const STEPS = [
 	{ id: "industry", label: "Industry" },
 	{ id: "complete", label: "Done" },
 ] as const;
-
-/**
- * Industry options. `subNiches` triggers the Step 2b picker.
- *
- * IMPORTANT: ids must match `INDUSTRY_ID_ALIASES` in
- * `convex/crm/fields/templates/registry.ts`. Aliases get resolved to
- * canonical template ids server-side (e.g. `solo` → `productivity`).
- */
-const INDUSTRIES: Array<{
-	id: string;
-	label: string;
-	icon?: string;
-	subNiches?: Array<{ id: string; label: string; description: string }>;
-}> = [
-	{
-		id: "real-estate",
-		label: "Real Estate",
-		icon: "🏠",
-		subNiches: [
-			{
-				id: "real-estate-dubai",
-				label: "🇦🇪 Dubai / Gulf",
-				description: "RERA, Form F, Ejari, Emirates ID, AED",
-			},
-			{
-				id: "real-estate-saudi",
-				label: "🇸🇦 Saudi Arabia",
-				description: "Ejar, Sakani, Iqama, SAR — Riyadh / Jeddah",
-			},
-			{
-				id: "real-estate-global",
-				label: "🌍 Global",
-				description: "Property type, intent, budget, commission",
-			},
-		],
-	},
-	{
-		id: "b2b-saas",
-		label: "B2B SaaS",
-		icon: "🚀",
-		subNiches: [
-			{
-				id: "b2b-saas-early-stage",
-				label: "🌱 Early-stage",
-				description: "< $1M ARR — short pipeline, light fields",
-			},
-			{
-				id: "b2b-saas",
-				label: "📈 Growth (SMB)",
-				description: "Standard BANT, MRR/ACV tracking",
-			},
-			{
-				id: "b2b-saas-enterprise",
-				label: "🏢 Enterprise",
-				description: "MEDDIC, champion, contract terms",
-			},
-		],
-	},
-	{
-		id: "productivity",
-		label: "Productivity / Solo",
-		icon: "✅",
-		subNiches: [
-			{
-				id: "solo",
-				label: "👤 Solopreneur",
-				description: "Tasks, ideas, reminders — no leads",
-			},
-			{
-				id: "student",
-				label: "🎓 Student",
-				description: "Courses, assignments, projects",
-			},
-			{
-				id: "side-project",
-				label: "🛠️ Side project",
-				description: "Personal goals, kanban tasks",
-			},
-		],
-	},
-	{ id: "freelancer", label: "Freelancer / Solo", icon: "💼" },
-	{ id: "agency-freelance", label: "Agency", icon: "🎨" },
-	{ id: "recruiting", label: "Recruiting", icon: "🧑‍💼" },
-	{ id: "generic", label: "Other / Generic", icon: "📋" },
-];
 
 const TEAM_SIZES = ["1–5", "6–20", "21–50", "51–200", "200+"] as const;
 
@@ -251,6 +166,24 @@ function WorkspaceStep({ onNext }: { onNext: (orgId: Id<"orgs">, slug: string) =
 
 // ─── Step 2: Industry + team size (with sub-niche fork) ───────────────────────
 
+/**
+ * Industry picker shape — fed entirely by the DB-backed queries
+ * `api._platform.industries.queries.{listOnboardingGroups,
+ * listOnboardingTemplatesByGroup}`. Stage 3 of
+ * INDUSTRY-TEMPLATES-DB-MIGRATION.md deleted every static fallback —
+ * the page renders a Loader2 spinner while the queries hydrate, then
+ * the picker.
+ */
+type IndustryGroup = {
+	id: string;
+	label: string;
+	icon?: string;
+	description?: string;
+	templateCount: number;
+	/** When the group has exactly one visible template, auto-select it. */
+	soloTemplateKey?: string;
+};
+
 function IndustryStep({
 	orgId,
 	onNext,
@@ -262,21 +195,56 @@ function IndustryStep({
 }) {
 	// Selected parent industry. May or may not have sub-niches.
 	const [parentId, setParentId] = useState<string | null>(null);
-	// When the parent has sub-niches, this holds the chosen sub-niche id.
+	// When the parent has sub-niches, this holds the chosen sub-niche templateKey.
 	const [subNicheId, setSubNicheId] = useState<string | null>(null);
 	const [teamSize, setTeamSize] = useState<string | null>(null);
 	const [loading, setLoading] = useState(false);
 
 	const updateOrgIndustry = useMutation(api.orgs.mutations.updateOrgIndustry);
-	const templates = useQuery(api.crm.fields.templates.queries.list, {});
-	const templatesById = new Map((templates ?? []).map((t) => [t.id, t] as const));
 
-	const parent = INDUSTRIES.find((i) => i.id === parentId);
-	const showingSubNicheStep = parent?.subNiches?.length;
+	// DB-backed onboarding queries. Stage 3 removed the static fallback —
+	// the page shows a spinner while these resolve.
+	const dbGroups = useQuery(api._platform.industries.queries.listOnboardingGroups, {});
+	const dbSubTemplates = useQuery(
+		api._platform.industries.queries.listOnboardingTemplatesByGroup,
+		parentId ? { groupKey: parentId } : "skip",
+	);
 
-	// Resolved industry id we send to the server. For parents without sub-niches
-	// we send the parent id; for parents with sub-niches we send the chosen sub.
-	const resolvedIndustryId = showingSubNicheStep ? subNicheId : parentId;
+	const groups: IndustryGroup[] = useMemo(() => {
+		if (!dbGroups) return [];
+		return dbGroups.map((g) => ({
+			id: g.groupKey,
+			label: g.label,
+			icon: g.icon,
+			description: g.description,
+			templateCount: g.templateCount,
+			soloTemplateKey: g.soloTemplateKey,
+		}));
+	}, [dbGroups]);
+
+	const parent = groups.find((g) => g.id === parentId);
+
+	const subNiches = useMemo(() => {
+		if (!parent) return undefined;
+		if (!dbSubTemplates) return undefined;
+		return dbSubTemplates.map((t) => ({
+			id: t.templateKey,
+			label: `${t.icon ?? ""} ${t.label}`.trim(),
+			description: t.description,
+		}));
+	}, [parent, dbSubTemplates]);
+
+	// "Has multiple variants" rule — when the group has ≥2 visible
+	// templates AND no `soloTemplateKey`, render step 2 (sub-niche
+	// picker). Single-template groups skip step 2 automatically.
+	const hasMultipleVariants =
+		(parent?.soloTemplateKey === undefined && (parent?.templateCount ?? 0) >= 2) ||
+		(subNiches?.length ?? 0) >= 2;
+	const showingSubNicheStep = hasMultipleVariants;
+
+	const resolvedIndustryId = showingSubNicheStep
+		? subNicheId
+		: (parent?.soloTemplateKey ?? parentId);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -291,6 +259,29 @@ function IndustryStep({
 			setLoading(false);
 		}
 	};
+
+	// Loading state — DB query is hydrating.
+	if (dbGroups === undefined) {
+		return (
+			<div className="mx-auto flex w-full flex-col items-center justify-center gap-3 sm:w-[440px]">
+				<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+				<p className="text-muted-foreground text-sm">Loading industries…</p>
+			</div>
+		);
+	}
+
+	if (groups.length === 0) {
+		return (
+			<div className="mx-auto flex w-full flex-col items-center justify-center gap-3 sm:w-[440px]">
+				<p className="text-center text-muted-foreground text-sm">
+					No industry templates configured. Please contact your platform admin.
+				</p>
+				<Button type="button" variant="outline" onClick={onBack}>
+					Back
+				</Button>
+			</div>
+		);
+	}
 
 	// ── Sub-niche refinement screen ─────────────────────────────────────
 	if (showingSubNicheStep && parent) {
@@ -309,33 +300,39 @@ function IndustryStep({
 				</div>
 
 				<form className="flex flex-col gap-6" onSubmit={handleSubmit}>
-					<div className="grid grid-cols-1 gap-2">
-						{parent.subNiches!.map((sub) => (
-							<button
-								key={sub.id}
-								type="button"
-								onClick={() => setSubNicheId(sub.id)}
-								className={cn(
-									"flex flex-col gap-1 rounded-[var(--radius)] border p-3 text-start transition-colors",
-									subNicheId === sub.id
-										? "border-primary bg-primary/10"
-										: "border-border bg-background hover:bg-muted",
-								)}
-							>
-								<span
+					{dbSubTemplates === undefined ? (
+						<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+							<Loader2 className="h-4 w-4 animate-spin" /> Loading variants…
+						</div>
+					) : (
+						<div className="grid grid-cols-1 gap-2">
+							{(subNiches ?? []).map((sub) => (
+								<button
+									key={sub.id}
+									type="button"
+									onClick={() => setSubNicheId(sub.id)}
 									className={cn(
-										"text-sm font-medium",
-										subNicheId === sub.id && "text-primary",
+										"flex flex-col gap-1 rounded-[var(--radius)] border p-3 text-start transition-colors",
+										subNicheId === sub.id
+											? "border-primary bg-primary/10"
+											: "border-border bg-background hover:bg-muted",
 									)}
 								>
-									{sub.label}
-								</span>
-								<span className="text-xs text-muted-foreground">
-									{sub.description}
-								</span>
-							</button>
-						))}
-					</div>
+									<span
+										className={cn(
+											"text-sm font-medium",
+											subNicheId === sub.id && "text-primary",
+										)}
+									>
+										{sub.label}
+									</span>
+									<span className="text-xs text-muted-foreground">
+										{sub.description}
+									</span>
+								</button>
+							))}
+						</div>
+					)}
 
 					<div className="space-y-2">
 						<p className="text-sm font-medium">Team size</p>
@@ -397,10 +394,10 @@ function IndustryStep({
 				<div className="space-y-2">
 					<p className="text-sm font-medium">Industry</p>
 					<div className="grid grid-cols-2 gap-2">
-						{INDUSTRIES.map((item) => {
-							const t = templatesById.get(item.id);
+						{groups.map((item) => {
 							const isSelected = parentId === item.id;
-							const hasSubNiches = !!item.subNiches?.length;
+							const groupHasMultipleVariants =
+								item.soloTemplateKey === undefined && item.templateCount >= 2;
 							return (
 								<button
 									key={item.id}
@@ -420,13 +417,13 @@ function IndustryStep({
 									<span className="flex items-center gap-1.5">
 										{item.icon && <span aria-hidden="true">{item.icon}</span>}
 										<span className="truncate">{item.label}</span>
-										{hasSubNiches && (
+										{groupHasMultipleVariants && (
 											<span className="ms-auto text-[10px] text-muted-foreground">
 												▸
 											</span>
 										)}
 									</span>
-									{t?.description && (
+									{item.description && (
 										<span
 											className={cn(
 												"line-clamp-2 font-normal text-[11px] leading-snug",
@@ -435,10 +432,10 @@ function IndustryStep({
 													: "text-muted-foreground",
 											)}
 										>
-											{t.description}
+											{item.description}
 										</span>
 									)}
-									{!t?.description && hasSubNiches && (
+									{!item.description && groupHasMultipleVariants && (
 										<span
 											className={cn(
 												"line-clamp-2 font-normal text-[11px] leading-snug",
@@ -486,9 +483,9 @@ function IndustryStep({
 					<Button
 						className="flex-1"
 						type="submit"
-						disabled={!parentId || (!parent?.subNiches?.length && !teamSize) || loading}
+						disabled={!parentId || (!hasMultipleVariants && !teamSize) || loading}
 					>
-						{parent?.subNiches?.length
+						{hasMultipleVariants
 							? "Choose variant →"
 							: loading
 								? "Saving…"

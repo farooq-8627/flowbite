@@ -65,6 +65,7 @@ import {
 } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -212,7 +213,7 @@ export function ChatLandingPane({
 			</header>
 
 			{/* ── 2. Today's pulse ────────────────────────────────────── */}
-			<section className="flex flex-col gap-2">
+			<section data-tour="landing-pulse" className="flex flex-col gap-2">
 				<h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
 					Today's pulse
 				</h3>
@@ -234,7 +235,7 @@ export function ChatLandingPane({
 			</section>
 
 			{/* ── 3. Top 3 next actions ────────────────────────────────── */}
-			<section className="flex flex-col gap-2">
+			<section data-tour="landing-actions" className="flex flex-col gap-2">
 				<h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
 					Top 3 next actions
 				</h3>
@@ -248,7 +249,8 @@ export function ChatLandingPane({
 				{nextActionsState === "empty" && (
 					<p className="rounded-[var(--radius)] border border-dashed bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
 						<BellOffIcon className="me-1.5 inline size-3" />
-						No outstanding actions right now — the AI re-ranks every 30 minutes.
+						No outstanding actions right now — the AI re-ranks as your workspace
+						changes.
 					</p>
 				)}
 				{nextActionsState === "ready" && nextActions && (
@@ -351,7 +353,7 @@ export function ChatLandingPane({
 			)}
 
 			{/* ── 5. Proactive prompts ─────────────────────────────────── */}
-			<section className="flex flex-col gap-2">
+			<section data-tour="landing-chips" className="flex flex-col gap-2">
 				<h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
 					Try asking
 				</h3>
@@ -370,6 +372,32 @@ export function ChatLandingPane({
 					))}
 				</ul>
 			</section>
+
+			{/* First-time coachmark — fires once per device. Bump the id
+			    (`v1` → `v2`) to re-show after meaningful step changes. */}
+			<FirstTimeTour id="chat-landing-v1" steps={CHAT_LANDING_TOUR_STEPS} />
 		</div>
 	);
 }
+
+// ─── First-time tour steps — module scope so the array reference is stable ──
+//
+// Per AGENTS.md FirstTimeTour rules: bump the tour id (`v1` → `v2`) when
+// these steps change meaningfully so users see the updated copy.
+const CHAT_LANDING_TOUR_STEPS: TourStep[] = [
+	{
+		target: "landing-pulse",
+		title: "Today's pulse",
+		body: "Your morning briefing lives here — a one-paragraph summary of what changed in your workspace today.",
+	},
+	{
+		target: "landing-actions",
+		title: "Top 3 next actions",
+		body: "These are the highest-priority things waiting for you. Click Act to ask the AI to handle one.",
+	},
+	{
+		target: "landing-chips",
+		title: "Quick prompts",
+		body: "Tap one of these to ask me to summarise, prioritise, or draft right away.",
+	},
+];

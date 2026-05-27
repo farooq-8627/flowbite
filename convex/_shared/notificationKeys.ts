@@ -16,11 +16,11 @@ import { v } from "convex/values";
 
 // ─── Catalog ─────────────────────────────────────────────────────────────────
 
-export type NotificationPreferenceCategory = "crm" | "reminders" | "ai" | "team" | "system";
+export type NotificationPreferenceCategory = "crm" | "tasks" | "ai" | "team" | "system";
 
 export const NOTIFICATION_PREFERENCE_CATEGORIES: Record<NotificationPreferenceCategory, string> = {
 	crm: "CRM",
-	reminders: "Reminders",
+	tasks: "Tasks",
 	ai: "AI",
 	team: "Team",
 	system: "System",
@@ -84,12 +84,14 @@ export const NOTIFICATION_PREFERENCE_CATALOG: readonly NotificationPreferenceEnt
 		defaultValue: true,
 	},
 
-	// Reminders
-	{ key: "reminder_due", category: "reminders", label: "Reminder due", defaultValue: true },
+	// Tasks (Decision #5 of TASKS-RENAME-PLAN.md — ONE verb family `task_*`;
+	// renamed from `reminder_due` / `reminder_overdue` per G9 of P1.6.A.
+	// Migration: `convex/_migrations/2026_05_27_renameReminderNotificationKeys.ts`).
+	{ key: "task_due", category: "tasks", label: "Task due", defaultValue: true },
 	{
-		key: "reminder_overdue",
-		category: "reminders",
-		label: "Reminder overdue",
+		key: "task_overdue",
+		category: "tasks",
+		label: "Task overdue",
 		defaultValue: true,
 	},
 

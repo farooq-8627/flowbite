@@ -271,6 +271,16 @@ export const updateForAI = internalMutation({
 	},
 });
 
+async function reorderImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; fieldIds: Id<"fieldDefinitions">[] },
+): Promise<void> {
+	const now = Date.now();
+	await Promise.all(
+		args.fieldIds.map((id, index) => ctx.db.patch(id, { order: index, updatedAt: now })),
+	);
+}
+
 export const reorder = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -279,12 +289,22 @@ export const reorder = orgMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "fieldDefinitions.manage");
+		await reorderImpl(ctx, args);
+	},
+});
 
-		await Promise.all(
-			args.fieldIds.map((id, index) =>
-				ctx.db.patch(id, { order: index, updatedAt: Date.now() }),
-			),
-		);
+/** AI-callable internal twin. */
+export const reorderForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		fieldIds: v.array(v.id("fieldDefinitions")),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "fieldDefinitions.manage");
+		const { userId: _u, ...rest } = args;
+		await reorderImpl(ctx, rest);
 	},
 });
 

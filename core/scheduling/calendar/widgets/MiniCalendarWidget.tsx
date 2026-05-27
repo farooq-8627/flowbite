@@ -59,7 +59,7 @@ export function MiniCalendarWidget({ orgSlug, className }: MiniCalendarWidgetPro
 						Schedule
 					</Button>
 					<Link
-						href={`/${orgSlug}/reminders?view=calendar`}
+						href={`/${orgSlug}/tasks?view=calendar`}
 						className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
 					>
 						Open <ArrowRightIcon className="size-3" />
@@ -73,7 +73,7 @@ export function MiniCalendarWidget({ orgSlug, className }: MiniCalendarWidgetPro
 					onSelect={(date) => {
 						if (!date) return;
 						setSelected(date);
-						router.push(`/${orgSlug}/reminders?view=calendar&date=${ymdKey(date)}`);
+						router.push(`/${orgSlug}/tasks?view=calendar&date=${ymdKey(date)}`);
 					}}
 					captionLayout="dropdown"
 				/>

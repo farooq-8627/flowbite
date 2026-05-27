@@ -25,8 +25,8 @@ import { EntityListResultCard } from "./EntityListResultCard";
 import { EntityResultCard } from "./EntityResultCard";
 import { InsightResultCard } from "./InsightResultCard";
 import { NoteResultCard } from "./NoteResultCard";
-import { ReminderResultCard } from "./ReminderResultCard";
 import { SettingsResultCard } from "./SettingsResultCard";
+import { TaskResultCard } from "./TaskResultCard";
 
 // Local re-statement of the discriminated union the backend declares in
 // `convex/ai/tools/_shared.ts`. We re-state here to avoid a frontend ↔
@@ -53,7 +53,7 @@ export type ToolDisplay =
 	| { kind: "personCode"; personCode: string }
 	| { kind: "dealCode"; dealCode: string }
 	| { kind: "note"; noteId: string }
-	| { kind: "reminder"; reminderId: string }
+	| { kind: "task"; taskId: string }
 	| {
 			kind: "diff";
 			entityType: "lead" | "contact" | "deal" | "company";
@@ -105,8 +105,8 @@ export function ToolResultRenderer({ display, orgId }: ToolResultRendererProps) 
 			return <DealCodeCard dealCode={display.dealCode} orgId={orgId} />;
 		case "note":
 			return <NoteResultCard noteId={display.noteId} orgId={orgId} />;
-		case "reminder":
-			return <ReminderResultCard reminderId={display.reminderId} orgId={orgId} />;
+		case "task":
+			return <TaskResultCard taskId={display.taskId} orgId={orgId} />;
 		case "diff":
 			return (
 				<DiffResultCard
@@ -146,7 +146,7 @@ export {
 	InsightResultCard,
 	NoteResultCard,
 	PersonCodeCard,
-	ReminderResultCard,
 	SettingsResultCard,
+	TaskResultCard,
 	// Direct CodeLookupCard import is rare — keep it discoverable.
 };

@@ -19,7 +19,7 @@
 
 import { v } from "convex/values";
 import { orgQuery } from "../../_functions/authenticated";
-import { getPlanLimits, type PlanTier } from "../../_platform/limits";
+import { getPlanLimitsFromDb, type PlanTier } from "../../_platform/limits";
 import { startOfMonth } from "../telemetry";
 
 const RANGE_MS: Record<"7d" | "30d" | "90d", number> = {
@@ -46,7 +46,7 @@ export const getOrgUsage = orgQuery({
 
 		const org = await ctx.db.get(args.orgId);
 		const plan: PlanTier = ((org?.plan as PlanTier | undefined) ?? "free") as PlanTier;
-		const limits = getPlanLimits(plan);
+		const limits = await getPlanLimitsFromDb(ctx, plan);
 
 		// Pull the range. We also need month-to-date totals; compute
 		// those from the same array if `monthStart >= rangeStart`,

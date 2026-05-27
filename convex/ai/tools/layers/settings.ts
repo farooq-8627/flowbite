@@ -310,7 +310,7 @@ registerTool({
 		onPermissionDenied: "Tell the user this requires org.editSettings permission.",
 	},
 	example: {
-		keys: ["leads.open", "deals.open", "deals.pipelineValue", "reminders.dueToday"],
+		keys: ["leads.open", "deals.open", "deals.pipelineValue", "tasks.dueToday"],
 	},
 	schema: z.object({
 		keys: z

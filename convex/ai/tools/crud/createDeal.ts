@@ -57,7 +57,7 @@ registerTool({
 			"If personCode is missing or fabricated, call search_crm to resolve. Don't retry with the same args.",
 		onPermissionDenied:
 			"Tell the user they need deals.create permission. Suggest contacting an admin.",
-		suggestNext: "create_followup",
+		suggestNext: "create_task",
 	},
 	schema: z.object({
 		title: z.string().min(1),

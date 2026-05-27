@@ -51,7 +51,7 @@ export type LayerId =
  *   onEmpty           — search/lookup returned no rows
  *   onPermissionDenied — RBAC failed (we already short-circuit, but the model can apologise)
  *   onPartialSuccess  — bulk operation where N/M rows succeeded
- *   suggestNext       — natural follow-up tool (e.g. create_lead → create_reminder)
+ *   suggestNext       — natural follow-up tool (e.g. create_lead → create_task)
  */
 export type ToolRunbook = {
 	onSuccess?: string;
@@ -362,6 +362,141 @@ export function getRegisteredToolNames(): string[] {
 	return Array.from(REGISTRY.keys());
 }
 
+// ─── C.4 — propose/commit schema audit ───────────────────────────────────────
+//
+// 2026-05-24 incident reminder: the original `commit_create_lead` had a
+// `notes` field on its propose schema but the underlying mutation
+// validator didn't accept it. The model dutifully populated `notes` for
+// every "and add a note that says X" prompt, the commit step silently
+// stripped it (resume.ts is correct to do so — re-parsing through the
+// commit's zod schema is the structural fix), and the user's note
+// content disappeared without a UI signal.
+//
+// This audit catches the same shape proactively: for every propose tool
+// (`twoStep` confirmation OR `needsApproval` declared, non-`commit_*`
+// name), look up the matching `commit_*` and compare the top-level zod
+// `.shape` fields. Any propose-only field gets a warn-level log line.
+//
+// Caveats:
+//   - Some propose-only fields are intentional UI display props (e.g.
+//     `archive_note_category` carries `name` for the propose card; the
+//     mutation needs only `categoryId`). The agent author triages
+//     each warning — the audit doesn't fail the build.
+//   - Only top-level fields of `z.object({...})` schemas are inspected.
+//     Tools using non-object root schemas are skipped with a debug note.
+
+let _proposeCommitAuditDone = false;
+
+interface SchemaAuditFinding {
+	pair: string;
+	proposeOnly: string[];
+	commitOnly: string[];
+	note?: string;
+}
+
+/**
+ * Walk the registry once per process, diff every propose/commit pair's
+ * top-level zod schema, and surface findings via `console.warn`. Return
+ * the findings list so tests can introspect.
+ */
+export function runProposeCommitSchemaAudit(force = false): SchemaAuditFinding[] {
+	if (_proposeCommitAuditDone && !force) return [];
+	_proposeCommitAuditDone = true;
+
+	const findings: SchemaAuditFinding[] = [];
+
+	for (const [name, def] of REGISTRY) {
+		if (name.startsWith("commit_")) continue;
+		const isTwoStep = def.confirmation === "twoStep" || def.needsApproval !== undefined;
+		if (!isTwoStep) continue;
+
+		const commitName = `commit_${name}`;
+		const commitDef = REGISTRY.get(commitName);
+		if (!commitDef) {
+			// Not every twoStep tool has a discrete commit — some use the
+			// AI-SDK-native `needsApproval` HITL path where the same tool
+			// is invoked twice (once previewed, once approved). Skip.
+			continue;
+		}
+
+		const proposeFields = extractTopLevelObjectFields(def.schema);
+		const commitFields = extractTopLevelObjectFields(commitDef.schema);
+
+		if (proposeFields === null || commitFields === null) {
+			findings.push({
+				pair: `${name} ↔ ${commitName}`,
+				proposeOnly: [],
+				commitOnly: [],
+				note: "Skipped — at least one schema is not a z.object() root.",
+			});
+			continue;
+		}
+
+		const proposeOnly = proposeFields.filter((f) => !commitFields.includes(f));
+		const commitOnly = commitFields.filter((f) => !proposeFields.includes(f));
+
+		if (proposeOnly.length === 0 && commitOnly.length === 0) continue;
+
+		findings.push({
+			pair: `${name} ↔ ${commitName}`,
+			proposeOnly,
+			commitOnly,
+		});
+	}
+
+	if (findings.length > 0) {
+		const lines = findings.map((f) => {
+			if (f.note) return `  • ${f.pair}: ${f.note}`;
+			const parts: string[] = [];
+			if (f.proposeOnly.length > 0) parts.push(`propose-only: ${f.proposeOnly.join(", ")}`);
+			if (f.commitOnly.length > 0) parts.push(`commit-only: ${f.commitOnly.join(", ")}`);
+			return `  • ${f.pair} — ${parts.join("; ")}`;
+		});
+		console.warn(
+			[
+				"[toolRegistry] propose/commit schema diff (C.4 audit):",
+				...lines,
+				"  Note: some propose-only fields are intentional UI display props (e.g. `name` for a propose card).",
+				"  Review each row and confirm the missing field is not user-supplied data the commit step would silently drop.",
+			].join("\n"),
+		);
+	}
+
+	return findings;
+}
+
+/**
+ * Top-level field names of a `z.object({...})` schema. Returns `null`
+ * when the schema is not a `ZodObject` (lazy schema, root union, etc.).
+ * The Zod 3+ shape accessor is `_def.shape()` (function) on older
+ * minor versions and a getter on `.shape` on newer ones — try both.
+ */
+function extractTopLevelObjectFields(schema: unknown): string[] | null {
+	if (!schema || typeof schema !== "object") return null;
+	// Try `.shape` first — current zod releases expose it as a getter.
+	const direct = (schema as { shape?: unknown }).shape;
+	if (direct && typeof direct === "object") {
+		return Object.keys(direct as Record<string, unknown>).sort();
+	}
+	// Fallback: legacy `_def.shape()` thunk.
+	const def = (schema as { _def?: { shape?: unknown } })._def;
+	if (def && typeof def === "object") {
+		const shapeFn = (def as { shape?: unknown }).shape;
+		if (typeof shapeFn === "function") {
+			try {
+				const shape = (shapeFn as () => Record<string, unknown>)();
+				if (shape && typeof shape === "object") return Object.keys(shape).sort();
+			} catch {
+				return null;
+			}
+		}
+		if (shapeFn && typeof shapeFn === "object") {
+			return Object.keys(shapeFn as Record<string, unknown>).sort();
+		}
+	}
+	return null;
+}
+
 // ─── expand_tools meta-tool ────────────────────────────────────────────────────
 
 const LAYER_DESCRIPTIONS: Record<LayerId, string> = {
@@ -495,6 +630,12 @@ export function getToolsForRequest(args: {
 	modelTier: ModelTier;
 	expandedLayers: string[];
 }): Record<string, unknown> {
+	// C.4 — run the propose/commit schema audit once per process. Cheap
+	// (walks REGISTRY in O(n)), warn-only, never throws. Catches the
+	// silent-data-loss class of bugs where a propose schema collects
+	// fields the commit schema never reads. See `runProposeCommitSchemaAudit`.
+	runProposeCommitSchemaAudit();
+
 	const { permissions, modelTier, expandedLayers } = args;
 	const result: Record<string, unknown> = {};
 

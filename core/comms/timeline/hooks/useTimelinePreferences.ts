@@ -92,11 +92,16 @@ export const TIMELINE_EVENT_GROUPS: TimelineEventGroup[] = [
 	},
 	{
 		id: "reminderRedundant",
-		label: "Reminder created/completed (duplicate of the reminder card)",
+		label: "Task created/completed (duplicate of the task card)",
 		description:
-			"Hides the bare \u201CReminder set\u201D / \u201CReminder completed\u201D row that mirrors the reminder card.",
+			"Hides the bare \u201CTask added\u201D / \u201CTask completed\u201D row that mirrors the task card.",
 		defaultHidden: true,
 		matches: (a) =>
+			a === "task_created" ||
+			a === "task_updated" ||
+			a === "task_deleted" ||
+			a === "task_completed" ||
+			// Backward-compat with legacy activity log rows.
 			a === "reminder_created" ||
 			a === "reminder_updated" ||
 			a === "reminder_deleted" ||
@@ -104,9 +109,9 @@ export const TIMELINE_EVENT_GROUPS: TimelineEventGroup[] = [
 	},
 	{
 		id: "followupRedundant",
-		label: "Follow-up created/completed (duplicate of the reminder card)",
+		label: "Follow-up created/completed (legacy duplicate of the task card)",
 		description:
-			"Follow-ups render as reminder cards too. This hides the parallel \u201CFollow-up created\u201D activity row.",
+			"Hides the legacy \u201CFollow-up created\u201D activity row from before the rename to tasks.",
 		defaultHidden: true,
 		matches: (a) =>
 			a === "followup_created" ||

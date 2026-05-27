@@ -24,7 +24,7 @@ const codePrefixesSchema = z.object({
 	person: prefixSchema,
 	deal: prefixSchema,
 	company: prefixSchema,
-	followup: prefixSchema,
+	task: prefixSchema,
 });
 
 export function CodePrefixesSection({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
@@ -38,7 +38,7 @@ export function CodePrefixesSection({ org, orgId }: { org: OrgSettings; orgId: I
 			person: prefixes.person ?? "P",
 			deal: prefixes.deal ?? "D",
 			company: prefixes.company ?? "C",
-			followup: prefixes.followup ?? "FU",
+			task: prefixes.task ?? "T",
 		},
 		onSubmit: async (data) => {
 			await update({
@@ -84,9 +84,9 @@ export function CodePrefixesSection({ org, orgId }: { org: OrgSettings; orgId: I
 					</SettingsFormRow>
 					<SettingsFormRow
 						control={form.control}
-						name="followup"
-						label="Follow-ups"
-						description={`Next follow-up code will look like ${values.followup || "FU"}-001.`}
+						name="task"
+						label="Tasks"
+						description={`Next task code will look like ${values.task || "T"}-001.`}
 					>
 						{(field) => <Input maxLength={5} {...field} />}
 					</SettingsFormRow>

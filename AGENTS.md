@@ -25,9 +25,8 @@ Convex agent skills for common tasks can be installed by running
 >
 > - **`Future-Enhancements.md`** — deferral cards (currently-disabled restrictions in §A; backlog enhancements in §B; audit-flagged items in §C; process items in §D; P3 AI tool gaps in §E; capability roadmap deferrals in §F; low-priority polish in §G). Pending only — every shipped row was migrated to `SHIPPED.md` on 2026-05-27.
 > - **`LANDING-PAGE.md`** — marketing-site spec (separate PR track, embedded at `app/(marketing)/`).
-> - **`PLATFORM-OWNER-PANEL.md`** — super-admin panel spec (separate sprint).
 >
-> Per-module architecture decisions live in `core/*/MODULE.md` and `convex/**/MODULE.md`. Architecture docs live in `docs/architecture/`. (Per-module STATE.md files were retired on 2026-05-27 — pending items consolidated into `Future-Enhancements.md` §H.)
+> Per-module architecture decisions live in `core/*/MODULE.md` and `convex/**/MODULE.md`. Architecture docs live in `docs/architecture/`. (Per-module STATE.md files were retired on 2026-05-27 — pending items consolidated into `Future-Enhancements.md` §H. The previous super-admin spec `PLATFORM-OWNER-PANEL.md` and `INDUSTRY-TEMPLATES-DB-MIGRATION.md` were both deleted on 2026-05-27 once their stages all shipped — pending Tier B/C / v2 items live as cards in `Future-Enhancements.md §B.27`–`§B.31`.)
 >
 > Every change must enforce full-repo verification (typecheck, biome, test, vitest, build all green for the WHOLE repository, not just changed files), the doc-cleanup rule (collapse shipped, keep pending in full), and the no-backward-compat directive (rename → delete old + migrate same edit).
 
@@ -538,7 +537,6 @@ await enforceRateLimit(ctx, {
 - `SHIPPED.md` — one-line changelog of every shipped scope. Read this to confirm "is X already done?".
 - `Future-Enhancements.md` — deferral cards (currently-disabled restrictions, backlog enhancements, audit-flagged items, process items, P3 AI tool gaps, capability roadmap deferrals, low-priority polish, per-module deferred polish in section H).
 - `LANDING-PAGE.md` — marketing-site spec (separate PR track).
-- `PLATFORM-OWNER-PANEL.md` — super-admin panel spec (separate sprint).
 
 **Failure to update PENDING.md / SHIPPED.md = broken contract. The next AI session will not know what shipped and what's left.**
 

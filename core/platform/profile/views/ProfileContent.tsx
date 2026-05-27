@@ -15,8 +15,7 @@ import { DealDetailShell } from "@/core/platform/profile/components/DealDetailSh
 import { OverviewCard } from "@/core/platform/profile/components/OverviewCard";
 import { PersonFilesByDealStage } from "@/core/platform/profile/components/PersonFilesByDealStage";
 import { PersonCalendarPanel } from "@/core/scheduling/calendar/panels/PersonCalendarPanel";
-import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
-import { RemindersPanel } from "@/core/scheduling/reminders/panels/RemindersPanel";
+import { TasksPanel } from "@/core/scheduling/tasks/panels/TasksPanel";
 import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import type { ProfileGroupId } from "../config/profile-sections";
@@ -61,7 +60,7 @@ export function ProfileContent({ activeGroup, personCode, orgSlug, orgId }: Prop
 			return <DealsGroup personCode={personCode} />;
 		case "files":
 			return <FilesGroup personCode={personCode} orgId={orgId} />;
-		case "reminders":
+		case "tasks":
 			return <RemindersGroup personCode={personCode} />;
 		case "calendar":
 			return <CalendarGroup personCode={personCode} />;
@@ -233,26 +232,26 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 	);
 }
 
-// ─── Reminders — CHROMELESS reminders + follow-ups stack ─────────────────────
+// ─── Tasks — CHROMELESS tasks + follow-ups stack ─────────────────────────────
 
 function RemindersGroup({ personCode }: { personCode: string }) {
 	return (
 		<div className="grid gap-6">
 			<ProfileSection
-				id="reminders.list"
-				title="Reminders"
-				description="All follow-ups scheduled for this person."
+				id="tasks.list"
+				title="Tasks"
+				description="All open tasks attached to this person — to-dos, calls, emails, meetings."
 				chromeless
 			>
-				<RemindersPanel personCode={personCode} />
+				<TasksPanel personCode={personCode} />
 			</ProfileSection>
 			<ProfileSection
-				id="reminders.followups"
+				id="tasks.followups"
 				title="Follow-ups"
 				description="Cadence-driven follow-ups attached to this person."
 				chromeless
 			>
-				<EntityFollowups personCode={personCode} />
+				<TasksPanel personCode={personCode} type="followup" />
 			</ProfileSection>
 		</div>
 	);

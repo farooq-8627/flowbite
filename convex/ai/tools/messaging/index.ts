@@ -16,5 +16,7 @@ import "./listMessages";
 import "./markThreadRead";
 import "./addParticipants";
 import "./removeParticipant";
+import "./startDm";
+import "./manageConversation";
 
 export { setMessagingContext } from "./_context";

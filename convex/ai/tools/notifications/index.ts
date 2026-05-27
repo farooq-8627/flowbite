@@ -6,5 +6,6 @@
  */
 import "./listNotifications";
 import "./markNotificationRead";
+import "./markAllNotificationsRead";
 
 export { setNotificationsContext } from "./_context";

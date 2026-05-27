@@ -38,7 +38,7 @@ export type ProfileGroupId =
 	| "notes"
 	| "deals"
 	| "files"
-	| "reminders"
+	| "tasks"
 	| "calendar";
 
 export const PROFILE_GROUPS: (ShellGroup & { id: ProfileGroupId; icon: LucideIcon })[] = [
@@ -48,7 +48,7 @@ export const PROFILE_GROUPS: (ShellGroup & { id: ProfileGroupId; icon: LucideIco
 	{ id: "notes", label: "Notes", icon: StickyNote },
 	{ id: "deals", label: "Deals", icon: LayoutList, permission: "deals.view" },
 	{ id: "files", label: "Files", icon: FolderOpen },
-	{ id: "reminders", label: "Reminders", icon: Bell, permission: "reminders.view" },
+	{ id: "tasks", label: "Reminders", icon: Bell, permission: "tasks.view" },
 	{ id: "calendar", label: "Calendar", icon: CalendarDays },
 ];
 
@@ -145,20 +145,20 @@ export const PROFILE_SECTIONS: ShellSection[] = [
 
 	// Reminders
 	{
-		id: "reminders.list",
-		groupId: "reminders",
+		id: "tasks.list",
+		groupId: "tasks",
 		label: "Reminders",
 		description: "All follow-ups scheduled for this person.",
 		keywords: ["follow-up", "reminder", "due", "overdue"],
-		permission: "reminders.view",
+		permission: "tasks.view",
 	},
 	{
-		id: "reminders.followups",
-		groupId: "reminders",
+		id: "tasks.followups",
+		groupId: "tasks",
 		label: "Follow-ups",
 		description: "Cadence-driven follow-ups attached to this person.",
 		keywords: ["follow-up", "cadence", "sequence", "outreach"],
-		permission: "reminders.view",
+		permission: "tasks.view",
 	},
 
 	// Calendar

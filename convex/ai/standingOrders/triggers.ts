@@ -26,15 +26,17 @@ import { internalAction, type MutationCtx } from "../../_generated/server";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
- * After a deal moves to a new stage, fire an auto-followup if:
+ * After a deal moves to a new stage, fire an auto-task if:
  *   - the destination stage has `onEnter.autoFollowupTemplate` set, AND
- *   - the deal's owner has flipped `users.preferences.aiAutonomy.autoFollowupOnStageMove`.
+ *   - the deal's owner has flipped `users.preferences.aiAutonomy.autoTaskOnStageMove`.
  *
- * The follow-up is created via `internal.crm.shared.reminders.mutations.createForAI`
- * with `source: "system"` and the templated body. Audit row records
- * `triggeredBy: "automation:onStageMove"`.
+ * The task is created via `internal.crm.shared.tasks.mutations.createForAI`
+ * with `type: "followup"` and the templated body. Audit row records
+ * `triggeredBy: "automation:onStageMove"`. (Renamed from
+ * `maybeFireAutoFollowupOnStageMove` per Stage 4B of TASKS-RENAME-PLAN.md
+ * — Decision #5: ONE verb family, `task_*`.)
  */
-export async function maybeFireAutoFollowupOnStageMove(
+export async function maybeFireAutoTaskOnStageMove(
 	ctx: MutationCtx,
 	args: {
 		orgId: Id<"orgs">;
@@ -54,15 +56,16 @@ export async function maybeFireAutoFollowupOnStageMove(
 
 	const ownerUserId = args.deal.assignedTo;
 	if (!ownerUserId) return;
-	// `reminders.create*` requires a `personCode`. Deals can exist without
-	// one (deal-only workflows); in that case there's no person to attach
-	// a follow-up to, so skip cleanly. Auto-followups for deal-only stages
-	// are tracked in Future-Enhancements.md.
+	// `tasks.create*` with `type: "followup"` requires a `personCode`.
+	// Deals can exist without one (deal-only workflows); in that case
+	// there's no person to attach a follow-up to, so skip cleanly.
+	// Auto-followups for deal-only stages are tracked in
+	// Future-Enhancements.md.
 	const personCode = args.deal.personCode;
 	if (typeof personCode !== "string" || personCode.length === 0) return;
 	const owner = await ctx.db.get(ownerUserId);
 	if (!owner || owner.deletedAt !== undefined) return;
-	const flag = owner.preferences?.aiAutonomy?.autoFollowupOnStageMove === true;
+	const flag = owner.preferences?.aiAutonomy?.autoTaskOnStageMove === true;
 	if (!flag) return;
 
 	const offsetDays = Math.max(1, args.toStage.onEnter?.autoFollowupAfterDays ?? 3);
@@ -71,9 +74,10 @@ export async function maybeFireAutoFollowupOnStageMove(
 		? template.replaceAll("{stage}", args.toStage.name)
 		: template;
 
-	await ctx.scheduler.runAfter(0, internal.crm.shared.reminders.mutations.createForAI, {
+	await ctx.scheduler.runAfter(0, internal.crm.shared.tasks.mutations.createForAI, {
 		orgId: args.orgId,
 		userId: ownerUserId,
+		type: "followup" as const,
 		personCode,
 		dealCode: args.deal.dealCode,
 		entityType: "deal",
@@ -81,14 +85,13 @@ export async function maybeFireAutoFollowupOnStageMove(
 		title,
 		dueAt,
 		assignedTo: ownerUserId,
-		source: "system",
-		priority: "normal",
+		priority: "normal" as const,
 	});
 
 	await ctx.db.insert("aiToolEvents", {
 		orgId: args.orgId,
 		userId: ownerUserId,
-		toolName: "create_followup",
+		toolName: "create_task",
 		layer: "automation",
 		startedAt: Date.now(),
 		durationMs: 0,

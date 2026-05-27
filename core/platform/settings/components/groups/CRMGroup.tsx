@@ -34,20 +34,18 @@ import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { cn } from "@/lib/utils";
 import type { OrgSettings } from "../../types";
 import { resolveEntityLabels } from "../../types";
-import { FollowupsSection } from "./crm/FollowupsSection";
 import { NoteCategoriesSection } from "./crm/NoteCategoriesSection";
-import { RemindersSection } from "./crm/RemindersSection";
 import { TagsSection } from "./crm/TagsSection";
+import { TasksSection } from "./crm/TasksSection";
 import { TimelineSection } from "./crm/TimelineSection";
 
-const CRM_TABS = ["tags", "notes", "reminders", "followups", "timeline"] as const;
+const CRM_TABS = ["tags", "notes", "tasks", "timeline"] as const;
 type CRMTab = (typeof CRM_TABS)[number];
 
 const TAB_LABELS: Record<CRMTab, string> = {
 	tags: "Tags",
 	notes: "Notes",
-	reminders: "Reminders",
-	followups: "Follow-ups",
+	tasks: "Tasks",
 	timeline: "Timeline",
 };
 
@@ -55,16 +53,11 @@ const TAB_LABELS: Record<CRMTab, string> = {
  * Map every sub-tab to the canonical settings-section id. Used to keep the
  * topnav sub-group pill highlight synced with the active tab via the
  * `shell:section-active` event.
- *
- * Note: the section ids preserve their historical `notes.*` prefix even
- * though they now live under CRM — the prefix is part of the public deep-
- * link contract (URLs, AI tool hooks, search index keywords).
  */
 const SECTION_ID_BY_TAB: Record<CRMTab, string> = {
 	tags: "crm.tags",
 	notes: "notes.categories",
-	reminders: "notes.reminders",
-	followups: "notes.followups",
+	tasks: "crm.tasks",
 	timeline: "notes.timeline",
 };
 
@@ -156,8 +149,7 @@ export function CRMGroup({ org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }
 				{activeTab === "notes" && (
 					<NoteCategoriesSection orgId={orgId} canManage={canManageNoteCategories} />
 				)}
-				{activeTab === "reminders" && <RemindersSection org={org} orgId={orgId} />}
-				{activeTab === "followups" && <FollowupsSection org={org} orgId={orgId} />}
+				{activeTab === "tasks" && <TasksSection org={org} orgId={orgId} />}
 				{activeTab === "timeline" && <TimelineSection />}
 			</div>
 		</div>

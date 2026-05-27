@@ -26,10 +26,16 @@
  * Cost: zero queries on BYOK or hard-blocked free; one indexed query
  * against `aiToolEvents.by_org_and_started` scoped to the current
  * calendar month for metered tiers.
+ *
+ * 2026-05-27 update — limits are now fetched DB-first via the
+ * internal query `_platform.tiers.queries.getLimitsInternal`. This
+ * runtime is `"use node"` (action) so it has no `ctx.db` access; the
+ * caller's `ctx.runQuery` makes the indexed read for us. Owner-panel
+ * tier edits take effect immediately on the next chat turn.
  */
 
 import type { Id } from "../../_generated/dataModel";
-import { getPlanLimits, type PlanTier } from "../../_platform/limits";
+import type { PlanLimits, PlanTier } from "../../_platform/limits";
 
 // biome-ignore lint/suspicious/noExplicitAny: pre-codegen cross-module ref
 const _ref = (path: string) => path as any;
@@ -47,7 +53,11 @@ export async function checkAiQuota(args: {
 	// BYOK — user pays the model bill, we don't meter. Skip every gate.
 	if (args.usageMode === "byok") return { allowed: true };
 
-	const limits = getPlanLimits(args.plan);
+	// DB-authoritative limits. Owner-panel edits to `platformTiers`
+	// land here on the next call without a redeploy.
+	const limits = (await args.ctx.runQuery(_ref("_platform/tiers/queries:getLimitsInternal"), {
+		tier: args.plan,
+	})) as PlanLimits;
 
 	// Free tier on a platform model — blocked. Tell the user the two
 	// ways forward: add a BYOK key (instant unblock) or upgrade.

@@ -1,14 +1,23 @@
 /**
  * convex/ai/actions/rankNextActions.ts
  *
- * Stage 6 of /SPRINT-PLAN.md (Proactive layer). The cron-driven entry
- * points that rebuild the materialised `aiNextActions` table.
+ * Stage 6 of /SPRINT-PLAN.md (Proactive layer). On-demand entry points
+ * that rebuild the materialised `aiNextActions` table.
  *
- * Architecture:
+ * 2026-05-27 — the steady-state path is now reactive, not cron-driven.
+ * `convex/ai/queries/nextActionsTrigger.ts:scheduleNextActionsRebuild`
+ * fires from every relevant lead/deal/task mutation, with a 5-second
+ * dedup window. The cron schedule for `rebuildAllOrgs` was removed
+ * from `convex/crons.ts` because the reactive path keeps the ranked
+ * store within ~250 ms of source-of-truth, whereas the cron added a
+ * stale window the user could feel. The action below is preserved
+ * as an ops entry point — running
+ * `npx convex run ai/actions/rankNextActions:rebuildAllOrgs '{}'`
+ * still does a global resweep (e.g. after a schema migration that
+ * changes the heuristic).
  *
- *   ┌─ crons.ts: rank-ai-next-actions (every 30 min)
- *   │
- *   ▼
+ * Architecture (when invoked manually):
+ *
  *   rebuildAllOrgs (internalAction)        ← NO `use node` — pure orchestration
  *     • runs `listActiveOrgMemberships` (internalQuery) to enumerate
  *       (orgId, userId) pairs we should rebuild for.
@@ -26,7 +35,7 @@
  *     is reachable from a V8 action via `ctx.runQuery` / `ctx.runMutation`.
  *
  * Cost gate:
- *   The Stage 6 prompt requires the cron to "gate via the existing AI
+ *   The Stage 6 prompt required the cron to "gate via the existing AI
  *   quota gate so a busy org doesn't blow the AI budget." This stage is
  *   heuristic-only — there is no LLM call at any layer of the rebuild —
  *   so the AI quota gate is not a meaningful constraint here. The cost
@@ -40,8 +49,8 @@
  *       ribbon won't render for them anyway.
  *
  * Telemetry:
- *   The action returns `{ orgs, scheduled, skipped }` so the cron's
- *   structured logs surface a one-line health summary every 30 min.
+ *   The action returns `{ orgs, scheduled, skipped }` so manual sweeps
+ *   surface a one-line health summary in the Convex logs.
  */
 
 import { v } from "convex/values";
@@ -91,13 +100,16 @@ export const listActiveOrgMemberships = internalQuery({
 });
 
 /**
- * Cron entry — runs every 30 min. Schedules a per-(org, user) rebuild
- * mutation so each rebuild has its own transaction.
+ * Manual / ops sweep entry — schedules a per-(org, user) rebuild
+ * mutation so each rebuild has its own transaction. No longer
+ * fired by a cron; invoke via
+ * `npx convex run ai/actions/rankNextActions:rebuildAllOrgs '{}'`
+ * for one-off resweeps after schema migrations.
  *
  * The schedule offset spreads the rebuilds 100 ms apart. With at most a
  * few hundred active members in the dev DB this finishes within seconds;
  * for a production workspace with 1000+ active members the total wall
- * clock is ~2 minutes — well below the next 30-min tick.
+ * clock is ~2 minutes.
  */
 export const rebuildAllOrgs = internalAction({
 	args: {},

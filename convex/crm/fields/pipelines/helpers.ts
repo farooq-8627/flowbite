@@ -13,7 +13,6 @@
  *   - Reserved suggestions for final stages: WON / LOST / DONE.
  */
 import type { Id } from "../../../_generated/dataModel";
-import { getTemplate } from "../templates/registry";
 
 // ─── Stage-code helpers ─────────────────────────────────────────────────────
 
@@ -30,8 +29,9 @@ import { getTemplate } from "../templates/registry";
  * Used by:
  *   - `pipelines.mutations.ts::addStage` — auto-suggest when not provided.
  *   - Settings UI placeholder text.
- *   - `convex/crm/fields/templates/definitions/*.ts` (built into the
- *     templates as static codes — this helper is the runtime fallback).
+ *   - `convex/_platform/industries/builtIns/*.ts` (built-in template
+ *     bootstrap fixtures — codes are static there; this helper is the
+ *     runtime fallback for owner-typed codes only).
  */
 export function deriveStageCode(
 	stage: { name: string; isFinal?: boolean; finalType?: string },
@@ -385,15 +385,18 @@ export async function validateStageTransition(
 // ─── Backwards-compat shim for `seedFromTemplate` ──────────────────────────
 
 /**
- * Backwards-compat wrapper around the new template registry.
+ * Backwards-compat wrapper around the new DB-backed `platformTemplates`
+ * table. Returns a pipeline-shaped seed (name + entityType + stages
+ * with codes) for the given templateKey, or `undefined` when the row
+ * doesn't exist / has no pipeline data.
  *
- * Returns a pipeline-shaped seed (name + entityType + stages with codes)
- * for the given template key. Existing callers (onboarding, tests) keep
- * working without changes.
- *
- * NEW callers should use `setupWorkspaceFromTemplate` from
- * `convex/crm/fields/templates/mutations.ts` — it ALSO seeds field
- * definitions and entity-label overrides bundled in the template.
+ * As of Stage 1 of INDUSTRY-TEMPLATES-DB-MIGRATION.md (2026-05-27)
+ * this helper is async and reads from the DB. Currently has zero
+ * runtime callers — kept as a back-compat shim per
+ * `pipelines/MODULE.md` decision #4. Newer callers should use
+ * `setupWorkspaceFromTemplate` from `convex/crm/fields/templates/mutations.ts`,
+ * which seeds the FULL workspace (pipelines + fields + entity labels +
+ * mock data + …) in one atomic transaction.
  */
 export type PipelineTemplate = {
 	name: string;
@@ -409,20 +412,66 @@ export type PipelineTemplate = {
 	}>;
 };
 
-export function seedFromTemplate(templateKey: string): PipelineTemplate | undefined {
-	const t = getTemplate(templateKey);
-	if (!t) return undefined;
-	return {
-		name: t.pipeline.name,
-		entityType: "deal",
-		stages: t.pipeline.stages.map((s, i) => ({
-			name: s.name,
-			code: s.code,
-			color: s.color,
-			order: i,
-			isFinal: s.isFinal,
-			finalType: s.finalType,
-			staleAfterDays: s.staleAfterDays,
-		})),
+export async function seedFromTemplate(
+	ctx: { db: any },
+	templateKey: string,
+): Promise<PipelineTemplate | undefined> {
+	const row = await ctx.db
+		.query("platformTemplates")
+		.withIndex("by_templateKey", (q: { eq: (k: string, v: unknown) => unknown }) =>
+			q.eq("templateKey", templateKey),
+		)
+		.unique();
+	if (!row) return undefined;
+	const def = (row.definition ?? {}) as {
+		pipeline?: { name?: string; stages?: unknown[] };
+		pipelines?: Array<{
+			entityType?: string;
+			name?: string;
+			stages?: unknown[];
+		}>;
 	};
+
+	// Prefer the legacy single-pipeline shape when present; fall back to
+	// the first deal-typed entry of the new `pipelines: [...]` array.
+	const single = def.pipeline;
+	if (single?.name && Array.isArray(single.stages)) {
+		return {
+			name: single.name,
+			entityType: "deal",
+			stages: shapeStages(single.stages),
+		};
+	}
+
+	const dealPipeline = def.pipelines?.find((p) => p.entityType === "deal");
+	if (!dealPipeline?.name || !Array.isArray(dealPipeline.stages)) {
+		return undefined;
+	}
+	return {
+		name: dealPipeline.name,
+		entityType: dealPipeline.entityType ?? "deal",
+		stages: shapeStages(dealPipeline.stages),
+	};
+}
+
+function shapeStages(stages: unknown[]): PipelineTemplate["stages"] {
+	return stages.map((s, i) => {
+		const stage = s as {
+			name?: string;
+			code?: string;
+			color?: string;
+			isFinal?: boolean;
+			finalType?: "positive" | "negative" | "neutral";
+			staleAfterDays?: number;
+		};
+		return {
+			name: stage.name ?? `Stage ${i + 1}`,
+			code: stage.code ?? `STG${i + 1}`,
+			color: stage.color,
+			order: i,
+			isFinal: stage.isFinal,
+			finalType: stage.finalType,
+			staleAfterDays: stage.staleAfterDays,
+		};
+	});
 }

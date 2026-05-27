@@ -613,11 +613,24 @@ export const aiStandingOrders = defineTable({
 /**
  * Stage 6 (SPRINT-PLAN.md) — `aiNextActions` table.
  *
- * Materialised, ranked list of "what should this user do next?" rows. The
- * table is rebuilt every 30 minutes by the cron action
- * `convex/ai/actions/rankNextActions:rebuildAllOrgs` (which paginates
- * orgs and runs `rebuildForOrg` per org → calls the heuristic ranker
- * `convex/ai/queries/nextActions:rankForUser` for every active member).
+ * Materialised, ranked list of "what should this user do next?" rows.
+ *
+ * Reactive rebuild model (2026-05-27):
+ *   The table is rebuilt **on-demand** when source data changes. Every
+ *   relevant lead/deal/task mutation calls
+ *   `convex/ai/queries/nextActionsTrigger:scheduleNextActionsRebuild`,
+ *   which schedules the per-user `rebuildForUser` mutation with a 5 s
+ *   token-bucket dedup so bursts coalesce. First-paint freshness comes
+ *   from `convex.ai.queries.nextActions:lazyWarmForUser`, fired once per
+ *   session by `AIPulseRibbon` when the ranked store is empty for the
+ *   caller.
+ *
+ *   The original 30-minute cron (`internal.ai.actions.rankNextActions.
+ *   rebuildAllOrgs`) was removed because the reactive path keeps the
+ *   ranked store within ~250 ms of source-of-truth and the cron was
+ *   adding stale-window latency the user could feel. The action is kept
+ *   in the codebase as an on-demand internal entrypoint (e.g. for ops
+ *   sweeps after a schema change) but is no longer scheduled.
  *
  * The ranker is **purely heuristic** (no LLM call). It scores three
  * record kinds per user:

@@ -76,7 +76,7 @@ export function OverviewCard({ personCode, compact = false, className }: Props) 
 		orgId ? { orgId, personCode, limit: messageLimit } : "skip",
 	);
 	const reminders = useQuery(
-		api.crm.shared.reminders.queries.listForPerson,
+		api.crm.shared.tasks.queries.listForPerson,
 		orgId ? { orgId, personCode } : "skip",
 	);
 	const deals = useQuery(
@@ -133,13 +133,13 @@ export function OverviewCard({ personCode, compact = false, className }: Props) 
 							<FollowupsCard
 								personCode={personCode}
 								profileBase={profileBaseHref}
-								reminders={reminders as Array<Doc<"reminders">> | undefined}
+								reminders={reminders as Array<Doc<"tasks">> | undefined}
 								limit={PER_CARD_LIMIT}
 							/>
 							<RemindersCard
 								personCode={personCode}
 								profileBase={profileBaseHref}
-								reminders={reminders as Array<Doc<"reminders">> | undefined}
+								reminders={reminders as Array<Doc<"tasks">> | undefined}
 								limit={PER_CARD_LIMIT}
 							/>
 						</div>
@@ -168,7 +168,7 @@ export function OverviewCard({ personCode, compact = false, className }: Props) 
 							<FollowupsCard
 								personCode={personCode}
 								profileBase={profileBaseHref}
-								reminders={reminders as Array<Doc<"reminders">> | undefined}
+								reminders={reminders as Array<Doc<"tasks">> | undefined}
 								limit={2}
 								dense
 							/>
@@ -469,17 +469,17 @@ function FollowupsCard({
 }: {
 	personCode: string;
 	profileBase: string | null;
-	reminders: Array<Doc<"reminders">> | undefined;
+	reminders: Array<Doc<"tasks">> | undefined;
 	limit: number;
 	dense?: boolean;
 }) {
 	const items = useMemo(() => {
 		return (reminders ?? [])
-			.filter((r) => r.source === "followup" && r.status === "pending")
+			.filter((r) => r.type === "followup" && r.status === "pending")
 			.sort((a, b) => a.dueAt - b.dueAt)
 			.slice(0, limit);
 	}, [reminders, limit]);
-	const href = profileBase ? `${profileBase}#reminders.followups` : null;
+	const href = profileBase ? `${profileBase}#tasks.followups` : null;
 
 	return (
 		<MiniCard
@@ -511,24 +511,24 @@ function RemindersCard({
 }: {
 	personCode: string;
 	profileBase: string | null;
-	reminders: Array<Doc<"reminders">> | undefined;
+	reminders: Array<Doc<"tasks">> | undefined;
 	limit: number;
 	dense?: boolean;
 }) {
 	const items = useMemo(() => {
 		return (reminders ?? [])
-			.filter((r) => r.source !== "followup" && r.status === "pending")
+			.filter((r) => r.type !== "followup" && r.status === "pending")
 			.sort((a, b) => a.dueAt - b.dueAt)
 			.slice(0, limit);
 	}, [reminders, limit]);
-	const href = profileBase ? `${profileBase}#reminders.list` : null;
+	const href = profileBase ? `${profileBase}#tasks.list` : null;
 
 	return (
 		<MiniCard
-			title="Open reminders"
+			title="Open tasks"
 			Icon={BellIcon}
 			href={href}
-			emptyLabel="No active reminders"
+			emptyLabel="No active tasks"
 			isEmpty={items.length === 0}
 			dense={dense}
 		>
@@ -542,7 +542,7 @@ function RemindersCard({
 	);
 }
 
-function ReminderRow({ reminder }: { reminder: Doc<"reminders"> }) {
+function ReminderRow({ reminder }: { reminder: Doc<"tasks"> }) {
 	const isOverdue = reminder.dueAt < Date.now();
 	return (
 		<li className="flex items-start gap-1.5 text-[11px]">

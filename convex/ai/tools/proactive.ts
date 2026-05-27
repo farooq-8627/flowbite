@@ -46,9 +46,9 @@ registerTool({
 	confirmation: "none",
 	instruction: {
 		whenToCall:
-			"Use to answer 'what should I do next?' / 'which records need my attention?' / 'show me my top priorities'. Reads the materialised proactive ranker (cron-rebuilt every 30 min) so cost is constant per call regardless of workspace size.",
+			"Use to answer 'what should I do next?' / 'which records need my attention?' / 'show me my top priorities'. Reads the materialised proactive ranker (rebuilt reactively on every lead/deal/task change) so cost is constant per call regardless of workspace size.",
 		whenNotToCall:
-			"Don't use to find a specific person or deal — use search_crm. Don't use to list every reminder — use list_followups.",
+			"Don't use to find a specific person or deal — use search_crm. Don't use to list every reminder — use list_tasks.",
 		preflight: ["list_my_permissions"],
 		synonyms: ["what should I do", "my priorities", "top tasks", "focus list", "what's next"],
 		goodExample: {

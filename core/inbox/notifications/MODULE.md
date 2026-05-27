@@ -124,9 +124,9 @@ export const NOTIFICATION_TYPES = {
   DEAL_WON:            "deal_won",
   DEAL_STALE:          "deal_stale",
 
-  // Follow-up / Reminder notifications
-  REMINDER_DUE:        "reminder_due",
-  REMINDER_OVERDUE:    "reminder_overdue",
+  // Task notifications
+  TASK_DUE:            "task_due",
+  TASK_OVERDUE:        "task_overdue",
 
   // Org notifications
   MEMBER_INVITED:      "member_invited",
@@ -205,7 +205,7 @@ export const markAllRead = orgMutation({
 notificationPreferences: v.optional(v.object({
   lead_assigned:       v.boolean(),   // default: true
   deal_stage_changed:  v.boolean(),   // default: true
-  reminder_due:        v.boolean(),   // default: true
+  task_due:            v.boolean(),   // default: true
   ai_action_completed: v.boolean(),   // default: false (can be noisy)
   billing_trial_ending: v.boolean(),  // default: true
 })),

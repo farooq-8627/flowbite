@@ -813,9 +813,9 @@ describe("fieldValues.set permission gate", () => {
 	});
 });
 
-// ─── reminders permission gates (non-assignee, non-manager → forbidden) ──────
+// ─── tasks permission gates (non-assignee, non-manager → forbidden) ─────────
 
-describe("reminders.complete", () => {
+describe("tasks.complete", () => {
 	it("blocks a non-assignee viewer from completing", async () => {
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
@@ -823,8 +823,8 @@ describe("reminders.complete", () => {
 		const { userId: viewerId, asUser: asViewer } = await seedUser(t, "viewer@example.com");
 		await seedAdditionalMember(t, orgId, viewerId, "viewer");
 
-		// Create reminder assigned to the org owner (asUser).
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		// Create task assigned to the org owner (asUser).
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode: "P-001",
 			entityType: "lead",
@@ -832,28 +832,28 @@ describe("reminders.complete", () => {
 			title: "Follow up",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: userId,
-			source: "manual",
+			type: "todo",
 		});
 
-		// Viewer (no reminders.manage, no assignment) cannot complete.
+		// Viewer (no tasks.manage, no assignment) cannot complete.
 		await expect(
-			asViewer.mutation(api.crm.shared.reminders.mutations.complete, {
+			asViewer.mutation(api.crm.shared.tasks.mutations.complete, {
 				orgId,
-				reminderId,
+				taskId,
 			}),
 		).rejects.toThrow();
 	});
 
-	it("allows a Member with reminders.manage to complete on behalf of the assignee", async () => {
-		// Member role in the SSOT catalog has `reminders.manage` — this is the
-		// "team admin" path for closing reminders other team members own.
+	it("allows a Member with tasks.manage to complete on behalf of the assignee", async () => {
+		// Member role in the SSOT catalog has `tasks.manage` — this is the
+		// "team admin" path for closing tasks other team members own.
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
 		const orgId = await seedOrg(t, userId);
 		const { userId: assigneeId } = await seedUser(t, "assignee@example.com");
 		await seedAdditionalMember(t, orgId, assigneeId, "member");
 
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode: "P-001",
 			entityType: "lead",
@@ -861,24 +861,24 @@ describe("reminders.complete", () => {
 			title: "Follow up",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: assigneeId,
-			source: "manual",
+			type: "todo",
 		});
 
-		// Owner (different from assignee) can still complete via reminders.manage.
-		await asUser.mutation(api.crm.shared.reminders.mutations.complete, {
+		// Owner (different from assignee) can still complete via tasks.manage.
+		await asUser.mutation(api.crm.shared.tasks.mutations.complete, {
 			orgId,
-			reminderId,
+			taskId,
 		});
-		const reminder = await t.run(async (ctx) => ctx.db.get(reminderId));
-		expect(reminder?.status).toBe("completed");
+		const task = await t.run(async (ctx) => ctx.db.get(taskId));
+		expect(task?.status).toBe("completed");
 	});
 
-	it("allows the assignee to complete their own reminder", async () => {
+	it("allows the assignee to complete their own task", async () => {
 		const t = convexTest(schema, modules);
 		const { userId, asUser } = await seedUser(t);
 		const orgId = await seedOrg(t, userId);
 
-		const { reminderId } = await asUser.mutation(api.crm.shared.reminders.mutations.create, {
+		const { taskId } = await asUser.mutation(api.crm.shared.tasks.mutations.create, {
 			orgId,
 			personCode: "P-001",
 			entityType: "lead",
@@ -886,16 +886,16 @@ describe("reminders.complete", () => {
 			title: "Follow up",
 			dueAt: Date.now() + 86_400_000,
 			assignedTo: userId,
-			source: "manual",
+			type: "todo",
 		});
 
-		await asUser.mutation(api.crm.shared.reminders.mutations.complete, {
+		await asUser.mutation(api.crm.shared.tasks.mutations.complete, {
 			orgId,
-			reminderId,
+			taskId,
 		});
 
-		const reminder = await t.run(async (ctx) => ctx.db.get(reminderId));
-		expect(reminder?.status).toBe("completed");
+		const task = await t.run(async (ctx) => ctx.db.get(taskId));
+		expect(task?.status).toBe("completed");
 	});
 });
 

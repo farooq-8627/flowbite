@@ -25,7 +25,7 @@ Every marketing claim must map back to one of these. If a feature isn't here, do
 | Move | deal stage / lead status / participant in/out of conversation | `move_*` |
 | Send | message in any conversation, with smart routing by personCode/dealCode/companyCode | `send_message` |
 | List / search | every entity + tags + categories + members + pipelines + saved views + field options + widgets + files + notifications + org timeline | `list_*` / `search_*` |
-| Suggest | top-N next actions ranked by score + confidence (cron-rebuilt every 30 min, no LLM cost) | `list_next_actions` |
+| Suggest | top-N next actions ranked by score + confidence (rebuilt reactively on every workspace change, no LLM cost) | `list_next_actions` |
 | Analyse | "why is X happening?" with structured output, cohort analysis, member performance, pipeline velocity | `analyze_metric` / `cohort_analysis` / `member_performance` |
 | Brief | morning briefing + week's outlook (deterministic + LLM-augmented) | `get_briefing` / `refresh_briefing` |
 | Draft | follow-up message / proposal / conversation summary (NEVER autosent — always presented to user) | `draft_message` / `draft_proposal` / `summarise_conversation` |
@@ -456,7 +456,7 @@ Auto-generated from git tags + manual curation. **Critical for AEO** — LLMs tr
 | The AI can do most things you do via UI | ✅ | 95% by usage frequency (post Stage 4) |
 | The AI is safe to talk to | ✅ | Two-step approval; per-tool RBAC; org plan gates; 3 hard-locked categories |
 | The AI remembers context across turns | ✅ | aiPersonaContext + per-entity rebuild (deterministic summariser) |
-| The AI proactively offers next actions | ✅ | Top-3 Pulse Ribbon + ranked `aiNextActions` (cron-rebuilt every 30 min) |
+| The AI proactively offers next actions | ✅ | Top-3 Pulse Ribbon + ranked `aiNextActions` (rebuilt reactively on every workspace change) |
 | The AI can act on its own | ✅ | Standing orders (interval/daily/weekly) + auto-followup on stage move + auto-enrich on contact create |
 | The AI can analyse your pipeline | ✅ | `analyze_metric` / `cohort_analysis` / `member_performance` / win-loss retrospective |
 | The AI can draft for you | ✅ | `draft_message` / `draft_proposal` / `summarise_conversation` (never autosent) |

@@ -65,9 +65,13 @@ export const users = defineTable({
 			 * explicitly toggle a flag in Settings → AI → Automation.
 			 *
 			 * Capability mapping (capability-audit `§2.3 W-*`):
-			 *   - autoFollowupOnStageMove   → W-2: when a deal hits a stage
+			 *   - autoTaskOnStageMove       → W-2: when a deal hits a stage
 			 *     whose `pipelineStages.onEnter.autoFollowupTemplate` is
-			 *     set, schedule `create_followup` automatically.
+			 *     set, schedule `create_task` (type=followup) automatically.
+			 *     (Renamed from `autoFollowupOnStageMove` per Stage 4B of
+			 *     TASKS-RENAME-PLAN.md — the verb-family is "task", not
+			 *     "followup". Migration:
+			 *     `convex/_migrations/2026_05_27_renameAutoFollowupOnStageMove.ts`.)
 			 *   - autoEnrichOnContactCreate → W-4: when a contact is
 			 *     created with an email/domain, schedule `enrich_record`.
 			 *   - autoTagOnNote             → W-3 (subset): when a new
@@ -81,7 +85,7 @@ export const users = defineTable({
 			 */
 			aiAutonomy: v.optional(
 				v.object({
-					autoFollowupOnStageMove: v.optional(v.boolean()),
+					autoTaskOnStageMove: v.optional(v.boolean()),
 					autoEnrichOnContactCreate: v.optional(v.boolean()),
 					autoTagOnNote: v.optional(v.boolean()),
 					weeklyDigestEmail: v.optional(v.boolean()),
@@ -214,7 +218,7 @@ export const orgs = defineTable({
 					person: v.optional(v.string()),
 					deal: v.optional(v.string()),
 					company: v.optional(v.string()),
-					followup: v.optional(v.string()),
+					task: v.optional(v.string()),
 				}),
 			),
 			modules: v.optional(
@@ -233,38 +237,15 @@ export const orgs = defineTable({
 					}),
 				),
 			),
-			reminderDefaults: v.optional(
-				v.object({
-					followUpWindowHours: v.optional(v.number()),
-					staleAlertDays: v.optional(v.number()),
-					morningBriefingEnabled: v.optional(v.boolean()),
-					morningBriefingTime: v.optional(v.string()),
-					rentAlertDays: v.optional(v.number()),
-					rentAlertEnabled: v.optional(v.boolean()),
-				}),
-			),
 			/**
-			 * Follow-up cadence defaults.
+			 * Task cadence defaults.
 			 *
-			 * Doctrine (CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md): follow-ups
-			 * are reminders with `source === "followup"`. These settings
-			 * affect that subset only — generic reminders ignore them.
-			 *
-			 * Every field is OPTIONAL so the block is purely additive — old
-			 * org docs validate without backfill, and the
-			 * `createFollowup` mutation falls back to hard-coded defaults
-			 * when a field is unset.
-			 *
-			 *   defaultDueOffsetDays — when the user clicks "Follow up"
-			 *     without specifying a date, the form defaults to
-			 *     `today + N days` (default: 3).
-			 *   defaultPriority      — default priority chip on a new
-			 *     follow-up (default: "normal").
-			 *   autoCloseAfterDays   — Phase B: auto-mark a follow-up
-			 *     completed if it sits past-due for N days. `null` /
-			 *     unset disables auto-close.
+			 * Replaces the legacy `followupDefaults` + `reminderDefaults`
+			 * blocks (dropped in Stage 4D of TASKS-RENAME-PLAN.md). Affects
+			 * `type === "followup"` tasks only — generic to-dos / calls /
+			 * emails / meetings ignore these defaults.
 			 */
-			followupDefaults: v.optional(
+			taskDefaults: v.optional(
 				v.object({
 					defaultDueOffsetDays: v.optional(v.number()),
 					defaultPriority: v.optional(
@@ -276,12 +257,22 @@ export const orgs = defineTable({
 						),
 					),
 					autoCloseAfterDays: v.optional(v.number()),
-					/** Notify the assignee when a follow-up is created/updated. Default: true. */
 					notifyAssignee: v.optional(v.boolean()),
-					/** Require every follow-up to be linked to a deal before saving. Default: false. */
 					requireDealCode: v.optional(v.boolean()),
-					/** Send a reminder notification N hours before the follow-up is due. 0 = off. */
 					reminderBeforeHours: v.optional(v.number()),
+				}),
+			),
+			/**
+			 * Morning-briefing defaults. Workspace-level toggle + hour for
+			 * the AI daily briefing. Stage 4D split this out of the
+			 * dropped `reminderDefaults` block so it has a clean home that
+			 * matches its actual semantics.
+			 */
+			briefingDefaults: v.optional(
+				v.object({
+					morningBriefingEnabled: v.optional(v.boolean()),
+					/** "HH:MM" 24-hour. */
+					morningBriefingTime: v.optional(v.string()),
 				}),
 			),
 			fileUpload: v.optional(

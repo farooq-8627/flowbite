@@ -29,7 +29,7 @@ Also: `platformOrgIdCounter` (single global row for ORB-001 platform org IDs).
 ## Critical Rules
 
 - `generatePersonCode` called ONLY in `leads.create`. On conversion, personCode is PASSED not regenerated.
-- Prefix customization: `orgSettings.codePrefixes` stores custom prefixes. Background job patches all records when prefix changes.
+- Prefix customization: `orgSettings.codePrefixes` stores custom prefixes. **NEW records use the new prefix immediately on next `generatePersonCode` / `generateEntityCode` call.** Existing records keep their original prefix forever — per locked decision #12 in `AGENTS.md`, personCode is the stable identity and is never regenerated. There is intentionally no backfill / rename job; renaming codes after the fact would break activity logs, deal links, AI references, and external integrations.
 
 ## Rules
 

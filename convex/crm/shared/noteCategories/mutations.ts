@@ -368,6 +368,48 @@ export const reorderForAI = internalMutation({
 
 // ─── setDefault ──────────────────────────────────────────────────────────────
 
+async function setDefaultImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; categoryId: Id<"noteCategories"> },
+): Promise<void> {
+	const target = await ctx.db.get(args.categoryId);
+	if (!target || target.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (target.isArchived) {
+		throw new ConvexError({
+			code: "ARCHIVED",
+			message: "Restore the category before marking it default.",
+		});
+	}
+
+	// Clear any previously-flagged defaults — there is exactly one default
+	// per org. We index on `by_org_and_default` so the lookup is cheap.
+	const previousDefaults = await ctx.db
+		.query("noteCategories")
+		.withIndex("by_org_and_default", (q) => q.eq("orgId", args.orgId).eq("isDefault", true))
+		.collect();
+
+	const now = Date.now();
+	for (const prev of previousDefaults) {
+		if (prev._id !== args.categoryId) {
+			await ctx.db.patch(prev._id, { isDefault: false, updatedAt: now });
+		}
+	}
+
+	if (!target.isDefault) {
+		await ctx.db.patch(args.categoryId, { isDefault: true, updatedAt: now });
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "noteCategory_setDefault",
+		entityType: "note",
+		entityId: args.categoryId,
+		description: `Default note category set to "${target.name}"`,
+		metadata: { categoryId: args.categoryId },
+	});
+}
+
 export const setDefault = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -376,47 +418,65 @@ export const setDefault = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
+		return setDefaultImpl(ctx, { ...args, userId });
+	},
+});
 
-		const target = await ctx.db.get(args.categoryId);
-		if (!target || target.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (target.isArchived) {
-			throw new ConvexError({
-				code: "ARCHIVED",
-				message: "Restore the category before marking it default.",
-			});
-		}
-
-		// Clear any previously-flagged defaults — there is exactly one default
-		// per org. We index on `by_org_and_default` so the lookup is cheap.
-		const previousDefaults = await ctx.db
-			.query("noteCategories")
-			.withIndex("by_org_and_default", (q) => q.eq("orgId", args.orgId).eq("isDefault", true))
-			.collect();
-
-		const now = Date.now();
-		for (const prev of previousDefaults) {
-			if (prev._id !== args.categoryId) {
-				await ctx.db.patch(prev._id, { isDefault: false, updatedAt: now });
-			}
-		}
-
-		if (!target.isDefault) {
-			await ctx.db.patch(args.categoryId, { isDefault: true, updatedAt: now });
-		}
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "noteCategory_setDefault",
-			entityType: "note",
-			entityId: args.categoryId,
-			description: `Default note category set to "${target.name}"`,
-			metadata: { categoryId: args.categoryId },
-		});
+export const setDefaultForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryId: v.id("noteCategories"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return setDefaultImpl(ctx, args);
 	},
 });
 
 // ─── remove (hard delete — only when zero notes reference it) ────────────────
+
+async function removeImpl(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users">; categoryId: Id<"noteCategories"> },
+): Promise<void> {
+	const cat = await ctx.db.get(args.categoryId);
+	if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (cat.isDefault) {
+		throw new ConvexError({
+			code: "DEFAULT_REQUIRED",
+			message: "Mark a different category as default before deleting this one.",
+		});
+	}
+
+	// Only allow hard delete when no notes reference it. Otherwise the
+	// caller should archive instead.
+	const referenced = await ctx.db
+		.query("notes")
+		.withIndex("by_org_and_category", (q) =>
+			q.eq("orgId", args.orgId).eq("categoryId", args.categoryId),
+		)
+		.first();
+	if (referenced) {
+		throw new ConvexError({
+			code: "IN_USE",
+			message: "This category still has notes. Archive it instead, or move the notes first.",
+		});
+	}
+
+	await ctx.db.delete(args.categoryId);
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "noteCategory_removed",
+		entityType: "note",
+		entityId: args.categoryId,
+		description: `Note category "${cat.name}" deleted`,
+		metadata: { categoryId: args.categoryId },
+	});
+}
 
 export const remove = orgMutation({
 	args: {
@@ -426,42 +486,20 @@ export const remove = orgMutation({
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.categories.manage");
+		return removeImpl(ctx, { ...args, userId });
+	},
+});
 
-		const cat = await ctx.db.get(args.categoryId);
-		if (!cat || cat.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (cat.isDefault) {
-			throw new ConvexError({
-				code: "DEFAULT_REQUIRED",
-				message: "Mark a different category as default before deleting this one.",
-			});
-		}
-
-		// Only allow hard delete when no notes reference it. Otherwise the
-		// caller should archive instead.
-		const referenced = await ctx.db
-			.query("notes")
-			.withIndex("by_org_and_category", (q) =>
-				q.eq("orgId", args.orgId).eq("categoryId", args.categoryId),
-			)
-			.first();
-		if (referenced) {
-			throw new ConvexError({
-				code: "IN_USE",
-				message:
-					"This category still has notes. Archive it instead, or move the notes first.",
-			});
-		}
-
-		await ctx.db.delete(args.categoryId);
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "noteCategory_removed",
-			entityType: "note",
-			entityId: args.categoryId,
-			description: `Note category "${cat.name}" deleted`,
-			metadata: { categoryId: args.categoryId },
-		});
+/** AI-callable internal twin. */
+export const removeForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryId: v.id("noteCategories"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.categories.manage");
+		return removeImpl(ctx, args);
 	},
 });

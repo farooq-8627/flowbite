@@ -241,3 +241,32 @@ export const resolveKey = internalQuery({
 		return null;
 	},
 });
+
+/**
+ * Org-scope-only resolver — the weekly-briefing flow has no userId so
+ * `resolveKey` can't be used directly. Mirrors the org-scope branch of
+ * `resolveKey` for callers that only have an `orgId`.
+ *
+ * Spec: PLATFORM-OWNER-PANEL.md §5 (added 2026-05-27 alongside the
+ * platform-key fallback chain).
+ */
+export const resolveOrgKeyForProvider = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		provider: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const orgKey = await ctx.db
+			.query("orgAiKeys")
+			.withIndex("by_org_and_provider", (q) =>
+				q.eq("orgId", args.orgId).eq("provider", args.provider as "anthropic"),
+			)
+			.filter((q) => q.and(q.eq(q.field("scope"), "org"), q.eq(q.field("isActive"), true)))
+			.first();
+		if (!orgKey) return null;
+		return {
+			encryptedKey: orgKey.encryptedKey,
+			baseUrl: orgKey.baseUrl ?? null,
+		};
+	},
+});

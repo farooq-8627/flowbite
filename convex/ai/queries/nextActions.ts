@@ -122,7 +122,7 @@ function clampScore(n: number): number {
  */
 export function computeRanking(args: {
 	now: number;
-	reminders: ReadonlyArray<Doc<"reminders">>;
+	reminders: ReadonlyArray<Doc<"tasks">>;
 	leads: ReadonlyArray<Doc<"leads">>;
 	deals: ReadonlyArray<Doc<"deals">>;
 	dealMedianValue: number;
@@ -147,45 +147,45 @@ export function computeRanking(args: {
 			const baseScore = clampScore(80 + Math.min(15, days));
 			row = {
 				recordKind: "reminder",
-				recordCode: r.followUpCode,
+				recordCode: r.taskCode,
 				score: baseScore,
 				confidence: classifyConfidence(baseScore),
 				reasonCode: "reminder_overdue",
 				reasonText: `${r.title} was due ${days} day${days === 1 ? "" : "s"} ago.`,
-				suggestedIntent: `Show ${r.followUpCode} (${r.title}) and help me complete or reschedule it.`,
+				suggestedIntent: `Show ${r.taskCode} (${r.title}) and help me complete or reschedule it.`,
 				dueAt: r.dueAt,
 			};
 		} else if (ms < ONE_DAY_MS) {
 			row = {
 				recordKind: "reminder",
-				recordCode: r.followUpCode,
+				recordCode: r.taskCode,
 				score: 70,
 				confidence: classifyConfidence(70),
 				reasonCode: "reminder_due_soon",
 				reasonText: `${r.title} is due in the next 24 hours.`,
-				suggestedIntent: `Show ${r.followUpCode} (${r.title}) — I'd like to action it before it's overdue.`,
+				suggestedIntent: `Show ${r.taskCode} (${r.title}) — I'd like to action it before it's overdue.`,
 				dueAt: r.dueAt,
 			};
 		} else if (ms < 2 * ONE_DAY_MS) {
 			row = {
 				recordKind: "reminder",
-				recordCode: r.followUpCode,
+				recordCode: r.taskCode,
 				score: 50,
 				confidence: classifyConfidence(50),
 				reasonCode: "reminder_due_soon",
 				reasonText: `${r.title} is due in the next 48 hours.`,
-				suggestedIntent: `Plan time for ${r.followUpCode} (${r.title}).`,
+				suggestedIntent: `Plan time for ${r.taskCode} (${r.title}).`,
 				dueAt: r.dueAt,
 			};
 		} else if (ms < 7 * ONE_DAY_MS) {
 			row = {
 				recordKind: "reminder",
-				recordCode: r.followUpCode,
+				recordCode: r.taskCode,
 				score: 35,
 				confidence: classifyConfidence(35),
 				reasonCode: "reminder_due_this_week",
 				reasonText: `${r.title} is due this week.`,
-				suggestedIntent: `Confirm next steps for ${r.followUpCode} (${r.title}).`,
+				suggestedIntent: `Confirm next steps for ${r.taskCode} (${r.title}).`,
 				dueAt: r.dueAt,
 			};
 		}
@@ -289,7 +289,7 @@ async function loadInputsForUser(
 	userId: Id<"users">,
 ) {
 	const reminders = await ctx.db
-		.query("reminders")
+		.query("tasks")
 		.withIndex("by_user_and_due", (q) => q.eq("assignedTo", userId))
 		.take(500);
 	const remindersForOrg = reminders.filter((r) => r.orgId === orgId);

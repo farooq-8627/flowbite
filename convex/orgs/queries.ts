@@ -372,7 +372,7 @@ export const getDashboardStats = orgQuery({
 			await Promise.all([
 				readAllOrgStats(ctx, args.orgId),
 				ctx.db
-					.query("reminders")
+					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
 						q
 							.eq("orgId", args.orgId)
@@ -382,14 +382,14 @@ export const getDashboardStats = orgQuery({
 					.take(100)
 					.then((rows) => rows.length),
 				ctx.db
-					.query("reminders")
+					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
 						q.eq("orgId", args.orgId).eq("status", "pending").lt("dueAt", startOfDayMs),
 					)
 					.take(200)
 					.then((rows) => rows.length),
 				ctx.db
-					.query("reminders")
+					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
 						q
 							.eq("orgId", args.orgId)

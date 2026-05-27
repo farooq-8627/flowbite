@@ -29,7 +29,7 @@ export const collectUserBriefingData = internalQuery({
 		// Reminders due today (assigned to this user). Skip rows opted out
 		// of AI exposure so the briefing doesn't quote a "private" reminder.
 		const reminders = await ctx.db
-			.query("reminders")
+			.query("tasks")
 			.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 			.filter((q) =>
 				q.and(
@@ -81,7 +81,7 @@ export const collectUserBriefingData = internalQuery({
 				id: r._id,
 				title: r.title,
 				dueAt: r.dueAt,
-				source: r.source,
+				type: r.type,
 			})),
 			topDeals: deals.slice(0, 5).map((d) => ({
 				id: d._id,
@@ -243,7 +243,7 @@ export const collectOrgWeeklyData = internalQuery({
 
 		// Reminder completion rate
 		const reminders = await ctx.db
-			.query("reminders")
+			.query("tasks")
 			.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 			.filter((q) => q.and(q.gte(q.field("dueAt"), weekAgo), q.lte(q.field("dueAt"), now)))
 			.take(500);

@@ -38,9 +38,19 @@ const OPEN_EVENT_NAME = "flowbite:ai-chat-open";
  * Dispatch a chat-prefill intent. Safe to call during render — the
  * effect runs on the next tick. Silently no-ops on the server (where
  * `window` is undefined).
+ *
+ * Side-effect: also dispatches the chat-panel-open event so the side
+ * sheet slides in immediately. Callers that previously had to call
+ * `openChatPanel()` first now get the open-then-prefill flow for free.
+ * The open event is idempotent (no state change if already open).
  */
 export function sendChatPrefill(intent: string): void {
 	if (typeof window === "undefined") return;
+	// Open first so the listener exists when the prefill event arrives.
+	// `dispatchEvent` is synchronous; the open handler runs before the
+	// next line and the prefill listener is registered by then. The
+	// composer focuses its textarea on prefill.
+	window.dispatchEvent(new CustomEvent(OPEN_EVENT_NAME));
 	window.dispatchEvent(new CustomEvent(EVENT_NAME, { detail: { intent } }));
 }
 

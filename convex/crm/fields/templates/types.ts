@@ -18,14 +18,14 @@
  *   2.  defaults              — currency, timezone, leadStaleAfterDays, locale
  *   3.  entityLabels          — singular/plural/slug per entity (incl. Arabic)
  *   4.  entityVisibility      — which 4+2 slots are visible on signup
- *   5.  codePrefixes          — person / deal / company / followup
+ *   5.  codePrefixes          — person / deal / company / task
  *   6.  pipelines             — N pipelines, each with stages + policy + flags
  *   7.  fieldDefinitions      — system + custom per entity, stage-aware
  *   8.  modules               — slot map (order, view, columns, board, meta)
  *   9.  noteCategories        — sticky-note kanban columns (overrides default 6)
  *   10. tags                  — preset tags ready for use at signup
- *   11. reminderDefaults      — follow-up window, stale, briefing, rent alert
- *   12. followupDefaults      — cadence + priority + auto-close + reminder
+ *   11. taskDefaults          — followup-task cadence + priority + auto-close
+ *   12. briefingDefaults      — morning-briefing toggle + time
  *   13. fileUpload            — allowed MIME categories + max size
  *   14. aiPersona             — overlay added to AI system prompt
  *   15. dashboardMetrics      — widget keys to show on dashboard home
@@ -158,27 +158,28 @@ export type CustomRoleSeed = {
 	permissions: string[];
 };
 
-// ─── Reminder defaults ───────────────────────────────────────────────────────
+// ─── Task cadence defaults ───────────────────────────────────────────────────
 
-export type ReminderDefaultsSeed = {
-	followUpWindowHours?: number;
-	staleAlertDays?: number;
-	morningBriefingEnabled?: boolean;
-	/** "HH:MM" 24-hour. Matches the schema validator. */
-	morningBriefingTime?: string;
-	rentAlertDays?: number;
-	rentAlertEnabled?: boolean;
-};
-
-// ─── Follow-up cadence defaults ─────────────────────────────────────────────
-
-export type FollowupDefaultsSeed = {
+/**
+ * Replaces the legacy `ReminderDefaultsSeed` + `FollowupDefaultsSeed`
+ * blocks (TASKS-RENAME-PLAN.md Stage 4D). Affects tasks with
+ * `type === "followup"` only.
+ */
+export type TaskDefaultsSeed = {
 	defaultDueOffsetDays?: number;
 	defaultPriority?: "low" | "normal" | "high" | "urgent";
 	autoCloseAfterDays?: number;
 	notifyAssignee?: boolean;
 	requireDealCode?: boolean;
 	reminderBeforeHours?: number;
+};
+
+// ─── Briefing defaults (workspace-wide) ─────────────────────────────────────
+
+export type BriefingDefaultsSeed = {
+	morningBriefingEnabled?: boolean;
+	/** "HH:MM" 24-hour. Matches the schema validator. */
+	morningBriefingTime?: string;
 };
 
 // ─── File-upload policy ──────────────────────────────────────────────────────
@@ -196,7 +197,7 @@ export type CodePrefixesSeed = {
 	person?: string;
 	deal?: string;
 	company?: string;
-	followup?: string;
+	task?: string;
 };
 
 // ─── Workspace defaults (org-level settings) ─────────────────────────────────
@@ -273,11 +274,11 @@ export interface IndustryTemplate {
 	// 10. Tag presets
 	tags?: TagSeed[];
 
-	// 11. Reminder defaults
-	reminderDefaults?: ReminderDefaultsSeed;
+	// 11. Task cadence defaults (followup-typed tasks)
+	taskDefaults?: TaskDefaultsSeed;
 
-	// 12. Follow-up cadence defaults
-	followupDefaults?: FollowupDefaultsSeed;
+	// 12. AI morning-briefing defaults
+	briefingDefaults?: BriefingDefaultsSeed;
 
 	// 13. File-upload policy
 	fileUpload?: FileUploadSeed;
@@ -369,11 +370,12 @@ export type MockNoteSeed = {
 		| { kind: "company"; companyKey: string };
 };
 
-export type MockReminderSeed = {
+export type MockTaskSeed = {
 	title: string;
 	/** Days from now (negative = past, 0 = today, positive = future). */
 	dueOffsetDays: number;
 	priority?: "low" | "normal" | "high" | "urgent";
+	/** Closed task type — "followup" carries cadence semantics; everything else lands as a generic todo. */
 	source?: "manual" | "followup";
 	/** Same anchor shape as MockNoteSeed. */
 	anchorTo?:
@@ -388,5 +390,5 @@ export type MockDataSeed = {
 	companies?: MockCompanySeed[];
 	deals?: MockDealSeed[];
 	notes?: MockNoteSeed[];
-	reminders?: MockReminderSeed[];
+	tasks?: MockTaskSeed[];
 };

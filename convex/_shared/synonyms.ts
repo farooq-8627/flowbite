@@ -211,7 +211,7 @@ export const FIELD_TYPE_CLARIFICATION_OPTIONS: ReadonlyArray<{
 // ─── Code normalisation ──────────────────────────────────────────────────────
 //
 // PHASE-3-AI-AUDIT.md §6.5 audit row 5. Codes used by the AI follow the shape
-// `<PREFIX>-<NUMBER>` (P-001, D-042, CO-007, FU-003). Small models routinely
+// `<PREFIX>-<NUMBER>` (P-001, D-042, CO-007, T-003). Small models routinely
 // emit them without the dash (`P001`), with extra spaces (`P 001`), or in a
 // mixed case (`p-001`). All variants should resolve to the canonical form
 // before we hit the indexed `getByXCode` queries — those are case-sensitive

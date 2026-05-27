@@ -17,7 +17,12 @@
 import { ConvexError } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
-import { getPlanLabel, getPlanLimits, type PlanLimits, type PlanTier } from "../_platform/limits";
+import {
+	getPlanLabel,
+	getPlanLimitsFromDb,
+	type PlanLimits,
+	type PlanTier,
+} from "../_platform/limits";
 
 export type PlanLimitKey = keyof PlanLimits;
 
@@ -34,7 +39,7 @@ export async function enforcePlanLimit(
 		throw new ConvexError({ code: "ORG_NOT_FOUND", message: "Workspace not found." });
 	}
 	const tier = (org.plan as PlanTier) ?? "free";
-	const limits = getPlanLimits(tier);
+	const limits = await getPlanLimitsFromDb(ctx, tier);
 	const limit = limits[args.limitKey];
 
 	if (limit === -1) return; // unlimited

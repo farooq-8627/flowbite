@@ -21,7 +21,6 @@
  *   npx convex run _migrations/2026_05_22_addOrgSettingsDashboardAndTrash:run
  */
 import { internalMutation } from "../_generated/server";
-import { getTemplate } from "../crm/fields/templates/registry";
 
 const LEGACY_COLOR_NAMES = new Set(["Yellow", "Blue", "Green", "Pink", "Purple", "Gray"]);
 
@@ -38,12 +37,18 @@ export const run = internalMutation({
 			// ── Pass 1: dashboardMetrics ───────────────────────────────
 			const existingMetrics = org.settings?.dashboardMetrics;
 			if (org.industry && (!existingMetrics || existingMetrics.length === 0)) {
-				const tpl = getTemplate(org.industry);
-				if (tpl?.dashboardMetrics && tpl.dashboardMetrics.length > 0) {
+				const tplRow = await ctx.db
+					.query("platformTemplates")
+					.withIndex("by_templateKey", (q) => q.eq("templateKey", org.industry as string))
+					.unique();
+				const tplMetrics =
+					(tplRow?.definition as { dashboardMetrics?: string[] } | undefined)
+						?.dashboardMetrics ?? [];
+				if (tplRow && tplMetrics.length > 0) {
 					await ctx.db.patch(org._id, {
 						settings: {
 							...(org.settings ?? {}),
-							dashboardMetrics: [...tpl.dashboardMetrics],
+							dashboardMetrics: [...tplMetrics],
 						},
 						updatedAt: now,
 					});

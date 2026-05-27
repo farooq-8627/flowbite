@@ -1,19 +1,21 @@
 /**
  * Platform-owner limits — SINGLE SOURCE OF TRUTH for plan tiers.
  *
- * This file IS the platform-owner dashboard for now. Every consumer
- * (mutations, UI gates, billing checks) imports from here.
- *
- * MIGRATION PATH (when the dashboard ships):
- *   1. Add a `platformLimits` table that mirrors PLAN_LIMITS.
- *   2. Replace getPlanLimits() body with a `ctx.db.get(...)` lookup.
- *   3. No consumer changes needed.
+ * **Migration in progress (Stage 4 — 2026-05-27):**
+ *   Tier limits are moving from these in-code constants to the
+ *   `platformTiers` table. The sync `getPlanLimits()` keeps reading the
+ *   constants (no consumer break) and `getPlanLimitsFromDb()` provides a
+ *   DB-first async variant. New consumers should prefer the async helper
+ *   so owner-panel edits are honoured immediately. Existing consumers
+ *   keep using the sync version until they're migrated one-by-one.
  *
  * RULES:
  *   - Never hardcode plan limits anywhere else. Always import from here.
  *   - Use -1 for "unlimited" (matches the convention in deep-plan).
  *   - Adding a new limit key requires updating PlanLimits + every plan tier.
  */
+
+import type { QueryCtx } from "../_generated/server";
 
 export type PlanTier = "free" | "starter" | "pro" | "enterprise";
 
@@ -67,7 +69,31 @@ export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
 	},
 };
 
+/**
+ * Synchronous, constant-backed lookup. Stable signature for the broad
+ * call site population. Owner-panel edits to `platformTiers` are NOT
+ * reflected here — switch the caller to `getPlanLimitsFromDb` when DB-
+ * authoritative limits matter.
+ */
 export function getPlanLimits(tier: PlanTier): PlanLimits {
+	return PLAN_LIMITS[tier];
+}
+
+/**
+ * DB-first async lookup — returns the row in `platformTiers.<tier>` when
+ * present and falls back to the in-code constants when the row is missing
+ * (the seed migration ensures this is rare). Use from contexts where the
+ * caller already has a Convex `QueryCtx` / `MutationCtx` and wants
+ * owner-panel edits honoured.
+ */
+export async function getPlanLimitsFromDb(ctx: QueryCtx, tier: PlanTier): Promise<PlanLimits> {
+	const row = await ctx.db
+		.query("platformTiers")
+		.withIndex("by_key", (q) => q.eq("key", tier))
+		.unique();
+	if (row?.limits) {
+		return row.limits;
+	}
 	return PLAN_LIMITS[tier];
 }
 

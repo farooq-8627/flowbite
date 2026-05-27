@@ -20,6 +20,11 @@
  */
 import { z } from "zod";
 import type { Id } from "../../_generated/dataModel";
+import {
+	PERMISSION_CATALOG,
+	PERMISSION_MODULE_LABELS,
+	PERMISSION_MODULE_ORDER,
+} from "../../_shared/permissions/catalog";
 import { entityTypeEnum } from "../../_shared/synonyms";
 import { WIDGET_KEYS, WIDGETS } from "../../_shared/widgetRegistry";
 import { getActiveRequestContext, registerTool } from "../toolRegistry";
@@ -273,156 +278,6 @@ don't redundantly request a layer that's already on.
 						expandedLayers.length === 0
 							? "Only the always-on layer is active. Call expand_tools to load more."
 							: `Active layers: always-on, ${expandedLayers.join(", ")}.`,
-				},
-			};
-		}),
-});
-
-// ─── list_followups ──────────────────────────────────────────────────────────
-//
-// 2026-05-24: previously referenced from runbooks + system prompt without
-// being registered. Fixes the "tool not found" loop on "show me my
-// follow-ups" requests.
-
-registerTool({
-	name: "list_followups",
-	layer: "always",
-	permission: "reminders.view",
-	confirmation: "none",
-	description: `
-Read-only: list follow-ups across the workspace. Use this whenever the
-user asks about pending or completed follow-ups (FU-XXX). Members
-without 'reminders.manage' only see their own assigned items.
-	`.trim(),
-	runbook: {
-		onSuccess:
-			"Group results by status (overdue / due today / upcoming / completed). Mention counts; only enumerate if the user asked for the full list.",
-		onEmpty:
-			"Tell the user they have no follow-ups in the requested filter and offer to schedule one with create_followup.",
-	},
-	example: { status: "pending" },
-	schema: z.object({
-		status: z.optional(z.enum(["pending", "completed"])).describe("Filter by status."),
-	}),
-	execute: async ({ status }) =>
-		runTool(async () => {
-			const tc = getCtx();
-			const rows = (await toolQuery(tc, "crm/shared/reminders/queries:listFollowupsForOrg", {
-				orgId: tc.orgId,
-				...(status ? { status } : {}),
-			})) as Array<{
-				_id: string;
-				followUpCode?: string;
-				title: string;
-				dueAt: number;
-				status: string;
-				priority?: string;
-				personCode?: string;
-				assignedTo?: string;
-			}>;
-
-			const now = Date.now();
-			const next24h = now + 24 * 60 * 60 * 1000;
-			const buckets = {
-				overdue: rows.filter((r) => r.status === "pending" && r.dueAt < now).length,
-				dueToday: rows.filter(
-					(r) => r.status === "pending" && r.dueAt >= now && r.dueAt < next24h,
-				).length,
-				upcoming: rows.filter((r) => r.status === "pending" && r.dueAt >= next24h).length,
-				completed: rows.filter((r) => r.status === "completed").length,
-			};
-
-			const summary = rows.slice(0, 25).map((r) => ({
-				code: r.followUpCode ?? r._id,
-				title: r.title,
-				dueAt: r.dueAt,
-				status: r.status,
-				priority: r.priority,
-				personCode: r.personCode,
-			}));
-
-			return {
-				ok: true as const,
-				data: {
-					total: rows.length,
-					buckets,
-					rows: summary,
-					truncated: rows.length > summary.length,
-				},
-				display: {
-					kind: "text" as const,
-					text:
-						rows.length === 0
-							? "No follow-ups match that filter."
-							: `${rows.length} follow-up(s) — ${buckets.overdue} overdue, ${buckets.dueToday} due today.`,
-				},
-			};
-		}),
-});
-
-// ─── list_followups_for_person ──────────────────────────────────────────────
-
-registerTool({
-	name: "list_followups_for_person",
-	layer: "always",
-	permission: "reminders.view",
-	confirmation: "none",
-	description: `
-Read-only: list follow-ups attached to a specific person (lead or
-contact) by personCode (P-XXX). Returns follow-ups across all
-statuses; bucket client-side as needed.
-	`.trim(),
-	runbook: {
-		onSuccess:
-			"Show pending follow-ups before completed. Mention counts. If empty, offer to schedule one via create_followup.",
-		onEmpty:
-			"Tell the user no follow-ups exist for this person and offer to create one with create_followup.",
-		onValidationError:
-			"If personCode doesn't resolve, call search_crm to find the right person first.",
-	},
-	example: { personCode: "P-001" },
-	schema: z.object({
-		personCode: z.string().describe("Person code, e.g. P-001."),
-	}),
-	execute: async ({ personCode }) =>
-		runTool(async () => {
-			const tc = getCtx();
-			const rows = (await toolQuery(
-				tc,
-				"crm/shared/reminders/queries:listFollowupsForPerson",
-				{ orgId: tc.orgId, personCode },
-			)) as Array<{
-				_id: string;
-				followUpCode?: string;
-				title: string;
-				dueAt: number;
-				status: string;
-				priority?: string;
-			}>;
-
-			const now = Date.now();
-			const pending = rows.filter((r) => r.status === "pending");
-			return {
-				ok: true as const,
-				data: {
-					personCode,
-					total: rows.length,
-					pendingCount: pending.length,
-					overdueCount: pending.filter((r) => r.dueAt < now).length,
-					rows: rows.map((r) => ({
-						code: r.followUpCode ?? r._id,
-						title: r.title,
-						dueAt: r.dueAt,
-						status: r.status,
-						priority: r.priority,
-					})),
-				},
-				display: {
-					kind: "text" as const,
-					text:
-						rows.length === 0
-							? `No follow-ups for ${personCode}.`
-							: `${rows.length} follow-up(s) for ${personCode} (${pending.length} pending).`,
 				},
 			};
 		}),
@@ -758,6 +613,109 @@ reorder dashboard widgets.
 						currentLayout.length === 0
 							? `${widgets.length} widget(s) supported. The dashboard is using the default layout.`
 							: `${widgets.length} widget(s) supported; ${currentLayout.length} active on the dashboard.`,
+				},
+			};
+		}),
+});
+
+// ─── list_permission_catalog ────────────────────────────────────────────────
+
+registerTool({
+	name: "list_permission_catalog",
+	layer: "always",
+	permission: null,
+	confirmation: "none",
+	description: `
+Read-only: list every permission key defined by the platform, grouped by
+module (org / members / leads / contacts / deals / companies / notes /
+messages / tasks / tags / savedViews / pipelines / fields / ai /
+activityLogs / notifications / files / data). Each row carries the
+machine \`key\`, human \`label\`, \`description\`, the \`module\` it sits
+under, and the \`defaultRoles\` it ships in (Owner / Admin / Member /
+Viewer).
+
+Use this when an admin asks "what permissions exist?", or before
+\`change_member_role\` / role-editor work, to ground the conversation
+in real keys instead of guessed names. To see what permissions the
+CURRENT user holds, call \`list_my_permissions\` (different tool).
+	`.trim(),
+	runbook: {
+		onSuccess:
+			"Group keys by module in your reply. If the user asked about one module (e.g. 'tasks'), filter your answer to that bucket — don't dump every permission.",
+		onEmpty:
+			"Should never be empty (the catalog is a static SSOT) — if it returns 0, surface the issue.",
+	},
+	example: {},
+	schema: z.object({
+		module: z
+			.optional(z.string())
+			.describe(
+				"Optional module filter (e.g. 'tasks', 'leads', 'ai'). When omitted, returns the full catalog grouped by module.",
+			),
+	}),
+	execute: async ({ module }) =>
+		runTool(async () => {
+			const filterModule = typeof module === "string" ? module.trim() : "";
+			const filtered = filterModule
+				? PERMISSION_CATALOG.filter((p) => p.module === filterModule)
+				: PERMISSION_CATALOG;
+
+			if (filterModule && filtered.length === 0) {
+				const known = [...new Set(PERMISSION_CATALOG.map((p) => p.module))].sort();
+				return {
+					ok: false as const,
+					error: `Unknown permission module '${filterModule}'. Known modules: ${known.join(", ")}.`,
+					code: "UNKNOWN_MODULE",
+				};
+			}
+
+			// Group by module preserving the canonical render order.
+			const grouped: Record<
+				string,
+				Array<{
+					key: string;
+					label: string;
+					description: string | undefined;
+					defaultRoles: string[];
+				}>
+			> = {};
+			for (const entry of filtered) {
+				if (!grouped[entry.module]) grouped[entry.module] = [];
+				grouped[entry.module].push({
+					key: entry.key,
+					label: entry.label,
+					description: entry.description,
+					defaultRoles: [...entry.defaultRoles],
+				});
+			}
+
+			const moduleOrder = filterModule
+				? [filterModule]
+				: PERMISSION_MODULE_ORDER.filter((m) => grouped[m]);
+			const modules = moduleOrder.map((id) => ({
+				id,
+				// Note: PERMISSION_MODULE_LABELS for renamable entities carries
+				// `{Leads}`-style placeholders. We surface them verbatim so the
+				// model knows these are entity-label slots; chat callers that
+				// render this back to the user should interpolate via the
+				// frontend's `useEntityLabels()` hook.
+				label: PERMISSION_MODULE_LABELS[id]?.label ?? id,
+				moduleDescription: PERMISSION_MODULE_LABELS[id]?.description,
+				permissions: grouped[id] ?? [],
+			}));
+
+			return {
+				ok: true as const,
+				data: {
+					totalKeys: filtered.length,
+					moduleCount: modules.length,
+					modules,
+				},
+				display: {
+					kind: "text" as const,
+					text: filterModule
+						? `${filtered.length} permission key(s) in module '${filterModule}'.`
+						: `${filtered.length} permission key(s) across ${modules.length} module(s).`,
 				},
 			};
 		}),

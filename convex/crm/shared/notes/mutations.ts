@@ -653,6 +653,60 @@ async function rebalanceCategoryIfTight(
  * Pass `entityType: "org"` + `entityId: "<orgSlug>"` to detach the note
  * back to the org-wide bucket.
  */
+async function setEntityImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		permissions: string[];
+		noteId: Id<"notes">;
+		entityType: string;
+		entityId: string;
+		personCode?: string;
+	},
+): Promise<void> {
+	const note = await ctx.db.get(args.noteId);
+	if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+
+	const isOwn = note.authorId === args.userId;
+	const canEditOwn = hasPermission(args.permissions, "notes.updateOwn");
+	const canEditAny = hasPermission(args.permissions, "notes.deleteAny");
+	if (!(canEditAny || (isOwn && canEditOwn))) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+
+	// Idempotent — bail if nothing actually changes.
+	if (
+		note.entityType === args.entityType &&
+		note.entityId === args.entityId &&
+		(note.personCode ?? undefined) === (args.personCode ?? undefined)
+	) {
+		return;
+	}
+
+	await ctx.db.patch(args.noteId, {
+		entityType: args.entityType,
+		entityId: args.entityId,
+		personCode: args.personCode,
+		updatedAt: Date.now(),
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "note_reattached",
+		entityType: args.entityType,
+		entityId: args.entityId,
+		personCode: args.personCode,
+		description: `Note re-attached to ${args.entityType}/${args.entityId}`,
+		metadata: {
+			noteId: args.noteId,
+			fromEntityType: note.entityType,
+			fromEntityId: note.entityId,
+		},
+	});
+}
+
 export const setEntity = orgMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -663,47 +717,23 @@ export const setEntity = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
+		return setEntityImpl(ctx, { ...args, userId, permissions: member.permissions });
+	},
+});
 
-		const note = await ctx.db.get(args.noteId);
-		if (!note || note.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-
-		const isOwn = note.authorId === userId;
-		const canEditOwn = hasPermission(member.permissions, "notes.updateOwn");
-		const canEditAny = hasPermission(member.permissions, "notes.deleteAny");
-		if (!(canEditAny || (isOwn && canEditOwn))) {
-			throw new ConvexError(ERRORS.FORBIDDEN);
-		}
-
-		// Idempotent — bail if nothing actually changes.
-		if (
-			note.entityType === args.entityType &&
-			note.entityId === args.entityId &&
-			(note.personCode ?? undefined) === (args.personCode ?? undefined)
-		) {
-			return;
-		}
-
-		await ctx.db.patch(args.noteId, {
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			updatedAt: Date.now(),
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "note_reattached",
-			entityType: args.entityType,
-			entityId: args.entityId,
-			personCode: args.personCode,
-			description: `Note re-attached to ${args.entityType}/${args.entityId}`,
-			metadata: {
-				noteId: args.noteId,
-				fromEntityType: note.entityType,
-				fromEntityId: note.entityId,
-			},
-		});
+/** AI-callable internal twin. */
+export const setEntityForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		noteId: v.id("notes"),
+		entityType: v.string(),
+		entityId: v.string(),
+		personCode: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		return setEntityImpl(ctx, { ...args, permissions: member.permissions });
 	},
 });
 

@@ -94,8 +94,12 @@ export function ToolSummaryCard({ summary, onSuggestionClick }: ToolSummaryCardP
 			{/* Field/value table */}
 			{hasTable && (
 				<dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 px-3 py-2 text-xs">
-					{summary.table?.map((row) => (
-						<RowInner key={`row-${row.label}`} row={row} />
+					{summary.table?.map((row, idx) => (
+						<RowInner
+							// biome-ignore lint/suspicious/noArrayIndexKey: tool emitters can repeat row labels (e.g. two rows whose label is a time like "10:43"); RowInner is stateless and the array is rebuilt fresh per tool result
+							key={`row-${idx}-${row.label}`}
+							row={row}
+						/>
 					))}
 				</dl>
 			)}
@@ -103,9 +107,10 @@ export function ToolSummaryCard({ summary, onSuggestionClick }: ToolSummaryCardP
 			{/* Facts (bulleted observations) */}
 			{hasFacts && (
 				<ul className="px-3 py-2 text-xs space-y-0.5 list-none">
-					{summary.facts?.map((fact) => (
+					{summary.facts?.map((fact, idx) => (
 						<li
-							key={`fact-${fact}`}
+							// biome-ignore lint/suspicious/noArrayIndexKey: facts are plain strings that may legitimately repeat; the <li> is stateless presentational markup
+							key={`fact-${idx}-${fact}`}
 							className="flex items-start gap-1.5 text-foreground/80"
 						>
 							<span
@@ -125,9 +130,10 @@ export function ToolSummaryCard({ summary, onSuggestionClick }: ToolSummaryCardP
 					<span className="me-1 text-[11px] font-medium text-emerald-900 dark:text-emerald-100">
 						Next:
 					</span>
-					{summary.suggestedNext?.map((s) => (
+					{summary.suggestedNext?.map((s, idx) => (
 						<Button
-							key={`s-${s.intent}-${s.label}`}
+							// biome-ignore lint/suspicious/noArrayIndexKey: suggestion intents/labels can repeat across emissions; the chip is a stateless button so an index-based composite key is safe
+							key={`s-${idx}-${s.intent}-${s.label}`}
 							size="sm"
 							variant="outline"
 							className={cn(

@@ -255,7 +255,7 @@ export const dismissAiPulseSuggestion = authenticatedMutation({
  * `ai.automation.manage` on the `aiStandingOrders` editor).
  */
 const AUTONOMY_KEYS = [
-	"autoFollowupOnStageMove",
+	"autoTaskOnStageMove",
 	"autoEnrichOnContactCreate",
 	"autoTagOnNote",
 	"weeklyDigestEmail",
@@ -265,7 +265,7 @@ async function updateAiAutonomyImpl(
 	ctx: import("../_generated/server").MutationCtx,
 	args: {
 		userId: import("../_generated/dataModel").Id<"users">;
-		autoFollowupOnStageMove?: boolean;
+		autoTaskOnStageMove?: boolean;
 		autoEnrichOnContactCreate?: boolean;
 		autoTagOnNote?: boolean;
 		weeklyDigestEmail?: boolean;
@@ -279,7 +279,7 @@ async function updateAiAutonomyImpl(
 	const existingAutonomy = existingPrefs.aiAutonomy ?? {};
 	const patched: Record<string, boolean> = { ...existingAutonomy };
 	const flags: Record<string, boolean | undefined> = {
-		autoFollowupOnStageMove: args.autoFollowupOnStageMove,
+		autoTaskOnStageMove: args.autoTaskOnStageMove,
 		autoEnrichOnContactCreate: args.autoEnrichOnContactCreate,
 		autoTagOnNote: args.autoTagOnNote,
 		weeklyDigestEmail: args.weeklyDigestEmail,
@@ -297,7 +297,7 @@ async function updateAiAutonomyImpl(
 
 export const updateAiAutonomy = authenticatedMutation({
 	args: {
-		autoFollowupOnStageMove: v.optional(v.boolean()),
+		autoTaskOnStageMove: v.optional(v.boolean()),
 		autoEnrichOnContactCreate: v.optional(v.boolean()),
 		autoTagOnNote: v.optional(v.boolean()),
 		weeklyDigestEmail: v.optional(v.boolean()),
@@ -315,7 +315,7 @@ export const updateAiAutonomy = authenticatedMutation({
 export const updateAiAutonomyForAI = internalMutation({
 	args: {
 		userId: v.id("users"),
-		autoFollowupOnStageMove: v.optional(v.boolean()),
+		autoTaskOnStageMove: v.optional(v.boolean()),
 		autoEnrichOnContactCreate: v.optional(v.boolean()),
 		autoTagOnNote: v.optional(v.boolean()),
 		weeklyDigestEmail: v.optional(v.boolean()),

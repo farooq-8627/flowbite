@@ -285,13 +285,11 @@ export function getSettingsSections(
 			keywords: ["label", "color", "categorize", "group", "mark", ...entityKeywords],
 		},
 
-		// ── CRM → Notes (sticky notes / reminders / followups / timeline) ────
+		// ── CRM → Notes (sticky notes / tasks / timeline) ────────────────────
 		// All of these were originally a top-level "Notes" group; they were
 		// folded into CRM (2026-05-17) because they're cross-cutting CRM
 		// concerns — there's no clean separation between "notes" and the
-		// records they hang off. Each subsection is a CRMGroup tab. The id
-		// prefix (`notes.*`) is preserved so existing deep-links, topnav
-		// pill IDs, and search-keyword references keep working.
+		// records they hang off. Each subsection is a CRMGroup tab.
 		{
 			id: "notes.categories",
 			groupId: "crm",
@@ -313,20 +311,27 @@ export function getSettingsSections(
 			permission: "notes.categories.manage",
 		},
 		{
-			id: "notes.reminders",
+			id: "crm.tasks",
 			groupId: "crm",
-			label: "Reminders",
+			label: "Tasks",
 			description:
-				"Default timing for automated reminders, morning briefings, and stale-deal alerts.",
-			keywords: ["follow-up", "stale", "briefing", "alert", "due date", "overdue", "rent"],
-		},
-		{
-			id: "notes.followups",
-			groupId: "crm",
-			label: "Follow-ups",
-			description:
-				"Default cadences for follow-up nudges sent from sticky notes and entity panels. UI ships when the Follow-ups module lands.",
-			keywords: ["follow-up", "cadence", "nudge", "sla", "reminder"],
+				"Default timing for automated reminders, morning briefings, follow-up cadence, and stale-deal alerts. Replaces the legacy Reminders + Follow-ups settings tabs.",
+			keywords: [
+				"task",
+				"tasks",
+				"follow-up",
+				"followup",
+				"reminder",
+				"reminders",
+				"cadence",
+				"nudge",
+				"sla",
+				"briefing",
+				"alert",
+				"due date",
+				"overdue",
+				"rent",
+			],
 		},
 		{
 			id: "notes.timeline",

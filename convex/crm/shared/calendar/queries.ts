@@ -73,11 +73,11 @@ export const getEvents = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		// Calendar is a derived view — its primary source is `reminders`, with
-		// activityLogs and deal close-dates layered on top. Gate on `reminders.view`
+		// Calendar is a derived view — its primary source is `tasks`, with
+		// activityLogs and deal close-dates layered on top. Gate on `tasks.view`
 		// (every system role has it). `deals.view` is checked separately below
 		// before the deal close-date layer is included.
-		requireRole(member.permissions, "reminders.view");
+		requireRole(member.permissions, "tasks.view");
 		const canViewDeals = hasPermission(member.permissions, "deals.view");
 		const canViewOrgActivity = hasPermission(member.permissions, "activityLogs.viewOrg");
 
@@ -86,24 +86,25 @@ export const getEvents = orgQuery({
 
 		const events: CalendarEventDTO[] = [];
 
-		// ── 1. Reminders ─────────────────────────────────────────────────────
+		// ── 1. Tasks ─────────────────────────────────────────────────────────
 		if (sources.has("reminder")) {
-			const reminders = await loadReminders(ctx, args, scope);
-			for (const r of reminders) {
-				if (r.dueAt < args.rangeStart || r.dueAt > args.rangeEnd) continue;
+			const tasks = await loadTasks(ctx, args, scope);
+			for (const t of tasks) {
+				if (t.dueAt < args.rangeStart || t.dueAt > args.rangeEnd) continue;
 				events.push({
-					id: `reminder:${r._id}`,
+					id: `task:${t._id}`,
 					source: "reminder",
-					title: r.title,
-					startsAt: r.dueAt,
+					title: t.title,
+					startsAt: t.dueAt,
 					color: COLOR_REMINDER,
-					personCode: r.personCode,
-					entityType: r.entityType,
-					entityId: r.entityId,
+					personCode: t.personCode,
+					entityType: t.entityType,
+					entityId: t.entityId,
 					meta: {
-						status: r.status,
-						followUpCode: r.followUpCode,
-						assignedTo: r.assignedTo,
+						status: t.status,
+						taskCode: t.taskCode,
+						type: t.type,
+						assignedTo: t.assignedTo,
 					},
 				});
 			}
@@ -182,14 +183,10 @@ type GetEventsArgs = {
 	entityId?: string;
 };
 
-async function loadReminders(
-	ctx: QueryCtx,
-	args: GetEventsArgs,
-	scope: "org" | "person" | "entity",
-) {
+async function loadTasks(ctx: QueryCtx, args: GetEventsArgs, scope: "org" | "person" | "entity") {
 	if (scope === "person" && args.personCode) {
 		return await ctx.db
-			.query("reminders")
+			.query("tasks")
 			.withIndex("by_org_and_person", (q) =>
 				q.eq("orgId", args.orgId).eq("personCode", args.personCode!),
 			)
@@ -197,14 +194,14 @@ async function loadReminders(
 	}
 	// org or entity scope — pull by due-date range, then post-filter for entity.
 	const byDue = await ctx.db
-		.query("reminders")
+		.query("tasks")
 		.withIndex("by_org_and_due", (q) =>
 			q.eq("orgId", args.orgId).gte("dueAt", args.rangeStart).lte("dueAt", args.rangeEnd),
 		)
 		.collect();
 	if (scope === "entity" && args.entityType && args.entityId) {
 		return byDue.filter(
-			(r) => r.entityType === args.entityType && r.entityId === args.entityId,
+			(t) => t.entityType === args.entityType && t.entityId === args.entityId,
 		);
 	}
 	return byDue;

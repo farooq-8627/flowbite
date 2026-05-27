@@ -3,34 +3,28 @@
 /**
  * EventForm — calendar-specific create/edit drawer.
  *
- * STATUS: IMPLEMENTED.
+ * "Create event" from the calendar = create a task. Wraps the canonical
+ * `<TaskForm>` with calendar-specific defaults:
  *
- * "Create event" from the calendar = create a reminder. Per
- * SCHEDULING-IMPLEMENTATION.md §0 ("`useCreateEventFromCalendar` is a
- * re-export of `useCreateReminder`") and §2.3, this form is a thin
- * wrapper around `<ReminderForm>` that:
- *
- *   1. Overrides the submit label to "Save as Reminder" so users can
- *      see the model behind the calendar (no hidden surprise).
+ *   1. Overrides the submit label to "Save as task".
  *   2. Pre-fills `dueAt` with whatever date the user clicked in the
- *      grid (we round to 9 AM on that date if no time was supplied).
- *   3. Sets `source = "calendar"` so the activity log says the event
- *      came from the calendar surface.
+ *      grid (we round to 9 AM if no time was supplied).
+ *   3. Defaults `type` to `todo` (calendar events that aren't a
+ *      call/email/meeting are general to-do items by default; the
+ *      operator can switch the type chip if needed).
  *
- * Editing reminders from the calendar uses the same `<ReminderForm>`
- * directly — there's no calendar-specific edit shape. We pass through
- * the full reminder doc.
+ * Replaces ReminderForm-based shim per TASKS-RENAME-PLAN.md (Stage 4B).
  */
 
 import { set } from "date-fns";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { ReminderForm } from "@/core/scheduling/reminders/components/ReminderForm";
+import { TaskForm } from "@/core/scheduling/tasks/components/TaskForm";
 
 interface EventFormProps {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	/** Edit mode — pass the full reminder doc. */
-	reminder?: Doc<"reminders"> | null;
+	/** Edit mode — pass the full task doc. */
+	task?: Doc<"tasks"> | null;
 	/** Create mode — pass calendar context (selected date + optional entity scope). */
 	defaults?: {
 		startsAt?: number;
@@ -52,30 +46,31 @@ function snapTo9amIfMidnight(ts: number): number {
 	return ts;
 }
 
-export function EventForm({ open, onOpenChange, reminder, defaults }: EventFormProps) {
+export function EventForm({ open, onOpenChange, task, defaults }: EventFormProps) {
 	const dueAt = defaults?.startsAt ? snapTo9amIfMidnight(defaults.startsAt) : undefined;
 
 	return (
-		<ReminderForm
+		<TaskForm
 			open={open}
 			onOpenChange={onOpenChange}
-			reminder={reminder}
+			task={task}
 			defaults={
-				reminder
+				task
 					? undefined
 					: {
 							personCode: defaults?.personCode,
 							dealCode: defaults?.dealCode,
-							entityType: defaults?.entityType ?? "person",
-							entityId: defaults?.entityId,
+							entityType:
+								defaults?.entityType ??
+								(defaults?.personCode ? "person" : undefined),
+							entityId: defaults?.entityId ?? defaults?.personCode,
 							assignedTo: defaults?.assignedTo,
 							title: defaults?.title,
 							dueAt,
-							// Calendar-driven creates always log source=calendar.
-							source: "calendar",
+							type: "todo",
 						}
 			}
-			submitLabel={reminder ? "Save changes" : "Save as reminder"}
+			submitLabel={task ? "Save changes" : "Save as task"}
 		/>
 	);
 }

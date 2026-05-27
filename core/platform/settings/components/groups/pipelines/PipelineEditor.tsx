@@ -16,18 +16,36 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useMutation } from "convex/react";
-import { Check, GripVertical, MoreHorizontal, Plus, Trash2, X } from "lucide-react";
+import {
+	Check,
+	GripVertical,
+	MoreHorizontal,
+	Plus,
+	SlidersHorizontal,
+	Trash2,
+	X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
@@ -85,6 +103,7 @@ function StageRow({
 	const [editing, setEditing] = useState(false);
 	const [draftName, setDraftName] = useState(stage.name);
 	const [draftCode, setDraftCode] = useState(stage.code);
+	const [advancedOpen, setAdvancedOpen] = useState(false);
 
 	const isDefault = stage.isDefaultStage === true;
 
@@ -314,7 +333,12 @@ function StageRow({
 							<MoreHorizontal className="size-3.5" />
 						</Button>
 					</DropdownMenuTrigger>
-					<DropdownMenuContent align="end" className="w-44">
+					<DropdownMenuContent align="end" className="w-48">
+						<DropdownMenuItem onSelect={() => setAdvancedOpen(true)}>
+							<SlidersHorizontal className="me-2 size-3.5" />
+							Advanced settings…
+						</DropdownMenuItem>
+						<DropdownMenuSeparator />
 						<DropdownMenuItem
 							onSelect={handleDelete}
 							disabled={isDefault}
@@ -328,7 +352,236 @@ function StageRow({
 					</DropdownMenuContent>
 				</DropdownMenu>
 			)}
+
+			<StageAdvancedSettingsDialog
+				open={advancedOpen}
+				onOpenChange={setAdvancedOpen}
+				stage={stage}
+				orgId={orgId}
+				pipelineId={pipelineId}
+			/>
 		</div>
+	);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Per-stage advanced settings dialog (P1.2.B)
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Exposes the four advanced fields on the stage record:
+//   - staleAfterDays   — how many days a deal can sit in the stage
+//                        before `<StaleIndicator>` flags it red.
+//   - warningAfterDays — early-warning threshold (amber) before stale.
+//   - isFinal          — marks the stage as a closed state. Final
+//                        stages can't be advanced from; they're won/lost.
+//   - finalType        — when isFinal is on, classify as positive (won) /
+//                        negative (lost) / neutral (closed-other). Drives
+//                        win-rate analytics + stage colour conventions.
+//
+// Empty number inputs map to `undefined` on save (= "no rule") so the
+// admin can fully clear a previously-set threshold by blanking it.
+
+function parseStageDays(raw: string): number | undefined {
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) return undefined;
+	const n = Number(trimmed);
+	if (!Number.isFinite(n) || n < 0) return undefined;
+	return Math.round(n);
+}
+
+function StageAdvancedSettingsDialog({
+	open,
+	onOpenChange,
+	stage,
+	orgId,
+	pipelineId,
+}: {
+	open: boolean;
+	onOpenChange: (v: boolean) => void;
+	stage: Stage;
+	orgId: Id<"orgs">;
+	pipelineId: Id<"pipelines">;
+}) {
+	const updateStage = useMutation(api.crm.fields.pipelines.mutations.updateStage);
+
+	const [staleDraft, setStaleDraft] = useState<string>(
+		stage.staleAfterDays !== undefined ? String(stage.staleAfterDays) : "",
+	);
+	const [warningDraft, setWarningDraft] = useState<string>(
+		stage.warningAfterDays !== undefined ? String(stage.warningAfterDays) : "",
+	);
+	const [isFinalDraft, setIsFinalDraft] = useState<boolean>(stage.isFinal === true);
+	const [finalTypeDraft, setFinalTypeDraft] = useState<
+		"positive" | "negative" | "neutral" | undefined
+	>(stage.finalType);
+	const [saving, setSaving] = useState(false);
+
+	// Reset drafts when the dialog opens for a different stage.
+	useEffect(() => {
+		if (!open) return;
+		setStaleDraft(stage.staleAfterDays !== undefined ? String(stage.staleAfterDays) : "");
+		setWarningDraft(stage.warningAfterDays !== undefined ? String(stage.warningAfterDays) : "");
+		setIsFinalDraft(stage.isFinal === true);
+		setFinalTypeDraft(stage.finalType);
+	}, [open, stage]);
+
+	const validationError = useMemo(() => {
+		const stale = parseStageDays(staleDraft);
+		const warning = parseStageDays(warningDraft);
+		if (warning !== undefined && stale !== undefined && warning >= stale) {
+			return "Warning threshold must be smaller than the stale threshold.";
+		}
+		if (isFinalDraft && !finalTypeDraft) {
+			return "Pick a final type — positive (won), negative (lost), or neutral.";
+		}
+		return null;
+	}, [staleDraft, warningDraft, isFinalDraft, finalTypeDraft]);
+
+	const handleSave = async () => {
+		if (validationError) {
+			toast.error(validationError);
+			return;
+		}
+		setSaving(true);
+		try {
+			await updateStage({
+				orgId,
+				pipelineId,
+				stageId: stage.id,
+				staleAfterDays: parseStageDays(staleDraft),
+				warningAfterDays: parseStageDays(warningDraft),
+				isFinal: isFinalDraft,
+				finalType: isFinalDraft ? finalTypeDraft : undefined,
+			});
+			toast.success("Stage settings saved");
+			onOpenChange(false);
+		} catch (err) {
+			toast.error(normalizeError(err, "Failed to save stage settings"));
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="max-w-md">
+				<DialogHeader>
+					<DialogTitle>Advanced settings — {stage.name}</DialogTitle>
+					<DialogDescription>
+						Stale &amp; warning thresholds drive the indicator on each deal card.
+						Marking the stage as final tells reports it's a closed state.
+					</DialogDescription>
+				</DialogHeader>
+
+				<div className="flex flex-col gap-4 py-2">
+					<div className="grid grid-cols-2 gap-3">
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="stage-stale-days" className="text-xs">
+								Stale after (days)
+							</Label>
+							<Input
+								id="stage-stale-days"
+								type="number"
+								inputMode="numeric"
+								min={0}
+								value={staleDraft}
+								onChange={(e) => setStaleDraft(e.target.value)}
+								placeholder="—"
+								className="h-8"
+							/>
+							<p className="text-[10px] leading-snug text-muted-foreground">
+								Cards turn red after this many days idle.
+							</p>
+						</div>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="stage-warn-days" className="text-xs">
+								Warning at (days)
+							</Label>
+							<Input
+								id="stage-warn-days"
+								type="number"
+								inputMode="numeric"
+								min={0}
+								value={warningDraft}
+								onChange={(e) => setWarningDraft(e.target.value)}
+								placeholder="—"
+								className="h-8"
+							/>
+							<p className="text-[10px] leading-snug text-muted-foreground">
+								Earlier amber warning before going stale.
+							</p>
+						</div>
+					</div>
+
+					<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-muted/20 p-3">
+						<div className="flex items-start justify-between gap-3">
+							<div className="flex flex-col gap-0.5">
+								<span className="text-xs font-medium">Final stage</span>
+								<span className="text-[10px] leading-snug text-muted-foreground">
+									Mark this stage as a closed state. Deals reaching a final stage
+									are treated as won / lost / closed-other in reports.
+								</span>
+							</div>
+							<Switch
+								checked={isFinalDraft}
+								onCheckedChange={setIsFinalDraft}
+								aria-label="Final stage"
+							/>
+						</div>
+						{isFinalDraft && (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="stage-final-type" className="text-xs">
+									Final type
+								</Label>
+								<Select
+									value={finalTypeDraft ?? ""}
+									onValueChange={(v) =>
+										setFinalTypeDraft(v as "positive" | "negative" | "neutral")
+									}
+								>
+									<SelectTrigger id="stage-final-type" className="h-8 text-xs">
+										<SelectValue placeholder="Pick one" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="positive" className="text-xs">
+											Positive (won)
+										</SelectItem>
+										<SelectItem value="negative" className="text-xs">
+											Negative (lost)
+										</SelectItem>
+										<SelectItem value="neutral" className="text-xs">
+											Neutral (closed — other)
+										</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
+						)}
+					</div>
+
+					{validationError && (
+						<p className="text-xs text-destructive">{validationError}</p>
+					)}
+				</div>
+
+				<DialogFooter>
+					<Button
+						type="button"
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={saving}
+					>
+						Cancel
+					</Button>
+					<Button
+						type="button"
+						onClick={handleSave}
+						disabled={saving || !!validationError}
+					>
+						{saving ? "Saving…" : "Save"}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }
 

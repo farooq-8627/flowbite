@@ -130,7 +130,7 @@ function NoteMeta({ entry }: { entry: TimelineNoteEntry }) {
 
 function ReminderBody({ entry }: { entry: TimelineReminderEntry }) {
 	const isCompleted = entry.status === "completed";
-	const isFollowup = entry.source === "followup";
+	const isFollowup = entry.type === "followup";
 	const dueDate = new Date(entry.dueAt);
 
 	return (
@@ -174,10 +174,10 @@ function ReminderBody({ entry }: { entry: TimelineReminderEntry }) {
 						</Badge>
 					</>
 				)}
-				{entry.followUpCode && (
+				{entry.taskCode && (
 					<>
 						<span aria-hidden>·</span>
-						<span className="font-mono">{entry.followUpCode}</span>
+						<span className="font-mono">{entry.taskCode}</span>
 					</>
 				)}
 				{entry.personCode && (

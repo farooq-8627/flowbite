@@ -25,8 +25,8 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { BUILT_IN_TEMPLATES } from "../../_platform/industries/builtIns";
 import { validateDashboardLayout, WIDGET_KEYS, WIDGETS } from "../../_shared/widgetRegistry";
-import { INDUSTRY_TEMPLATES } from "../../crm/fields/templates/registry";
 
 describe("widgetRegistry — template <-> registry contract", () => {
 	it("WIDGET_KEYS has a matching WIDGETS metadata entry for every key", () => {
@@ -39,7 +39,7 @@ describe("widgetRegistry — template <-> registry contract", () => {
 		}
 	});
 
-	for (const [templateId, template] of Object.entries(INDUSTRY_TEMPLATES)) {
+	for (const [templateId, template] of Object.entries(BUILT_IN_TEMPLATES)) {
 		const metrics = template.dashboardMetrics ?? [];
 
 		it(`template '${templateId}' has at least one dashboardMetrics key`, () => {
@@ -94,7 +94,7 @@ describe("widgetRegistry — template <-> registry contract", () => {
 	// surface keys in by default so a fresh org sees the Pulse + Quick
 	// Composer immediately. This guard fails loudly if a template forgets
 	// either key.
-	for (const [templateId, template] of Object.entries(INDUSTRY_TEMPLATES)) {
+	for (const [templateId, template] of Object.entries(BUILT_IN_TEMPLATES)) {
 		const metrics = template.dashboardMetrics ?? [];
 		it(`template '${templateId}' opts in ai.pulseRibbon + ai.quickComposer (Stage 5)`, () => {
 			expect(metrics, `template '${templateId}' missing ai.pulseRibbon`).toContain(

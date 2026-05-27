@@ -118,26 +118,23 @@ crons.interval(
 /**
  * Stage 6 (SPRINT-PLAN.md) — proactive next-actions ranker.
  *
- * Every 30 minutes, scan every active (org, user) membership and rebuild
- * the materialised `aiNextActions` ranked list per user. Heuristic-only —
- * no LLM call — so the cost is bounded by the DB read budget, not token
- * spend.
+ * Originally a 30-minute cron rebuilt the materialised `aiNextActions`
+ * ranked list for every active (org, user) membership. Removed
+ * 2026-05-27 — replaced by the reactive trigger
+ * `convex/ai/queries/nextActionsTrigger.ts:scheduleNextActionsRebuild`,
+ * which fires from every relevant lead/deal/task mutation (with a 5 s
+ * token-bucket dedup so bursts are coalesced). First-paint freshness
+ * is covered by `convex.ai.queries.nextActions:lazyWarmForUser` (1/min
+ * per user, fired once per session by `AIPulseRibbon` when the ranked
+ * store is empty). The cron added latency the user felt as "the ribbon
+ * is stale" — the new reactive path keeps the ranked store within
+ * ~250 ms of source-of-truth.
  *
  * The action `internal.ai.actions.rankNextActions.rebuildAllOrgs`
- * paginates memberships and schedules a per-user `rebuildForUser`
- * mutation per pair. Each mutation runs in its own transaction so the
- * read cap can never be hit by a single org with many active users.
- *
- * Rebuild offset: 100 ms × index — even at 5,000 active members the
- * total wall clock is ~8 minutes, well below the 30-min tick. Inactive
- * members (lastActiveAt > 30 days) are skipped.
+ * remains in the codebase as an on-demand internal entrypoint (e.g. for
+ * a one-off ops sweep after a schema change) but is no longer fired by
+ * the scheduler.
  */
-crons.interval(
-	"rank-ai-next-actions",
-	{ minutes: 30 },
-	internal.ai.actions.rankNextActions.rebuildAllOrgs,
-	{},
-);
 
 /**
  * Stage 7 (SPRINT-PLAN.md) — nightly cohort rebuild.
@@ -181,5 +178,19 @@ crons.interval(
 	internal.ai.standingOrders.evaluator.tick,
 	{},
 );
+
+/**
+ * Daily owner-panel OTP garbage collection.
+ *
+ * Each OTP row has a 15-minute TTL. We keep them around for an
+ * additional 24h after expiry so audit-log entries can be correlated
+ * to the underlying credential during incident response. After that
+ * window the rows are pure clutter — this cron deletes them.
+ *
+ * Idempotent: deletes only rows whose `expiresAt + 24h` is in the past.
+ *
+ * Spec: PLATFORM-OWNER-PANEL.md §4.2.
+ */
+crons.interval("owner-otp-gc", { hours: 24 }, internal._platform.otp.mutations.deleteExpired, {});
 
 export default crons;

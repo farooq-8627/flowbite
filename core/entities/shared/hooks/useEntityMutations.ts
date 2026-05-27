@@ -52,6 +52,7 @@
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
+import { dropAiNextActionsByCode } from "@/core/ai/lib/aiNextActionsCache";
 
 // ─── leads ─────────────────────────────────────────────────────────────────
 
@@ -67,16 +68,27 @@ export function useUpdateLead() {
 	return useMutation(api.crm.entities.leads.mutations.update).withOptimisticUpdate(
 		(store, args) => {
 			const all = store.getAllQueries(api.crm.entities.leads.queries.list);
+			let personCode: string | undefined;
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
 				if (qa.orgId !== args.orgId) continue;
-				if (!list.some((l) => l._id === args.leadId)) continue;
+				const target = list.find((l) => l._id === args.leadId);
+				if (!target) continue;
+				if (!personCode) personCode = target.personCode;
 				const { orgId: _o, leadId: _l, ...patch } = args;
 				store.setQuery(
 					api.crm.entities.leads.queries.list,
 					qa,
 					list.map((l) => (l._id === args.leadId ? { ...l, ...patch } : l)),
 				);
+			}
+			// Pulse-row drop — when status flips to a closed bucket
+			// the Pulse Ribbon's `lead_stale_*` row is no longer
+			// applicable. Backend reactively rebuilds via
+			// `scheduleNextActionsRebuild`; this is the no-flash UX.
+			const closedStatuses = new Set(["Won", "Lost", "Converted"]);
+			if (personCode && args.status && closedStatuses.has(args.status)) {
+				dropAiNextActionsByCode(store, args.orgId, "lead", personCode);
 			}
 		},
 	);
@@ -86,15 +98,23 @@ export function useSoftDeleteLead() {
 	return useMutation(api.crm.entities.leads.mutations.softDelete).withOptimisticUpdate(
 		(store, args) => {
 			const all = store.getAllQueries(api.crm.entities.leads.queries.list);
+			let personCode: string | undefined;
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
 				if (qa.orgId !== args.orgId) continue;
-				if (!list.some((l) => l._id === args.leadId)) continue;
+				const target = list.find((l) => l._id === args.leadId);
+				if (!target) continue;
+				if (!personCode) personCode = target.personCode;
 				store.setQuery(
 					api.crm.entities.leads.queries.list,
 					qa,
 					list.filter((l) => l._id !== args.leadId),
 				);
+			}
+			// Pulse-row drop — soft-delete clears every ribbon row
+			// referencing this lead's personCode.
+			if (personCode) {
+				dropAiNextActionsByCode(store, args.orgId, "lead", personCode);
 			}
 		},
 	);
@@ -125,15 +145,21 @@ export function useSoftDeleteContact() {
 	return useMutation(api.crm.entities.contacts.mutations.softDelete).withOptimisticUpdate(
 		(store, args) => {
 			const all = store.getAllQueries(api.crm.entities.contacts.queries.list);
+			let personCode: string | undefined;
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
 				if (qa.orgId !== args.orgId) continue;
-				if (!list.some((c) => c._id === args.contactId)) continue;
+				const target = list.find((c) => c._id === args.contactId);
+				if (!target) continue;
+				if (!personCode) personCode = target.personCode;
 				store.setQuery(
 					api.crm.entities.contacts.queries.list,
 					qa,
 					list.filter((c) => c._id !== args.contactId),
 				);
+			}
+			if (personCode) {
+				dropAiNextActionsByCode(store, args.orgId, "contact", personCode);
 			}
 		},
 	);
@@ -220,12 +246,15 @@ export function useUpdateDeal() {
 export function useSoftDeleteDeal() {
 	return useMutation(api.crm.entities.deals.mutations.softDelete).withOptimisticUpdate(
 		(store, args) => {
+			let dealCode: string | undefined;
 			// Flat list cache.
 			const all = store.getAllQueries(api.crm.entities.deals.queries.list);
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
 				if (qa.orgId !== args.orgId) continue;
-				if (!list.some((d) => d._id === args.dealId)) continue;
+				const target = list.find((d) => d._id === args.dealId);
+				if (!target) continue;
+				if (!dealCode) dealCode = target.dealCode;
 				store.setQuery(
 					api.crm.entities.deals.queries.list,
 					qa,
@@ -245,12 +274,21 @@ export function useSoftDeleteDeal() {
 						next[stageId] = rows;
 						continue;
 					}
+					if (!dealCode) {
+						const found = rows.find((r) => r._id === args.dealId);
+						if (found?.dealCode) dealCode = found.dealCode;
+					}
 					touched = true;
 					next[stageId] = rows.filter((r) => r._id !== args.dealId);
 				}
 				if (touched) {
 					store.setQuery(api.crm.entities.deals.queries.listGroupedByStage, qa, next);
 				}
+			}
+
+			// Pulse-row drop — clears `deal_stuck_*` rows for this deal.
+			if (dealCode) {
+				dropAiNextActionsByCode(store, args.orgId, "deal", dealCode);
 			}
 		},
 	);
@@ -287,13 +325,16 @@ export function useMoveDealToStage() {
 	return useMutation(api.crm.entities.deals.mutations.moveToStage).withOptimisticUpdate(
 		(store, args) => {
 			const now = Date.now();
+			let dealCode: string | undefined;
 
 			// 1. Flat list cache — used by the list view.
 			const all = store.getAllQueries(api.crm.entities.deals.queries.list);
 			for (const { args: qa, value: list } of all) {
 				if (!list) continue;
 				if (qa.orgId !== args.orgId) continue;
-				if (!list.some((d) => d._id === args.dealId)) continue;
+				const target = list.find((d) => d._id === args.dealId);
+				if (!target) continue;
+				if (!dealCode) dealCode = target.dealCode;
 				store.setQuery(
 					api.crm.entities.deals.queries.list,
 					qa,
@@ -324,6 +365,7 @@ export function useMoveDealToStage() {
 					const idx = rows.findIndex((r) => r._id === args.dealId);
 					if (idx >= 0 && !foundRow) {
 						foundRow = rows[idx];
+						if (!dealCode && foundRow.dealCode) dealCode = foundRow.dealCode;
 						next[stageId] = rows.filter((_, i) => i !== idx);
 					} else {
 						next[stageId] = rows;
@@ -344,6 +386,14 @@ export function useMoveDealToStage() {
 				next[args.stageId] = next[args.stageId] ? [...next[args.stageId], moved] : [moved];
 
 				store.setQuery(api.crm.entities.deals.queries.listGroupedByStage, qa, next);
+			}
+
+			// Pulse-row drop — stage move resets the staleness clock,
+			// so any `deal_stuck_*` row for this dealCode is no longer
+			// applicable. Backend reactively rebuilds; this is the
+			// no-flash UX layer.
+			if (dealCode) {
+				dropAiNextActionsByCode(store, args.orgId, "deal", dealCode);
 			}
 		},
 	);

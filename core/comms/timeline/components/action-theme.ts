@@ -123,12 +123,19 @@ function resolveHeadline(entityType: string, action: string): string {
 	// surfaces that ignore `description`.
 	if (action === "field_updated") return `${label} updated`;
 
-	// Reminder verbs
-	if (action === "reminder_created" || action === "followup_created") return "Reminder set";
-	if (action === "reminder_completed" || action === "followup_completed")
-		return "Reminder completed";
-	if (action === "reminder_deleted") return "Reminder removed";
-	if (action === "reminder_updated") return "Reminder updated";
+	// Task verbs (also recognise legacy reminder_/followup_ verbs for
+	// backward-compat with old activity log rows that haven't been
+	// rewritten by the migration).
+	if (action === "task_created" || action === "reminder_created" || action === "followup_created")
+		return "Task added";
+	if (
+		action === "task_completed" ||
+		action === "reminder_completed" ||
+		action === "followup_completed"
+	)
+		return "Task completed";
+	if (action === "task_deleted" || action === "reminder_deleted") return "Task removed";
+	if (action === "task_updated" || action === "reminder_updated") return "Task updated";
 
 	// Note verbs
 	if (action === "note_created") return "Note added";

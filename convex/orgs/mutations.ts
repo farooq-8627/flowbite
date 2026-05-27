@@ -37,9 +37,32 @@ import {
 } from "../_shared/permissions/derive";
 import { RESERVED_SLUGS, validateSlug } from "../_shared/reservedSlugs";
 import { logActivity } from "../activityLogs/helpers";
-import { INDUSTRY_ID_ALIASES, INDUSTRY_TEMPLATES } from "../crm/fields/templates/registry";
 import { sendNotification } from "../notifications/helpers";
 import { ensureUniqueSlug, generateSlug, getOrgBySlug, getOrgMember } from "./helpers";
+
+// ─── DB-backed industry-template resolution (Stage 1) ────────────────────────
+
+/**
+ * Resolve an industry id to a canonical templateKey by reading the
+ * `platformTemplates` table. Replaces the legacy static-map lookup
+ * (`INDUSTRY_TEMPLATES[id]` / `INDUSTRY_ID_ALIASES[id]`) that was
+ * deleted in Stage 3 of INDUSTRY-TEMPLATES-DB-MIGRATION.md.
+ *
+ * Both built-in templates AND alias rows live in the same table, so
+ * the resolution collapses to a single point query. Falls back to
+ * `"generic"` when the id is unknown — same behaviour as the previous
+ * static map.
+ */
+async function resolveTemplateKey(ctx: MutationCtx, industry: string): Promise<string> {
+	const direct = await ctx.db
+		.query("platformTemplates")
+		.withIndex("by_templateKey", (q) => q.eq("templateKey", industry))
+		.unique();
+	if (direct && !direct.isArchived) return direct.templateKey;
+	// Fallback: generic. Always present after the seed migration; if
+	// it's somehow missing we let the seeder throw downstream.
+	return "generic";
+}
 
 // Platform prefix is read from env — never hardcoded.
 // Set PLATFORM_PREFIX in your Convex environment variables.
@@ -294,7 +317,10 @@ export const create = authenticatedMutation({
  * Update org industry + team size (onboarding Step 2).
  *
  * Now a thin wrapper around `applyTemplate` — every industry id resolves
- * via the registry (`convex/crm/fields/templates/registry.ts`). The legacy
+ * via `resolveTemplateKey()` which point-queries the `platformTemplates`
+ * table. (The legacy static `INDUSTRY_TEMPLATES` + `INDUSTRY_ID_ALIASES`
+ * maps under `convex/crm/fields/templates/registry.ts` were deleted in
+ * Stage 3 of INDUSTRY-TEMPLATES-DB-MIGRATION.md.) The legacy
  * `getDefaultStages(...)` + `seedFieldDefinitionsForOrg(...)` call path is
  * REMOVED — every onboarding now seeds via `setupWorkspaceFromTemplate`,
  * giving the workspace a complete set of pipelines, fields, entity labels,
@@ -303,8 +329,8 @@ export const create = authenticatedMutation({
  * timezone in one atomic transaction.
  *
  * Backwards compat: `industry` is still a free-form string (no narrowing).
- * Unknown ids transparently fall through to the `generic` template via the
- * registry's alias map — never throws TEMPLATE_NOT_FOUND from this path.
+ * Unknown ids transparently fall through to the `generic` template via
+ * the resolver — never throws TEMPLATE_NOT_FOUND from this path.
  */
 export const updateOrgIndustry = authenticatedMutation({
 	args: {
@@ -324,11 +350,9 @@ export const updateOrgIndustry = authenticatedMutation({
 			updatedAt: now,
 		});
 
-		// Resolve via the alias map; default to "generic" so onboarding never
+		// Resolve via DB lookup; default to "generic" so onboarding never
 		// blocks on an uncurated industry id.
-		const templateId = INDUSTRY_TEMPLATES[args.industry]
-			? args.industry
-			: (INDUSTRY_ID_ALIASES[args.industry] ?? "generic");
+		const templateId = await resolveTemplateKey(ctx, args.industry);
 
 		await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
 			orgId: args.orgId,
@@ -363,9 +387,7 @@ async function applyTemplateImpl(
 	ctx: MutationCtx,
 	args: { orgId: Id<"orgs">; userId: Id<"users">; templateId: string },
 ): Promise<{ ok: true; templateId: string }> {
-	const resolved = INDUSTRY_TEMPLATES[args.templateId]
-		? args.templateId
-		: (INDUSTRY_ID_ALIASES[args.templateId] ?? "generic");
+	const resolved = await resolveTemplateKey(ctx, args.templateId);
 
 	await ctx.runMutation(internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate, {
 		orgId: args.orgId,
@@ -517,11 +539,11 @@ async function clearMockDataImpl(
 		}
 	}
 
-	const reminders = await ctx.db
-		.query("reminders")
+	const tasks = await ctx.db
+		.query("tasks")
 		.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 		.collect();
-	for (const row of reminders) {
+	for (const row of tasks) {
 		if (row.excludeFromAI === true && row.createdAt === seededAt) {
 			await ctx.db.delete(row._id);
 			deleted += 1;
@@ -704,7 +726,7 @@ const orgUpdateArgs = {
 					person: v.optional(v.string()),
 					deal: v.optional(v.string()),
 					company: v.optional(v.string()),
-					followup: v.optional(v.string()),
+					task: v.optional(v.string()),
 				}),
 			),
 			modules: v.optional(
@@ -723,17 +745,7 @@ const orgUpdateArgs = {
 					}),
 				),
 			),
-			reminderDefaults: v.optional(
-				v.object({
-					followUpWindowHours: v.optional(v.number()),
-					staleAlertDays: v.optional(v.number()),
-					morningBriefingEnabled: v.optional(v.boolean()),
-					morningBriefingTime: v.optional(v.string()),
-					rentAlertDays: v.optional(v.number()),
-					rentAlertEnabled: v.optional(v.boolean()),
-				}),
-			),
-			followupDefaults: v.optional(
+			taskDefaults: v.optional(
 				v.object({
 					defaultDueOffsetDays: v.optional(v.number()),
 					defaultPriority: v.optional(
@@ -748,6 +760,12 @@ const orgUpdateArgs = {
 					notifyAssignee: v.optional(v.boolean()),
 					requireDealCode: v.optional(v.boolean()),
 					reminderBeforeHours: v.optional(v.number()),
+				}),
+			),
+			briefingDefaults: v.optional(
+				v.object({
+					morningBriefingEnabled: v.optional(v.boolean()),
+					morningBriefingTime: v.optional(v.string()),
 				}),
 			),
 			fileUpload: v.optional(
@@ -800,8 +818,7 @@ async function updateImpl(
 		const org = await ctx.db.get(orgId);
 		const existing: {
 			codePrefixes?: Record<string, string | undefined>;
-			reminderDefaults?: Record<string, unknown>;
-			followupDefaults?: Record<string, unknown>;
+			taskDefaults?: Record<string, unknown>;
 			fileUpload?: Record<string, unknown>;
 			[k: string]: unknown;
 		} = org?.settings ?? {};
@@ -814,16 +831,10 @@ async function updateImpl(
 					...newSettings.codePrefixes,
 				},
 			}),
-			...(newSettings.reminderDefaults && {
-				reminderDefaults: {
-					...existing.reminderDefaults,
-					...newSettings.reminderDefaults,
-				},
-			}),
-			...(newSettings.followupDefaults && {
-				followupDefaults: {
-					...existing.followupDefaults,
-					...newSettings.followupDefaults,
+			...(newSettings.taskDefaults && {
+				taskDefaults: {
+					...existing.taskDefaults,
+					...newSettings.taskDefaults,
 				},
 			}),
 			...(newSettings.fileUpload && {

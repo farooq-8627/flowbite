@@ -259,3 +259,91 @@ export function renderPasswordResetEmail(args: {
 
 	return { subject, html, text };
 }
+
+/**
+ * Build the HTML body for an owner-panel OTP code email.
+ *
+ * 6-digit numeric code prominently displayed (not a link — the panel
+ * always asks the user to type the code on the auth page so the email
+ * has zero clickable surface). 15-minute TTL is rendered into the copy
+ * so the recipient knows when to act.
+ *
+ * Used only by `convex/_platform/otp/actions.ts` (see
+ * `PLATFORM-OWNER-PANEL.md §2.5`).
+ */
+export function renderOwnerOtpEmail(args: {
+	code: string;
+	expiresAt: number;
+	requestIp?: string | null;
+	requestUserAgent?: string | null;
+	appName?: string;
+}): { subject: string; html: string; text: string } {
+	const appName = args.appName ?? "Orbitly";
+	const expiresOn = new Date(args.expiresAt).toUTCString();
+	const ttlMin = Math.max(1, Math.round((args.expiresAt - Date.now()) / 60_000));
+	const subject = `${appName} platform owner verification code`;
+
+	const safeCode = escapeHtml(args.code);
+	const safeApp = escapeHtml(appName);
+	const safeIp = args.requestIp ? escapeHtml(args.requestIp) : null;
+	const safeUa = args.requestUserAgent ? escapeHtml(args.requestUserAgent.slice(0, 200)) : null;
+
+	const html = `<!doctype html>
+<html lang="en">
+  <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden;">
+            <tr>
+              <td style="padding:32px 40px 16px 40px;">
+                <p style="margin:0 0 8px 0;font-size:14px;color:#64748b;">${safeApp} · Platform owner</p>
+                <h1 style="margin:0;font-size:22px;line-height:1.3;color:#0f172a;">Your verification code</h1>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 8px 40px;font-size:15px;line-height:1.6;color:#334155;">
+                <p style="margin:0 0 16px 0;">Use this code to enter the platform owner panel. The code expires in about ${ttlMin} minute${ttlMin === 1 ? "" : "s"}.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 24px 40px;">
+                <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:0.4em;background:#0f172a;color:#ffffff;padding:18px 22px;border-radius:8px;text-align:center;">${safeCode}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 24px 40px;font-size:13px;color:#64748b;">
+                <p style="margin:0 0 8px 0;"><strong>If you didn't request this code, ignore this email and consider rotating your password.</strong> The platform owner panel is gated by an email allow-list — only operators on that list can reach the OTP step in the first place.</p>
+                ${
+					safeIp || safeUa
+						? `<p style="margin:0 0 8px 0;color:#475569;">Request from: ${safeIp ? `<span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${safeIp}</span>` : "(IP unavailable)"}${safeUa ? ` · <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;">${safeUa}</span>` : ""}</p>`
+						: ""
+				}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 40px 32px 40px;border-top:1px solid #e2e8f0;">
+                <p style="margin:24px 0 0 0;font-size:12px;color:#64748b;line-height:1.5;">This code expires on ${escapeHtml(expiresOn)}. It can only be used once.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+
+	const text = [
+		`${appName} platform owner verification code: ${args.code}`,
+		"",
+		`This code expires in about ${ttlMin} minute${ttlMin === 1 ? "" : "s"} (on ${expiresOn}). It can only be used once.`,
+		"",
+		"If you didn't request this code, ignore this email and consider rotating your password.",
+		safeIp ? `Request IP: ${args.requestIp}` : "",
+		safeUa ? `User agent: ${args.requestUserAgent}` : "",
+	]
+		.filter((l) => l.length > 0)
+		.join("\n");
+
+	return { subject, html, text };
+}

@@ -112,7 +112,7 @@ RULES
  * stage work please"* — `create` matches settingsVerbs, `stage` (in "next
  * stage work") matches settingsNouns, confidence 0.65 ≥ floor 0.6, so the
  * heuristic locked the request to the `settings` subagent whose narrow
- * allow-list does NOT include `create_followup`. The fix:
+ * allow-list does NOT include `create_task`. The fix:
  *   1. Add an explicit CRM-action heuristic BEFORE settings — followup /
  *      remind / note / tag this / convert / move to / send msg / draft /
  *      summarise verbs all pin to `crm_action @ 0.75` and skip the

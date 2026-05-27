@@ -212,13 +212,14 @@ export const searchByCode = orgQuery({
 				return { entity: company, entityType: "company" as const };
 		}
 
-		if (prefix === "FU") {
-			const reminder = await ctx.db
-				.query("reminders")
-				.withIndex("by_org_and_person", (q) => q.eq("orgId", args.orgId))
-				.take(200)
-				.then((rows) => rows.find((r) => r.followUpCode === code));
-			if (reminder) return { entity: reminder, entityType: "reminder" as const };
+		if (prefix === "T") {
+			const task = await ctx.db
+				.query("tasks")
+				.withIndex("by_org_and_taskCode", (q) =>
+					q.eq("orgId", args.orgId).eq("taskCode", code),
+				)
+				.first();
+			if (task) return { entity: task, entityType: "task" as const };
 		}
 
 		return null;

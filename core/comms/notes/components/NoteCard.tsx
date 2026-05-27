@@ -57,7 +57,7 @@ import {
 	type EntityAttachment,
 	EntityPickerPopover,
 } from "./EntityPickerPopover";
-import { NoteReminderDialog } from "./NoteReminderDialog";
+import { NoteTaskDialog } from "./NoteTaskDialog";
 import { resolveTextColor } from "./note-color-utils";
 
 export interface NoteCardProps {
@@ -132,7 +132,7 @@ export function NoteCard({
 }: NoteCardProps) {
 	const [editing, setEditing] = useState(autoFocus);
 	const [draft, setDraft] = useState(note.content);
-	const [reminderOpen, setReminderOpen] = useState(false);
+	const [taskDialogOpen, setTaskDialogOpen] = useState(false);
 	const textareaRef = useRef<HTMLTextAreaElement>(null);
 	const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -413,9 +413,9 @@ export function NoteCard({
 											{note.isPinned ? "Unpin" : "Pin"}
 										</DropdownMenuItem>
 									)}
-									<DropdownMenuItem onSelect={() => setReminderOpen(true)}>
+									<DropdownMenuItem onSelect={() => setTaskDialogOpen(true)}>
 										<BellRingIcon className="me-2 size-3.5" />
-										Set reminder
+										Add task
 									</DropdownMenuItem>
 									{canEdit && (
 										<DropdownMenuItem
@@ -532,9 +532,9 @@ export function NoteCard({
 				    row is persisted today; the full Reminders UI (panel, form,
 				    detail) lands later and will surface the same row through
 				    its own listForPerson query. */}
-				<NoteReminderDialog
-					open={reminderOpen}
-					onOpenChange={setReminderOpen}
+				<NoteTaskDialog
+					open={taskDialogOpen}
+					onOpenChange={setTaskDialogOpen}
 					note={note}
 				/>
 			</div>

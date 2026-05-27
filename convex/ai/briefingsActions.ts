@@ -19,11 +19,19 @@
  * Schedulers / external callers reference these by string path:
  *   - convex/crons.ts           → "ai/briefingsActions:generateForActiveUsers"
  *   - convex/ai/briefingsPublic → "ai/briefingsActions:generate"
+ *
+ * 2026-05-27 — provider key resolution rewritten to mirror
+ * `titleGeneration.pickTitleModel`. Order: BYOK (user → org via
+ * `ai/keys:resolveKey`) → DB platform key (`_platform/aiKeys:getEncryptedPlatformKey`)
+ * → env platform key (`getPlatformKey`). When no key is found we now
+ * persist an error briefing row so the dashboard surfaces the failure
+ * instead of silently swallowing it.
  */
 import { generateText } from "ai";
 import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
-import { internalAction } from "../_generated/server";
+import { type ActionCtx, internalAction } from "../_generated/server";
+import { decryptApiKey } from "./encryption";
 import type { ProviderId } from "./encryptionTypes";
 import {
 	buildLanguageModel,
@@ -37,6 +45,163 @@ import {
 const _ref = (path: string) => path as any;
 // biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern
 const _anyArgs = (a: Record<string, unknown>) => a as any;
+/**
+ * Resolve a usable provider model for the briefing call. Mirrors
+ * `titleGeneration.pickTitleModel` so behaviour is consistent across
+ * every internal "platform-cost" LLM call.
+ *
+ * Resolution order:
+ *   1. The configured briefing model's provider — try BYOK key for
+ *      (org,user), then BYOK org-scope, then platform DB key, then
+ *      platform env key.
+ *   2. Fall back through the same hierarchy for two cheap alternatives
+ *      (`gemini-2.5-flash-lite`, `gpt-4o-mini`) so deployments missing
+ *      the briefing-model provider can still produce a briefing.
+ *
+ * Returns the bound LanguageModel + the modelKey (for the audit row's
+ * `model` field). Returns null when NO provider can be resolved — the
+ * caller writes an error briefing in that case.
+ */
+async function pickBriefingModel(
+	ctx: ActionCtx,
+	orgId: Id<"orgs">,
+	userId: Id<"users">,
+): Promise<{ model: unknown; modelKey: string; source: string } | null> {
+	const briefingModelKey = process.env.AI_BRIEFING_MODEL ?? PLATFORM_BRIEFING_MODEL;
+	const order = [briefingModelKey, "gemini-2.5-flash-lite", "gpt-4o-mini"].filter(
+		(k, i, a) => a.indexOf(k) === i,
+	);
+	return pickModelInOrder(ctx, order, { orgId, userId });
+}
+
+/**
+ * Org-scoped model resolver — used by `generateWeeklyForOrg` which has
+ * no userId. Skips user-scope BYOK keys, otherwise identical to
+ * `pickBriefingModel`. Caller passes the explicit modelKey order.
+ */
+async function pickOrgScopedModel(
+	ctx: ActionCtx,
+	orgId: Id<"orgs">,
+	order: string[],
+): Promise<{ model: unknown; modelKey: string; source: string } | null> {
+	const dedup = order.filter((k, i, a) => a.indexOf(k) === i);
+	return pickModelInOrder(ctx, dedup, { orgId });
+}
+
+/**
+ * Shared resolver loop — walks `order` and returns the first usable
+ * provider via BYOK (user → org) → platform DB → platform env.
+ */
+async function pickModelInOrder(
+	ctx: ActionCtx,
+	order: string[],
+	scope: { orgId: Id<"orgs">; userId?: Id<"users"> },
+): Promise<{ model: unknown; modelKey: string; source: string } | null> {
+	for (const key of order) {
+		const info = MODEL_REGISTRY[key];
+		if (!info) continue;
+		const provider = info.provider as ProviderId;
+
+		// 1. BYOK (user → org). resolveKey already implements that
+		// fallback when a userId is supplied.
+		if (scope.userId) {
+			const byok = (await ctx.runQuery(
+				_ref("ai/keys:resolveKey"),
+				_anyArgs({
+					orgId: scope.orgId as string,
+					userId: scope.userId as string,
+					provider,
+				}),
+			)) as {
+				encryptedKey: string;
+				baseUrl: string | null;
+				scope: "user" | "org";
+			} | null;
+			if (byok) {
+				try {
+					const decrypted = decryptApiKey(byok.encryptedKey);
+					return {
+						model: buildLanguageModel({
+							provider,
+							modelId: info.modelId,
+							apiKey: decrypted,
+							baseUrl: byok.baseUrl ?? undefined,
+						}),
+						modelKey: key,
+						source: `byok:${byok.scope}`,
+					};
+				} catch {
+					// Fall through to next source.
+				}
+			}
+		} else {
+			// Org-only path — query the org-scope BYOK row directly via
+			// the same internal getter used by the orchestrator.
+			const orgByok = (await ctx.runQuery(
+				_ref("ai/keys:resolveOrgKeyForProvider"),
+				_anyArgs({ orgId: scope.orgId as string, provider }),
+			)) as { encryptedKey: string; baseUrl: string | null } | null;
+			if (orgByok) {
+				try {
+					const decrypted = decryptApiKey(orgByok.encryptedKey);
+					return {
+						model: buildLanguageModel({
+							provider,
+							modelId: info.modelId,
+							apiKey: decrypted,
+							baseUrl: orgByok.baseUrl ?? undefined,
+						}),
+						modelKey: key,
+						source: "byok:org",
+					};
+				} catch {
+					// Fall through.
+				}
+			}
+		}
+
+		// 2. Platform DB key (managed via the Owner panel — see
+		// `convex/_platform/aiKeys`). Ahead of env so operators can
+		// rotate keys without a redeploy.
+		const dbPlat = (await ctx.runQuery(
+			_ref("_platform/aiKeys/queries:getEncryptedPlatformKey"),
+			_anyArgs({ provider: provider as string }),
+		)) as { encryptedKey: string; baseUrl: string | null } | null;
+		if (dbPlat) {
+			try {
+				const decrypted = decryptApiKey(dbPlat.encryptedKey);
+				return {
+					model: buildLanguageModel({
+						provider,
+						modelId: info.modelId,
+						apiKey: decrypted,
+						baseUrl: dbPlat.baseUrl ?? undefined,
+					}),
+					modelKey: key,
+					source: "platform:db",
+				};
+			} catch {
+				// Fall through.
+			}
+		}
+
+		// 3. Env platform key — legacy path, kept for backwards compat.
+		const envPlat = getPlatformKey(provider);
+		if (envPlat) {
+			return {
+				model: buildLanguageModel({
+					provider,
+					modelId: info.modelId,
+					apiKey: envPlat,
+				}),
+				modelKey: key,
+				source: "platform:env",
+			};
+		}
+	}
+
+	return null;
+}
 
 // ─── Generate briefing (action — calls LLM) ──────────────────────────────────
 
@@ -58,13 +223,13 @@ export const generate = internalAction({
 			user: { name: string };
 			org: { name: string; currency: string };
 			counts: { remindersDue: number; openDeals: number; activityCount: number };
-			reminders: Array<{ id: string; title: string; dueAt: number; source: string }>;
+			reminders: Array<{ id: string; title: string; dueAt: number; type: string }>;
 			topDeals: Array<{ id: string; title: string; value?: number }>;
 		};
 
 		// 2. Build prompt
 		const remindersList = data.reminders.length
-			? data.reminders.map((r) => `- ${r.title} (${r.source ?? "manual"})`).join("\n")
+			? data.reminders.map((r) => `- ${r.title} (${r.type ?? "todo"})`).join("\n")
 			: "(none scheduled)";
 		const dealsList = data.topDeals.length
 			? data.topDeals
@@ -89,24 +254,32 @@ ${dealsList}
 
 Write 2-3 short paragraphs in plain professional language. Highlight what needs attention today. Be specific with names and numbers. Do NOT use bullet points in the output. Do NOT use a greeting like "Good morning" — just dive into the substance.`;
 
-		// 3. Resolve model (always platform-billed; briefings never use BYOK)
-		const briefingModelKey = process.env.AI_BRIEFING_MODEL ?? PLATFORM_BRIEFING_MODEL;
-		const info = MODEL_REGISTRY[briefingModelKey] ?? MODEL_REGISTRY[PLATFORM_BRIEFING_MODEL];
-		const apiKey = getPlatformKey(info.provider as ProviderId);
-		if (!apiKey) {
-			console.warn("[briefings.generate] No platform API key for", info.provider);
+		// 3. Resolve a usable model — BYOK first, then platform DB, then
+		//    platform env. Falls through to two cheaper alternatives if
+		//    the configured briefing model can't be resolved.
+		const choice = await pickBriefingModel(ctx, args.orgId, args.userId);
+		if (!choice) {
+			// Persist an error row so the DailyBriefingCard surfaces the
+			// problem instead of going silent.
+			await ctx.runMutation(
+				_ref("ai/briefings:insertBriefing"),
+				_anyArgs({
+					orgId: args.orgId,
+					userId: args.userId,
+					summary:
+						"Couldn't generate your briefing — no AI key is available. Add an API key in Settings → AI (per-user/per-org) or ask the platform owner to add one in the Owner panel → AI Keys.",
+					highlights: [],
+					model: "error:no_key",
+					trigger: args.trigger,
+				}),
+			);
 			return;
 		}
-		const model = buildLanguageModel({
-			provider: info.provider as ProviderId,
-			modelId: info.modelId,
-			apiKey,
-		});
 
 		// 4. Generate
 		try {
 			const result = await generateText({
-				model: model as Parameters<typeof generateText>[0]["model"],
+				model: choice.model as Parameters<typeof generateText>[0]["model"],
 				prompt,
 				temperature: 0.4,
 				maxOutputTokens: 400, // v5: renamed from `maxTokens`
@@ -122,7 +295,7 @@ Write 2-3 short paragraphs in plain professional language. Highlight what needs 
 			for (const r of data.reminders.slice(0, 3)) {
 				highlights.push({
 					type: "due_today",
-					entityType: "reminder",
+					entityType: "task",
 					entityId: r.id,
 					text: r.title,
 				});
@@ -136,7 +309,7 @@ Write 2-3 short paragraphs in plain professional language. Highlight what needs 
 					userId: args.userId,
 					summary: result.text,
 					highlights,
-					model: `${info.provider}:${briefingModelKey}`,
+					model: `${choice.source}:${choice.modelKey}`,
 					inputTokens: result.usage?.inputTokens,
 					outputTokens: result.usage?.outputTokens,
 					trigger: args.trigger,
@@ -144,6 +317,20 @@ Write 2-3 short paragraphs in plain professional language. Highlight what needs 
 			);
 		} catch (err) {
 			console.error("[briefings.generate] failed:", err);
+			// Surface the error in the UI so the user knows refresh failed.
+			await ctx.runMutation(
+				_ref("ai/briefings:insertBriefing"),
+				_anyArgs({
+					orgId: args.orgId,
+					userId: args.userId,
+					summary: `Couldn't generate your briefing — the AI provider returned an error. (${String(
+						err,
+					).slice(0, 200)})`,
+					highlights: [],
+					model: `error:${choice.modelKey}`,
+					trigger: args.trigger,
+				}),
+			);
 		}
 	},
 });
@@ -245,23 +432,28 @@ Rules:
 - 1-3 actionItems max — only add when clearly useful.
 - Output ONLY the JSON object, nothing else.`;
 
-		// 3. Resolve model — prefer standard tier, fall back to briefing tier
+		// 3. Resolve model — prefer standard tier, fall back to briefing
+		// tier and to two cheap alternatives if neither is configured.
+		// Mirrors pickBriefingModel but org-scoped (no userId) so it
+		// only consults org-scope BYOK + platform sources.
 		const standardModelKey = process.env.AI_DEFAULT_MODEL ?? PLATFORM_BRIEFING_MODEL;
-		const info = MODEL_REGISTRY[standardModelKey] ?? MODEL_REGISTRY[PLATFORM_BRIEFING_MODEL];
-		const apiKey = getPlatformKey(info.provider as ProviderId);
-		if (!apiKey) {
-			console.warn("[briefings.generateWeekly] no key for", info.provider);
+		const choice = await pickOrgScopedModel(ctx, args.orgId, [
+			standardModelKey,
+			PLATFORM_BRIEFING_MODEL,
+			"gemini-2.5-flash-lite",
+			"gpt-4o-mini",
+		]);
+		if (!choice) {
+			console.warn(
+				"[briefings.generateWeekly] no provider key available for org",
+				args.orgId,
+			);
 			return;
 		}
-		const model = buildLanguageModel({
-			provider: info.provider as ProviderId,
-			modelId: info.modelId,
-			apiKey,
-		});
 
 		try {
 			const result = await generateText({
-				model: model as Parameters<typeof generateText>[0]["model"],
+				model: choice.model as Parameters<typeof generateText>[0]["model"],
 				prompt,
 				temperature: 0.4,
 				maxOutputTokens: 700,
@@ -298,7 +490,7 @@ Rules:
 					highlights: (parsed.highlights ?? []).slice(0, 5),
 					actionItems: (parsed.actionItems ?? []).slice(0, 3),
 					trend: trendDirection,
-					model: `${info.provider}:${standardModelKey}`,
+					model: `${choice.source}:${choice.modelKey}`,
 					inputTokens: result.usage?.inputTokens,
 					outputTokens: result.usage?.outputTokens,
 					trigger: args.trigger,

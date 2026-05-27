@@ -56,7 +56,7 @@ export const collectAll = internalQuery({
 				.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
 				.collect(),
 			ctx.db
-				.query("reminders")
+				.query("tasks")
 				.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 				.collect(),
 			ctx.db

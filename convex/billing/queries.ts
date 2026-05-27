@@ -8,7 +8,7 @@
 
 import { v } from "convex/values";
 import { orgQuery } from "../_functions/authenticated";
-import { getPlanLabel, getPlanLimits, type PlanTier } from "../_platform/limits";
+import { getPlanLabel, getPlanLimitsFromDb, type PlanTier } from "../_platform/limits";
 
 export const getCurrentPlan = orgQuery({
 	args: { orgId: v.id("orgs") },
@@ -19,7 +19,7 @@ export const getCurrentPlan = orgQuery({
 		return {
 			plan: tier,
 			planLabel: getPlanLabel(tier),
-			limits: getPlanLimits(tier),
+			limits: await getPlanLimitsFromDb(ctx, tier),
 			lemonSqueezy: {
 				customerId: org.lemonSqueezyCustomerId,
 				subscriptionId: org.lemonSqueezySubscriptionId,

@@ -12,5 +12,6 @@
 import "./listFiles";
 import "./updateFileTags";
 import "./removeFile";
+import "./attachFile";
 
 export { setFilesContext } from "./_context";

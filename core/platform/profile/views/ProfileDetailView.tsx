@@ -27,7 +27,7 @@ import { ProfileContent } from "./ProfileContent";
  *
  * Permissions:
  *   - `deals.view` gates the Deals tab.
- *   - `reminders.view` gates the Reminders tab.
+ *   - `tasks.view` gates the Reminders tab.
  *   - Internal notes (isInternal: true) and deal values rely on further
  *     permission checks *inside* their tabs — not at the shell level.
  *

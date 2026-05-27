@@ -94,23 +94,23 @@ async function suggestForOrg(ctx: QueryCtx, orgId: Id<"orgs">): Promise<Suggesti
 
 	// 1. Overdue follow-ups (status="pending" + dueAt < now). Up to 3.
 	const reminders = (await ctx.db
-		.query("reminders")
-		.withIndex("by_org_and_status", (q) => q.eq("orgId", orgId).eq("status", "pending"))
-		.take(50)) as Doc<"reminders">[];
+		.query("tasks")
+		.withIndex("by_org_and_status_and_due", (q) => q.eq("orgId", orgId).eq("status", "pending"))
+		.take(50)) as Doc<"tasks">[];
 	const overdue = reminders.filter((r) => r.dueAt < Date.now()).slice(0, 3);
 	for (const r of overdue) {
 		const days = daysAgo(r.dueAt);
 		out.push({
 			id: `overdue:${r._id}`,
 			kind: "overdue_followup",
-			headline: `Follow-up ${r.followUpCode} is overdue`,
+			headline: `Follow-up ${r.taskCode} is overdue`,
 			body:
 				days <= 0
 					? `${r.title} is due today.`
 					: `${r.title} was due ${days} day${days === 1 ? "" : "s"} ago.`,
-			intent: `Show me follow-up ${r.followUpCode} and help me complete or reschedule it`,
+			intent: `Show me follow-up ${r.taskCode} and help me complete or reschedule it`,
 			severity: days >= 3 ? "critical" : "warning",
-			anchor: { entityType: "reminder", code: r.followUpCode },
+			anchor: { entityType: "task", code: r.taskCode },
 		});
 	}
 

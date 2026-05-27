@@ -1,14 +1,13 @@
 /**
  * Industry pipeline stage templates — convex/orgs/templates/pipelineStages.ts
  *
- * LEGACY shim. Used by `orgs.mutations.updateOrgIndustry` for the existing
- * onboarding flow. New consumers should use the richer template registry at
- * `convex/crm/fields/templates/registry.ts` (which also seeds field
- * definitions + entity labels).
- *
- * To add a new industry: prefer adding it to the registry, not here. This
- * file stays for backwards-compat with onboarding industry strings until
- * the wizard migrates to the registry.
+ * LEGACY shim. Kept only for back-compat with onboarding paths that
+ * still call `getDefaultStages(...)`. The canonical seeder is
+ * `convex/crm/fields/templates/mutations.ts::setupWorkspaceFromTemplate`,
+ * which reads template data from the `platformTemplates` DB rows
+ * (Stage 3 of INDUSTRY-TEMPLATES-DB-MIGRATION.md). Adding a new
+ * industry = clone-or-create via `/xowner/industries/new`, NOT a
+ * code change here.
  */
 import { deriveStageCode } from "../../crm/fields/pipelines/helpers";
 

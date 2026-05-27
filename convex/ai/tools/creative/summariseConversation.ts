@@ -6,7 +6,7 @@
  * `summarise_conversation` (atomic, costClass `expensive`): condenses
  * a thread of messages into a 1-3 sentence summary + 3 bullets +
  * agreements + open questions + concrete action items the user can
- * one-click into `create_followup`.
+ * one-click into `create_task`.
  *
  * Targeting: exactly ONE of `conversationId` / `personCode` / `dealCode`
  * / `companyCode`. Routes to the matching Stage-2 ForAI query
@@ -57,7 +57,7 @@ registerTool({
 	description: "Stub — overridden by buildToolDescription via instruction.",
 	instruction: {
 		whenToCall:
-			"Use when the user asks to SUMMARISE / RECAP / 'what did Sara and I agree on' / 'catch me up on the deal thread'. Returns a 3-bullet summary + agreements + open questions + actionable items the user can one-click into create_followup.",
+			"Use when the user asks to SUMMARISE / RECAP / 'what did Sara and I agree on' / 'catch me up on the deal thread'. Returns a 3-bullet summary + agreements + open questions + actionable items the user can one-click into create_task.",
 		whenNotToCall:
 			"Don't use to read raw messages (use list_messages). Don't use to draft a reply (use draft_message). Don't use for non-message threads — this only summarises conversations / messages.",
 		preflight: ["search_crm"],
@@ -82,7 +82,7 @@ registerTool({
 	},
 	runbook: {
 		onSuccess:
-			"Lead with the headline summary. List the bullets / agreements / open questions concisely. Surface action items as suggestedNext chips so the user can one-click create_followup. Don't dump JSON — paraphrase.",
+			"Lead with the headline summary. List the bullets / agreements / open questions concisely. Surface action items as suggestedNext chips so the user can one-click create_task. Don't dump JSON — paraphrase.",
 		onEmpty:
 			"Tell the user there are no messages in the supplied range. Offer to widen the range to last_30d or pick a different target.",
 		onPermissionDenied:

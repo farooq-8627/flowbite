@@ -2,7 +2,7 @@
  * convex/ai/tools/scheduling/_context.ts
  *
  * Stage 3 of /SPRINT-PLAN.md (2026-05-26). Per-request ToolContext for
- * the reminder-edit tools (update_reminder; future: snooze_reminder,
+ * the reminder-edit tools (update_task; future: snooze_reminder,
  * reschedule_reminder, etc.). Set once per turn from
  * `bindAllToolContexts`; consumed via `getSchedulingCtx()` inside each
  * tool's `execute()`.

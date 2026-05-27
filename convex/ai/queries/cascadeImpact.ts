@@ -6,7 +6,7 @@
  * BEFORE asking the user to approve a destructive write.
  *
  * Why this lives here (not in `convex/crm/.../queries.ts`):
- *   - The cascade counts cross several tables (deals, notes, reminders,
+ *   - The cascade counts cross several tables (deals, notes, tasks,
  *     companyMembers). Each entity domain owns its own queries module —
  *     there's no natural home in any single one of them. AI-specific
  *     read paths belong under `convex/ai/queries`.
@@ -24,14 +24,14 @@
  * Cascade rules (counts are best-effort caps at 500 — anything more reads
  * as "500+" in the propose card; the soft-delete itself never iterates
  * children, so this is purely informational for the user):
- *   - lead/contact:  notes by (entityType, entityId), reminders by personCode
+ *   - lead/contact:  notes by (entityType, entityId), tasks by personCode
  *   - company:       linked deals (companyId), notes (entityType=company),
  *                    companyMembers join rows
- *   - deal:          notes (entityType=deal, entityId=dealId), reminders
+ *   - deal:          notes (entityType=deal, entityId=dealId), tasks
  *                    by dealCode
  *   - note:          no cascade — the row's own metadata is returned for
  *                    the propose card.
- *   - reminder:      no cascade — same.
+ *   - task:          no cascade — same.
  */
 
 import { ConvexError, v } from "convex/values";
@@ -41,12 +41,12 @@ import { internalQuery, type QueryCtx } from "../../_generated/server";
 import { resolveCodeToRecordForAI } from "../../_shared/aiEntityPatch";
 import { ERRORS } from "../../_shared/errors";
 
-export type AnyDeleteEntityType = "lead" | "contact" | "deal" | "company" | "note" | "reminder";
+export type AnyDeleteEntityType = "lead" | "contact" | "deal" | "company" | "note" | "task";
 
 export type CascadeCounts = {
 	deals?: number;
 	notes?: number;
-	reminders?: number;
+	tasks?: number;
 	memberLinks?: number;
 };
 
@@ -59,9 +59,9 @@ export type CascadeImpactResult =
 	| {
 			kind: "found";
 			entityType: AnyDeleteEntityType;
-			/** The row's primary id (lead/contact/deal/company/note/reminder _id). */
+			/** The row's primary id (lead/contact/deal/company/note/task _id). */
 			entityId: string;
-			/** P-XXX / D-XXX / FU-XXX / etc. when the entity has a public code. */
+			/** P-XXX / D-XXX / T-XXX / etc. when the entity has a public code. */
 			canonicalCode?: string;
 			/** Human-readable name for the propose card. */
 			displayName: string;
@@ -87,12 +87,12 @@ async function countNotesForEntity(
 	return rows.length;
 }
 
-async function countRemindersByPersonCode(
+async function countTasksByPersonCode(
 	ctx: QueryCtx,
 	args: { orgId: Id<"orgs">; personCode: string },
 ): Promise<number> {
 	const rows = await ctx.db
-		.query("reminders")
+		.query("tasks")
 		.withIndex("by_org_and_person", (q) =>
 			q.eq("orgId", args.orgId).eq("personCode", args.personCode),
 		)
@@ -100,16 +100,16 @@ async function countRemindersByPersonCode(
 	return rows.length;
 }
 
-async function countRemindersByDealCode(
+async function countTasksByDealCode(
 	ctx: QueryCtx,
 	args: { orgId: Id<"orgs">; dealCode: string },
 ): Promise<number> {
-	// Reminders are not indexed by dealCode — the field is optional and
-	// most reminders are person-only. A take+filter is the cheapest
-	// honest path: per-org reminder count is bounded by `RATE_LIMITS.write`
+	// Tasks aren't indexed by dealCode — the field is optional and
+	// most tasks are person-only. A take+filter is the cheapest
+	// honest path: per-org task count is bounded by `RATE_LIMITS.write`
 	// so this stays under a few hundred rows in practice.
 	const rows = await ctx.db
-		.query("reminders")
+		.query("tasks")
 		.withIndex("by_org_and_due", (q) => q.eq("orgId", args.orgId))
 		.take(1000);
 	return rows.filter((r) => r.dealCode === args.dealCode).length;
@@ -149,7 +149,7 @@ async function countMemberLinksForCompany(
 /**
  * Compute the cascade impact of deleting an entity. The caller must
  * supply ONE of `entityCode` (P-XXX / D-XXX / C-XXX / etc.),
- * `followUpCode` (FU-XXX), or `noteId`. `entityType` is required so the
+ * `taskCode` (T-XXX), or `noteId`. `entityType` is required so the
  * resolver knows which table to look in.
  *
  * Returns `{ kind: "not_found" }` when the lookup misses — never throws
@@ -166,10 +166,10 @@ export const getEntityCascadeImpact = internalQuery({
 			v.literal("deal"),
 			v.literal("company"),
 			v.literal("note"),
-			v.literal("reminder"),
+			v.literal("task"),
 		),
 		entityCode: v.optional(v.string()),
-		followUpCode: v.optional(v.string()),
+		taskCode: v.optional(v.string()),
 		noteId: v.optional(v.id("notes")),
 	},
 	handler: async (ctx, args): Promise<CascadeImpactResult> => {
@@ -212,7 +212,7 @@ export const getEntityCascadeImpact = internalQuery({
 					entityType: args.entityType,
 					entityId: row._id as unknown as string,
 				});
-				cascade.reminders = await countRemindersByPersonCode(ctx, {
+				cascade.tasks = await countTasksByPersonCode(ctx, {
 					orgId: args.orgId,
 					personCode: personRow.personCode,
 				});
@@ -224,7 +224,7 @@ export const getEntityCascadeImpact = internalQuery({
 					entityType: "deal",
 					entityId: row._id as unknown as string,
 				});
-				cascade.reminders = await countRemindersByDealCode(ctx, {
+				cascade.tasks = await countTasksByDealCode(ctx, {
 					orgId: args.orgId,
 					dealCode: dealRow.dealCode,
 				});
@@ -283,33 +283,33 @@ export const getEntityCascadeImpact = internalQuery({
 			};
 		}
 
-		// ── reminder → followUpCode lookup ──────────────────────────────
-		if (args.entityType === "reminder") {
-			if (!args.followUpCode) {
+		// ── task → taskCode lookup ──────────────────────────────────────
+		if (args.entityType === "task") {
+			if (!args.taskCode) {
 				throw new ConvexError({
 					code: "INVALID_ARGS",
-					message: "followUpCode is required for entityType=reminder.",
+					message: "taskCode is required for entityType=task.",
 				});
 			}
-			const reminder = await ctx.db
-				.query("reminders")
-				.withIndex("by_org_and_followUpCode", (q) =>
-					q.eq("orgId", args.orgId).eq("followUpCode", args.followUpCode!),
+			const task = await ctx.db
+				.query("tasks")
+				.withIndex("by_org_and_taskCode", (q) =>
+					q.eq("orgId", args.orgId).eq("taskCode", args.taskCode!),
 				)
 				.first();
-			if (!reminder) {
+			if (!task) {
 				return {
 					kind: "not_found",
-					entityType: "reminder",
-					lookup: args.followUpCode,
+					entityType: "task",
+					lookup: args.taskCode,
 				};
 			}
 			return {
 				kind: "found",
-				entityType: "reminder",
-				entityId: reminder._id as unknown as string,
-				canonicalCode: reminder.followUpCode,
-				displayName: reminder.title,
+				entityType: "task",
+				entityId: task._id as unknown as string,
+				canonicalCode: task.taskCode,
+				displayName: task.title,
 				cascade: {},
 			};
 		}

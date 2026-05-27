@@ -21,6 +21,7 @@ import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generatePersonCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
+import { scheduleNextActionsRebuildForUsers } from "../../../ai/queries/nextActionsTrigger";
 import { sendNotification } from "../../../notifications/helpers";
 
 /** Strip all non-digits from a phone number for index-based dedup */
@@ -119,6 +120,10 @@ async function createImpl(
 		personCode,
 	});
 
+	// Reactive AI Pulse — covers caller AND assignee (fan-out for the
+	// `lead_stale_*` heuristic that ranks by assignee).
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, args.assignedTo]);
+
 	return { leadId, personCode };
 }
 
@@ -185,6 +190,16 @@ async function updateImpl(
 		after: { ...lead, ...patch } as unknown as Record<string, unknown>,
 		fields: ["displayName", "email", "phone", "status", "source", "assignedTo"],
 	});
+
+	// Reactive AI Pulse — covers status changes that flip Won/Lost/
+	// Converted (drops the row), reassignment (shifts ownership), and
+	// touch-time updates (resets the stale clock). Fan out to the
+	// caller, original assignee, and new assignee.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [
+		args.userId,
+		lead.assignedTo,
+		args.assignedTo,
+	]);
 }
 
 export const create = orgMutation({
@@ -356,6 +371,11 @@ async function convertToContactImpl(
 		personCode: lead.personCode,
 	});
 
+	// Reactive AI Pulse — converting drops the lead row from the ribbon
+	// (status flips to "Converted") and may add a contact-anchored row.
+	// Fan out to the lead's assignee + the caller.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, lead.assignedTo]);
+
 	return { contactId, personCode: lead.personCode };
 }
 
@@ -430,6 +450,9 @@ async function softDeleteImpl(
 		personCode: lead.personCode,
 		description: `Lead deleted: ${lead.displayName}`,
 	});
+
+	// Reactive AI Pulse — drop the ribbon row referencing this personCode.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, lead.assignedTo]);
 }
 
 export const softDelete = orgMutation({

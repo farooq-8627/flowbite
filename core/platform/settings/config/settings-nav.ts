@@ -7,7 +7,6 @@ import {
 	Bot,
 	Brain,
 	Building2,
-	CalendarClock,
 	CreditCard,
 	Database,
 	Keyboard,
@@ -179,16 +178,10 @@ export function getSettingsGroups(labels: EntityLabels = ENTITY_LABEL_DEFAULTS):
 					description: "Coloured buckets that sticky notes group into",
 				},
 				{
-					id: "notes.reminders",
-					label: "Reminders",
+					id: "crm.tasks",
+					label: "Tasks",
 					icon: BellRing,
-					description: "Defaults for follow-ups, briefings, and stale alerts",
-				},
-				{
-					id: "notes.followups",
-					label: "Follow-ups",
-					icon: CalendarClock,
-					description: "Defaults for follow-up automations and SLAs",
+					description: "Defaults for tasks, follow-ups, briefings, and stale alerts",
 				},
 				{
 					id: "notes.timeline",

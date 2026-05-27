@@ -210,7 +210,7 @@ export type ToolDisplay =
 	/** Resolved client-side via getByDealCode. */
 	| { kind: "dealCode"; dealCode: string }
 	| { kind: "note"; noteId: string }
-	| { kind: "reminder"; reminderId: string }
+	| { kind: "task"; taskId: string }
 	| {
 			kind: "diff";
 			entityType: "lead" | "contact" | "deal" | "company";

@@ -11,10 +11,12 @@
  * matching the OLD ids because the first run already patched them).
  *
  * Note: even without this migration the workspace continues to work,
- * because `INDUSTRY_ID_ALIASES` in registry.ts maps the old ids onto the
- * new ones. This migration just makes `org.industry` consistent with
- * the canonical id set so the WorkspaceTemplateSection UI shows the
- * right "Current" badge and Phase 3B AI tools see the canonical id.
+ * because the platform-template table now carries back-compat alias rows
+ * (`dubai-real-estate` → `real-estate-dubai`, `real-estate` →
+ * `real-estate-global`) seeded by `2026_05_27_seedIndustryTemplatesIntoDB`.
+ * This migration just makes `org.industry` consistent with the canonical
+ * id set so the WorkspaceTemplateSection UI shows the right "Current"
+ * badge and Phase 3B AI tools see the canonical id.
  *
  * Run via:
  *   npx convex run _migrations/2026_05_22_renameRealEstateTemplateIds:run

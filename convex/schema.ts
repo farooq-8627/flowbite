@@ -39,9 +39,15 @@ export default defineSchema({
 
 	// Platform
 	platformTemplates: platform.platformTemplates,
+	platformIndustryGroups: platform.platformIndustryGroups,
+	platformReservedSlugs: platform.platformReservedSlugs,
 	featureFlags: platform.featureFlags,
 	rateLimits: platform.rateLimits,
 	platformContext: platform.platformContext,
+	platformTiers: platform.platformTiers,
+	platformOwnerOtps: platform.platformOwnerOtps,
+	platformAuditLogs: platform.platformAuditLogs,
+	platformAiKeys: platform.platformAiKeys,
 
 	// CRM — entities
 	leads: crmEntities.leads,
@@ -56,13 +62,13 @@ export default defineSchema({
 	fieldDefinitions: crmFields.fieldDefinitions,
 	fieldValues: crmFields.fieldValues,
 
-	// CRM — shared (notes, conversations, messages, reminders, tags, savedViews)
+	// CRM — shared (notes, conversations, messages, tasks, tags, savedViews)
 	notes: crmShared.notes,
 	noteCategories: crmShared.noteCategories,
 	conversations: crmShared.conversations,
 	conversationMembers: crmShared.conversationMembers,
 	messages: crmShared.messages,
-	reminders: crmShared.reminders,
+	tasks: crmShared.tasks,
 	tags: crmShared.tags,
 	entityTags: crmShared.entityTags,
 	savedViews: crmShared.savedViews,

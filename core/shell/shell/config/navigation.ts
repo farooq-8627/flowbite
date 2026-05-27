@@ -15,11 +15,10 @@ import type { LucideIcon } from "lucide-react";
 import {
 	Activity,
 	Bell,
-	BellRing,
 	Building2,
-	CalendarClock,
 	Handshake,
 	LayoutDashboard,
+	ListTodo,
 	MessageSquare,
 	Palette,
 	Settings,
@@ -164,22 +163,15 @@ export function buildNavigation(
 			url: `${base}/messages`,
 			icon: MessageSquare,
 		},
-		// Reminders now hosts three views (List | Calendar | Today) inside a
-		// toolbar toggle, so the sidebar carries one entry instead of two.
-		// The standalone `/calendar` route was removed — calendar is a view
-		// of reminders (`/reminders?view=calendar`), not a separate page.
+		// Tasks consolidates the legacy `Reminders` + `Follow-ups` surfaces into
+		// ONE noun (Stage 4D rename, TASKS-RENAME-PLAN.md decisions #8 + #9).
+		// The list/calendar/today views are switchable inside the page via a
+		// toolbar toggle. Cadence-style follow-ups still exist as a `type` chip
+		// on each task, not as a separate route or sidebar item.
 		{
-			title: locale === "ar" ? "التذكيرات" : "Reminders",
-			url: `${base}/reminders`,
-			icon: BellRing,
-		},
-		// Follow-ups lives next to reminders in the sidebar but is a distinct
-		// CRM-cadence surface — see CODE-ARCHITECTURE-TIMELINE-FOLLOWUPS.md.
-		// Persistence is the same `reminders` table with `source = "followup"`.
-		{
-			title: locale === "ar" ? "المتابعات" : "Follow-ups",
-			url: `${base}/followups`,
-			icon: CalendarClock,
+			title: locale === "ar" ? "المهام" : "Tasks",
+			url: `${base}/tasks`,
+			icon: ListTodo,
 		},
 		{
 			title: locale === "ar" ? "الملاحظات" : "Notes",

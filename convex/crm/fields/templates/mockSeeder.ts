@@ -25,7 +25,7 @@
  *   - `stageCode` → resolved against the seed's pipeline stage map.
  *   - `categoryName` (notes) → queries noteCategories by name. Falls back
  *     to the org's default category if none matches.
- *   - `anchorTo` (notes / reminders) → resolves the entity's code/id at
+ *   - `anchorTo` (notes / tasks) → resolves the entity's code/id at
  *     seed time and links via the appropriate field (personCode, dealCode).
  */
 
@@ -329,9 +329,9 @@ export async function seedMockEntities(
 		inserted += 1;
 	}
 
-	// ── Insert reminders ─────────────────────────────────────────────
-	for (const seed of data.reminders ?? []) {
-		// Anchor lookup — reminders need both a personCode AND an entityType+entityId.
+	// ── Insert tasks ─────────────────────────────────────────────────
+	for (const seed of data.tasks ?? []) {
+		// Anchor lookup — tasks need both a personCode AND an entityType+entityId.
 		let entityType: string = "org";
 		let entityId: string = orgId;
 		let personCode: string = "";
@@ -371,17 +371,24 @@ export async function seedMockEntities(
 			}
 		}
 
-		// Reminders require a personCode (schema-mandated). Skip the seed
-		// if we couldn't resolve one — better than violating the schema.
+		// Tasks may have a personCode or be deal-only. Skip the seed if
+		// we couldn't resolve any anchor — better than violating the
+		// schema's entityType/entityId requirements.
 		if (!personCode && entityType !== "deal") continue;
 
-		const followUpCode = await generateEntityCode(ctx, orgId, "followup");
+		const taskCode = await generateEntityCode(ctx, orgId, "task");
 		const dueAt = now + seed.dueOffsetDays * 86_400_000;
 
-		await ctx.db.insert("reminders", {
+		// Map the legacy seed `source` to the new closed `type` union.
+		// "followup" stays on the cadence type; everything else lands as a
+		// generic todo so the seeded mock remains valid under the new shape.
+		const seedType: "todo" | "followup" = seed.source === "followup" ? "followup" : "todo";
+
+		await ctx.db.insert("tasks", {
 			orgId,
-			followUpCode,
-			personCode: personCode || "—",
+			taskCode,
+			type: seedType,
+			personCode: personCode || undefined,
 			dealCode,
 			entityType,
 			entityId,
@@ -389,7 +396,6 @@ export async function seedMockEntities(
 			dueAt,
 			assignedTo: actorUserId,
 			status: "pending",
-			source: seed.source ?? "manual",
 			priority: seed.priority,
 			createdAt: now,
 			updatedAt: now,

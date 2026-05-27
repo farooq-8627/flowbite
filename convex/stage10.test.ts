@@ -423,44 +423,45 @@ describe("mapEnrichmentError (Stage 10)", () => {
 	});
 });
 
-// ─── 5. RemindersCard gate contract (DASHBOARD-AUDIT.md §6 last checkbox) ──
+// ─── 5. TasksCard dashboard gate contract (Stage 4D rename) ────────────────
 
-describe("RemindersCard dashboard gate (Stage 10)", () => {
+describe("TasksCard dashboard gate (Stage 4D)", () => {
 	/**
-	 * The user reported "reminders not showing on the dashboard". Root
-	 * cause: the `generic` template wrote `dashboardMetrics:
-	 * ['reminders.list']` but the frontend's RemindersCard gate
-	 * checked only `reminders.dueToday || tasks.dueToday`. Stage 1
-	 * fixed this in two halves — registry + frontend gate. This test
-	 * asserts both halves stay in sync so the regression cannot
-	 * silently come back.
+	 * Stage 4D of TASKS-RENAME-PLAN.md flipped the canonical dashboard
+	 * gate key from `reminders.list` → `tasks.list`. The frontend gate
+	 * is `tasks.list || tasks.dueToday`. This test asserts the
+	 * registry + the frontend gate stay in sync so the rename can't
+	 * silently regress.
 	 */
-	it("validateDashboardLayout(['reminders.list']) accepts the key with zero rejects", () => {
-		const r = validateDashboardLayout(["reminders.list"]);
-		expect(r.keys).toEqual(["reminders.list"]);
+	it("validateDashboardLayout(['tasks.list']) accepts the key with zero rejects", () => {
+		const r = validateDashboardLayout(["tasks.list"]);
+		expect(r.keys).toEqual(["tasks.list"]);
 		expect(r.rejected).toEqual([]);
 	});
 
-	it("WIDGET_KEYS contains every key the RemindersCard gate checks", () => {
+	it("WIDGET_KEYS contains every key the TasksCard gate checks", () => {
 		// Mirrors the JSX at core/shell/shell/views/dashboard/DashboardHomeView.tsx :
-		//   isEnabled("reminders.list") || isEnabled("reminders.dueToday") || isEnabled("tasks.dueToday")
-		for (const key of ["reminders.list", "reminders.dueToday", "tasks.dueToday"] as const) {
+		//   isEnabled("tasks.list") || isEnabled("tasks.dueToday")
+		for (const key of ["tasks.list", "tasks.dueToday"] as const) {
 			expect(WIDGET_KEYS as readonly string[]).toContain(key);
 			expect(WIDGETS[key]).toBeDefined();
 			expect(WIDGETS[key].label).toBeTruthy();
 		}
 	});
 
-	it("validateDashboardLayout rejects the legacy calendar.miniWidget alias at runtime", () => {
-		// Stage 3-A session 2 (2026-05-27) — pure-code directive. The
-		// `calendar.miniWidget` alias is no longer auto-coerced at
-		// runtime; the rename map lives ONLY inside the migration
-		// `convex/_migrations/2026_05_26_normalizeDashboardMetrics.ts`.
-		// validateDashboardLayout MUST reject the legacy key so a
-		// regression that re-introduces it as a runtime path is caught
-		// immediately.
-		const result = validateDashboardLayout(["calendar.miniWidget", "reminders.list"]);
-		expect(result.rejected).toEqual(["calendar.miniWidget"]);
-		expect(result.keys).toEqual(["reminders.list"]);
+	it("validateDashboardLayout rejects the legacy reminders.list + calendar.miniWidget aliases", () => {
+		// Stage 4D — `reminders.list` is dropped; the migration
+		// `2026_05_27_dropRemindersTable` does not auto-coerce dashboard
+		// metric keys, so old org docs that still carry the legacy
+		// alias must be rewritten by the dashboard normaliser
+		// (`2026_05_26_normalizeDashboardMetrics`). validateDashboardLayout
+		// MUST reject the legacy keys at write time.
+		const result = validateDashboardLayout([
+			"calendar.miniWidget",
+			"reminders.list",
+			"tasks.list",
+		]);
+		expect(result.rejected.sort()).toEqual(["calendar.miniWidget", "reminders.list"]);
+		expect(result.keys).toEqual(["tasks.list"]);
 	});
 });

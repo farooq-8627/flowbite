@@ -758,3 +758,442 @@ registerTool({
 			};
 		}),
 });
+
+// ─── change_pipeline (P1.3 G-1) ─────────────────────────────────────────────
+//
+// Move a deal to a different pipeline. The deal lands at the first
+// non-final stage of the target pipeline; the pipeline-change is logged
+// as `deal_pipeline_changed` and the assignee is notified. twoStep
+// because a pipeline change is a structural reassignment that shouldn't
+// happen without user confirmation.
+
+registerTool({
+	name: "change_pipeline",
+	layer: "pipelines",
+	permission: "deals.changePipeline",
+	confirmation: "twoStep",
+	approvalCategory: "update_record",
+	description:
+		"Move a deal between pipelines (e.g. Sales → Renewals). Lands at the first non-final stage. Closed deals must be reopened first.",
+	instruction: {
+		whenToCall:
+			"User says 'move D-007 to Renewals', 'switch pipeline', 'put this deal in the X pipeline', or describes moving a deal between named pipelines.",
+		whenNotToCall:
+			"the user wants to move between STAGES of the same pipeline (use move_deal_stage). Closed deals can't change pipeline — say so and offer reopen_deal.",
+		preflight: ["list_pipelines"],
+		requiredClarifications: ["dealId", "toPipelineId"],
+		synonyms: ["change pipeline", "switch pipeline", "move to pipeline", "transfer pipeline"],
+		goodExample: {
+			description: "User: 'Move D-007 to the Renewals pipeline.'",
+			args: { dealId: "k123abc...", toPipelineId: "k456def...", dealTitle: "Acme renewal" },
+		},
+	},
+	runbook: {
+		onSuccess:
+			"Confirm in one short sentence: deal title + new pipeline name. The deal entity card shows the new state.",
+		onValidationError:
+			"If the toPipelineId doesn't resolve, list pipelines via list_pipelines first. SAME_PIPELINE means the deal already lives there. DEAL_CLOSED means it's won/lost — offer reopen_deal.",
+	},
+	schema: z.object({
+		dealId: z.string().min(1).describe("Convex deal _id."),
+		toPipelineId: z.string().min(1).describe("Destination pipeline _id."),
+		dealTitle: z.string().optional().describe("Deal title for the propose card."),
+		toPipelineName: z.string().optional().describe("Target pipeline name for the card."),
+	}),
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "deals.changePipeline");
+		return propose("change_pipeline", args, {
+			title: `Move deal to ${args.toPipelineName ?? "another pipeline"}`,
+			fields: [
+				{ label: "Deal", value: args.dealTitle ?? args.dealId },
+				{ label: "New pipeline", value: args.toPipelineName ?? args.toPipelineId },
+			],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_change_pipeline",
+	layer: "pipelines",
+	permission: "deals.changePipeline",
+	confirmation: "none",
+	description: "Internal: commit pre-approved change_pipeline.",
+	schema: z.object({
+		dealId: z.string(),
+		toPipelineId: z.string(),
+		dealTitle: z.string().optional(),
+		toPipelineName: z.string().optional(),
+	}),
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "deals.changePipeline");
+			await toolMutation(getCtx(), "crm/entities/deals/mutations:changePipeline", {
+				orgId,
+				dealId: args.dealId,
+				toPipelineId: args.toPipelineId,
+			});
+			return {
+				ok: true as const,
+				data: { dealId: args.dealId, toPipelineId: args.toPipelineId },
+				display: {
+					kind: "entity" as const,
+					entityType: "deal" as const,
+					entityId: args.dealId,
+				},
+				summary: {
+					headline: `Deal moved to ${args.toPipelineName ?? "the target pipeline"}`,
+					table: [
+						{ label: "Deal", value: args.dealTitle ?? args.dealId },
+						{ label: "New pipeline", value: args.toPipelineName ?? args.toPipelineId },
+					],
+				},
+			};
+		}),
+});
+
+// ─── apply_stage_template (D-5) ─────────────────────────────────────────────
+//
+// Curated stage-template catalog. Each entry is a *named, opinionated* stage
+// chain derived from the equivalent template in
+// `convex/_platform/industries/builtIns/`. The tool exposes 4 starter
+// templates so the AI can spin up a pipeline that reflects how that
+// industry actually operates — without users having to enumerate every
+// stage by hand. Curated to keep the surface tight; full per-industry
+// templates ship via the onboarding flow / owner panel, not the AI.
+//
+// Why a curated subset (4) instead of the full 9 builtIns?
+//   - The AI's job is to LOWER the activation cost for "I want a
+//     pipeline like X" prompts, not replicate the full onboarding UX.
+//   - Each template here is hand-verified: stage codes don't collide,
+//     final stages carry `isFinal: true`, sane stale-after defaults.
+//   - Adding a new template is a one-record append below + a release
+//     note. Cheap. The list intentionally errs small.
+//
+// Naming convention: lowercase-snake-case key matches the source
+// industry slug where possible (`b2b_saas` → `b2b-saas`).
+
+interface StageTemplateStage {
+	name: string;
+	code: string;
+	color?: string;
+	staleAfterDays?: number;
+	isFinal?: boolean;
+	finalType?: "positive" | "negative" | "neutral";
+}
+
+interface StageTemplate {
+	key: string;
+	label: string;
+	description: string;
+	suggestedPipelineName: string;
+	stages: readonly StageTemplateStage[];
+}
+
+const STAGE_TEMPLATES: readonly StageTemplate[] = [
+	{
+		key: "b2b-saas",
+		label: "B2B SaaS",
+		description:
+			"Discovery → Demo → Proposal → Negotiation → Won/Lost. Mirrors the b2b_saas industry template.",
+		suggestedPipelineName: "Sales Pipeline",
+		stages: [
+			{ name: "Discovery", code: "DISC", color: "#6366f1", staleAfterDays: 5 },
+			{ name: "Demo Scheduled", code: "DEMO", color: "#8b5cf6", staleAfterDays: 7 },
+			{ name: "Proposal Sent", code: "PROP", color: "#a855f7", staleAfterDays: 7 },
+			{ name: "Negotiation", code: "NEG", color: "#d946ef", staleAfterDays: 10 },
+			{
+				name: "Closed Won",
+				code: "WON",
+				color: "#22c55e",
+				isFinal: true,
+				finalType: "positive",
+			},
+			{
+				name: "Closed Lost",
+				code: "LOST",
+				color: "#ef4444",
+				isFinal: true,
+				finalType: "negative",
+			},
+		],
+	},
+	{
+		key: "real-estate",
+		label: "Real Estate",
+		description:
+			"Inquiry → Viewing → Offer → Under Contract → Closed/Lost. Mirrors the real_estate industry template.",
+		suggestedPipelineName: "Listings Pipeline",
+		stages: [
+			{ name: "Inquiry", code: "INQ", color: "#0ea5e9", staleAfterDays: 3 },
+			{ name: "Viewing Scheduled", code: "VIEW", color: "#06b6d4", staleAfterDays: 5 },
+			{ name: "Offer Made", code: "OFFER", color: "#f59e0b", staleAfterDays: 5 },
+			{ name: "Under Contract", code: "CTRCT", color: "#a855f7", staleAfterDays: 14 },
+			{
+				name: "Closed",
+				code: "CLOSED",
+				color: "#22c55e",
+				isFinal: true,
+				finalType: "positive",
+			},
+			{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
+		],
+	},
+	{
+		key: "productivity",
+		label: "Productivity / Solopreneur",
+		description:
+			"Inbox → Doing → Waiting → Done/Cancelled. A lightweight task-style flow for solo operators who want a status board, not a sales funnel.",
+		suggestedPipelineName: "Workflow",
+		stages: [
+			{ name: "Inbox", code: "INBOX", color: "#94a3b8", staleAfterDays: 2 },
+			{ name: "Doing", code: "DOING", color: "#3b82f6", staleAfterDays: 3 },
+			{ name: "Waiting", code: "WAIT", color: "#f59e0b", staleAfterDays: 7 },
+			{ name: "Done", code: "DONE", color: "#22c55e", isFinal: true, finalType: "positive" },
+			{
+				name: "Cancelled",
+				code: "CANCEL",
+				color: "#ef4444",
+				isFinal: true,
+				finalType: "neutral",
+			},
+		],
+	},
+	{
+		key: "agency-services",
+		label: "Agency / Services",
+		description:
+			"Lead → Discovery Call → Proposal → Engaged → Delivered/Lost. Mirrors the agency_freelance industry template — service businesses with a discovery → scope → contract motion.",
+		suggestedPipelineName: "Client Pipeline",
+		stages: [
+			{ name: "Lead", code: "LEAD", color: "#6366f1", staleAfterDays: 3 },
+			{ name: "Discovery Call", code: "DISC", color: "#8b5cf6", staleAfterDays: 5 },
+			{ name: "Proposal Sent", code: "PROP", color: "#a855f7", staleAfterDays: 7 },
+			{ name: "Engaged", code: "ENG", color: "#22c55e", staleAfterDays: 30 },
+			{
+				name: "Delivered",
+				code: "DELIV",
+				color: "#10b981",
+				isFinal: true,
+				finalType: "positive",
+			},
+			{ name: "Lost", code: "LOST", color: "#ef4444", isFinal: true, finalType: "negative" },
+		],
+	},
+];
+
+const TEMPLATE_KEYS = STAGE_TEMPLATES.map((t) => t.key) as [string, ...string[]];
+
+function nanoid12(): string {
+	// Same shape the pipelines mutation uses for stage ids — 12-char base36
+	// segment, padded to keep widths constant. Math.random is fine here:
+	// the id is opaque + scoped to a pipeline, and the `code` field is the
+	// real semantic key.
+	return Math.random().toString(36).slice(2, 14).padEnd(12, "0");
+}
+
+registerTool({
+	name: "apply_stage_template",
+	layer: "pipelines",
+	permission: "pipelines.manage",
+	requiredCapability: "premium",
+	confirmation: "twoStep",
+	approvalCategory: "settings",
+	description: "",
+	instruction: {
+		whenToCall:
+			"User says 'set up a sales pipeline like a SaaS company', 'spin up a real-estate pipeline', 'I want a workflow board', 'use the agency template', 'apply the X starter template'. Routes to a curated catalogue of 4 hand-verified templates so the user doesn't have to enumerate stages.",
+		whenNotToCall:
+			"the user wants a CUSTOM stage chain (call create_pipeline with explicit stages); OR the user is renaming an existing pipeline (use update_pipeline); OR they want to copy stages from another existing pipeline (not supported yet).",
+		preflight: ["list_pipelines"],
+		requiredClarifications: ["templateKey"],
+		synonyms: [
+			"apply template",
+			"use starter template",
+			"setup pipeline like",
+			"spin up template pipeline",
+			"create from template",
+		],
+		goodExample: {
+			description: "User: 'Spin up a B2B SaaS sales pipeline.'",
+			args: { templateKey: "b2b-saas", pipelineName: "Q3 Sales", entityType: "deal" },
+		},
+		badExample: {
+			description:
+				"User wants a brand-new custom 7-stage chain — should call create_pipeline directly.",
+			args: { templateKey: "b2b-saas", pipelineName: "Custom 7-stage" },
+		},
+	},
+	runbook: {
+		onSuccess:
+			"Confirm with the new pipeline name + the stage chain ('Discovery → Demo Scheduled → …'). Don't dump the colour codes.",
+		onValidationError:
+			"UNKNOWN_TEMPLATE → tell the user which keys exist (b2b-saas, real-estate, productivity, agency-services). PLAN_LIMIT_EXCEEDED → suggest archiving an unused pipeline first.",
+		onPermissionDenied: "Tell the user they need pipelines.manage permission.",
+	},
+	schema: z.object({
+		templateKey: z
+			.enum(TEMPLATE_KEYS)
+			.describe(
+				"Curated template id: 'b2b-saas' | 'real-estate' | 'productivity' | 'agency-services'.",
+			),
+		pipelineName: z
+			.string()
+			.min(1)
+			.max(60)
+			.describe("Display name for the new pipeline (the template only provides defaults)."),
+		entityType: z
+			.enum(["deal", "lead"])
+			.default("deal")
+			.describe(
+				"Entity the pipeline tracks. Default 'deal'; pick 'lead' only when the user explicitly wants a lead pipeline.",
+			),
+		isDefault: z
+			.optional(z.boolean())
+			.describe("Mark this new pipeline as the default for its entity type."),
+	}),
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "pipelines.manage");
+		const tpl = STAGE_TEMPLATES.find((t) => t.key === args.templateKey);
+		if (!tpl) {
+			return {
+				ok: false as const,
+				code: "UNKNOWN_TEMPLATE",
+				error: `Template '${args.templateKey}' is not in the curated catalogue. Known: ${STAGE_TEMPLATES.map((t) => t.key).join(", ")}.`,
+			};
+		}
+		const stageChain = tpl.stages.map((s) => s.name).join(" → ");
+		return propose("apply_stage_template", args, {
+			title: `Apply template: ${tpl.label}`,
+			fields: [
+				{ label: "Template", value: tpl.label },
+				{ label: "Pipeline name", value: args.pipelineName },
+				{ label: "Tracks", value: args.entityType ?? "deal" },
+				{ label: "Stages", value: stageChain },
+				...(args.isDefault ? [{ label: "Default", value: "Yes" }] : []),
+			],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_apply_stage_template",
+	layer: "pipelines",
+	permission: "pipelines.manage",
+	confirmation: "none",
+	description: "Internal: commit pre-approved stage-template apply.",
+	schema: z.object({
+		templateKey: z.enum(TEMPLATE_KEYS),
+		pipelineName: z.string().min(1).max(60),
+		entityType: z.enum(["deal", "lead"]).default("deal"),
+		isDefault: z.optional(z.boolean()),
+	}),
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, permissions } = getCtx();
+			requirePermission(permissions, "pipelines.manage");
+
+			const tpl = STAGE_TEMPLATES.find((t) => t.key === args.templateKey);
+			if (!tpl) {
+				return {
+					ok: false as const,
+					code: "UNKNOWN_TEMPLATE",
+					error: `Template '${args.templateKey}' is not in the curated catalogue.`,
+				};
+			}
+
+			// Build the StageInput[] the pipelines mutation expects:
+			// `id` + `order` + per-stage flags. The first stage is wired
+			// as the default-stage so the pipelines.create flow attaches
+			// the customary "Default" sentinel cleanly.
+			const stages = tpl.stages.map((s, i) => ({
+				id: `stage_${nanoid12()}`,
+				name: s.name,
+				code: s.code,
+				order: i,
+				color: s.color,
+				isDefaultStage: i === 0,
+				isFinal: s.isFinal,
+				finalType: s.finalType,
+				staleAfterDays: s.staleAfterDays,
+			}));
+
+			const result = (await toolMutation(getCtx(), "crm/fields/pipelines/mutations:create", {
+				orgId,
+				name: args.pipelineName,
+				entityType: args.entityType,
+				stages,
+				...(args.isDefault === true ? { isDefault: true } : {}),
+			})) as { pipelineId?: string; _id?: string };
+
+			return {
+				ok: true as const,
+				data: {
+					pipelineId: result.pipelineId ?? result._id,
+					templateKey: tpl.key,
+					stageCount: stages.length,
+				},
+				display: {
+					kind: "text" as const,
+					text: `✅ Pipeline "${args.pipelineName}" created from template "${tpl.label}" with ${stages.length} stages.`,
+				},
+				summary: {
+					headline: `Created "${args.pipelineName}" from ${tpl.label}`,
+					table: [
+						{ label: "Template", value: tpl.label },
+						{ label: "Tracks", value: args.entityType },
+						{
+							label: "Stages",
+							value: tpl.stages.map((s) => s.name).join(" → "),
+						},
+					],
+				},
+			};
+		}),
+});
+
+/**
+ * Read-only catalogue tool. Lets the model surface the available
+ * curated templates when the user asks "what templates can I apply?"
+ * before committing to an `apply_stage_template` call.
+ */
+registerTool({
+	name: "list_stage_templates",
+	layer: "pipelines",
+	permission: null,
+	confirmation: "none",
+	description: `Read-only: list the curated stage templates that \`apply_stage_template\` accepts.
+Returns each template's \`key\`, \`label\`, \`description\`, suggested
+\`pipelineName\`, and the ordered stage chain. Use this BEFORE calling
+\`apply_stage_template\` when the user asks "what templates are
+available?" or to confirm the right \`templateKey\`.`,
+	runbook: {
+		onSuccess:
+			"List the 4 templates with one-line summaries. Don't dump every stage chain unless the user asked.",
+	},
+	example: {},
+	schema: z.object({}),
+	execute: async () =>
+		runTool(async () => {
+			return {
+				ok: true as const,
+				data: {
+					count: STAGE_TEMPLATES.length,
+					templates: STAGE_TEMPLATES.map((t) => ({
+						key: t.key,
+						label: t.label,
+						description: t.description,
+						suggestedPipelineName: t.suggestedPipelineName,
+						stageCount: t.stages.length,
+						stageChain: t.stages.map((s) => s.name).join(" → "),
+					})),
+				},
+				display: {
+					kind: "text" as const,
+					text: `${STAGE_TEMPLATES.length} curated stage template(s) available.`,
+				},
+			};
+		}),
+});

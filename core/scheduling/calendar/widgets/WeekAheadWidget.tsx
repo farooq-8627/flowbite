@@ -10,7 +10,7 @@
  *   - up to 3 event chips with title + colour (instead of just dots)
  *   - "+N more" line when overflow
  *
- * Click any cell → /{orgSlug}/reminders?view=calendar&date=yyyy-MM-dd
+ * Click any cell → /{orgSlug}/tasks?view=calendar&date=yyyy-MM-dd
  * Click any chip → also navigates (inherits cell click — chips here are
  *   non-interactive labels, only used for display).
  *
@@ -76,7 +76,7 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 					<CardTitle className="text-base">Week ahead</CardTitle>
 				</div>
 				<Link
-					href={`/${orgSlug}/reminders?view=calendar`}
+					href={`/${orgSlug}/tasks?view=calendar`}
 					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
 				>
 					Open calendar <ArrowRightIcon className="size-3" />
@@ -96,7 +96,7 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 							return (
 								<li key={key}>
 									<Link
-										href={`/${orgSlug}/reminders?view=calendar&date=${key}`}
+										href={`/${orgSlug}/tasks?view=calendar&date=${key}`}
 										className={cn(
 											"flex h-full min-h-[120px] flex-col gap-1.5 rounded-[var(--radius)] border p-2 transition-colors hover:border-ring/40 hover:bg-accent/30 lg:min-h-[110px] lg:p-1.5",
 											isDayToday && "ring-1 ring-primary/40",
@@ -178,7 +178,7 @@ function WeekAheadEmptyFallback({ orgSlug }: { orgSlug: string }) {
 					Ask AI to schedule one
 				</Button>
 				<Button asChild size="sm" variant="ghost" className="h-7 text-xs">
-					<Link href={`/${orgSlug}/reminders?view=calendar`}>Open calendar</Link>
+					<Link href={`/${orgSlug}/tasks?view=calendar`}>Open calendar</Link>
 				</Button>
 			</div>
 		</div>

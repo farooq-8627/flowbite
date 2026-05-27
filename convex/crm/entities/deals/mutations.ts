@@ -13,7 +13,8 @@ import {
 	requireOrgMemberByIds,
 } from "../../../_functions/authenticated";
 import { internal } from "../../../_generated/api";
-import { internalMutation } from "../../../_generated/server";
+import type { Id } from "../../../_generated/dataModel";
+import { internalMutation, type MutationCtx } from "../../../_generated/server";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -21,7 +22,8 @@ import { requireRole } from "../../../_shared/permissions";
 import { enforceRateLimit, RATE_LIMITS } from "../../../_shared/rateLimit";
 import { generateEntityCode } from "../../../_shared/recordCodes";
 import { logActivity } from "../../../activityLogs/helpers";
-import { maybeFireAutoFollowupOnStageMove } from "../../../ai/standingOrders/triggers";
+import { scheduleNextActionsRebuildForUsers } from "../../../ai/queries/nextActionsTrigger";
+import { maybeFireAutoTaskOnStageMove } from "../../../ai/standingOrders/triggers";
 import { sendNotification } from "../../../notifications/helpers";
 import { getRequiredFieldsForStage, pickMissingFields } from "../../fields/pipelines/helpers";
 
@@ -135,6 +137,9 @@ async function createImpl(
 		personCode: args.personCode,
 	});
 
+	// Reactive AI Pulse — caller + assignee.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, args.assignedTo]);
+
 	return { dealId, dealCode };
 }
 
@@ -245,6 +250,14 @@ async function updateImpl(
 		after: { ...deal, ...patch } as unknown as Record<string, unknown>,
 		fields: ["title", "value", "currency", "assignedTo", "expectedCloseDate"],
 	});
+
+	// Reactive AI Pulse — value bumps may change median + trigger
+	// high-value boost; assignedTo change shifts ownership.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [
+		args.userId,
+		deal.assignedTo,
+		args.assignedTo,
+	]);
 }
 
 export const update = orgMutation({
@@ -437,17 +450,21 @@ async function moveToStageImpl(
 
 	// Stage 8 — autonomous layer. If the destination stage opted into
 	// `onEnter.autoFollowupTemplate` AND the deal-owner has flipped
-	// `users.preferences.aiAutonomy.autoFollowupOnStageMove`, schedule a
-	// follow-up reminder + write an `aiToolEvents` audit row tagged
+	// `users.preferences.aiAutonomy.autoTaskOnStageMove`, schedule a
+	// follow-up task + write an `aiToolEvents` audit row tagged
 	// `triggeredBy: "automation:onStageMove"`. Both gates default off so
 	// existing workspaces see no behaviour change. See
-	// `convex/ai/standingOrders/triggers.ts:maybeFireAutoFollowupOnStageMove`.
-	await maybeFireAutoFollowupOnStageMove(ctx, {
+	// `convex/ai/standingOrders/triggers.ts:maybeFireAutoTaskOnStageMove`.
+	await maybeFireAutoTaskOnStageMove(ctx, {
 		orgId: args.orgId,
 		dealId: args.dealId,
 		deal,
 		toStage,
 	});
+
+	// Reactive AI Pulse — stage move resets the stuck-stage clock,
+	// dropping any matching `deal_stuck_*` row immediately.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, deal.assignedTo]);
 }
 
 export const moveToStage = orgMutation({
@@ -611,6 +628,10 @@ async function closeAsDoneImpl(
 		dealId: args.dealId,
 		finalType: args.finalType,
 	});
+
+	// Reactive AI Pulse — closing drops every `deal_stuck_*` ribbon row
+	// for this deal.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, deal.assignedTo]);
 }
 
 export const closeAsDone = orgMutation({
@@ -673,6 +694,9 @@ async function softDeleteImpl(
 		personCode: deal.personCode,
 		description: `Deal deleted: ${deal.title}`,
 	});
+
+	// Reactive AI Pulse — drop any ribbon row referencing this dealCode.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, deal.assignedTo]);
 }
 
 export const softDelete = orgMutation({
@@ -808,6 +832,10 @@ async function reopenImpl(
 		entityId: args.dealId,
 		personCode: deal.personCode,
 	});
+
+	// Reactive AI Pulse — reopen restarts the staleness clock; rebuild
+	// so the ribbon picks up the now-active deal.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, deal.assignedTo]);
 }
 
 export const reopen = orgMutation({
@@ -866,87 +894,120 @@ export const changePipeline = orgMutation({
 			periodMs: 60_000,
 			orgId: args.orgId,
 		});
-
-		const deal = await ctx.db.get(args.dealId);
-		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
-			throw new ConvexError(ERRORS.NOT_FOUND);
-		}
-		if (deal.wonAt || deal.lostAt) {
-			throw new ConvexError({
-				code: "DEAL_CLOSED",
-				message: "Closed deals cannot change pipeline. Reopen first.",
-			});
-		}
-		if (deal.pipelineId === args.toPipelineId) {
-			throw new ConvexError({
-				code: "SAME_PIPELINE",
-				message: "Deal is already in this pipeline.",
-			});
-		}
-
-		const [fromPipeline, toPipeline] = await Promise.all([
-			ctx.db.get(deal.pipelineId),
-			ctx.db.get(args.toPipelineId),
-		]);
-		if (!toPipeline || toPipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (toPipeline.entityType !== "deal")
-			throw new ConvexError({
-				code: "INVALID_PIPELINE",
-				message: "Target pipeline is not for deals.",
-			});
-
-		const sortedStages = [...toPipeline.stages].sort((a, b) => a.order - b.order);
-		const firstNonFinal = sortedStages.find((s) => !s.isFinal) ?? sortedStages[0];
-		if (!firstNonFinal)
-			throw new ConvexError({
-				code: "EMPTY_PIPELINE",
-				message: "Target pipeline has no stages.",
-			});
-
-		const now = Date.now();
-		await ctx.db.patch(args.dealId, {
-			pipelineId: args.toPipelineId,
-			currentStageId: firstNonFinal.id,
-			stageEnteredAt: now,
-			updatedAt: now,
-		});
-
-		await logActivity(ctx, {
-			orgId: args.orgId,
-			userId,
-			action: "deal_pipeline_changed",
-			entityType: "deal",
-			entityId: args.dealId,
-			personCode: deal.personCode,
-			description: `Pipeline changed: ${fromPipeline?.name ?? "?"} → ${toPipeline.name}`,
-			metadata: {
-				fromPipelineId: deal.pipelineId,
-				toPipelineId: args.toPipelineId,
-				fromStageId: deal.currentStageId,
-				toStageId: firstNonFinal.id,
-				toStageCode: firstNonFinal.code,
-			},
-		});
-
-		if (deal.assignedTo && deal.assignedTo !== userId) {
-			await sendNotification(ctx, {
-				orgId: args.orgId,
-				userId: deal.assignedTo,
-				type: "deal.pipeline_changed",
-				title: `Deal moved to ${toPipeline.name}: ${deal.title}`,
-				entityType: "deal",
-				entityId: args.dealId,
-			});
-		}
-
-		await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
-			orgId: args.orgId,
-			entityType: "deal",
-			entityId: args.dealId,
-			personCode: deal.personCode,
-		});
+		return changePipelineImpl(ctx, { ...args, userId });
 	},
 });
+
+/** AI-callable internal twin. */
+export const changePipelineForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		dealId: v.id("deals"),
+		toPipelineId: v.id("pipelines"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "deals.changePipeline");
+		await enforceRateLimit(ctx, {
+			scope: "deals.update",
+			key: `${args.userId}:${args.orgId}`,
+			max: 120,
+			periodMs: 60_000,
+			orgId: args.orgId,
+		});
+		return changePipelineImpl(ctx, args);
+	},
+});
+
+async function changePipelineImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		dealId: Id<"deals">;
+		toPipelineId: Id<"pipelines">;
+	},
+): Promise<void> {
+	const deal = await ctx.db.get(args.dealId);
+	if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if (deal.wonAt || deal.lostAt) {
+		throw new ConvexError({
+			code: "DEAL_CLOSED",
+			message: "Closed deals cannot change pipeline. Reopen first.",
+		});
+	}
+	if (deal.pipelineId === args.toPipelineId) {
+		throw new ConvexError({
+			code: "SAME_PIPELINE",
+			message: "Deal is already in this pipeline.",
+		});
+	}
+
+	const [fromPipeline, toPipeline] = await Promise.all([
+		ctx.db.get(deal.pipelineId),
+		ctx.db.get(args.toPipelineId),
+	]);
+	if (!toPipeline || toPipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
+	if (toPipeline.entityType !== "deal")
+		throw new ConvexError({
+			code: "INVALID_PIPELINE",
+			message: "Target pipeline is not for deals.",
+		});
+
+	const sortedStages = [...toPipeline.stages].sort((a, b) => a.order - b.order);
+	const firstNonFinal = sortedStages.find((s) => !s.isFinal) ?? sortedStages[0];
+	if (!firstNonFinal)
+		throw new ConvexError({
+			code: "EMPTY_PIPELINE",
+			message: "Target pipeline has no stages.",
+		});
+
+	const now = Date.now();
+	await ctx.db.patch(args.dealId, {
+		pipelineId: args.toPipelineId,
+		currentStageId: firstNonFinal.id,
+		stageEnteredAt: now,
+		updatedAt: now,
+	});
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deal_pipeline_changed",
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+		description: `Pipeline changed: ${fromPipeline?.name ?? "?"} → ${toPipeline.name}`,
+		metadata: {
+			fromPipelineId: deal.pipelineId,
+			toPipelineId: args.toPipelineId,
+			fromStageId: deal.currentStageId,
+			toStageId: firstNonFinal.id,
+			toStageCode: firstNonFinal.code,
+		},
+	});
+
+	if (deal.assignedTo && deal.assignedTo !== args.userId) {
+		await sendNotification(ctx, {
+			orgId: args.orgId,
+			userId: deal.assignedTo,
+			type: "deal.pipeline_changed",
+			title: `Deal moved to ${toPipeline.name}: ${deal.title}`,
+			entityType: "deal",
+			entityId: args.dealId,
+		});
+	}
+
+	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
+		orgId: args.orgId,
+		entityType: "deal",
+		entityId: args.dealId,
+		personCode: deal.personCode,
+	});
+}
 
 /**
  * markAsLost — close a deal as lost from any stage (no need to move it to
@@ -1067,6 +1128,9 @@ async function markAsLostImpl(
 			},
 		});
 	}
+
+	// Reactive AI Pulse — drops `deal_stuck_*` rows for this dealCode.
+	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, deal.assignedTo]);
 }
 
 export const markAsLost = orgMutation({

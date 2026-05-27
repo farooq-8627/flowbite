@@ -6,7 +6,9 @@
  * STATUS: IMPLEMENTED.
  *
  * A compact list of the four most actionable counts:
- *   - Reminders due today (links → /reminders)
+ *   - Reminders due today (links → /tasks; underlying entity is the `tasks`
+ *     table — the user-facing label "Reminders" is kept per the Stage 4D
+ *     terminology carve-out)
  *   - Open leads to qualify (links → /leads)
  *   - Deals to advance (links → /deals)
  *   - Deals won all-time (links → /deals)
@@ -47,7 +49,7 @@ export function TodaySummaryCard({ stats, orgSlug }: TodaySummaryCardProps) {
 			icon: <HourglassIcon className="size-3.5" />,
 			label: "Reminders due today",
 			value: stats.remindersDueToday,
-			href: `/${orgSlug}/reminders`,
+			href: `/${orgSlug}/tasks`,
 			accent: "text-amber-600",
 		},
 		{

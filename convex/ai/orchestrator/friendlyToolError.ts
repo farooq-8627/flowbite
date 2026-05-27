@@ -205,7 +205,7 @@ function mapKnownCode(err: NormalisedError, toolName: string): FriendlyToolError
 			// the real permission gate. The router can pick a subagent whose
 			// `allowedTools` allow-list doesn't include the tool the model
 			// tried to call (e.g. router routes "create a followup ... next
-			// stage" to `settings`, then the model calls `create_followup`
+			// stage" to `settings`, then the model calls `create_task`
 			// which is not in `settings.allowedTools`). The AI SDK rejects
 			// the call as FORBIDDEN with rawError "Model tried to call
 			// unavailable tool '<name>'. Available tools: ...". That is a
@@ -320,6 +320,34 @@ function mapByMessage(err: NormalisedError, toolName: string): FriendlyToolError
 	const m = err.message;
 	const lower = m.toLowerCase();
 
+	// AI-SDK Zod errors — surface as BAD_TOOL_ARGS with a clear path
+	// the user can take in the regular UI. Catches "Type validation
+	// failed: …" and the "invalid_value" issue code emitted by the SDK
+	// when an enum / literal mismatch fires.
+	if (
+		lower.includes("type validation failed") ||
+		lower.includes("invalid_value") ||
+		lower.includes("zoderror")
+	) {
+		return {
+			code: "BAD_TOOL_ARGS",
+			short: "I sent the wrong shape.",
+			summary: "The tool's argument validation rejected what I sent.",
+			details: `${m}\n\nThis is a bug on the AI side — it has been logged.`,
+			manualSteps: [
+				"1. Open the matching screen in the regular UI.",
+				"2. Fill the form with the values you wanted.",
+				"3. Click Save.",
+			],
+			recoveryActions: [
+				{
+					label: "Try again",
+					intent: "Retry the previous request with corrected arguments",
+				},
+			],
+		};
+	}
+
 	// Convex argument-validation errors — most common cause of the
 	// dreaded generic on twoStep flows. Detect via the well-known
 	// `ArgumentValidationError` substring or "Validator error" prefix
@@ -395,7 +423,7 @@ function mapByMessage(err: NormalisedError, toolName: string): FriendlyToolError
 	}
 
 	// Stage 3-A H2 — even when the error never says "permission" or
-	// "forbidden" (e.g. AI SDK directly throws "Tool 'create_followup' is
+	// "forbidden" (e.g. AI SDK directly throws "Tool 'create_task' is
 	// not registered in tools"), recognise the unavailable-tool pattern
 	// and surface SUBAGENT_SCOPE — it's the most common failure path with
 	// small models that call layer tools without expanding the layer.
@@ -449,6 +477,7 @@ function pathHint(personOrDealOrCompanyCode: string): string {
 	if (upper.startsWith("P-")) return `/profile/${upper}`;
 	if (upper.startsWith("D-")) return `/deals/${upper}`;
 	if (upper.startsWith("CO-")) return `/companies/${upper}`;
-	if (upper.startsWith("FU-")) return `/calendar?reminder=${upper}`;
+	if (upper.startsWith("T-")) return `/tasks?task=${upper}`;
+	if (upper.startsWith("FU-")) return `/tasks?legacyTask=${upper}`;
 	return upper;
 }

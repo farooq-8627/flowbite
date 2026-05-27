@@ -49,13 +49,22 @@
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { internalMutation } from "../_generated/server";
-import { INDUSTRY_ID_ALIASES, INDUSTRY_TEMPLATES } from "../crm/fields/templates/registry";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 
-function resolveTemplateId(industry: string | undefined): string {
+/**
+ * Resolve an `org.industry` string to a canonical `templateKey` by
+ * reading `platformTemplates` (Stage 1 of
+ * INDUSTRY-TEMPLATES-DB-MIGRATION). Returns `"generic"` when the id
+ * is missing — matches the previous static-map behaviour.
+ */
+async function resolveTemplateId(ctx: MutationCtx, industry: string | undefined): Promise<string> {
 	if (!industry) return "generic";
-	if (INDUSTRY_TEMPLATES[industry]) return industry;
-	return INDUSTRY_ID_ALIASES[industry] ?? "generic";
+	const row = await ctx.db
+		.query("platformTemplates")
+		.withIndex("by_templateKey", (q) => q.eq("templateKey", industry))
+		.unique();
+	if (row && !row.isArchived) return row.templateKey;
+	return "generic";
 }
 
 export const run = internalMutation({
@@ -94,7 +103,7 @@ export const run = internalMutation({
 				.take(50);
 			const activeMember = members.find((m) => m.deletedAt === undefined);
 
-			const templateId = args.forceTemplateId ?? resolveTemplateId(org.industry);
+			const templateId = args.forceTemplateId ?? (await resolveTemplateId(ctx, org.industry));
 
 			const result = await ctx.runMutation(
 				internal.crm.fields.templates.mutations.setupWorkspaceFromTemplate,

@@ -82,6 +82,7 @@ import type { FileCategory } from "@/core/data-io/files/file-categories";
 import { EditDealDrawer } from "@/core/entities/_entities/deals/components/EditDealDrawer";
 import { MarkAsDoneDialog } from "@/core/entities/_entities/deals/components/MarkAsDoneDialog";
 import { MarkAsLostDialog } from "@/core/entities/_entities/deals/components/MarkAsLostDialog";
+import { WarnModeBanner } from "@/core/entities/_entities/deals/components/WarnModeBanner";
 import { useDealPipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import { EntityAISummaryCard } from "@/core/entities/shared/components/EntityAISummaryCard";
 import { EntityFilesPanel } from "@/core/entities/shared/components/EntityFilesPanel";
@@ -91,7 +92,7 @@ import { TagsCell } from "@/core/entities/shared/components/TagsCell";
 import { useEntityFields } from "@/core/entities/shared/hooks/useEntityFields";
 import { useEntityFieldValuesMap } from "@/core/entities/shared/hooks/useEntityFieldValuesMap";
 import { EntityCalendarPanel } from "@/core/scheduling/calendar/panels/EntityCalendarPanel";
-import { EntityFollowups } from "@/core/scheduling/followups/components/EntityFollowups";
+import { TasksPanel } from "@/core/scheduling/tasks/panels/TasksPanel";
 import { useCurrentOrg, useOrgMemberMap } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import {
@@ -465,6 +466,13 @@ function DealDetailCard({ deal, orgId }: { deal: Deal; orgId: Id<"orgs"> }) {
 			<MarkAsDoneDialog deal={deal} open={markDoneOpen} onOpenChange={setMarkDoneOpen} />
 			<MarkAsLostDialog deal={deal} open={markLostOpen} onOpenChange={setMarkLostOpen} />
 
+			{/* ─── Warn-mode banner ─────────────────────────────────────
+			    Renders only when the pipeline policy is "warn" AND the
+			    current stage has unfilled required fields. Mounted here
+			    so the warning is visible regardless of which tab is
+			    active. */}
+			<WarnModeBanner orgId={orgId} deal={deal} />
+
 			{/* ─── Tab body — scrolls within the shell, mirrors CompanyShell. */}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
 				{activeTab === "overview" && (
@@ -497,7 +505,12 @@ function DealDetailCard({ deal, orgId }: { deal: Deal; orgId: Id<"orgs"> }) {
 				)}
 				{activeTab === "followups" && (
 					<div className="p-3 sm:p-4">
-						<EntityFollowups entityType="deal" entityId={deal.dealCode} />
+						<TasksPanel
+							entityType="deal"
+							entityId={deal.dealCode}
+							type="followup"
+							defaults={{ personCode: deal.personCode ?? undefined }}
+						/>
 					</div>
 				)}
 				{activeTab === "calendar" && (

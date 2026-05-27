@@ -330,9 +330,11 @@ const BUILT_IN_COMPANY_FIELDS: FieldDefinitionSeed[] = [
 // industry-specific extras here. Returned together with the built-ins.
 // INDUSTRY_OVERLAYS — legacy lightweight overlays applied by the seed
 // fallback (`fieldDefinitions/internal.ts::seedFieldDefinitionsForOrg`).
-// Curated industry templates in `convex/crm/fields/templates/definitions/`
-// own the richer set of fields (RERA, Form F, Ejari for `dubai-real-estate`,
-// etc.). These overlays are kept only as a safety net for orgs whose
+// Curated industry templates in `convex/_platform/industries/builtIns/`
+// (bootstrap fixtures) own the richer set of fields (RERA, Form F, Ejari
+// for `dubai-real-estate`, etc.). The runtime SOURCE OF TRUTH after
+// Stage 3 is the `platformTemplates` table, populated by the seed
+// migration. These overlays are kept only as a safety net for orgs whose
 // onboarding path didn't run the curated template seeder.
 const REAL_ESTATE_LEGACY_OVERLAY: FieldDefinitionSeed[] = [
 	{

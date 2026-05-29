@@ -202,8 +202,21 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 	};
 
 	return (
-		<div className="h-full overflow-y-auto overflow-x-hidden py-2 md:p-6">
-			<div className="grid gap-4 min-w-0">
+		<div className="h-full overflow-y-auto overflow-x-hidden py-4 md:p-6">
+			{/*
+			 * 2026-05-30 (mobile overflow fix) — `grid-cols-1` is load-bearing.
+			 * Without an explicit column count, `display: grid` defaults to a
+			 * single `auto` column that sizes to content's max-content width.
+			 * On mobile, any descendant card with long content (pipeline
+			 * switcher buttons, recent-activity descriptions, big currency
+			 * numbers) inflates that `auto` column past the viewport, dragging
+			 * every sibling card with it. `grid-cols-1` resolves to
+			 * `repeat(1, minmax(0, 1fr))`, forcing the column to fill parent
+			 * width AND shrink to 0 when content is too wide — which is what
+			 * lets `truncate` and `overflow-hidden` inside the cards actually
+			 * take effect.
+			 */}
+			<div className="grid grid-cols-1 gap-4 min-w-0">
 				{/* Mock-data banner — only renders when seeded + not dismissed. */}
 				<MockDataBanner
 					orgId={orgId}
@@ -250,7 +263,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					    state stays visually parallel with the weekly card next
 					    to it. */}
 					{isEnabled("ai.morningBriefing") && (
-						<div className="grid gap-4 lg:grid-cols-2 lg:auto-rows-fr">
+						<div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:auto-rows-fr">
 							<DailyBriefingCard orgId={orgId} orgSlug={orgSlug} />
 							<WeeklyInsightCard orgId={orgId} />
 						</div>
@@ -352,7 +365,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				    `activityLogs.viewOrg` still see this widget — the
 				    payload comes through `getDashboardStats` which is open
 				    to every member. */}
-						<div className="grid gap-4 lg:grid-cols-2">
+						<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 							{isEnabled("messages.recent") && (
 								<MessagesPreviewWidget
 									orgId={orgId}

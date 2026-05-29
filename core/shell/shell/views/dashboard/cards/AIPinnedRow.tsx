@@ -52,7 +52,7 @@ export function AIPinnedRow({ orgId, orgSlug: _orgSlug, renderWidget }: AIPinned
 	if (!cells || cells.length === 0) return null;
 
 	return (
-		<div className="grid gap-3">
+		<div className="grid grid-cols-1 gap-3">
 			<div className="flex items-center gap-2">
 				<Sparkles className="h-4 w-4 text-primary" aria-hidden="true" />
 				<h2 className="text-sm font-semibold tracking-tight">Pinned by AI</h2>
@@ -60,7 +60,7 @@ export function AIPinnedRow({ orgId, orgSlug: _orgSlug, renderWidget }: AIPinned
 					Visible only to you · 24h
 				</Badge>
 			</div>
-			<div className="grid gap-4 lg:grid-cols-2">
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				{cells.map((cell) => (
 					<AIPinnedCellShell
 						key={cell._id}

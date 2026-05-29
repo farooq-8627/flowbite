@@ -132,7 +132,7 @@ export function DashboardLayoutRenderer({
 	const regularPanels = typedLayout.panels.filter((p) => !FIXED_SLOT_WIDGETS.has(p.widget));
 
 	return (
-		<div className="grid gap-4 min-w-0">
+		<div className="grid grid-cols-1 gap-4 min-w-0">
 			{/* Stage 7 (2026-05-29) — Revenue hero card always sits at
 			    the top of the layout-aware path, above any
 			    template-declared hero widget. */}
@@ -149,7 +149,7 @@ export function DashboardLayoutRenderer({
 			{/* Regular panels grid — every template panel that isn't a
 			    fixed-slot widget (Tasks / Messages / Activity / Week-ahead). */}
 			{regularPanels.length > 0 ? (
-				<div className="grid gap-4 lg:grid-cols-3 lg:auto-rows-fr">
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:auto-rows-fr">
 					{regularPanels.map((p) => {
 						const node = renderWidget(p.widget, { orgId, orgSlug, stats });
 						if (!node) return null;
@@ -179,7 +179,7 @@ export function DashboardLayoutRenderer({
 			) : null}
 
 			{/* Recent messages + Recent activity — always 50/50 side-by-side. */}
-			<div className="grid gap-4 lg:grid-cols-2">
+			<div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<MessagesPreviewWidget
 					orgId={orgId}
 					orgSlug={orgSlug}
@@ -262,7 +262,7 @@ function renderWidget(key: WidgetKey, args: WidgetRenderArgs): ReactNode {
 			return <ARRCohortWidget orgId={args.orgId} orgSlug={args.orgSlug} className="h-full" />;
 		case "ai.morningBriefing":
 			return (
-				<div className="grid gap-4 lg:grid-cols-2 lg:auto-rows-fr">
+				<div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:auto-rows-fr">
 					<DailyBriefingCard orgId={args.orgId} orgSlug={args.orgSlug} />
 					<WeeklyInsightCard orgId={args.orgId} />
 				</div>

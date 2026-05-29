@@ -396,7 +396,7 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 					</Link>
 				</Button>
 			</header>
-			<ul className="grid gap-2 md:grid-cols-3">
+			<ul className="grid grid-cols-1 gap-2 md:grid-cols-3">
 				{visible.map((row) => (
 					<PulseChip
 						key={row.id}

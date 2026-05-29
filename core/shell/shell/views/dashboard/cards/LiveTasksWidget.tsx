@@ -91,7 +91,7 @@ export function LiveTasksWidget({ orgId, orgSlug, limit = 10 }: LiveTasksWidgetP
 	const totalCount = tasks?.length ?? 0;
 
 	return (
-		<Card className="flex h-full flex-col">
+		<Card className="flex h-full flex-col min-w-0 overflow-hidden">
 			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
 				<div className="flex items-baseline gap-2">
 					<CardTitle className="text-base">Tasks</CardTitle>

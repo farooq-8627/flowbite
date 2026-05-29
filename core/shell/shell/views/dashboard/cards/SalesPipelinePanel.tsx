@@ -112,7 +112,7 @@ export function SalesPipelinePanel({ orgId, orgSlug, className }: SalesPipelineP
 
 	if (forecast === undefined || velocity === undefined) {
 		return (
-			<Card className={className}>
+			<Card className={cn("min-w-0 overflow-hidden", className)}>
 				<CardHeader>
 					<CardTitle>Sales pipeline</CardTitle>
 					<CardDescription>Loading forecast + velocity…</CardDescription>
@@ -126,7 +126,7 @@ export function SalesPipelinePanel({ orgId, orgSlug, className }: SalesPipelineP
 
 	if (pipelineCount === 0) {
 		return (
-			<Card className={className}>
+			<Card className={cn("min-w-0 overflow-hidden", className)}>
 				<CardHeader className="pb-2">
 					<CardTitle>Sales pipeline</CardTitle>
 					<CardDescription>
@@ -161,7 +161,7 @@ export function SalesPipelinePanel({ orgId, orgSlug, className }: SalesPipelineP
 			) ?? null);
 
 	return (
-		<Card className={className}>
+		<Card className={cn("min-w-0 overflow-hidden", className)}>
 			<CardHeader className="flex flex-col gap-3 pb-2 sm:flex-row sm:items-start sm:justify-between">
 				<div className="flex flex-col gap-1 min-w-0">
 					<CardTitle>Sales pipeline</CardTitle>
@@ -343,7 +343,7 @@ function SummaryTab({
 			? Math.round((forecast.wonCount / (forecast.wonCount + forecast.lostCount)) * 100)
 			: 0;
 	return (
-		<div className="grid gap-3 md:grid-cols-3">
+		<div className="grid grid-cols-1 gap-3 md:grid-cols-3">
 			<MetricTile
 				label="Open value"
 				value={
@@ -545,7 +545,7 @@ function ForecastTab({
 	const totalWonInWindow = forecast.wonValue;
 
 	return (
-		<div className="grid gap-3 md:grid-cols-2">
+		<div className="grid grid-cols-1 gap-3 md:grid-cols-2">
 			{/* HubSpot-style buckets */}
 			<div className="grid grid-cols-3 gap-2 min-w-0">
 				<MetricTile

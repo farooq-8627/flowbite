@@ -69,7 +69,7 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 	const isEmpty = events !== undefined && events.length === 0;
 
 	return (
-		<Card className={cn("flex flex-col", className)}>
+		<Card className={cn("flex flex-col min-w-0 overflow-hidden", className)}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
 				<div className="flex items-center gap-2">
 					<CalendarRangeIcon className="size-4 text-muted-foreground" aria-hidden />

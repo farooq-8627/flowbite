@@ -68,7 +68,7 @@ export function MessagesPreviewWidget({ orgId, orgSlug, limit = 5, className }: 
 	}, [members]);
 
 	return (
-		<Card className={`flex flex-col ${className ?? ""}`.trim()}>
+		<Card className={`flex flex-col min-w-0 overflow-hidden ${className ?? ""}`.trim()}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
 				<div className="flex items-center gap-2">
 					<MessageSquare className="size-4 text-muted-foreground" aria-hidden="true" />

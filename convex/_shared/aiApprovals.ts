@@ -94,8 +94,30 @@ export type ApprovalCategory = (typeof ALL_APPROVAL_CATEGORIES)[number];
  * Chosen 2026-05-26 with the user:
  *   - Creates + deletes still gate by default — single create still shows
  *     the preview card, deletes still confirm cascade impact.
- *   - Updates / converts / messages / schedule / files / participant ops
+ *   - Updates / converts / messages / schedule / participant ops
  *     auto-approve by default (these are the high-frequency low-risk ops).
+ *
+ * Adjusted 2026-05-28 (Stage 0 of DASHBOARD-V2-PLAN.md):
+ *   - `files` flipped from `true` → `false`. With `true` a propose payload
+ *     was stashed by `wrapToolsForApprovalSanitisation` BUT
+ *     `stopOnAnyTwoStepCall` honoured the auto-approve and never halted
+ *     the loop, so `commit_attach_file` never ran and the file remained
+ *     scoped to `aiChat` instead of being re-scoped to the target person
+ *     / deal / company. Net effect: the user's file disappeared from the
+ *     person's Files tab. Flipping to `false` surfaced the propose card
+ *     so the user's existing approve-button flow finished the attach.
+ *
+ * Adjusted 2026-05-28 (Stage 0.5 of DASHBOARD-V2-PLAN.md):
+ *   - `files` flipped back to `true`. The Stage 0.5 commit-shim in
+ *     `convex/ai/orchestrator/streamLoop.ts:wrapToolsForApprovalSanitisation`
+ *     closes the silent-drop class of bug at the wrapper layer: when
+ *     `resolveNeedsApproval(...) === false` AND a propose shape is
+ *     returned, the wrapper now looks up `commit_<tool>` via
+ *     `getRegisteredTool` and runs its `execute()` directly, returning
+ *     the commit's real summary to the SDK. The model sees the actual
+ *     outcome; the file is re-scoped in the same round-trip. Mirrors
+ *     `resume.ts`'s post-user-approval path so both flows (auto +
+ *     manual) produce identical commits.
  *
  * Hard-locked categories aren't in this map because they're not togglable.
  */

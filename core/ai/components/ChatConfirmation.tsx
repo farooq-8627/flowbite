@@ -145,7 +145,13 @@ export function ChatConfirmation({ message, orgId }: Props) {
 					disabled={settled}
 				/>
 			) : (
-				<PreviewCard args={args} fields={preview?.fields} title={preview?.title} />
+				<PreviewCard
+					args={args}
+					fields={preview?.fields}
+					title={preview?.title}
+					toolName={toolName}
+					orgId={orgId}
+				/>
 			)}
 
 			{/* Footer — only when still pending. ask_user_choice surfaces only

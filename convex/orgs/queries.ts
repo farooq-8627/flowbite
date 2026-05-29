@@ -348,7 +348,19 @@ export const getEntityLabels = orgQuery({
  * to the minute because reminders are time-based, not counter-friendly.
  */
 export const getDashboardStats = orgQuery({
-	args: { orgId: v.id("orgs") },
+	args: {
+		orgId: v.id("orgs"),
+		/**
+		 * Stage 7 of /DASHBOARD-V2-PLAN.md (2026-05-29) — recent
+		 * activity row limit, configurable per-call. Default 10
+		 * (matches the previous hardcoded `.take(10)`); clamped to
+		 * `[1, 50]` so a misbehaving caller can't request a huge slice
+		 * via this endpoint. Callers that want more should drive the
+		 * full timeline page instead. Optional + clamped → backwards
+		 * compatible with existing callers that don't supply a value.
+		 */
+		recentActivityLimit: v.optional(v.number()),
+	},
 	handler: async (ctx, args) => {
 		const member = await ctx.db
 			.query("orgMembers")
@@ -367,6 +379,12 @@ export const getDashboardStats = orgQuery({
 		const startOfDay = new Date();
 		startOfDay.setHours(0, 0, 0, 0);
 		const startOfDayMs = startOfDay.getTime();
+
+		// Clamp the activity limit so a misbehaving caller can't issue a
+		// huge `.take()` via this endpoint. The default mirrors the
+		// previous hardcoded behaviour.
+		const requestedLimit = args.recentActivityLimit ?? 10;
+		const activityLimit = Math.max(1, Math.min(50, Math.floor(requestedLimit)));
 
 		const [stats, remindersDueToday, remindersOverdue, remindersDoneThisWeek, recentActivity] =
 			await Promise.all([
@@ -402,7 +420,7 @@ export const getDashboardStats = orgQuery({
 					.query("activityLogs")
 					.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
 					.order("desc")
-					.take(10),
+					.take(activityLimit),
 			]);
 
 		return {
@@ -433,6 +451,12 @@ export const getDashboardStats = orgQuery({
 /**
  * Internal query for processChat: get a member's permissions + org plan in one call.
  * Returns null if user is not a member of the org.
+ *
+ * **2026-05-27 P0.1.1** — extended return shape with
+ * `subscriptionStatus` + `currentPeriodEnd` so the AI quota gate
+ * (`convex/ai/orchestrator/quotaGate.ts`) can honour `on_trial` (treat
+ * as active) and `past_due` (allow for 3 days from period end as
+ * grace, then fall back to free-tier rules).
  */
 export const getMemberWithPermissions = internalQuery({
 	args: { orgId: v.id("orgs"), userId: v.id("users") },
@@ -454,6 +478,8 @@ export const getMemberWithPermissions = internalQuery({
 			settings: (org.settings ?? {}) as Record<string, unknown>,
 			aiMessagesUsed:
 				((org as Record<string, unknown>).aiMessagesUsedThisPeriod as number) ?? 0,
+			subscriptionStatus: org.lemonSqueezySubscriptionStatus,
+			currentPeriodEnd: org.lemonSqueezyCurrentPeriodEnd,
 		};
 	},
 });

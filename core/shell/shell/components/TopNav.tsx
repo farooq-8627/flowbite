@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { Bell, Bot, CheckCheck, Search } from "lucide-react";
+import { Bell, CheckCheck, Search } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
+import { AIMark } from "@/core/ai/components/AIMark";
 import { resolveNotificationHref } from "@/core/inbox/notifications/utils/resolveNotificationHref";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import { useNavSlotNode } from "@/core/shell/shell/context/nav-slot-context";
@@ -114,7 +115,7 @@ export function TopNav({
 								aria-label="Toggle AI Assistant"
 								className="size-8 text-muted-foreground hover:text-foreground"
 							>
-								<Bot className="size-4" />
+								<AIMark size="size-4" tone="muted" aria-hidden="true" />
 							</Button>
 						</TooltipTrigger>
 						<TooltipContent side="bottom" className="flex items-center gap-1">

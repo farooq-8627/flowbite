@@ -15,13 +15,23 @@
  *   - "Take action" CTA that opens the chat with the suggestion's
  *     `intent` pre-filled in the composer (via `onTakeAction` callback)
  *
+ * Empty state (2026-05-30) — used to be `return null` so the panel
+ * disappeared on quiet workspaces. The AI Pulse Ribbon now covers the
+ * "top 3 things to do" surface higher up the page, but the suggestions
+ * panel staying silent left a gap on detail pages and on workspaces
+ * where the ribbon is dismissed. The panel now renders a calm
+ * "All clear" card with a couple of helpful next-step CTAs that hand
+ * off to the chat panel via `onTakeAction`. The visual weight is light
+ * (dashed border, muted background) so a healthy workspace doesn't
+ * feel like it's being shouted at.
+ *
  * RTL-safe: all directional spacing uses logical properties (`ms-`,
  * `me-`, `ps-`, `pe-`).
  */
 
 import { useQuery } from "convex/react";
 import { anyApi } from "convex/server";
-import { AlertCircle, AlertTriangle, ArrowRight, Info, Sparkles } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, CheckCircle2, Info, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
 import { cn } from "@/lib/utils";
@@ -81,9 +91,14 @@ export function AISuggestionsPanel({
 	}
 
 	if (suggestions.length === 0) {
-		// Don't render the empty case — saves vertical space on a quiet
-		// workspace. Parent can decide to render a placeholder if needed.
-		return null;
+		return (
+			<AISuggestionsEmpty
+				scope={scope}
+				entityType={entityType}
+				onTakeAction={onTakeAction}
+				className={className}
+			/>
+		);
 	}
 
 	return (
@@ -148,4 +163,93 @@ function SeverityIcon({ severity }: { severity: SuggestionSeverity }) {
 		);
 	}
 	return <Info className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-500" aria-label="Info" />;
+}
+
+// ─── Empty state ────────────────────────────────────────────────────────────
+
+interface AISuggestionsEmptyProps {
+	scope: "org" | "entity";
+	entityType?: string;
+	onTakeAction?: (intent: string) => void;
+	className?: string;
+}
+
+/**
+ * Calm "All clear" card. Avoids the previous `return null` pattern so:
+ *
+ *   1. Detail pages (Profile / Deal / etc.) explicitly confirm the AI
+ *      checked the record and found nothing flagged — silence used to
+ *      look indistinguishable from the panel never having loaded.
+ *   2. The Settings → Appearance preview, e2e tests, and screenshot
+ *      tooling have a deterministic empty render to assert against.
+ *   3. Users who dismiss every AI Pulse Ribbon item still see a positive
+ *      "you're caught up" surface in the AI Cockpit instead of a hole.
+ *
+ * Two CTAs: one for "what's next" planning, one for a daily review. Both
+ * route through `onTakeAction` — the same prefill bridge the active
+ * suggestions use — so behaviour is consistent across every state.
+ */
+function AISuggestionsEmpty({
+	scope,
+	entityType,
+	onTakeAction,
+	className,
+}: AISuggestionsEmptyProps) {
+	const isOrgScope = scope === "org";
+	const headline = isOrgScope ? "You're all caught up" : "Nothing flagged on this record";
+	const body = isOrgScope
+		? "No urgent follow-ups, stuck deals, or overdue tasks right now. Ask the AI what to focus on next or run a quick review of the workspace."
+		: `Looks healthy — no risks, missing fields, or stalled steps to address right now. Ask the AI to suggest a next step${
+				entityType ? ` for this ${entityType}` : ""
+			}.`;
+
+	const primaryIntent = isOrgScope
+		? "What should I focus on next? Look at the open pipeline, overdue tasks, and stuck leads, then suggest one concrete next action."
+		: `Suggest one concrete next step for ${entityType ?? "this record"} — keep it actionable and short.`;
+	const secondaryIntent = isOrgScope
+		? "Run a quick review of the workspace today: any deals slipping, any leads going cold, any tasks at risk? Summarise in 3 bullets."
+		: `Audit ${entityType ?? "this record"} for missing fields, stale activity, and unanswered messages. Reply in 3 bullets.`;
+
+	return (
+		<section
+			className={cn(
+				"rounded-[var(--radius)] border border-dashed border-border bg-muted/30 px-3 py-3",
+				className,
+			)}
+			aria-label="AI suggestions — all clear"
+			data-state="empty"
+		>
+			<header className="flex items-center gap-2">
+				<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" aria-hidden />
+				<h3 className="text-xs font-medium text-foreground">AI suggestions</h3>
+				<span className="ms-auto text-[10px] uppercase tracking-wide text-muted-foreground/70">
+					{isOrgScope ? "Workspace" : "This record"}
+				</span>
+			</header>
+			<p className="mt-2 text-sm font-medium text-foreground">{headline}</p>
+			<p className="mt-0.5 text-xs text-muted-foreground">{body}</p>
+			{onTakeAction ? (
+				<div className="mt-2.5 flex flex-wrap items-center gap-2">
+					<Button
+						size="sm"
+						variant="default"
+						className="h-7 gap-1 text-xs"
+						onClick={() => onTakeAction(primaryIntent)}
+					>
+						<Sparkles className="h-3 w-3" aria-hidden />
+						Ask AI what's next
+					</Button>
+					<Button
+						size="sm"
+						variant="ghost"
+						className="h-7 gap-1 text-xs"
+						onClick={() => onTakeAction(secondaryIntent)}
+					>
+						{isOrgScope ? "Run a quick review" : "Audit this record"}
+						<ArrowRight className="h-3 w-3" aria-hidden />
+					</Button>
+				</div>
+			) : null}
+		</section>
+	);
 }

@@ -1,0 +1,40 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`TasksDataTable (compact) > renders the empty placard when there are no tasks 1`] = `
+<div
+  class="flex h-full flex-col items-center justify-center gap-2 rounded-[var(--radius)] border border-dashed bg-muted/30 px-4 py-8 text-center"
+>
+  <svg
+    aria-hidden="true"
+    class="lucide lucide-circle-check size-6 text-muted-foreground"
+    fill="none"
+    height="24"
+    stroke="currentColor"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="2"
+    viewBox="0 0 24 24"
+    width="24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <circle
+      cx="12"
+      cy="12"
+      r="10"
+    />
+    <path
+      d="m9 12 2 2 4-4"
+    />
+  </svg>
+  <p
+    class="text-sm font-medium text-foreground"
+  >
+    All clear
+  </p>
+  <p
+    class="text-xs text-muted-foreground"
+  >
+    No open tasks right now. Create one to keep the day moving.
+  </p>
+</div>
+`;

@@ -1,38 +1,18 @@
 "use client";
 
-import { useAction, useQuery } from "convex/react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { useQuery } from "convex/react";
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import { toast } from "@/lib/toast";
+import { PricingCard } from "@/core/billing/components/PricingCard";
+import { TrialBanner } from "@/core/billing/components/TrialBanner";
 import type { OrgSettings } from "../../types";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSection } from "../shared/SettingsSection";
-
-/**
- * Variant ids exposed to the upgrade buttons. These are environment-
- * specific — set them in your `.env.local` (and Convex dashboard for
- * `LEMONSQUEEZY_VARIANT_*`). The webhook handler maps each variant id
- * to a plan tier; if a variant isn't set, the corresponding upgrade
- * button is hidden.
- */
-const UPGRADE_VARIANTS: Array<{ tier: "starter" | "pro" | "enterprise"; envKey: string }> = [
-	{ tier: "starter", envKey: "NEXT_PUBLIC_LEMONSQUEEZY_VARIANT_STARTER" },
-	{ tier: "pro", envKey: "NEXT_PUBLIC_LEMONSQUEEZY_VARIANT_PRO" },
-	{ tier: "enterprise", envKey: "NEXT_PUBLIC_LEMONSQUEEZY_VARIANT_ENTERPRISE" },
-];
-
-function getVariantId(envKey: string): string | undefined {
-	// Next.js inlines NEXT_PUBLIC_* at build time; we read from process.env
-	// directly so missing keys are simply undefined.
-	const env = process.env as Record<string, string | undefined>;
-	const value = env[envKey];
-	return value && value.length > 0 ? value : undefined;
-}
 
 function StatusBadge({ status }: { status: string | undefined }) {
 	if (!status) return null;
@@ -68,24 +48,27 @@ function UsageBar({ label, used, limit }: { label: string; used: number; limit: 
 	);
 }
 
+/**
+ * In-app billing settings — Phase 3A + 2026-05-27 P0.1 / P0.2 wave.
+ *
+ * Layout:
+ *   - TrialBanner (only renders when status ≠ active)
+ *   - "Current Plan" card with status badge + period end + usage bars
+ *   - "Choose plan" card containing one <PricingCard /> per tier from
+ *     the public `listPublicTiers` query (DB-backed via owner panel).
+ *   - Invoices link to LemonSqueezy customer portal when configured.
+ *
+ * The PricingCard component is the SAME one the marketing /pricing
+ * page renders — owner-panel edits to display name, description,
+ * features, prices, or LemonSqueezy variant ids propagate everywhere.
+ */
 export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id<"orgs"> }) {
 	const plan = useQuery(api.billing.queries.getCurrentPlan, { orgId });
+	const tiers = useQuery(api._platform.tiers.queries.listPublicTiers, {});
 	const usage = useQuery(api.ai.queries.telemetry.getOrgUsage, { orgId, range: "30d" });
-	const checkout = useAction(api.billing.actions.createCheckoutUrl);
-	const [busyTier, setBusyTier] = useState<string | null>(null);
+	const [cadence, setCadence] = useState<"monthly" | "yearly">("monthly");
 
-	const handleUpgrade = async (tier: string, variantId: string) => {
-		setBusyTier(tier);
-		try {
-			const r = await checkout({ orgId, variantId });
-			window.location.href = r.url;
-		} catch (err) {
-			toast.mutationError(err, "Could not start checkout.");
-			setBusyTier(null);
-		}
-	};
-
-	if (!plan) {
+	if (!plan || !tiers) {
 		return (
 			<div className="grid gap-6">
 				<SettingsSection id="billing.plan" title="Current Plan" description="Loading…">
@@ -101,6 +84,8 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 
 	return (
 		<div className="grid gap-6">
+			<TrialBanner orgId={orgId} />
+
 			<SettingsSection
 				id="billing.plan"
 				title="Current Plan"
@@ -142,32 +127,48 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 						</span>
 					</SettingsRow>
 				)}
+			</SettingsSection>
 
-				<div className="mt-2 flex flex-wrap gap-2 border-t pt-4">
-					{UPGRADE_VARIANTS.filter(({ tier }) => tier !== plan.plan).map(
-						({ tier, envKey }) => {
-							const variantId = getVariantId(envKey);
-							if (!variantId) return null;
-							return (
-								<Button
-									key={tier}
-									variant="outline"
-									size="sm"
-									disabled={busyTier !== null}
-									onClick={() => handleUpgrade(tier, variantId)}
-								>
-									{busyTier === tier ? (
-										<Loader2 className="size-3.5 animate-spin" />
-									) : (
-										<ExternalLink className="size-3.5" />
-									)}
-									{tier === "enterprise"
-										? "Switch to Enterprise"
-										: `Upgrade to ${tier[0]?.toUpperCase()}${tier.slice(1)}`}
-								</Button>
-							);
-						},
-					)}
+			<SettingsSection
+				id="billing.choose"
+				title="Choose a plan"
+				description="Limits, copy, and pricing are managed in the platform owner panel — what you see here is what every visitor sees on the marketing site."
+				action={
+					<div className="flex items-center gap-2 text-xs">
+						<span
+							className={
+								cadence === "monthly" ? "font-medium" : "text-muted-foreground"
+							}
+						>
+							Monthly
+						</span>
+						<Switch
+							checked={cadence === "yearly"}
+							onCheckedChange={(v) => setCadence(v ? "yearly" : "monthly")}
+							aria-label="Toggle billing cadence"
+						/>
+						<span
+							className={
+								cadence === "yearly" ? "font-medium" : "text-muted-foreground"
+							}
+						>
+							Yearly{" "}
+							<span className="text-[10px] text-muted-foreground">(save ~17%)</span>
+						</span>
+					</div>
+				}
+			>
+				<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+					{tiers.map((tier) => (
+						<PricingCard
+							key={tier.key}
+							tier={tier}
+							cadence={cadence}
+							mode="upgrade"
+							orgId={orgId}
+							currentTierKey={plan.plan}
+						/>
+					))}
 				</div>
 			</SettingsSection>
 
@@ -183,6 +184,7 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 					limit={plan.limits.maxPipelinesPerEntityType}
 				/>
 				<UsageBar label="Deals" used={0} limit={plan.limits.maxDeals} />
+				<UsageBar label="Leads" used={0} limit={plan.limits.maxLeads} />
 				<UsageBar
 					label="Custom fields per entity"
 					used={0}
@@ -193,24 +195,11 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 					used={usage?.usedThisMonth.totalTokens ?? 0}
 					limit={plan.limits.aiTokensPerMonth}
 				/>
-			</SettingsSection>
-
-			<SettingsSection
-				id="billing.invoices"
-				title="Invoices"
-				description="Payment history is managed by LemonSqueezy."
-				action={
-					<Button variant="outline" size="sm" disabled={!plan.lemonSqueezy.customerId}>
-						Open portal
-						<ExternalLink className="size-3.5" />
-					</Button>
-				}
-			>
-				<div className="py-6 text-center text-sm text-muted-foreground">
-					{plan.lemonSqueezy.customerId
-						? "Use 'Open portal' to view past invoices."
-						: "No billing history yet — upgrade to a paid plan to see invoices here."}
-				</div>
+				<UsageBar
+					label="AI message credits / mo"
+					used={0}
+					limit={plan.limits.aiMessageCreditsPerMonth}
+				/>
 			</SettingsSection>
 		</div>
 	);

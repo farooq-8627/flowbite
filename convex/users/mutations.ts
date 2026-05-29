@@ -15,6 +15,10 @@ import { ConvexError, v } from "convex/values";
 import { authenticatedMutation } from "../_functions/authenticated";
 import { internalMutation } from "../_generated/server";
 import { ENTITY_TYPES } from "../_shared/constants";
+import {
+	DASHBOARD_ACTIVITY_ROW_LIMIT_MAX,
+	DASHBOARD_ACTIVITY_ROW_LIMIT_MIN,
+} from "../_shared/dashboardDensity";
 import { ERRORS } from "../_shared/errors";
 import { notificationPreferencesValidator } from "../_shared/notificationKeys";
 import { logActivity } from "../activityLogs/helpers";
@@ -167,6 +171,11 @@ export const updatePreferences = authenticatedMutation({
 		aiAutoContextLoad: v.optional(v.boolean()),
 		aiBriefingEnabled: v.optional(v.boolean()),
 		aiPanelOpenByDefault: v.optional(v.boolean()),
+		// Stage 7 of /DASHBOARD-V2-PLAN.md (2026-05-30) — per-user
+		// dashboard density. Clamped to [DASHBOARD_ACTIVITY_ROW_LIMIT_MIN,
+		// DASHBOARD_ACTIVITY_ROW_LIMIT_MAX] in the handler so a misbehaving
+		// caller can't write a 0 or a 1000.
+		dashboardActivityRowLimit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const existing = ctx.user.preferences ?? {};
@@ -185,6 +194,16 @@ export const updatePreferences = authenticatedMutation({
 		if (args.aiBriefingEnabled !== undefined) next.aiBriefingEnabled = args.aiBriefingEnabled;
 		if (args.aiPanelOpenByDefault !== undefined)
 			next.aiPanelOpenByDefault = args.aiPanelOpenByDefault;
+		if (args.dashboardActivityRowLimit !== undefined) {
+			const clamped = Math.max(
+				DASHBOARD_ACTIVITY_ROW_LIMIT_MIN,
+				Math.min(
+					DASHBOARD_ACTIVITY_ROW_LIMIT_MAX,
+					Math.floor(args.dashboardActivityRowLimit),
+				),
+			);
+			next.dashboardActivityRowLimit = clamped;
+		}
 
 		await ctx.db.patch(ctx.userId, {
 			preferences: next,
@@ -590,6 +609,92 @@ export const upsertFromAuth = internalMutation({
 			onboardingCompleted: false,
 			createdAt: now,
 			updatedAt: now,
+		});
+	},
+});
+
+// ─── Stage 5 (DASHBOARD-V2-PLAN.md) — per-user dashboard layout override ──────
+//
+// Per locked decision #13: AI never writes the canonical dashboard layout.
+// These two mutations are the ONLY way `users.preferences.dashboardLayoutOverride`
+// is set or cleared — a deliberate user gesture (drag-to-reorder,
+// "Pin to my dashboard" via promoteToLayout, "Reset to org default").
+// No ForAI twins — there is no AI write path for the layout.
+
+import { validateDashboardLayoutShape } from "../_shared/widgetRegistry";
+
+/**
+ * Replace the calling user's dashboard layout override for a specific
+ * org. The layout is shape-validated via the SSOT
+ * `validateDashboardLayoutShape` before write.
+ *
+ * Permission: every authenticated org member can write their own
+ * preferences. RBAC is implicit (you can only set YOUR own row).
+ */
+export const setMyDashboardLayoutOverride = authenticatedMutation({
+	args: {
+		orgId: v.id("orgs"),
+		layout: v.any(),
+	},
+	handler: async (ctx, args) => {
+		// Verify the user is an active member of the target org so a
+		// stale clientside orgId can't write the override for an org
+		// the user has been removed from.
+		const member = await ctx.db
+			.query("orgMembers")
+			.withIndex("by_orgId_and_userId", (q) =>
+				q.eq("orgId", args.orgId).eq("userId", ctx.userId),
+			)
+			.first();
+		if (!member || member.deletedAt) {
+			throw new ConvexError("Not a member of this organization.");
+		}
+
+		const validation = validateDashboardLayoutShape(args.layout);
+		if (!validation.valid) {
+			const first = validation.errors[0];
+			throw new ConvexError({
+				code: "INVALID_LAYOUT",
+				message: first
+					? `${first.path}: ${first.message}`
+					: "Layout failed shape validation.",
+			});
+		}
+
+		const existing = ctx.user.preferences ?? {};
+		await ctx.db.patch(ctx.userId, {
+			preferences: {
+				...existing,
+				dashboardLayoutOverride: {
+					orgId: args.orgId,
+					layout: validation.layout,
+					updatedAt: Date.now(),
+				},
+			},
+			updatedAt: Date.now(),
+		});
+		return { rejectedKeys: validation.rejected };
+	},
+});
+
+/**
+ * "Reset to org default" — clears the calling user's layout override
+ * so the dashboard falls back through the resolver to
+ * `org.settings.dashboardLayout` and then the legacy fixed grid.
+ *
+ * Idempotent — clearing when nothing is set is a no-op.
+ */
+export const clearMyDashboardLayoutOverride = authenticatedMutation({
+	args: {
+		orgId: v.id("orgs"),
+	},
+	handler: async (ctx, _args) => {
+		const existing = ctx.user.preferences ?? {};
+		if (!existing.dashboardLayoutOverride) return;
+		const { dashboardLayoutOverride: _ignored, ...rest } = existing;
+		await ctx.db.patch(ctx.userId, {
+			preferences: rest,
+			updatedAt: Date.now(),
 		});
 	},
 });

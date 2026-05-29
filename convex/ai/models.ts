@@ -154,12 +154,14 @@ export function getModel(args: {
 		};
 	}
 
+	// Plan-tier gating — re-enabled 2026-05-27 (P0.2.A).
+	// `PLAN_ALLOWED_TIERS` maps `OrgPlan` → the model tiers a paying org may run on
+	// the platform key. BYOK callers above bypass this entirely (they pay the model
+	// bill directly). When the requested model's tier isn't allowed, we silently
+	// downgrade to the highest-tier model whose provider has a platform key set —
+	// the chat keeps working, but on a tier the plan covers. The `*ChatModelPicker*`
+	// frontend surfaces an upgrade CTA before the user gets here.
 	const allowedTiers = new Set<ModelTier>(PLAN_ALLOWED_TIERS[plan] ?? PLAN_ALLOWED_TIERS.free);
-	// DEFERRED: see Future-Enhancements.md §A.1 (plan-tier gating in getModel).
-	//          Re-enable in Phase 6 / Week 6 of PHASE-3-AI-AUDIT.md §6 by deleting
-	//          the next line. During testing every plan can run every tier so
-	//          dev workflows aren't blocked by a missing upgrade flow.
-	for (const t of ["small", "standard", "premium"] as const) allowedTiers.add(t);
 
 	// Helper: pick any model whose provider has a platform key set, preferring
 	// allowed-tier candidates first, then falling back to any tier. This lets

@@ -26,26 +26,87 @@ import { requirePlatformOwner } from "../ownerAuth";
 
 const TIER_FALLBACK_DEFAULTS: Record<
 	PlanTier,
-	{ displayName: string; monthlyPriceUSD: number; yearlyPriceUSD: number; trialDays: number }
+	{
+		displayName: string;
+		monthlyPriceUSD: number;
+		yearlyPriceUSD: number;
+		trialDays: number;
+		description: string;
+		features: string[];
+		highlight: boolean;
+	}
 > = {
-	free: { displayName: "Free", monthlyPriceUSD: 0, yearlyPriceUSD: 0, trialDays: 0 },
-	starter: { displayName: "Starter", monthlyPriceUSD: 19, yearlyPriceUSD: 190, trialDays: 14 },
-	pro: { displayName: "Pro", monthlyPriceUSD: 49, yearlyPriceUSD: 490, trialDays: 14 },
+	free: {
+		displayName: "Free",
+		monthlyPriceUSD: 0,
+		yearlyPriceUSD: 0,
+		trialDays: 0,
+		description: "Get started — bring your own AI key, or test the platform.",
+		features: [
+			"Up to 100 leads & 50 deals",
+			"3 team members",
+			"5 custom fields per entity",
+			"100 MB file storage",
+			"Bring-your-own AI key (unmetered)",
+		],
+		highlight: false,
+	},
+	starter: {
+		displayName: "Starter",
+		monthlyPriceUSD: 19,
+		yearlyPriceUSD: 190,
+		trialDays: 14,
+		description: "For solo operators ready to scale beyond the free tier.",
+		features: [
+			"5,000 leads & 1,000 deals",
+			"10 team members",
+			"3 pipelines per entity, 20 custom fields",
+			"5 GB file storage",
+			"100K AI tokens / 5,000 AI messages per month",
+		],
+		highlight: false,
+	},
+	pro: {
+		displayName: "Pro",
+		monthlyPriceUSD: 49,
+		yearlyPriceUSD: 490,
+		trialDays: 14,
+		description: "For growing teams that need automation + analytics.",
+		features: [
+			"50,000 leads & 10,000 deals",
+			"50 team members",
+			"10 pipelines per entity, 100 custom fields",
+			"50 GB file storage",
+			"1M AI tokens / 50,000 AI messages per month",
+			"Premium models (Opus, GPT-4o, Gemini Pro) on platform key",
+		],
+		highlight: true,
+	},
 	enterprise: {
 		displayName: "Enterprise",
 		monthlyPriceUSD: 199,
 		yearlyPriceUSD: 1990,
 		trialDays: 30,
+		description: "For agencies + large workspaces with bespoke needs.",
+		features: [
+			"Unlimited leads, deals, members, fields, storage",
+			"Unlimited AI tokens + AI messages",
+			"Premium support + onboarding",
+			"Custom contract + SSO available",
+		],
+		highlight: false,
 	},
 };
 
 const limitsValidator = v.object({
 	maxPipelinesPerEntityType: v.number(),
 	maxDeals: v.number(),
+	maxLeads: v.optional(v.number()),
 	maxMembers: v.number(),
 	maxCustomFieldsPerEntityType: v.number(),
 	maxStorageBytes: v.number(),
 	aiTokensPerMonth: v.number(),
+	aiMessageCreditsPerMonth: v.optional(v.number()),
 });
 
 /**
@@ -56,15 +117,27 @@ const limitsValidator = v.object({
  * `patch` carries only the fields that changed; missing keys leave the
  * existing values untouched. Limit values clamp at -1 for unlimited and
  * at 0 for "feature disabled".
+ *
+ * **2026-05-27 P0.1.2** — patch shape extended with marketing-copy
+ * fields (`description`, `features`, `highlight`) + LemonSqueezy
+ * variant ids (`lemonSqueezyVariantIdMonthly`,
+ * `lemonSqueezyVariantIdYearly`). Owner-panel edits to those propagate
+ * directly to the in-app `PricingCard` and the marketing /pricing page
+ * via the public `listPublicTiers` query.
  */
 export const updateTier = mutation({
 	args: {
 		key: orgPlanValidator,
 		patch: v.object({
 			displayName: v.optional(v.string()),
+			description: v.optional(v.string()),
+			features: v.optional(v.array(v.string())),
+			highlight: v.optional(v.boolean()),
 			monthlyPriceUSD: v.optional(v.number()),
 			yearlyPriceUSD: v.optional(v.number()),
 			trialDays: v.optional(v.number()),
+			lemonSqueezyVariantIdMonthly: v.optional(v.string()),
+			lemonSqueezyVariantIdYearly: v.optional(v.string()),
 			limits: v.optional(limitsValidator),
 			active: v.optional(v.boolean()),
 		}),
@@ -93,9 +166,14 @@ export const updateTier = mutation({
 			const seeded = {
 				key: args.key,
 				displayName: args.patch.displayName ?? defaults.displayName,
+				description: args.patch.description ?? defaults.description,
+				features: args.patch.features ?? defaults.features,
+				highlight: args.patch.highlight ?? defaults.highlight,
 				monthlyPriceUSD: args.patch.monthlyPriceUSD ?? defaults.monthlyPriceUSD,
 				yearlyPriceUSD: args.patch.yearlyPriceUSD ?? defaults.yearlyPriceUSD,
 				trialDays: args.patch.trialDays ?? defaults.trialDays,
+				lemonSqueezyVariantIdMonthly: args.patch.lemonSqueezyVariantIdMonthly,
+				lemonSqueezyVariantIdYearly: args.patch.lemonSqueezyVariantIdYearly,
 				limits: args.patch.limits ?? PLAN_LIMITS[args.key],
 				active: args.patch.active ?? true,
 				updatedBy: userId,
@@ -109,9 +187,17 @@ export const updateTier = mutation({
 			before = { ...existing };
 			const next = {
 				displayName: args.patch.displayName ?? existing.displayName,
+				description: args.patch.description ?? existing.description,
+				features: args.patch.features ?? existing.features,
+				highlight: args.patch.highlight ?? existing.highlight,
 				monthlyPriceUSD: args.patch.monthlyPriceUSD ?? existing.monthlyPriceUSD,
 				yearlyPriceUSD: args.patch.yearlyPriceUSD ?? existing.yearlyPriceUSD,
 				trialDays: args.patch.trialDays ?? existing.trialDays,
+				lemonSqueezyVariantIdMonthly:
+					args.patch.lemonSqueezyVariantIdMonthly ??
+					existing.lemonSqueezyVariantIdMonthly,
+				lemonSqueezyVariantIdYearly:
+					args.patch.lemonSqueezyVariantIdYearly ?? existing.lemonSqueezyVariantIdYearly,
 				limits: args.patch.limits ?? existing.limits,
 				active: args.patch.active ?? existing.active,
 				updatedBy: userId,

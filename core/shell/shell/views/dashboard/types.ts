@@ -10,10 +10,30 @@
  */
 
 export interface ActivityItem {
+	/**
+	 * Convex doc id. Required for React keys — composite tuples
+	 * (`createdAt-action-entityType-entityId`) collide when two
+	 * `activityLogs` rows land in the same millisecond on the same
+	 * entity (e.g. multi-field bulk edits each emit their own
+	 * `field_updated` row inside a single transaction). The doc id is
+	 * the only guaranteed-unique handle.
+	 */
+	_id: string;
 	action: string;
 	description?: string;
 	createdAt: number;
 	actorType: string;
+	/**
+	 * Stage 3 of `DASHBOARD-V2-PLAN.md` (2026-05-29) — widened to expose
+	 * the actor + entity context the new `<RecentActivityWidget>` needs
+	 * for avatar resolution + deep-linking. Server already returns these
+	 * fields on every `activityLogs` row read from `getDashboardStats`;
+	 * the type just stops narrowing them away.
+	 */
+	userId: string;
+	entityType: string;
+	entityId: string;
+	personCode?: string;
 }
 
 export interface DashboardStats {

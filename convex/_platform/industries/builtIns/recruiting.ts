@@ -497,7 +497,7 @@ export const recruitingTemplate: IndustryTemplate = {
 		"today.focus",
 		"messages.recent",
 		"activity.recent",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
 
 	customRoles: [

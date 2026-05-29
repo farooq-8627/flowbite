@@ -37,6 +37,7 @@ import type {
 	BriefingDefaultsSeed,
 	CodePrefixesSeed,
 	CustomRoleSeed,
+	DashboardLayoutSeed,
 	FieldDefSeed,
 	FileUploadSeed,
 	IndustryTemplate,
@@ -259,6 +260,7 @@ async function patchOrgSettings(
 		fileUpload?: FileUploadSeed;
 		aiPersona?: string;
 		dashboardMetrics?: string[];
+		dashboardLayout?: DashboardLayoutSeed;
 		industryId: string;
 	},
 	now: number,
@@ -376,6 +378,23 @@ async function patchOrgSettings(
 	// custom widgets re-order via Settings → Workspace.
 	if (args.dashboardMetrics && args.dashboardMetrics.length > 0) {
 		newSettings.dashboardMetrics = [...args.dashboardMetrics];
+	}
+
+	// Stage 4 of /DASHBOARD-V2-PLAN.md (2026-05-29) — dashboardLayout
+	// propagation. Templates that opt into the multi-region layout
+	// (per-industry dashboards) ship a `dashboardLayout` slot. Re-apply
+	// resets it; templates that don't ship one leave the slot
+	// undefined and the renderer falls back to the
+	// `dashboardMetrics`-driven default. Unknown widget keys are
+	// rejected at render time by `validateDashboardLayoutShape`; the
+	// shape itself is validated against the same schema the platform
+	// editor enforces (`validators.ts::validateDefinition`), so writes
+	// reaching this seed point are already well-formed.
+	if (args.dashboardLayout !== undefined) {
+		newSettings.dashboardLayout = {
+			...args.dashboardLayout,
+			panels: args.dashboardLayout.panels.map((p) => ({ ...p })),
+		};
 	}
 
 	const patch: {
@@ -630,6 +649,7 @@ export const setupWorkspaceFromTemplate = internalMutation({
 				fileUpload: t.fileUpload,
 				aiPersona: t.aiPersona,
 				dashboardMetrics: t.dashboardMetrics,
+				dashboardLayout: t.dashboardLayout,
 				industryId: t.id,
 			},
 			now,

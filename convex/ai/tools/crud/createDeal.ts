@@ -3,9 +3,22 @@
  *
  * Two-step deal creation. Only `title` is required.
  *
- * `personCode` is the canonical link to a person (lead/contact). When the
- * model has only a name, it should call search_crm to resolve to a personCode
- * before passing it here — never fabricate codes.
+ * Stage-aware contract (locked 2026-05-30):
+ *   - The deal lands in the org's default deal pipeline (`isDefault`
+ *     pipeline, fallback first deal pipeline) and the pipeline's
+ *     default stage. The default stage carries the MINIMUM required
+ *     fields by design — typically just title.
+ *   - Optional fields (value, personCode, expectedCloseDate) are
+ *     populated only when the user supplies them. Other stage-
+ *     specific required fields are enforced later by `move_deal_stage`
+ *     via the pipeline's `stageTransitionPolicy`.
+ *   - The AI tool MUST NOT fabricate `pipelineId` — leave it unset and
+ *     the server resolves the default. Pass an explicit `pipelineId`
+ *     only when the user named a specific pipeline.
+ *
+ * `personCode` is the canonical link to a person (lead/contact). When
+ * the model has only a name, it should call `search_crm` to resolve to
+ * a personCode before passing it here — never fabricate codes.
  *
  * Permission: `deals.create`. Confirmation: twoStep.
  */
@@ -27,27 +40,27 @@ registerTool({
 	permission: "deals.create",
 	confirmation: "twoStep",
 	approvalCategory: "create_record",
-	description: "Create a new deal. Resolve personCode via search_crm — never fabricate codes.",
+	description:
+		"Create a new deal — only `title` is required. The deal lands in the default pipeline + default stage automatically; stage-specific fields are filled later when moving stages.",
 	instruction: {
 		whenToCall:
-			"Use when the user asks to open / start a new sales opportunity for an existing person. Shows a preview card and waits for approval.",
+			"Use when the user asks to open / start a new sales opportunity. Shows a preview card and waits for approval.",
 		whenNotToCall:
-			"the deal already exists (call update_entity to change stage/value) OR the person isn't in the CRM yet (call create_lead or create_contact first).",
+			"the deal already exists (call update_entity to change stage/value). The person doesn't need to be in the CRM yet — `personCode` is optional.",
 		preflight: ["search_crm"],
 		requiredClarifications: ["title"],
 		synonyms: ["opportunity", "sale", "pipeline entry"],
 		goodExample: {
-			description: "User: 'Open a $25k deal for P-001 — Q3 contract renewal.'",
+			description:
+				"User: 'Create 5 sample deals so I can explore the pipeline.' Each only needs a title — the default pipeline + stage handle the rest.",
 			args: {
-				title: "Q3 contract renewal",
-				value: 25000,
-				personCode: "P-001",
+				title: "Acme Corp - Enterprise Expansion",
 			},
 		},
 		badExample: {
-			description: "User: 'Make a deal' (no person).",
+			description: "User: 'Make a deal' (no title).",
 			args: { title: "" },
-			whyBad: "title is required. Call ask_user_input for the deal title; resolve personCode via search_crm if a person is mentioned.",
+			whyBad: "title is required. Call ask_user_input for the deal title; resolve personCode via search_crm only if a person is mentioned.",
 		},
 	},
 	runbook: {

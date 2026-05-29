@@ -7,6 +7,7 @@
 
 export { setAnalyticsContext } from "../analytics";
 export { setCreativeContext } from "../creative";
+export { setDashboardContext } from "../dashboard";
 export { setFilesContext } from "../files";
 export { setMessagingContext } from "../messaging";
 export { setNotificationsContext } from "../notifications";

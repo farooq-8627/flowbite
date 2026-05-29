@@ -94,4 +94,8 @@ export default defineSchema({
 	aiInsights: ai.aiInsights,
 	aiCohortReports: ai.aiCohortReports,
 	aiStandingOrders: ai.aiStandingOrders,
+	// Stage 5 (DASHBOARD-V2-PLAN.md) — AI dashboard surfaces
+	ephemeralDashboardCells: ai.ephemeralDashboardCells,
+	dashboardAnnotations: ai.dashboardAnnotations,
+	dealScores: ai.dealScores,
 });

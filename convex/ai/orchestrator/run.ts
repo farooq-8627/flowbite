@@ -102,6 +102,8 @@ async function getOrgMemberAndPermissions(
 	plan: OrgPlan;
 	settings: Record<string, unknown>;
 	aiMessagesUsed: number;
+	subscriptionStatus?: string;
+	currentPeriodEnd?: number;
 }> {
 	const result = (await ctx.runQuery("orgs/queries:getMemberWithPermissions", {
 		orgId,
@@ -111,6 +113,8 @@ async function getOrgMemberAndPermissions(
 		plan: OrgPlan;
 		settings: Record<string, unknown>;
 		aiMessagesUsed: number;
+		subscriptionStatus?: string;
+		currentPeriodEnd?: number;
 	} | null;
 	if (!result) throw new Error("Not a member of this org.");
 	return result;
@@ -179,7 +183,13 @@ export const run = internalAction({
 		logTwoStepSchemaAuditOnce();
 
 		// 1. Auth + RBAC + quota
-		let memberInfo: { permissions: string[]; plan: OrgPlan; settings: Record<string, unknown> };
+		let memberInfo: {
+			permissions: string[];
+			plan: OrgPlan;
+			settings: Record<string, unknown>;
+			subscriptionStatus?: string;
+			currentPeriodEnd?: number;
+		};
 		try {
 			memberInfo = await getOrgMemberAndPermissions(ctx as never, args.orgId, args.userId);
 		} catch {
@@ -240,8 +250,10 @@ export const run = internalAction({
 
 		// 4.5 — AI token quota gate (post-resolution).
 		// • BYOK → always allowed regardless of plan.
+		// • Trial / past_due grace → treated as active (P0.1.1).
 		// • Platform on free → blocked with "add BYOK or upgrade" message.
-		// • Platform on starter / pro → metered against `aiTokensPerMonth`.
+		// • Platform on starter / pro → metered against `aiTokensPerMonth`
+		//   AND `aiMessageCreditsPerMonth` (whichever exhausts first wins).
 		// • Platform on enterprise → unmetered.
 		try {
 			const quotaResult = await checkAiQuota({
@@ -249,6 +261,8 @@ export const run = internalAction({
 				orgId: args.orgId,
 				plan: memberInfo.plan,
 				usageMode: modelResult.usageMode,
+				subscriptionStatus: memberInfo.subscriptionStatus,
+				currentPeriodEnd: memberInfo.currentPeriodEnd,
 			});
 			if (!quotaResult.allowed) {
 				await failChat(quotaResult.message);
@@ -353,6 +367,7 @@ export const run = internalAction({
 			"notifications",
 			"analytics",
 			"creative",
+			"dashboard",
 		];
 		const requestedLayers = new Set<string>(args.expandedLayers ?? []);
 		for (const l of ALL_LAYERS) requestedLayers.add(l);

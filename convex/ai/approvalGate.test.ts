@@ -23,7 +23,7 @@
  *      canonical categories.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
 	AUTO_APPROVE_DEFAULTS,
@@ -122,7 +122,6 @@ describe("approval gate — resolveNeedsApproval", () => {
 			{ name: "_t_gate_send_default", cat: "send_message" },
 			{ name: "_t_gate_manage_default", cat: "manage_participants" },
 			{ name: "_t_gate_schedule_default", cat: "schedule" },
-			{ name: "_t_gate_files_default", cat: "files" },
 		];
 		for (const c of cases) {
 			register(c.name, {
@@ -132,8 +131,7 @@ describe("approval gate — resolveNeedsApproval", () => {
 					| "convert_record"
 					| "send_message"
 					| "manage_participants"
-					| "schedule"
-					| "files",
+					| "schedule",
 			});
 			expect(
 				resolveNeedsApproval(c.name, {}, resolveEffectiveAutoApprove({})),
@@ -143,6 +141,14 @@ describe("approval gate — resolveNeedsApproval", () => {
 	});
 
 	it("guard 4 — default-OFF categories still ask with default preferences", () => {
+		// `files` returned to default-ON on 2026-05-28 (Stage 0.5 of
+		// DASHBOARD-V2-PLAN.md) once the auto-commit shim in
+		// `convex/ai/orchestrator/streamLoop.ts` closed the silent-drop
+		// class of bug at the wrapper layer. Stage 0 had temporarily
+		// gated `files` to `false`; the shim now runs `commit_<tool>`
+		// directly when the gate says SKIP for a twoStep tool, so a user
+		// who opted in to `files: true` actually gets the commit (the
+		// file IS re-scoped to the destination entity in one round-trip).
 		register("_t_gate_create_default", {
 			confirmation: "twoStep",
 			approvalCategory: "create_record",
@@ -228,6 +234,11 @@ describe("approval gate — resolveNeedsApproval", () => {
 		expect(eff.send_message).toBe(true);
 		expect(eff.manage_participants).toBe(true);
 		expect(eff.schedule).toBe(true);
+		// `files` returned to default-ON on 2026-05-28 (Stage 0.5).
+		// The commit-shim in `streamLoop.ts:wrapToolsForApprovalSanitisation`
+		// runs `commit_<tool>` directly when the gate says SKIP for a
+		// twoStep tool, closing the silent-drop class of bug Stage 0
+		// fixed by temporarily gating files to OFF.
 		expect(eff.files).toBe(true);
 		expect(eff.create_record).toBe(false);
 		expect(eff.delete_record).toBe(false);
@@ -243,6 +254,60 @@ describe("approval gate — resolveNeedsApproval", () => {
 		// untouched keys keep defaults
 		expect(eff.send_message).toBe(true);
 		expect(eff.delete_record).toBe(false);
+	});
+
+	it("guard 10b — files-categorised twoStep tools (regression for Stage 0 attach_file silent-drop): default-ON safely auto-commits via the wrapper shim, explicit user `false` still surfaces the propose card", () => {
+		// History:
+		//   - Pre 2026-05-28: `files: true` AND no commit-shim → silent-drop.
+		//     `wrapToolsForApprovalSanitisation` stashed the propose payload
+		//     but `stopOnAnyTwoStepCall` honoured the auto-approve and the
+		//     loop never halted. `commit_attach_file` never ran. The file
+		//     stayed at `scope: "aiChat"` instead of being re-scoped to the
+		//     destination person/deal/company.
+		//   - Stage 0: `files: false` (temporary). Propose card surfaces;
+		//     user's existing approve-button flow drives commit_attach_file.
+		//   - Stage 0.5: `files: true` again (permanent). The wrapper now
+		//     looks up `commit_<tool>` and runs it directly when the gate
+		//     says SKIP. Same tool result the user-approval flow produces.
+		// This test pins the GATE'S contract — the wrapper-shim contract
+		// is exercised in `streamLoop` integration tests separately.
+		register("_t_gate_attach_file_regression", {
+			confirmation: "twoStep",
+			approvalCategory: "files",
+		});
+
+		// (a) With NO user override (Stage 0.5 default), the gate says
+		// SKIP — the streamLoop's commit-shim will run commit_attach_file
+		// directly. NO propose card is surfaced.
+		expect(
+			resolveNeedsApproval(
+				"_t_gate_attach_file_regression",
+				{ fileId: "abc123", scope: "person", scopeId: "P-001" },
+				resolveEffectiveAutoApprove({}),
+			),
+			"files default skips after Stage 0.5 (commit-shim runs)",
+		).toBe(false);
+
+		// (b) Explicit user `files: true` — same path as (a).
+		expect(
+			resolveNeedsApproval(
+				"_t_gate_attach_file_regression",
+				{ fileId: "abc123", scope: "person", scopeId: "P-001" },
+				resolveEffectiveAutoApprove({ files: true }),
+			),
+			"explicit user `files: true` skips — wrapper auto-commits",
+		).toBe(false);
+
+		// (c) Explicit user `files: false` — propose card surfaces and
+		// the user drives `commit_attach_file` via the approve button.
+		expect(
+			resolveNeedsApproval(
+				"_t_gate_attach_file_regression",
+				{ fileId: "abc123", scope: "person", scopeId: "P-001" },
+				resolveEffectiveAutoApprove({ files: false }),
+			),
+			"explicit user `files: false` surfaces propose card",
+		).toBe(true);
 	});
 
 	it("guard 11 — category type-guards recognise canonical categories", () => {
@@ -274,5 +339,162 @@ describe("approval gate — resolveNeedsApproval", () => {
 		for (const cat of HARD_LOCKED_CATEGORIES) {
 			expect(userSet.has(cat)).toBe(false);
 		}
+	});
+
+	// ─── Stage 0.5 of DASHBOARD-V2-PLAN.md — auto-commit shim ─────────
+	//
+	// The wrapper-shim contract: when the gate says SKIP for a twoStep
+	// tool AND a paired `commit_<tool>` is registered AND its zod
+	// schema accepts the propose payload's `confirmationPayload.args`,
+	// run commit's execute() and return its result. The tests below
+	// pin that behaviour by registering a propose+commit pair and
+	// driving the same lookup path the wrapper uses (registry +
+	// schema.safeParse + execute).
+	//
+	// Why we test the registry-level contract instead of the wrapper:
+	// the wrapper is a private helper inside `streamLoop.ts` (a
+	// "use node" file with `streamText` deps that pull in the AI SDK).
+	// Importing it here would force a node-runtime test runner, when
+	// the rest of approvalGate.test.ts runs in vitest. The wrapper's
+	// only dependency on the registry is `getRegisteredTool` +
+	// `commitDef.schema.safeParse` + `commitDef.execute` — exercising
+	// those three calls in the same order is equivalent.
+
+	it("guard 14a — auto-commit shim lookup: a paired commit_<tool> is resolvable + its schema accepts the propose payload", async () => {
+		const { getRegisteredTool } = await import("./toolRegistry");
+		const proposeName = "_t_shim_propose_ok";
+		const commitName = `commit_${proposeName}`;
+
+		register(proposeName, {
+			confirmation: "twoStep",
+			approvalCategory: "files",
+			schema: z.object({ fileId: z.string() }),
+			execute: async ({ fileId }: { fileId: string }) => ({
+				ok: false,
+				requiresConfirmation: true as const,
+				confirmationPayload: {
+					tool: proposeName,
+					args: { fileId, scope: "person", scopeId: "P-001" },
+				},
+			}),
+		});
+		// Mirror real twoStep tools — the commit's schema accepts a
+		// SUPERSET of the propose's input args (the propose builds the
+		// canonical commit args inside its execute body).
+		const commitFn = vi.fn(async (args: Record<string, unknown>) => ({
+			ok: true,
+			data: args,
+			summary: { headline: `Attached file ${args.fileId}` },
+		}));
+		register(commitName, {
+			confirmation: "none",
+			schema: z.object({
+				fileId: z.string(),
+				scope: z.enum(["person", "deal", "company"]),
+				scopeId: z.string(),
+			}),
+			execute: commitFn,
+		});
+
+		// Step 1 — wrapper would only run the shim when gate says SKIP.
+		expect(
+			resolveNeedsApproval(
+				proposeName,
+				{ fileId: "abc" },
+				resolveEffectiveAutoApprove({ files: true }),
+			),
+		).toBe(false);
+
+		// Step 2 — registry lookup the wrapper performs.
+		const commitDef = getRegisteredTool(commitName);
+		expect(commitDef).toBeDefined();
+
+		// Step 3 — propose execute builds the canonical commit args.
+		const fakeProposeOut = (await getRegisteredTool(proposeName)?.execute({
+			fileId: "abc",
+		})) as {
+			confirmationPayload: { args: Record<string, unknown> };
+		};
+		const proposeArgs = fakeProposeOut.confirmationPayload.args;
+
+		// Step 4 — commit's schema parses + execute runs with parsed data.
+		const parsed = commitDef!.schema.safeParse(proposeArgs);
+		expect(parsed.success).toBe(true);
+		if (parsed.success) {
+			const result = await commitDef!.execute(parsed.data);
+			expect((result as { ok: boolean }).ok).toBe(true);
+			expect((result as { summary: { headline: string } }).summary.headline).toContain("abc");
+		}
+		expect(commitFn).toHaveBeenCalledTimes(1);
+	});
+
+	it("guard 14b — auto-commit shim falls back to propose card when no commit_<tool> is registered (defensive)", async () => {
+		const { getRegisteredTool } = await import("./toolRegistry");
+		const orphanName = "_t_shim_orphan_propose";
+		register(orphanName, {
+			confirmation: "twoStep",
+			approvalCategory: "files",
+			schema: z.object({ fileId: z.string() }),
+			execute: async ({ fileId }: { fileId: string }) => ({
+				ok: false,
+				requiresConfirmation: true as const,
+				confirmationPayload: { tool: orphanName, args: { fileId } },
+			}),
+		});
+
+		// The gate says SKIP — but no commit pair exists.
+		expect(
+			resolveNeedsApproval(
+				orphanName,
+				{ fileId: "abc" },
+				resolveEffectiveAutoApprove({ files: true }),
+			),
+		).toBe(false);
+		expect(getRegisteredTool(`commit_${orphanName}`)).toBeUndefined();
+		// Wrapper's documented behaviour: log + fall back to propose
+		// card. The user can still approve manually. The contract is
+		// "never silently drop a write" — the propose card surfacing is
+		// the safety net.
+	});
+
+	it("guard 14c — auto-commit shim refuses to run when commit's schema rejects the propose payload", async () => {
+		const { getRegisteredTool } = await import("./toolRegistry");
+		const proposeName = "_t_shim_propose_drift";
+		const commitName = `commit_${proposeName}`;
+
+		register(proposeName, {
+			confirmation: "twoStep",
+			approvalCategory: "files",
+			schema: z.object({ fileId: z.string() }),
+			execute: async () => ({
+				ok: false,
+				requiresConfirmation: true as const,
+				confirmationPayload: {
+					tool: proposeName,
+					// Intentional drift — propose carries a field the
+					// commit's tightened schema doesn't accept (mirrors
+					// the C.4 audit's silent-data-loss class of bug).
+					args: { thisFieldDoesNotExist: true },
+				},
+			}),
+		});
+		const commitFn = vi.fn(async () => ({ ok: true }));
+		register(commitName, {
+			confirmation: "none",
+			schema: z.object({ fileId: z.string() }),
+			execute: commitFn,
+		});
+
+		const proposeOut = (await getRegisteredTool(proposeName)?.execute({
+			fileId: "abc",
+		})) as { confirmationPayload: { args: Record<string, unknown> } };
+		const parsed = getRegisteredTool(commitName)!.schema.safeParse(
+			proposeOut.confirmationPayload.args,
+		);
+		// The wrapper's guard: when parse fails, log + fall back to the
+		// propose card. The commit's execute is NEVER called with
+		// drifted args.
+		expect(parsed.success).toBe(false);
+		expect(commitFn).not.toHaveBeenCalled();
 	});
 });

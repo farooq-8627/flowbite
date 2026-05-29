@@ -21,15 +21,13 @@
 
 import type { ComponentType } from "react";
 import { BulkPreviewCard } from "./BulkPreviewCard";
-import { CompanyPreviewCard } from "./CompanyPreviewCard";
-import { ContactPreviewCard } from "./ContactPreviewCard";
 import { CsvImportPreviewCard } from "./CsvImportPreviewCard";
 import { DangerPreviewCard } from "./DangerPreviewCard";
 import { DealPreviewCard } from "./DealPreviewCard";
 import { EntityDiffCard } from "./EntityDiffCard";
+import { EntityPreviewCard } from "./EntityPreviewCard";
 import { FieldPreviewCard } from "./FieldPreviewCard";
 import { GenericPreviewCard } from "./GenericPreviewCard";
-import { LeadPreviewCard } from "./LeadPreviewCard";
 import { PipelinePreviewCard } from "./PipelinePreviewCard";
 import { SettingsPreviewCard } from "./SettingsPreviewCard";
 
@@ -40,6 +38,10 @@ export interface PreviewCardProps {
 	fields?: Array<{ label: string; value: unknown }>;
 	/** Optional preview title from `propose()`. */
 	title?: string;
+	/** The tool name being previewed (so a shared card can pick its variant). */
+	toolName?: string;
+	/** Active org id — lets a card render the live entity card / currency. */
+	orgId?: string;
 }
 
 /**
@@ -47,10 +49,7 @@ export interface PreviewCardProps {
  * of the tool definition in `convex/ai/tools/*`.
  *
  * Two-step tools that share a card layout:
- *   • create_lead              → LeadPreviewCard
- *   • create_contact           → ContactPreviewCard
- *   • create_company           → CompanyPreviewCard
- *   • create_deal              → DealPreviewCard
+ *   • create_lead/contact/company/deal → EntityPreviewCard (renders the real EntityCard)
  *   • update_entity            → EntityDiffCard (renders a key-by-key diff)
  *   • bulk_update_entities     → BulkPreviewCard
  *   • bulk_close_deals         → BulkPreviewCard (uses outcome variant)
@@ -65,10 +64,10 @@ export interface PreviewCardProps {
  * the {label,value} list propose() generated.
  */
 export const PREVIEW_REGISTRY: Record<string, ComponentType<PreviewCardProps>> = {
-	create_lead: LeadPreviewCard,
-	create_contact: ContactPreviewCard,
-	create_company: CompanyPreviewCard,
-	create_deal: DealPreviewCard,
+	create_lead: EntityPreviewCard,
+	create_contact: EntityPreviewCard,
+	create_company: EntityPreviewCard,
+	create_deal: EntityPreviewCard,
 	create_field: FieldPreviewCard,
 	update_field: FieldPreviewCard,
 	update_entity: EntityDiffCard,
@@ -89,15 +88,13 @@ export function getPreviewCard(toolName: string): ComponentType<PreviewCardProps
 
 export {
 	BulkPreviewCard,
-	CompanyPreviewCard,
-	ContactPreviewCard,
 	CsvImportPreviewCard,
 	DangerPreviewCard,
 	DealPreviewCard,
 	EntityDiffCard,
+	EntityPreviewCard,
 	FieldPreviewCard,
 	GenericPreviewCard,
-	LeadPreviewCard,
 	PipelinePreviewCard,
 	SettingsPreviewCard,
 };

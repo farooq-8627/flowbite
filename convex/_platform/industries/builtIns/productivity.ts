@@ -205,8 +205,26 @@ export const productivityTemplate: IndustryTemplate = {
 		"activity.recent",
 		// Streak deferred to Phase 4 — registry slot reserved, renders "Coming soon" card.
 		"tasks.streak",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
+
+	// ─── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ────────────────
+	// Productivity users don't run a sales pipeline — the layout leads
+	// with the tasks queue as the hero, pairs today's focus + the mini
+	// calendar inline, and surfaces the week-ahead strip + activity
+	// feed below. Forecast bands kept at HubSpot defaults (the
+	// SalesPipelinePanel still ships in the metric strip for any
+	// productivity user who renames `Task → Deal` and starts tracking
+	// won-deal counts) but the panel ISN'T part of the layout grid.
+	dashboardLayout: {
+		hero: "tasks.list",
+		panels: [
+			{ id: "productivity-today", span: 1, widget: "today.focus" },
+			{ id: "productivity-calendar", span: 2, widget: "calendar.mini" },
+			{ id: "productivity-week-ahead", span: 3, widget: "calendar.weekAhead" },
+			{ id: "productivity-activity", span: 3, widget: "activity.recent" },
+		],
+	},
 
 	customRoles: [],
 

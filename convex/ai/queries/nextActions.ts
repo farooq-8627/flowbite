@@ -514,58 +514,97 @@ export const snoozeNextAction = orgMutation({
 // 30-min cron action AND from the AI tool layer. The dashboard's
 // AIPulseRibbon needs to fire it ONCE per session when the ranked store
 // is empty — so we expose a public `orgMutation` wrapper that schedules
-// the rebuild via `ctx.scheduler.runAfter(0, ...)`. Rate-limited at
-// 1/min per user/org so a misbehaving frontend can't spam the cron's
-// budget. Permission gate matches `listForUser` (`leads.view`) so any
-// member who can read the ribbon can also warm it.
+// the rebuild via `ctx.scheduler.runAfter(0, ...)`.
+//
+// Rate-limit budget — 5 per minute per `(userId, orgId)` pair. Originally
+// pinned at 1/min but the budget was too tight in practice: every dashboard
+// remount (multi-tab use, route navigation back to `/`, the Refresh button
+// in `AICockpitSection`) tries to warm independently and a single user can
+// trip the gate just by clicking around. 5/min still prevents a runaway
+// frontend from spamming the queue (the actual rebuild is the expensive
+// op and is itself bounded) while letting normal navigation succeed.
+//
+// **Soft-fail contract**: rate-limit rejection no longer throws. Hitting
+// the gate returns `{ scheduled: false, rateLimited: true }` so the
+// frontend can swallow it silently and the Convex error log stays clean.
+// Any other error still throws.
 //
 // Scheduler-runAfter (not direct call) because the public mutation
 // completes before the rebuild starts — the dashboard can return,
 // React reactivity picks up the new rows on the next reactive cycle.
 
+const LAZY_WARM_RATE_LIMIT = { max: 5, periodMs: 60_000 } as const;
+
+type LazyWarmResult =
+	| { scheduled: true; rateLimited?: false }
+	| { scheduled: false; rateLimited: true };
+
+async function tryEnforceLazyWarmLimit(
+	ctx: MutationCtx,
+	args: { orgId: Id<"orgs">; userId: Id<"users"> },
+): Promise<{ ok: true } | { ok: false }> {
+	try {
+		await enforceRateLimit(ctx, {
+			scope: "ai.nextActions.lazyWarm",
+			key: `${args.userId}:${args.orgId}`,
+			max: LAZY_WARM_RATE_LIMIT.max,
+			periodMs: LAZY_WARM_RATE_LIMIT.periodMs,
+			orgId: args.orgId,
+		});
+		return { ok: true };
+	} catch (err) {
+		// Soft-fail only on the rate-limit ConvexError. Re-throw any
+		// other failure (DB error, schema mismatch, etc.) so we still
+		// see real bugs in the logs.
+		if (err instanceof ConvexError && typeof err.data === "string") {
+			if (err.data.startsWith("Too many requests.")) {
+				return { ok: false };
+			}
+		}
+		throw err;
+	}
+}
+
 export const lazyWarmForUser = orgMutation({
 	args: { orgId: v.id("orgs") },
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<LazyWarmResult> => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
 
-		await enforceRateLimit(ctx, {
-			scope: "ai.nextActions.lazyWarm",
-			key: `${userId}:${args.orgId}`,
-			max: 1,
-			periodMs: 60_000,
-			orgId: args.orgId,
-		});
+		const gate = await tryEnforceLazyWarmLimit(ctx, { orgId: args.orgId, userId });
+		if (!gate.ok) {
+			return { scheduled: false, rateLimited: true };
+		}
 
 		await ctx.scheduler.runAfter(0, internal.ai.queries.nextActions.rebuildForUser, {
 			orgId: args.orgId,
 			userId,
 		});
 
-		return { scheduled: true } as const;
+		return { scheduled: true };
 	},
 });
 
 export const lazyWarmForUserForAI = internalMutation({
 	args: { orgId: v.id("orgs"), userId: v.id("users") },
-	handler: async (ctx, args) => {
+	handler: async (ctx, args): Promise<LazyWarmResult> => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "leads.view");
 
-		await enforceRateLimit(ctx, {
-			scope: "ai.nextActions.lazyWarm",
-			key: `${args.userId}:${args.orgId}`,
-			max: 1,
-			periodMs: 60_000,
+		const gate = await tryEnforceLazyWarmLimit(ctx, {
 			orgId: args.orgId,
+			userId: args.userId,
 		});
+		if (!gate.ok) {
+			return { scheduled: false, rateLimited: true };
+		}
 
 		await ctx.scheduler.runAfter(0, internal.ai.queries.nextActions.rebuildForUser, {
 			orgId: args.orgId,
 			userId: args.userId,
 		});
 
-		return { scheduled: true } as const;
+		return { scheduled: true };
 	},
 });
 

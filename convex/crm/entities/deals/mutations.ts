@@ -173,13 +173,29 @@ export const create = orgMutation({
 	},
 });
 
-/** AI-callable internal twin — see `convex/ai/tools/_shared.ts`. */
+/**
+ * AI-callable internal twin — see `convex/ai/tools/_shared.ts`.
+ *
+ * Stage-aware contract for AI: ONLY `title` is required. The AI tool
+ * doesn't have to know about pipelines or sources to create a deal —
+ * the deal lands in the org's default deal pipeline + default stage
+ * (whose required fields are minimal by design). When the deal later
+ * moves to a stricter stage, `moveToStage` enforces stage-aware
+ * required-field gates via `getRequiredFieldsForStage`.
+ *
+ * `pipelineId` is optional here — when omitted we resolve the org's
+ * default pipeline (`isDefault === true`, falling back to the first
+ * deal pipeline). `source` defaults to `"ai"` so AI-created deals are
+ * trivially distinguishable in reports. Public `create` (used by
+ * AddDealDrawer) keeps both args strict — UI flows always know which
+ * pipeline they're targeting.
+ */
 export const createForAI = internalMutation({
 	args: {
 		orgId: v.id("orgs"),
 		userId: v.id("users"),
 		title: v.string(),
-		pipelineId: v.id("pipelines"),
+		pipelineId: v.optional(v.id("pipelines")),
 		currentStageId: v.optional(v.string()),
 		contactId: v.optional(v.id("contacts")),
 		companyId: v.optional(v.id("companies")),
@@ -188,13 +204,41 @@ export const createForAI = internalMutation({
 		value: v.optional(v.number()),
 		currency: v.optional(v.string()),
 		assignedTo: v.optional(v.id("users")),
-		source: v.string(),
+		source: v.optional(v.string()),
 		expectedCloseDate: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "deals.create");
-		return createImpl(ctx, args);
+
+		// Resolve default pipeline when the AI tool doesn't supply one.
+		// AddDealDrawer always passes pipelineId, so this only fires for
+		// AI-driven creates.
+		let pipelineId = args.pipelineId;
+		if (!pipelineId) {
+			const dealPipelines = await ctx.db
+				.query("pipelines")
+				.withIndex("by_org_and_entity", (q) =>
+					q.eq("orgId", args.orgId).eq("entityType", "deal"),
+				)
+				.collect();
+			const defaultPipeline =
+				dealPipelines.find((p) => p.isDefault === true) ?? dealPipelines[0];
+			if (!defaultPipeline) {
+				throw new ConvexError({
+					code: "NO_DEAL_PIPELINE",
+					message:
+						"No deal pipeline configured. Create one in Settings → Modules → Deals → Pipelines, then retry.",
+				});
+			}
+			pipelineId = defaultPipeline._id;
+		}
+
+		return createImpl(ctx, {
+			...args,
+			pipelineId,
+			source: args.source ?? "ai",
+		});
 	},
 });
 

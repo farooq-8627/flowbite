@@ -203,13 +203,40 @@ export const platformContext = defineTable({
  *
  * One row per tier key — `key` is the unique business identifier.
  *
- * Spec: PLATFORM-OWNER-PANEL.md §4.1.
+ * **2026-05-27 P0.1+P0.2 update:** added marketing-copy fields
+ * (`description`, `features`, `highlight`) plus per-billing-period
+ * LemonSqueezy variant ids so the owner panel becomes the SSOT for
+ * EVERY tier-config knob — quota limits, marketing bullets, and
+ * checkout variant ids — and that single source feeds both the in-app
+ * `PricingCard` and the marketing site's `/pricing` page. Limits are
+ * extended with `maxLeads` + `aiMessageCreditsPerMonth` so the audit's
+ * pricing ladder ($199 = 50,000 credits) ships end-to-end. All new
+ * fields are optional so the migration is non-breaking; the seed
+ * migration `_migrations/2026_05_27_seedPlanLimitsExtensions.ts`
+ * idempotently fills sensible defaults on any pre-existing rows.
+ *
+ * Spec: PLATFORM-OWNER-PANEL.md §4.1 + PENDING.md P0.1.2 + P0.2.E.
  */
 export const platformTiers = defineTable({
 	/** Stable business identifier — also used as the org `plan` value. */
 	key: orgPlanValidator,
 	/** Display name shown in marketing + dashboard. */
 	displayName: v.string(),
+	/**
+	 * One-line marketing tagline — shown on the PricingCard subtitle and
+	 * the marketing /pricing page.
+	 */
+	description: v.optional(v.string()),
+	/**
+	 * Ordered list of user-facing feature bullets shown on the PricingCard.
+	 * Owner-controlled — change copy without redeploying.
+	 */
+	features: v.optional(v.array(v.string())),
+	/**
+	 * "Most popular" / accent tile flag. Exactly one tier per workspace
+	 * SHOULD be highlighted (UI doesn't enforce — owner discretion).
+	 */
+	highlight: v.optional(v.boolean()),
 	/** Monthly price in USD (0 for free tier). */
 	monthlyPriceUSD: v.number(),
 	/** Yearly price in USD (0 for free tier). */
@@ -217,16 +244,35 @@ export const platformTiers = defineTable({
 	/** Trial length in days for new orgs on this tier (0 = no trial). */
 	trialDays: v.number(),
 	/**
+	 * LemonSqueezy variant id for monthly billing. When set, the in-app
+	 * upgrade button + marketing PricingCard route the user to a hosted
+	 * LemonSqueezy checkout against this variant. The webhook
+	 * (`convex/billing/internal.ts::variantToPlan`) reads this back to
+	 * map a webhook variant_id → plan tier. The legacy
+	 * `LEMONSQUEEZY_VARIANT_*` env vars remain a fallback for backwards
+	 * compat with deployments that haven't yet migrated their tier rows.
+	 */
+	lemonSqueezyVariantIdMonthly: v.optional(v.string()),
+	/** LemonSqueezy variant id for yearly billing. */
+	lemonSqueezyVariantIdYearly: v.optional(v.string()),
+	/**
 	 * Quota limits enforced by `_platform/limits.ts::getPlanLimits`.
 	 * `-1` means unlimited; `0` means "feature disabled" (e.g. AI on free).
+	 *
+	 * `maxLeads` + `aiMessageCreditsPerMonth` are optional only because
+	 * existing rows pre-date them; the read path
+	 * (`getPlanLimitsFromDb`) backfills from the in-code defaults when
+	 * absent, and the seed migration writes the defaults idempotently.
 	 */
 	limits: v.object({
 		maxPipelinesPerEntityType: v.number(),
 		maxDeals: v.number(),
+		maxLeads: v.optional(v.number()),
 		maxMembers: v.number(),
 		maxCustomFieldsPerEntityType: v.number(),
 		maxStorageBytes: v.number(),
 		aiTokensPerMonth: v.number(),
+		aiMessageCreditsPerMonth: v.optional(v.number()),
 	}),
 	/** Whether this tier is currently selectable in onboarding / billing UI. */
 	active: v.boolean(),

@@ -244,8 +244,29 @@ export const freelancerTemplate: IndustryTemplate = {
 		"today.focus",
 		"messages.recent",
 		"calendar.mini",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
+
+	// ─── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ────────────────
+	// Solo freelancers' #1 pain is "did I get paid?" — the layout leads
+	// with the live tasks queue (deliverables) as the hero and pairs the
+	// invoice-aging widget with today's focus card so unpaid invoices
+	// stay one glance away. Coverage bands tightened to {2, 1} — short
+	// project cycles + small operator → 2:1 is healthy, 1:1 is the
+	// danger line.
+	dashboardLayout: {
+		hero: "tasks.list",
+		panels: [
+			{ id: "freelancer-aging", span: 2, widget: "invoices.aging" },
+			{ id: "freelancer-today", span: 1, widget: "today.focus" },
+			{ id: "freelancer-pipeline", span: 2, widget: "pipeline.salesPanel" },
+			{ id: "freelancer-calendar", span: 1, widget: "calendar.mini" },
+			{ id: "freelancer-messages", span: 3, widget: "messages.recent" },
+		],
+		forecast: {
+			coverageBands: { healthy: 2, warning: 1 },
+		},
+	},
 
 	customRoles: [],
 

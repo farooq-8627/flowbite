@@ -26,11 +26,12 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { anyApi } from "convex/server";
-import { Bot, RefreshCw, Sparkles } from "lucide-react";
+import { RefreshCw, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
+import { AIMark } from "@/core/ai/components/AIMark";
 import { useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 
@@ -79,33 +80,54 @@ export function DailyBriefingCard({ orgId }: Props) {
 
 	if (briefing === undefined) {
 		return (
-			<div className="flex h-32 items-center justify-center rounded-[var(--radius)] border bg-card">
-				<Bot className="size-5 animate-pulse text-muted-foreground" />
+			<div className="flex h-full min-h-[180px] items-center justify-center rounded-[var(--radius)] border bg-card">
+				<AIMark size="size-5" tone="muted" className="animate-pulse" aria-hidden="true" />
 			</div>
 		);
 	}
 
 	if (briefing === null) {
 		return (
-			<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-card p-4">
+			<div className="flex h-full min-h-[180px] flex-col gap-3 rounded-[var(--radius)] border bg-card p-4">
 				<div className="flex items-center gap-2">
 					<Sparkles className="size-4 text-primary" />
 					<span className="font-semibold text-sm">AI Morning Briefing</span>
+					<span className="ms-auto text-[10px] text-muted-foreground/60">
+						· just for you
+					</span>
 				</div>
-				<p className="text-sm text-muted-foreground">
-					Your daily briefing hasn't been generated yet. Click below to create one.
+				<p className="text-sm leading-relaxed text-foreground">
+					Wake up to a personalised summary of yesterday's activity and today's
+					priorities.
 				</p>
-				{canRefresh && (
-					<Button
-						size="sm"
-						onClick={handleRefresh}
-						disabled={refreshing}
-						className="self-start gap-1.5"
-					>
-						<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
-						Generate briefing
-					</Button>
-				)}
+				<ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+					<li className="flex gap-2 leading-relaxed">
+						<span className="text-primary">•</span>
+						<span>What changed across your leads, deals, and tasks overnight</span>
+					</li>
+					<li className="flex gap-2 leading-relaxed">
+						<span className="text-primary">•</span>
+						<span>Top 3 priorities ranked by deal value + recency</span>
+					</li>
+					<li className="flex gap-2 leading-relaxed">
+						<span className="text-primary">•</span>
+						<span>One-tap action chips to follow up immediately</span>
+					</li>
+				</ul>
+				<div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2 text-[10px] text-muted-foreground">
+					<span>Auto-generated daily at your morning time</span>
+					{canRefresh && (
+						<button
+							type="button"
+							onClick={handleRefresh}
+							disabled={refreshing}
+							className="flex items-center gap-1 hover:text-foreground transition-colors disabled:opacity-50"
+						>
+							<RefreshCw className={`size-3 ${refreshing ? "animate-spin" : ""}`} />
+							Generate now
+						</button>
+					)}
+				</div>
 			</div>
 		);
 	}
@@ -116,7 +138,7 @@ export function DailyBriefingCard({ orgId }: Props) {
 	const isErrorBriefing = briefing.model?.startsWith("error:") ?? false;
 	if (isErrorBriefing) {
 		return (
-			<div className="flex flex-col gap-3 rounded-[var(--radius)] border border-amber-300/60 bg-amber-50/60 p-4 dark:border-amber-700/40 dark:bg-amber-950/20">
+			<div className="flex h-full min-h-[180px] flex-col gap-3 rounded-[var(--radius)] border border-amber-300/60 bg-amber-50/60 p-4 dark:border-amber-700/40 dark:bg-amber-950/20">
 				<div className="flex items-center gap-2">
 					<Sparkles className="size-4 text-amber-700 dark:text-amber-300" />
 					<span className="font-semibold text-sm text-amber-900 dark:text-amber-100">
@@ -132,7 +154,7 @@ export function DailyBriefingCard({ orgId }: Props) {
 						variant="outline"
 						onClick={handleRefresh}
 						disabled={refreshing}
-						className="self-start gap-1.5"
+						className="mt-auto self-start gap-1.5"
 					>
 						<RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
 						Try again
@@ -159,7 +181,7 @@ export function DailyBriefingCard({ orgId }: Props) {
 				: `${Math.floor(generatedMinAgo / 60)} h ago`;
 
 	return (
-		<div className="flex flex-col gap-3 rounded-[var(--radius)] border bg-card p-4">
+		<div className="flex h-full min-h-[180px] flex-col gap-3 rounded-[var(--radius)] border bg-card p-4">
 			<div className="flex items-center gap-2">
 				<Sparkles className="size-4 text-primary" />
 				<span className="flex-1 font-semibold text-sm">AI Morning Briefing</span>
@@ -204,7 +226,7 @@ export function DailyBriefingCard({ orgId }: Props) {
 				</div>
 			)}
 
-			<div className="flex items-center justify-between gap-2 border-t border-border pt-2 text-[10px] text-muted-foreground">
+			<div className="mt-auto flex items-center justify-between gap-2 border-t border-border pt-2 text-[10px] text-muted-foreground">
 				<span>Generated by {briefing.model}</span>
 				{canRefresh && (
 					<button

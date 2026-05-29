@@ -38,6 +38,7 @@ import { describe, expect, it } from "vitest";
 // `registerTool({...})` side-effects at module-load time.
 import "./ai/tools/tasks";
 import { api } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { getDefaultPermissionsForRole } from "./_shared/permissions/derive";
 import {
 	clearActiveRequestContext,
@@ -49,6 +50,16 @@ import { setTasksContext } from "./ai/tools/tasks";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+// `getToolsForRequest` returns `Record<string, unknown>` so individual
+// tool entries lose their AI-SDK `tool({...})` shape at the type level.
+// The structure is stable: every tool exposes `inputSchema.safeParse`
+// and `execute(args)`. Casting to this thin local type keeps the test
+// readable without `as any`.
+type RegisteredTool = {
+	inputSchema: { safeParse: (args: unknown) => { success: boolean } };
+	execute: (args: unknown) => Promise<unknown>;
+};
 
 const TASK_TOOL_NAMES = [
 	"create_task",
@@ -148,7 +159,7 @@ describe("task tool schemas reject bad inputs", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.create_task!;
+			const tool = tools.create_task as RegisteredTool;
 			// Missing both title and type.
 			expect(tool.inputSchema.safeParse({}).success).toBe(false);
 			// Type outside the closed enum.
@@ -180,7 +191,7 @@ describe("task tool schemas reject bad inputs", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.complete_task_by_code!;
+			const tool = tools.complete_task_by_code as RegisteredTool;
 			// Missing taskCode.
 			expect(tool.inputSchema.safeParse({}).success).toBe(false);
 			// Empty string fails codeString validation.
@@ -207,7 +218,7 @@ describe("task tool schemas reject bad inputs", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.list_tasks!;
+			const tool = tools.list_tasks as RegisteredTool;
 			expect(tool.inputSchema.safeParse({}).success).toBe(true);
 			expect(tool.inputSchema.safeParse({ type: "followup" }).success).toBe(true);
 			expect(tool.inputSchema.safeParse({ status: "pending" }).success).toBe(true);
@@ -230,7 +241,7 @@ describe("task tool schemas reject bad inputs", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.list_tasks_for_person!;
+			const tool = tools.list_tasks_for_person as RegisteredTool;
 			expect(tool.inputSchema.safeParse({}).success).toBe(false);
 			expect(tool.inputSchema.safeParse({ personCode: "P-001" }).success).toBe(true);
 		} finally {
@@ -302,6 +313,7 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				ctx: ctx as unknown as Parameters<typeof setTasksContext>[0]["ctx"],
 				orgId,
 				userId,
+				conversationId: undefined as unknown as Id<"aiConversations">,
 				permissions: [...getDefaultPermissionsForRole("Owner")],
 			});
 			const tools = getToolsForRequest({
@@ -309,7 +321,7 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.complete_task_by_code!;
+			const tool = tools.complete_task_by_code as RegisteredTool;
 			const result = (await tool.execute({ taskCode: created.taskCode })) as {
 				ok: true;
 				data: { taskCode: string; alreadyCompleted: boolean };
@@ -317,7 +329,7 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 			expect(result.ok).toBe(true);
 			expect(result.data.taskCode).toBe(created.taskCode);
 			expect(result.data.alreadyCompleted).toBe(false);
-		}, {});
+		});
 
 		const after = await t.run(async (ctx) => ctx.db.get(created.taskId));
 		expect(after?.status).toBe("completed");
@@ -338,6 +350,7 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				ctx: ctx as unknown as Parameters<typeof setTasksContext>[0]["ctx"],
 				orgId,
 				userId,
+				conversationId: undefined as unknown as Id<"aiConversations">,
 				permissions: [...getDefaultPermissionsForRole("Owner")],
 			});
 			const tools = getToolsForRequest({
@@ -345,12 +358,12 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.cancel_task_by_code!;
+			const tool = tools.cancel_task_by_code as RegisteredTool;
 			const result = (await tool.execute({ taskCode: created.taskCode })) as {
 				ok: true;
 			};
 			expect(result.ok).toBe(true);
-		}, {});
+		});
 
 		const after = await t.run(async (ctx) => ctx.db.get(created.taskId));
 		expect(after).toBeNull();
@@ -364,6 +377,7 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				ctx: ctx as unknown as Parameters<typeof setTasksContext>[0]["ctx"],
 				orgId,
 				userId,
+				conversationId: undefined as unknown as Id<"aiConversations">,
 				permissions: [...getDefaultPermissionsForRole("Owner")],
 			});
 			const tools = getToolsForRequest({
@@ -371,13 +385,13 @@ describe("task tool execute() round-trips through ForAI mutations", () => {
 				modelTier: "standard",
 				expandedLayers: [],
 			});
-			const tool = tools.get_task_by_code!;
+			const tool = tools.get_task_by_code as RegisteredTool;
 			const result = (await tool.execute({ taskCode: "T-999" })) as {
 				ok: false;
 				code: string;
 			};
 			expect(result.ok).toBe(false);
 			expect(result.code).toBe("NOT_FOUND");
-		}, {});
+		});
 	});
 });

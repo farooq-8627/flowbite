@@ -447,7 +447,7 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 		"today.focus",
 		"calendar.weekAhead",
 		"deals.renewingIn30Days",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
 
 	customRoles: [

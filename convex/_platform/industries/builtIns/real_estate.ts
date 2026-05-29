@@ -344,8 +344,31 @@ export const realEstateTemplate: IndustryTemplate = {
 		"today.focus",
 		"calendar.weekAhead",
 		"messages.recent",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
+
+	// ─── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ────────────────
+	// Real-estate brokers live in a multi-week funnel — Inquiry → Viewing
+	// → Offer → Contract is THE workflow. The layout leads with the
+	// property-funnel widget so dropoff is the first thing in view, then
+	// pairs the Sales Pipeline Panel (Summary / Velocity / Forecast tabs)
+	// with the live tasks queue. Week-ahead + activity feed sit below.
+	// Coverage bands relaxed to {5, 3} — RE cycles are longer (90+ days
+	// from Inquiry → Won is normal), so 3:1 is the warning line and 5:1
+	// is healthy.
+	dashboardLayout: {
+		hero: "properties.funnel",
+		panels: [
+			{ id: "real-estate-pipeline", span: 2, widget: "pipeline.salesPanel" },
+			{ id: "real-estate-tasks", span: 1, widget: "tasks.list" },
+			{ id: "real-estate-week-ahead", span: 3, widget: "calendar.weekAhead" },
+			{ id: "real-estate-activity", span: 2, widget: "activity.recent" },
+			{ id: "real-estate-messages", span: 1, widget: "messages.recent" },
+		],
+		forecast: {
+			coverageBands: { healthy: 5, warning: 3 },
+		},
+	},
 
 	savedViews: [
 		{

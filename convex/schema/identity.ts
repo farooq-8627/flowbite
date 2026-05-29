@@ -138,13 +138,86 @@ export const users = defineTable({
 			 *   - `proactive` → wraps the AI cluster on the dashboard
 			 *     (AISuggestionsPanel + AIPulseRibbon + AIQuickComposerCard +
 			 *     DailyBriefingCard + WeeklyInsightCard) inside
-			 *     `<ProactiveWorkspaceSection>`.
+			 *     `<AICockpitSection>` (Stage 1 of DASHBOARD-V2-PLAN.md
+			 *     renamed `<ProactiveWorkspaceSection>`; the storage key
+			 *     stayed `proactive` so existing per-user collapse state
+			 *     carries over).
 			 */
 			dashboardSectionsCollapsed: v.optional(
 				v.object({
 					proactive: v.optional(v.boolean()),
 				}),
 			),
+			/**
+			 * Stage 5 (`/DASHBOARD-V2-PLAN.md` Stage 5, locked decision #13).
+			 *
+			 * Per-user dashboard layout override scoped to an active org.
+			 * Resolution chain (top-down — first hit wins):
+			 *
+			 *   1. `user.preferences.dashboardLayoutOverride.layout`
+			 *      (this slot, when `orgId` matches the active workspace)
+			 *   2. `org.settings.dashboardLayout` (org default — Stage 4)
+			 *   3. legacy fixed grid (`DashboardHomeView` default branch)
+			 *
+			 * Single-org-active model — only the user's currently-viewed
+			 * org owns this slot at a time. When the user switches org,
+			 * the slot may carry a stale `orgId`; the renderer compares
+			 * `orgId` and falls back to the org default if mismatched.
+			 * Multi-org per-user override is a future expansion to
+			 * `v.array(...)` if needed.
+			 *
+			 * `layout` is the same shape as `org.settings.dashboardLayout`
+			 * (validated by `widgetRegistry.validateDashboardLayoutShape`)
+			 * — kept loose here as `v.any()` to avoid duplicating the full
+			 * validator inside the schema (which the SSOT validator
+			 * enforces at write time anyway). The mutation
+			 * `users.mutations:setMyDashboardLayoutOverride` re-validates
+			 * the shape via the SSOT validator before writing, so this
+			 * slot can never carry an invalid layout.
+			 *
+			 * Writes:
+			 *   - `users.mutations:setMyDashboardLayoutOverride` — replaces
+			 *     the slot with the user's customised layout (drag-reorder,
+			 *     "Pin to my dashboard", etc.).
+			 *   - `users.mutations:clearMyDashboardLayoutOverride` —
+			 *     "Reset to org default" button. Sets the slot to undefined.
+			 *
+			 * AI never writes this slot. Per the architectural rule in
+			 * DASHBOARD-V2-PLAN.md Stage 5: "AI never writes the canonical
+			 * dashboard layout." AI's `render_widget` writes to
+			 * `ephemeralDashboardCells` (per-user 24h TTL); the user's
+			 * deliberate "Pin to my dashboard" click is what mutates this
+			 * slot.
+			 */
+			dashboardLayoutOverride: v.optional(
+				v.object({
+					orgId: v.id("orgs"),
+					layout: v.any(),
+					updatedAt: v.number(),
+				}),
+			),
+			/**
+			 * Stage 7 of `/DASHBOARD-V2-PLAN.md` (2026-05-29) → per-user
+			 * setting (2026-05-30). How many rows the dashboard's
+			 * Recent activity + Recent messages widgets render.
+			 *
+			 * Migrated out of the `DASHBOARD_RECENT_ACTIVITY_LIMIT` /
+			 * `DASHBOARD_RECENT_MESSAGES_LIMIT` constants in
+			 * `core/shell/shell/views/dashboard/DashboardHomeView.tsx` so
+			 * each user can dial preview density up or down without a code
+			 * change. The same number drives both widgets (they're tuned
+			 * in lockstep so the dashboard's two recent-rows panels stay
+			 * visually parallel).
+			 *
+			 * Range: 3..15 enforced by the writer
+			 * (`users.mutations:updatePreferences`). Reads clamp the value
+			 * with the same bounds + fall back to 6 (the historic constant)
+			 * when the slot is undefined. Server-side
+			 * `getDashboardStats({ recentActivityLimit })` clamps to [1, 50].
+			 *
+			 * Set via Settings → Appearance → Dashboard density.
+			 */
+			dashboardActivityRowLimit: v.optional(v.number()),
 		}),
 	),
 	...timestamps,
@@ -309,6 +382,51 @@ export const orgs = defineTable({
 			 * adding a registry entry; templates can opt in by listing the key.
 			 */
 			dashboardMetrics: v.optional(v.array(v.string())),
+			/**
+			 * Stage 4 of /DASHBOARD-V2-PLAN.md (2026-05-29) — additive
+			 * optional layout descriptor that supersedes the flat
+			 * `dashboardMetrics` rendering path when set.
+			 *
+			 * Renderer fallback: when this slot is undefined the dashboard
+			 * keeps the existing `dashboardMetrics`-driven path (KPI strip
+			 * + fixed grid). When set, `<DashboardHomeView>` switches to
+			 * the layout-aware renderer that paints:
+			 *   - optional `hero` widget (full-width above the strip)
+			 *   - KPI strip (defaults to `dashboardMetrics` when
+			 *     `metrics` is omitted, otherwise honours `metrics`)
+			 *   - panel grid, where each panel declares an `lg+`-breakpoint
+			 *     `span: 1 | 2 | 3` against a 3-column grid track.
+			 *
+			 * Cross-validated at write time by
+			 * `validateDashboardLayoutShape` (in `_shared/widgetRegistry.ts`)
+			 * AND at template-seed time by
+			 * `_platform/industries/validators.ts::validateDefinition`,
+			 * so unknown widget keys never reach the runtime path. No
+			 * migration needed — additive optional.
+			 */
+			dashboardLayout: v.optional(
+				v.object({
+					hero: v.optional(v.string()),
+					metrics: v.optional(v.array(v.string())),
+					panels: v.array(
+						v.object({
+							id: v.string(),
+							span: v.union(v.literal(1), v.literal(2), v.literal(3)),
+							widget: v.string(),
+						}),
+					),
+					forecast: v.optional(
+						v.object({
+							coverageBands: v.optional(
+								v.object({
+									healthy: v.number(),
+									warning: v.number(),
+								}),
+							),
+						}),
+					),
+				}),
+			),
 			/**
 			 * Phase 3A — soft-delete retention.
 			 *

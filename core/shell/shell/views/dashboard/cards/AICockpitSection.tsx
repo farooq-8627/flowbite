@@ -1,17 +1,28 @@
 "use client";
 
 /**
- * ProactiveWorkspaceSection — Stage 3-A.5 of /SPRINT-PLAN.md.
+ * AICockpitSection — Stage 1 of `DASHBOARD-V2-PLAN.md` (2026-05-28).
  *
  * Wraps the dashboard's AI cluster (AISuggestionsPanel + AIPulseRibbon
  * + AIQuickComposerCard + DailyBriefingCard + WeeklyInsightCard) under
  * a single H2 header so the user reads the cluster as one logical
- * surface ("PROACTIVE WORKSPACE — what to do next"). The cluster is
- * collapsible per-user via `users.preferences.dashboardSectionsCollapsed.proactive`
- * (default expanded).
+ * surface ("AI Cockpit — your workspace, on autopilot"). The cluster
+ * is collapsible per-user via
+ * `users.preferences.dashboardSectionsCollapsed.proactive` (key
+ * unchanged so existing per-user preferences carry over — only the
+ * surface label changed).
  *
- * 2026-05-27 — added a single permanently-visible Refresh control on the
- * header right that triggers BOTH proactive surfaces in one click:
+ * The section was previously called `ProactiveWorkspaceSection`. The
+ * user's 2026-05-28 feedback: "Proactive workspace" was internally
+ * accurate but invisibly so — the new name advertises the AI-native
+ * positioning the dashboard is moving toward (matches the new
+ * `<AIMark>` brand mark + the `Sparkles` icon that pairs with it).
+ *
+ * Stage 5 of the same plan adds AI-written widgets that mount inside
+ * this section; the rename pre-empts that scope.
+ *
+ * Refresh button — single permanently-visible control on the header
+ * right that triggers BOTH proactive surfaces in one click:
  *
  *   - `ai.queries.nextActions.lazyWarmForUser` rebuilds the user's
  *     ranked Top-3 / Top-100 in `aiNextActions` (the AI Pulse Ribbon
@@ -32,36 +43,38 @@
  *     and the refresh button so optimistic updates can be added in one
  *     place later.
  *
- * RTL: uses `ms-/me-/ps-/pe-/start-/end-` only. The chevron flips
- * automatically via `dir="rtl"` on the root layout because we use a
- * scaleX(-1) transform for the closed state — but for accessibility
- * we ALSO change `aria-expanded` so screen readers announce the state
- * correctly.
+ * RTL: uses `ms-/me-/ps-/pe-/start-/end-` only. The collapse state is
+ * conveyed via `aria-expanded` and the body show/hide — there's no
+ * chevron icon (removed 2026-05-29 per user request that the entire
+ * header bar — minus the refresh button — be the toggle target). The
+ * refresh button calls `event.stopPropagation()` on its onClick so a
+ * click there doesn't bubble up and toggle the section.
  *
  * `rounded-[var(--radius)]` per AGENTS.md — no hardcoded radii.
  */
 
 import { useMutation } from "convex/react";
 import { anyApi } from "convex/server";
-import { ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { AIMark } from "@/core/ai/components/AIMark";
 import { useCurrentOrg, useMe, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
-interface ProactiveWorkspaceSectionProps {
+interface AICockpitSectionProps {
 	children: ReactNode;
 	className?: string;
 }
 
-const TITLE = "Proactive workspace";
-const SUBTITLE = "What to do next";
+const TITLE = "AI Cockpit";
+const SUBTITLE = "Your workspace, on autopilot";
 
-export function ProactiveWorkspaceSection({ children, className }: ProactiveWorkspaceSectionProps) {
+export function AICockpitSection({ children, className }: AICockpitSectionProps) {
 	const me = useMe();
 	const { fullOrgEntry } = useCurrentOrg();
 	const orgId = fullOrgEntry?.org._id as Id<"orgs"> | undefined;
@@ -70,6 +83,9 @@ export function ProactiveWorkspaceSection({ children, className }: ProactiveWork
 	const canRefreshPulse = permissions.includes("leads.view");
 
 	const setCollapsed = useMutation(api.users.mutations.setDashboardSectionCollapsed);
+	// Note — the user-prefs key stays "proactive" so existing per-user
+	// collapse state carries over the rename. Renaming the storage key
+	// would force every user back to expanded on next visit.
 	const collapsed = me?.preferences?.dashboardSectionsCollapsed?.proactive === true;
 
 	// Refresh wiring — both mutations are server-side rate-limited so
@@ -108,45 +124,48 @@ export function ProactiveWorkspaceSection({ children, className }: ProactiveWork
 
 	return (
 		<section
-			aria-label="Proactive workspace"
+			aria-label="AI Cockpit"
 			className={cn(
 				"flex flex-col gap-3 rounded-[var(--radius)] border bg-card/50 p-3",
 				className,
 			)}
 		>
 			<header className="flex items-center justify-between gap-2">
+				{/* The whole left side of the header is the collapse
+				    toggle. `flex-1` so the hit area covers everything up
+				    to the refresh button on the right. `cursor-pointer`
+				    plus the explicit `aria-expanded` keep the affordance
+				    visible to both sighted users and screen readers. The
+				    chevron icon was removed per user request — the
+				    cursor + the body's collapse animation are signal
+				    enough. */}
 				<button
 					type="button"
 					onClick={() =>
 						void setCollapsed({ section: "proactive", collapsed: !collapsed })
 					}
-					className="flex items-center gap-2 text-start"
+					className="flex flex-1 cursor-pointer items-center gap-2 text-start"
 					aria-expanded={!collapsed}
-					aria-controls="proactive-workspace-body"
+					aria-controls="ai-cockpit-body"
 				>
 					<span
 						aria-hidden
 						className="flex size-7 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
 					>
-						<Sparkles className="size-4" />
+						<AIMark size="size-4" tone="brand" aria-hidden="true" />
 					</span>
 					<div className="flex flex-col">
-						<h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+						<h2 className="text-sm font-semibold tracking-wide text-foreground">
 							{TITLE}
 						</h2>
 						<p className="text-xs text-muted-foreground">{SUBTITLE}</p>
 					</div>
-					{collapsed ? (
-						<ChevronRight
-							className="ms-1 size-4 text-muted-foreground rtl:rotate-180"
-							aria-hidden
-						/>
-					) : (
-						<ChevronDown className="ms-1 size-4 text-muted-foreground" aria-hidden />
-					)}
 				</button>
 				{/* Refresh control — always visible on the right side per
-				    user spec (2026-05-27). One click rebuilds Pulse + Brief. */}
+				    user spec (2026-05-27). One click rebuilds Pulse +
+				    Brief. `onClick` calls `event.stopPropagation()` so a
+				    click on the refresh button doesn't bubble up and
+				    accidentally toggle the section's collapse state. */}
 				<div className="flex items-center gap-1">
 					{(canRefreshPulse || canRefreshBriefing) && (
 						<Tooltip>
@@ -156,7 +175,10 @@ export function ProactiveWorkspaceSection({ children, className }: ProactiveWork
 									variant="ghost"
 									size="icon"
 									className="size-8 text-muted-foreground hover:text-foreground"
-									onClick={handleRefresh}
+									onClick={(event) => {
+										event.stopPropagation();
+										void handleRefresh();
+									}}
 									disabled={refreshing || !orgId}
 									aria-label="Refresh AI pulse and morning briefing"
 								>
@@ -173,10 +195,7 @@ export function ProactiveWorkspaceSection({ children, className }: ProactiveWork
 					)}
 				</div>
 			</header>
-			<div
-				id="proactive-workspace-body"
-				className={cn("flex flex-col gap-3", collapsed && "hidden")}
-			>
+			<div id="ai-cockpit-body" className={cn("flex flex-col gap-3", collapsed && "hidden")}>
 				{children}
 			</div>
 		</section>

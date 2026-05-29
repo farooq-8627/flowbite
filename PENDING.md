@@ -10,109 +10,28 @@
 
 ---
 
-# 🔴 P0 — Must ship before public launch
+# 🔴 P0 — DASHBOARD-V2-PLAN.md (active sprint, opened 2026-05-28)
 
-## P0.1 — LemonSqueezy upgrade flow (the billing wall)
+> **Source of truth.** `DASHBOARD-V2-PLAN.md` carries the full multi-stage scope (production references, verified findings, locked decisions, per-stage acceptance criteria). The rows below are pointers — they exist so anyone scanning `PENDING.md` sees the active dashboard work without flipping files. **Stage 0 (file-attach silent-drop hotfix), Stage 0.5 (auto-approve commit shim), Stage 1 (surface polish — AI Cockpit rename, Sparkles unification, weekly Generate-now, drop duplicated AI briefing KPI, currency-agnostic icon), Stage 2 (Sales Pipeline Panel rewrite — full-width tabbed Summary/Velocity/Forecast surface with HubSpot weighted forecast + 12-week sparkline + coverage-ratio dial; legacy `PipelineCard` + `PipelineVelocityCard` retired), Stage 3 (LiveTasksWidget + RecentActivityWidget — `<TasksDataTable>` extracted with a compact prop; legacy `<TasksCard>` 8-row capped list and `<TimelineActivityWidget>` retired from the dashboard renderer), Stage 4 (per-industry `dashboardLayout` slot — additive optional + new `<DashboardLayoutRenderer>` + 3 new analytical widgets `<InvoiceAgingWidget>` / `<PropertyFunnelWidget>` / `<ARRCohortWidget>` + 4 templates flipped: b2b-saas, freelancer, real-estate-global, productivity), Stage 6 (user-requested batch — bulk ops made free, generic `bulk_create_entities` + `bulk_create_tasks` with one approval card, approval cards render the real `<EntityCard>` via `EntityPreviewCard`, Today's-focus folded into the metric strip + `TodaySummaryCard` retired, motivating `DashboardEmptyState` on the pipeline panel, and a system-prompt explicitness block for limitations + completion summaries)**, and **Stage 7 (revenue hero + always-on pipeline + AI empty states + configurable activity/messages limits — `<RevenueEstimateHero>` consolidates the 4 deal KPI tiles into one bold weighted-revenue headline; `<SalesPipelinePanel>` renders unconditionally for every workspace via the panel's own empty state — gate dropped; `<AIPulseRibbon>` stuck-on-spinner bug fixed + strong "Your AI co-pilot is ready" empty card; `<DailyBriefingCard>` + `<WeeklyInsightCard>` empty states upgraded to value-prop + 3 bullets; `getDashboardStats` accepts `recentActivityLimit` (clamped [1,50], default 10) + `<RecentActivityWidget>` honours a `limit` prop)** all shipped — see `SHIPPED.md`.
+>
+> **Locked decisions** (per user, 2026-05-28; full table in `DASHBOARD-V2-PLAN.md §5`):
+> 1. Section rename = **AI Cockpit** ✅ shipped Stage 1.
+> 2. Auto-approve fix shape = **Stage 0 + Stage 0.5 both** ✅ shipped (Stage 0 + Stage 0.5).
+> 3. Forecast category thresholds = **HubSpot defaults** (Commit ≥75 / Best Case 50–74 / Pipeline <50). ✅ shipped Stage 2.
+> 4. Coverage-ratio bands = **industry-tunable per template** (default 3:1 / 2:1; per-template override). ✅ shipped Stage 4 — every layout-opted template (`b2b-saas {3,2}`, `freelancer {2,1}`, `real-estate-global {5,3}`) sets its own band; the default kicks in for templates that don't.
+> 5. Stage 4 first three industries = **Real-estate, Freelancer, B2B SaaS**. ✅ shipped Stage 4 (productivity also flipped as the v1 plan's 4th).
+> 6. Stage 5 scope = **Ship all 5 capabilities** (`render_widget`, `annotate_widget`, `revise_forecast`, anomaly detection, predictive deal scoring). ✅ shipped Stage 5 — render_widget, annotate_widget, score_deal, explain_deal_score, list_anomalies. revise_forecast deferred per scope realism (covered by analyze_metric in the analytics layer).
+> 7. Stage 0 → 1 timing = **Pause after each stage** — wait for explicit user go-ahead before kicking the next.
 
-**Status:** ⬜ Pending — final 1 / 100 production-readiness point.
-**Owner:** `convex/billing/`, `core/platform/settings/components/groups/billing/`
-**Why this is P0:** the AI quota gate already hard-blocks Free tier (`convex/ai/orchestrator/quotaGate.ts`); what's missing is the upgrade UX. Without it, paying users can't actually upgrade — they'd hit the gate, see "BYOK or upgrade", and have nowhere to click.
+## P0-DV2.6 — Widget editor (deferred)
 
-### What needs to ship
-
-1. **LemonSqueezy webhook smoke test.** `convex/billing/webhooks.ts` already accepts events; verify against LemonSqueezy's test mode. Run the full lifecycle in a dev account: `subscription_created` → `subscription_updated` → `subscription_payment_failed` → `subscription_payment_recovered` → `subscription_cancelled`.
-
-2. **Production signing-secret rotation playbook.** Document at `docs/runbooks/lemonsqueezy-rotation.md`. Current secret is `LEMON_SQUEEZY_SIGNING_SECRET`. Rotation requires:
-   - Push new env var to Convex.
-   - Update LemonSqueezy webhook config.
-   - Verify next inbound event arrives with new signature.
-
-3. **Per-variant feature-gate copy.** The pricing card in `core/platform/settings/components/groups/billing/PricingCard.tsx` lists tiers but the bullets are generic. Map each variant id (in `_platform/limits.ts`) to the specific copy: token quota, premium tools, support level.
-
-4. **Trial flow + grace period.** `subscription_status: "on_trial"` is in the schema enum but unused. Add:
-   - UI banner ("X days of trial left").
-   - Quota-gate handling that treats trial = active.
-   - 3-day grace period for `subscription_status: "past_due"` before falling back to free-tier behaviour.
-
-### Files involved
-- `convex/billing/webhooks.ts` — webhook lifecycle handlers
-- `convex/_platform/limits.ts` — `getPlanLimits()` may need trial-aware variant
-- `convex/ai/orchestrator/quotaGate.ts` — extend to honour `on_trial` + 3-day past_due grace
-- `core/platform/settings/components/groups/billing/PricingCard.tsx` — per-variant copy
-- `core/platform/settings/components/groups/billing/TrialBanner.tsx` — NEW (small banner)
-- `docs/runbooks/lemonsqueezy-rotation.md` — NEW
-
-### Verification
-- Test mode subscription transitions flow through correctly + UI reflects state within 5 s.
-- Manual: free user clicks "Upgrade to Starter" → completes checkout in LemonSqueezy test mode → returns to app → quota gate now allows platform models.
-- `convex/billing/webhooks.test.ts` covers signature verification + state transitions (currently ~6 tests; add trial + past_due cases).
-
-**Effort:** ~3 days.
+Attio-style report builder. Out of scope for this plan; will be its own card under `Future-Enhancements.md §B` when prioritised.
 
 ---
 
-## P0.2 — Re-enable testing-phase restrictions before launch
+# ✅ P0 — All previous P0 wave items shipped 2026-05-27
 
-These 5 guardrails were intentionally relaxed during testing. They MUST be re-enabled before the platform takes paying users on the Free plan, otherwise LLM cost blows the budget.
-
-### P0.2.A — Plan-tier gating in `getModel()`
-
-**What's disabled:** any user can hit `claude-opus-4` / `gpt-4o` / `o3-mini` against the platform key regardless of plan.
-**Risk:** uncapped Free-tier access on premium models would burn the LLM budget at any meaningful signup volume.
-**Files:** `convex/ai/modelRegistry.ts` (`PLAN_ALLOWED_TIERS`, `getAllowedModelsForPlan`), `convex/ai/models.ts` (`getModel()` plan-tier downgrade block).
-
-**How to re-enable:**
-1. Restore the `allowedTiers` check in `convex/ai/models.ts` `getModel()` (the block that calls `pickAnyConfiguredModel()` when `!allowedTiers.has(info.tier)`).
-2. Surface a soft-fail message when a user picks a model their plan can't run: "Your plan supports up to Sonnet 4.5; upgrading to Pro unlocks Opus 4."
-3. Gate the model picker in `core/ai/components/ChatModelPicker.tsx` so disallowed entries either render greyed out with an upgrade CTA, OR are filtered out entirely (UX decision pending).
-4. `useModelPreference` should respect `allowedTiers` again, derived from `useCurrentOrg().org.plan` + `MODEL_REGISTRY[modelKey].tier`.
-5. For BYOK users, KEEP the bypass: if `usageMode === "byok"`, plan tier doesn't apply (their key, their cost).
-
-**Verification:** new unit test — signed in on `plan: "free"`, calling `processChat.run` with `modelKey: "claude-opus-4"` should silently downgrade to a small-tier model with `usageMode: "platform"`.
-
-### P0.2.B — Per-tool `requiredCapability: "premium"` gate
-
-**What's disabled:** small models (Haiku, Llama-3.3, Kimi, gpt-4o-mini) can call high-stakes tools (`bulk_update`, `bulk_close_deals`, `update_org_settings`, `rename_entity_labels`, `invite_member`, `remove_member`, `create_pipeline`, `apply_template`, `create_field`).
-**Risk:** small models hallucinate destructive args (e.g. `bulk_close_deals` with no filter → closes everything). Two-step approval still saves us, but the premium gate is a second layer of defence.
-**Files:** `convex/ai/toolRegistry.ts` (`getToolsForRequest` capability filter), `convex/ai/tools/layers/{bulk,settings,members,pipelines,templates,fields}.ts`.
-
-**How to re-enable:**
-1. Restore the `if (def.requiredCapability === "premium" && modelTier === "small") continue;` filter in `getToolsForRequest()` in `convex/ai/toolRegistry.ts`.
-2. Confirm runbooks block respects the same filter.
-3. Update the "Model Capability Notice" injected by `systemPrompt.ts` for `modelTier === "small"`.
-
-**Verification:**
-- Unit: with `modelTier: "small"`, `getToolsForRequest` does NOT include `bulk_update`, `update_org_settings`, etc.
-- Integration: with `modelKey: "claude-haiku-3-5"`, asking "delete all my leads" yields a refusal/explanation, not a tool call.
-
-### P0.2.C — `stepCountIs` cap (raised to 30 for all models during testing)
-
-**What's relaxed:** every model has the same 30-step recovery budget. The original spec proposed tier-aware caps `(small=12, standard=20, premium=30)`.
-**Risk:** pathological agent loop on a small model can run for 30 tool steps before bailing.
-**Files:** `convex/ai/orchestrator/streamLoop.ts:81`.
-
-**How to re-enable:**
-```ts
-const STEP_CAP_BY_TIER = { small: 12, standard: 20, premium: 30 } as const;
-const cap = STEP_CAP_BY_TIER[modelResult.tier];
-streamText({ ..., stopWhen: stepCountIs(cap) });
-```
-
-**Verification:** small-tier model hitting an infinite tool loop terminates at 12 steps. Telemetry: `aiMessages.usage.totalSteps` p99 stays under cap.
-
-### P0.2.D — `systemPrompt.ts` "Model Capability Notice" alignment
-
-**What's stale:** the prompt still claims the small-model gate is on. Since P0.2.B is off, the claim is technically inaccurate.
-**Decision:** when P0.2.B is reinstated, the notice and the gate align automatically.
-
-### P0.2.E — `enforcePlanLimit` quota tightening
-
-**What's loose:** Free plan caps deliberately generous for testing (`maxLeads`, `maxDeals`, `maxCustomFields` in `convex/_platform/limits.ts`).
-**Files:** `convex/_shared/enforcePlanLimit.ts`, `convex/_platform/limits.ts`.
-
-**How to re-enable:** re-tune `Free` limits (e.g. `maxLeads: 100`, `maxDeals: 50`, `maxCustomFields: 5`). Ship the AI-message credit pool ($199 = 50,000 credits) per the pricing ladder.
-
-**Verification:** creating 101st lead on Free plan throws `PLAN_LIMIT_REACHED`. Dashboard surfaces a "X% of plan used" indicator.
+P0.1 (LemonSqueezy upgrade flow) and P0.2 (re-enable all 5 testing-phase restrictions) are LIVE end-to-end: trial + 3-day past_due grace in `quotaGate.ts`; per-variant `PricingCard.tsx` + `TrialBanner.tsx` reading new public `_platform.tiers.queries.listPublicTiers`; webhook lifecycle smoke-tested (12 contract tests in `convex/billing-webhooks.test.ts`); production runbook at `docs/runbooks/lemonsqueezy-rotation.md`. Plan-tier gate restored in `getModel()` with BYOK bypass; premium tool gate restored in `toolRegistry.isToolExposed`; tier-aware `STEP_CAP_BY_TIER` in `streamLoop.ts`; `systemPrompt.ts` capability notice rewritten to match the now-enforced gate; `PlanLimits` extended with `maxLeads` + `aiMessageCreditsPerMonth`, Free tightened to 100/50/5/0, Pro 50,000-credit pool. Owner panel `TiersView` is the SSOT for every plan-config knob (displayName, description, features, highlight, prices, trial days, LemonSqueezy variant ids monthly/yearly, all 8 limits) — edits propagate to runtime gates AND the same `PricingCard` the marketing /pricing page will consume. Idempotent migration `_migrations/2026_05_27_seedPlanLimitsExtensions.ts` backfills the new fields on existing rows. `variantToPlan()` rewritten DB-first with env-var fallback. See `SHIPPED.md` for the full row.
 
 ---
 

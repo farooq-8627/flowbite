@@ -58,11 +58,18 @@ const _anyArgs = (a: Record<string, unknown>) => a as any;
  *      (`gemini-2.5-flash-lite`, `gpt-4o-mini`) so deployments missing
  *      the briefing-model provider can still produce a briefing.
  *
+/**
+ * Shared model resolver for AI features that follow the briefing-style
+ * preference: cheap small model first, fall back to platform alternatives.
+ * Exported so other Stage 5+ "ask the AI a small thing" actions
+ * (`explainDealScore`, etc.) reuse the same BYOK → platform fallback
+ * order without duplicating the resolver.
+ *
  * Returns the bound LanguageModel + the modelKey (for the audit row's
  * `model` field). Returns null when NO provider can be resolved — the
  * caller writes an error briefing in that case.
  */
-async function pickBriefingModel(
+export async function pickBriefingModel(
 	ctx: ActionCtx,
 	orgId: Id<"orgs">,
 	userId: Id<"users">,

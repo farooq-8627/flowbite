@@ -39,141 +39,37 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 
 # A. Currently-disabled restrictions (re-enable before public launch)
 
-## A.1 — Plan-tier gating in `getModel()` (model downgrade for free/starter plans)
-
-| Field           | Value                                                                                  |
-|-----------------|----------------------------------------------------------------------------------------|
-| Status          | Disabled (testing phase, 2026-05-23)                                                   |
-| Category        | Model gating / Billing                                                                 |
-| Phase to ship   | Pre-launch (P0.2.A in `PENDING.md`)                                                    |
-| Owners          | `convex/ai/` + `convex/billing/` + `convex/_platform/limits.ts`                        |
-| Risk if skipped | A user on the **Free** plan can hit `claude-opus-4` / `gpt-4o` / `o3-mini` against the platform key, which will burn our LLM budget. We rely on the honour-system + total quota during testing — that is fine for staging but not for public launch. |
-| Files involved  | `convex/ai/modelRegistry.ts` (`PLAN_ALLOWED_TIERS`, `getAllowedModelsForPlan`), `convex/ai/models.ts` (`getModel()` plan-tier downgrade block) |
-
-**Why we deferred.** During testing phase we want every model to behave identically for every signed-in user, so we can A/B model behaviour, exercise tools end-to-end on small models, and unblock developers without standing up plan upgrades.
-
-**Benefits when reinstated.**
-- Cost control. Premium models cost ~50× more per request than small models; uncapped access on the free tier is unsustainable at any meaningful signup volume.
-- Pricing leverage. The "use Opus / GPT-4o" upgrade path is one of the strongest reasons to move users from Free → Platform Solo / Team.
-- Predictable margins. Each plan tier maps to a known cost-per-active-user envelope only when premium models are gated.
-
-**Use cases / who it protects.**
-- Saudi/Dubai RE teams (the launch segment) on the Platform Team plan ($199/mo) — they expect Sonnet/4o by default; they don't care about Opus.
-- Solo / freelance Free users — Haiku / 4o-mini / Llama-3.3 are plenty for the vast majority of their requests.
-
-**Implementation sketch when re-enabling.**
-1. Restore the `allowedTiers` check in `convex/ai/models.ts` `getModel()` (the block that calls `pickAnyConfiguredModel()` when `!allowedTiers.has(info.tier)`).
-2. Surface a soft-fail message when a user picks a model their plan can't run, e.g. "Your plan supports up to Sonnet 4.5; upgrading to Pro unlocks Opus 4."
-3. Gate the model picker in `core/ai/components/ChatModelPicker.tsx` so disallowed entries either render greyed out with an upgrade CTA, OR are filtered out entirely (UX decision pending).
-4. Frontend hook update — `useModelPreference` should respect `allowedTiers` again, derived from `useCurrentOrg().org.plan` + `MODEL_REGISTRY[modelKey].tier`.
-5. For BYOK users, KEEP the bypass: if `usageMode === "byok"`, plan tier doesn't apply (their key, their cost).
-
-**Verification.**
-- New unit test: signed in on `plan: "free"`, calling `processChat.run` with `modelKey: "claude-opus-4"` should silently downgrade to a "small"-tier model with `usageMode: "platform"`.
-- Manual: Free plan user clicks "Opus 4" in picker → sees upgrade CTA, request still goes out on Sonnet/Haiku.
-
----
-
-## A.2 — Per-tool `requiredCapability: "premium"` gate
+## A.6 — Auto-approve `files` (✅ implemented Stage 0.5 of `DASHBOARD-V2-PLAN.md`, 2026-05-28)
 
 | Field           | Value                                                                              |
 |-----------------|------------------------------------------------------------------------------------|
-| Status          | Disabled (testing phase, 2026-05-23)                                               |
-| Category        | Model gating / Tool surface                                                        |
-| Phase to ship   | Pre-launch (P0.2.B in `PENDING.md`)                                                |
-| Owners          | `convex/ai/toolRegistry.ts` + every tool def with `requiredCapability: "premium"`  |
-| Risk if skipped | Small models (Haiku, Llama-3.3, Kimi, OpenRouter free Llama, gpt-4o-mini) get exposed to high-stakes tools (`bulk_update`, `bulk_close_deals`, `update_org_settings`, `rename_entity_labels`, `invite_member`, `remove_member`, `create_pipeline`, `apply_template`, `create_field`). They are MORE LIKELY to call these incorrectly. The two-step confirmation (`twoStep`) still saves us — but premium gating is a second layer of defence. |
-| Files involved  | `convex/ai/toolRegistry.ts` (`getToolsForRequest` capability filter), `convex/ai/tools/layers/{bulk,settings,members,pipelines,templates,fields}.ts` |
+| Status          | ✅ Implemented (Stage 0.5)                                                          |
+| Phase shipped   | Stage 0.5 of `DASHBOARD-V2-PLAN.md`                                                |
+| See             | `SHIPPED.md` "Stages 0.5 + 1 of `DASHBOARD-V2-PLAN.md`"                            |
 
-**Why we deferred.** Same testing rationale as A.1 — we want every developer-grade test ("invite a member to my workspace", "rename the lead label to Customer") to work on the cheapest available platform key.
-
-**Benefits when reinstated.**
-- Reliability. Smaller models hallucinate destructive args (e.g. `bulk_close_deals` with no filter → closes everything). Even with `twoStep`, the user sees a confusing preview screen they didn't ask for.
-- Cost. Bulk tools tend to chain — one `bulk_update` followup often fires a follow-up `add_note` per row. Letting Haiku drive that loop wastes both Haiku and our DB budget.
-- Defence-in-depth. RBAC + premium gate + twoStep + rate limit = 4 layers. Removing any one is OK during testing; shipping with 3 is fine; shipping with 2 is risky.
-
-**Use cases / who it protects.**
-- Admin actions (member invite, settings changes, label renames) feel "wrong" coming from a small model in production — premium routing matches user intuition.
-- Bulk write operations on real-estate workspaces (200 leads, 50 deals) — we want the smartest available agent on those.
-
-**Implementation sketch when re-enabling.**
-1. Restore the `if (def.requiredCapability === "premium" && modelTier === "small") continue;` filter in `getToolsForRequest()` in `convex/ai/toolRegistry.ts`.
-2. Confirm runbooks block respects the same filter (it already calls `getActiveRunbooks` which mirrors `getToolsForRequest`).
-3. Update the "Model Capability Notice" injected by `systemPrompt.ts` for `modelTier === "small"` so the model knows the gate is real.
-
-**Verification.**
-- Unit: with `modelTier: "small"`, `getToolsForRequest` does NOT include `bulk_update`, `update_org_settings`, etc.
-- Integration: with `modelKey: "claude-haiku-3-5"`, asking "delete all my leads" yields a refusal/explanation, not a tool call.
+**Outcome.** `convex/ai/orchestrator/streamLoop.ts:wrapToolsForApprovalSanitisation` now closes the silent-drop class of bug at its source: when `resolveNeedsApproval(...) === false` for a propose-shape result AND a paired `commit_<tool>` is registered AND its zod schema accepts the propose payload's `confirmationPayload.args`, the wrapper looks up the commit via `getRegisteredTool` (same path `resume.ts` uses post-user-approval), parses the args, runs `commit.execute()`, and returns the commit's real summary to the SDK. `convex/_shared/aiApprovals.ts:AUTO_APPROVE_DEFAULTS.files` flipped back to `true`. Architectural deviation from the original plan: kept the auto-commit path as a registry lookup instead of adding a `commitFn?` field to every ToolDef — zero churn for tool authors, single code path with `resume.ts`. Verified by `convex/ai/approvalGate.test.ts` guards 14a / 14b / 14c.
 
 ---
 
-## A.3 — `stepCountIs` cap (raised to 30 for all models during testing)
+## A.7 — Bulk tools exempted from the `requiredCapability: "premium"` model-tier gate (2026-05-29)
 
 | Field           | Value                                                                              |
 |-----------------|------------------------------------------------------------------------------------|
-| Status          | Relaxed (testing phase, 2026-05-23)                                                |
-| Category        | Cost / Reliability                                                                 |
-| Phase to ship   | Pre-launch (P0.2.C in `PENDING.md`)                                                |
-| Owners          | `convex/ai/orchestrator/streamLoop.ts`                                             |
-| Risk if skipped | A pathological agent loop on a small model can run for 30 tool steps before bailing. With `tool-error` recovery + Zod-error reformatting + introspection tools the practical loop length is 3-5, but the worst case is unbounded by tier. |
-| Files involved  | `convex/ai/orchestrator/streamLoop.ts:81`                                          |
+| Status          | Removed (intentional — product decision, NOT a testing-phase deferral)             |
+| Category        | Tool surface / Model gating                                                        |
+| Phase to ship   | Permanent for bulk-CREATE. Re-evaluate bulk-UPDATE/CLOSE gating at launch (see below). |
+| Owners          | `convex/ai/tools/layers/bulk.ts`                                                   |
+| Risk if skipped | Small-tier models can run bulk update/close/create. Blast radius is still bounded by the HARD-LOCKED `bulk` approval category (every batch shows one propose card the user must approve) + per-entity RBAC + per-row rate limits. |
+| Files involved  | `convex/ai/tools/layers/bulk.ts` (`bulk_update_entities`, `bulk_close_deals`, new `bulk_create_entities`); `convex/ai/tools/tasks.ts` (`bulk_create_tasks`) |
 
-**Why we deferred.** The original `stepCountIs(5)` cap caused the user-visible "Empty message" bug. We've raised it to a single value (30) so every model — including smaller ones — has the same recovery budget. The original spec proposed tier-aware caps `(small=12, standard=20, premium=30)`, which we'll restore later.
+**Why we removed it:** the user's core onboarding flow is "let me add/seed all my data at once" instead of one record at a time. Gating bulk behind a premium model tier meant a free/testing org on a small model could not seed test data or do a bulk import — the exact friction that produced the 2026-05-29 "make 10 leads → it made 1 then mis-routed to apply_template" bug. Bulk-CREATE staying free is a deliberate product decision (data onboarding must always work). The two existing A.2-gated bulk tools (`bulk_update_entities`, `bulk_close_deals`) were ungated in the same edit for consistency.
 
-**Benefits when reinstated.**
-- Cost. Each step on Opus 4 costs ~$0.05; capping small models lower means we pay for retries proportionate to the LLM cost.
-- Performance. Lower caps shorten the worst-case latency for misbehaving prompts on small models.
-- Predictability. Per-tier caps give product an SLA: "small model requests resolve in ≤12 steps".
+**Benefits of keeping it removed:** any user, any tier, can onboard/seed/clean data in one approval round. Removes the #1 friction in first-run.
 
-**Implementation sketch when re-enabling.**
-```ts
-// streamLoop.ts
-const STEP_CAP_BY_TIER = { small: 12, standard: 20, premium: 30 } as const;
-const cap = STEP_CAP_BY_TIER[modelResult.tier];
-streamText({ ..., stopWhen: stepCountIs(cap) });
-```
+**Use cases / who it protects:** free-tier + testing orgs seeding sample data; teams importing an existing book of business; the AI's "create N sample deals" empty-state CTA on the pipeline panel.
 
-**Verification.**
-- Unit: small-tier model hitting an infinite tool loop terminates at 12 steps.
-- Telemetry: `aiMessages.usage.totalSteps` percentile-99 stays under cap.
-
----
-
-## A.4 — `systemPrompt.ts` "Model Capability Notice" alignment
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | Kept active — but its claims are not enforced while A.2 is disabled                |
-| Category        | Prompt / Honesty                                                                   |
-| Phase to ship   | Re-align with A.2 — same edit                                                      |
-| Owners          | `convex/ai/systemPrompt.ts`                                                        |
-| Risk if skipped | While A.2 is disabled, the small-model notice tells the model "you cannot use bulk_update" — but the tool registry actually exposes it. The model can call it. Result: confusing for the model + misleading audit logs. |
-| Files involved  | `convex/ai/systemPrompt.ts:148-159`                                                |
-
-**Decision.** When A.2 is reinstated, the notice and the gate align automatically. No separate work needed.
-
----
-
-## A.5 — `enforcePlanLimit` quotas during onboarding & dev
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | Active in code; expansive defaults in `_platform/limits.ts`                        |
-| Category        | Billing / Plan limits                                                              |
-| Phase to ship   | Pre-launch (P0.2.E in `PENDING.md`) — alongside the LemonSqueezy upgrade flow      |
-| Owners          | `convex/_shared/enforcePlanLimit.ts`, `convex/_platform/limits.ts`                 |
-| Risk if skipped | Low for now — limits exist but are generous on Free. Risk grows once paid plans differentiate. |
-| Files involved  | `convex/_platform/limits.ts`                                                       |
-
-**Why we deferred.** Limits exist (`enforcePlanLimit` is wired) but Free plan caps are deliberately loose for testing. Reinstating means tightening the numbers, not re-enabling the function.
-
-**Implementation sketch.**
-- Re-tune `Free` limits in `_platform/limits.ts` (e.g. `maxLeads: 100`, `maxDeals: 50`, `maxCustomFields: 5`).
-- Ship the AI-message credit pool that the audit's pricing ladder ($199 = 50,000 credits) requires.
-
-**Verification.**
-- Unit: creating 101st lead on Free plan throws `PLAN_LIMIT_REACHED` ConvexError.
-- E2E: dashboard surfaces a "X% of plan used" indicator.
+**If bulk-update/close gating must come back** (cost-control on small models only): re-add `requiredCapability: "premium"` to `bulk_update_entities` + `bulk_close_deals` ONLY — keep `bulk_create_entities` + `bulk_create_tasks` free. The `bulk` HARD-LOCKED twoStep category (`convex/_shared/aiApprovals.ts`) already forces an approval card regardless, so the gate is purely a model-tier cost lever, not a safety one.
+**Verification:** `convex/ai/agentScorer.test.ts` exercises the tool layer; a small-tier request now sees the bulk tools. Manual: ask a small-model org "create 5 sample leads" → `bulk_create_entities` propose card appears.
 
 ---
 
@@ -592,6 +488,98 @@ Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now 
 
 ---
 
+## B.32 — Drag-to-reorder for dashboard panels (Stage 5 deferral)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Dashboard UX                                                                       |
+| Phase to ship   | Stage 6 of `DASHBOARD-V2-PLAN.md` (or a focused dashboard-UX sprint)               |
+| Owners          | `core/shell/shell/views/dashboard/`, `convex/users/mutations.ts`                   |
+| Risk if skipped | Low — `Pin to my dashboard` button on AI-rendered cells is the primary write path for v1; users wanting to reorder can use Settings → Dashboard. |
+| Files involved  | `core/shell/shell/views/dashboard/DashboardLayoutRenderer.tsx`, `core/shell/shell/views/dashboard/DashboardHomeView.tsx`, lift `useKanbanItems` from `core/data-display/kanban/` |
+
+**Why we deferred.** Stage 5 ships the AI-write surfaces (5 tools + per-user override + AIPinnedRow + annotation chips) end-to-end. Drag-to-reorder is a focused UI effort — porting the kanban pattern to the dashboard panel grid requires custom drop-target sizing per `span: 1 | 2 | 3` and a new persistence path through `setMyDashboardLayoutOverride`. Out of scope for the same session that landed the underlying schema.
+
+**Benefits when reinstated.**
+- One-handed reordering directly on the dashboard.
+- Removes the round-trip through Settings → Dashboard for personal layout edits.
+- Makes the AI-pinned cells one of two write paths (drag + Pin) with consistent UX.
+
+**Use cases / who it protects.** Power users who want to rearrange their personal layout frequently — sales managers swapping pipeline panel position day-to-day, freelancers re-pinning the invoice aging panel during billing weeks.
+
+**Implementation sketch.**
+1. Lift `useKanbanItems` (RTL-safe + 1-mutation-per-drop per AGENTS.md) from `components/ui/kanban.tsx` into a `useDashboardPanelDrag` hook.
+2. Wrap each panel cell in `DashboardLayoutRenderer` with a drag handle visible on hover.
+3. `onCommit` calls `setMyDashboardLayoutOverride({ orgId, layout: { ...current, panels: reordered } })` exactly once per drop.
+4. Optimistic update: `withOptimisticUpdate` patches the user's preferences cache so the visual order updates instantly.
+
+**Verification.**
+- New e2e test: drag panel A above panel B, refresh page, panel A renders first.
+- Convex test: `setMyDashboardLayoutOverride` rate-limit holds at 120/min/user-org (drag bursts coalesced).
+
+---
+
+## B.33 — Per-deal score-dot UX in the Deals widget (Stage 5 deferral)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Dashboard UX — predictive scoring surface                                          |
+| Phase to ship   | Stage 6 of `DASHBOARD-V2-PLAN.md` or a dedicated AI-surface polish stage           |
+| Owners          | `core/entities/_entities/deals/`, `core/shell/shell/views/dashboard/cards/`        |
+| Risk if skipped | Low — score is fully accessible via the AI tool surface (`score_deal`, `explain_deal_score`); the cron runs daily and the table is populated. |
+| Files involved  | `core/entities/_entities/deals/components/DealCard.tsx`, `core/entities/_entities/deals/views/DealsView.tsx`, new `core/shell/shell/views/dashboard/cards/DealScoreDot.tsx` |
+
+**Why we deferred.** Stage 5 ships the deterministic scoring engine + cron + on-demand AI tool + LLM explainer end-to-end. The frontend dot UX (small coloured circle on each deal row tied to the score 0-100, with a "Why?" popover that calls `explain_deal_score`) is a discrete UI deliverable that benefits from its own design pass — colour scale, popover layout, accessibility (keyboard popover trigger + ARIA live region for the LLM narrative).
+
+**Benefits when reinstated.**
+- Glanceable per-row health signal across kanban + list views.
+- Click → 1 LLM call, narrative inline. Same gate (`ai.briefingRefresh`) the AI tool already enforces.
+- Surfaces the score everywhere deals render — Deals widget, kanban, list, profile drawer.
+
+**Use cases / who it protects.** Sales teams scanning their pipeline daily — "where do I focus today?" answered without opening the AI panel.
+
+**Implementation sketch.**
+1. New `<DealScoreDot dealId={...} />` reads `dealScores.queries.getForDeal` (subscription is free — already cached by `listForOrg`'s batched query).
+2. Colour scale: 80+ green, 60-79 amber, <60 red. Confidence label as the tooltip.
+3. Popover on click: shows component breakdown + "Generate explanation" button → calls a frontend mutation that schedules `explainDealScore.run` and reads back the persisted `dealScores.explanation` row.
+4. Mount in `<DealCard>` next to the deal title + in `DealsListView` as a column.
+
+**Verification.**
+- Frontend test: dot colour responds to score band.
+- Backend test: clicking "Why?" without `ai.briefingRefresh` → permission error surfaced as a friendly toast.
+
+---
+
+## B.34 — `revise_forecast` AI tool (Stage 5 deferral)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | AI tool — analytical                                                               |
+| Phase to ship   | When forecast-revision shows up as a real user pattern; covered for now by `analyze_metric` (Stage 7) |
+| Owners          | `convex/ai/tools/dashboard/`, `convex/aiInsights`                                   |
+| Risk if skipped | Low — `analyze_metric` returns the same shape (forecast narrative + 3-5 findings + action items) and is already in the analytics layer. The "revise" semantics are a v2 nuance. |
+| Files involved  | New `convex/ai/tools/dashboard/reviseForecast.ts`, extend `aiInsights` schema with `forecastSnapshot`. |
+
+**Why we deferred.** Stage 5 plan listed `revise_forecast` as the 3rd of 5 capabilities. Looking at it more carefully during implementation: `analyze_metric` already returns a forecast narrative + persists it to `aiInsights`, and the user-facing affordance ("AI proposes a forecast revision with diff preview") is a UI investment on top of an already-shipped tool. Not enough delta to warrant a 4th twoStep tool until users actually ask for it.
+
+**Benefits when reinstated.**
+- Diff preview ("forecast was $1.4M, AI suggests $1.42M based on these signals") makes the analytical insight actionable.
+- Persists the revised number so the dashboard's Forecast tab can show "AI-revised forecast" alongside the deterministic one.
+
+**Implementation sketch.**
+1. New `revise_forecast` twoStep tool: propose returns the existing forecast snapshot + the revised number + 3-5 supporting findings.
+2. Commit writes a new `aiInsights` row with `kind: "forecastRevision"` + the diff payload.
+3. Forecast tab on `<SalesPipelinePanel>` reads the latest forecastRevision row + renders an "AI revision" badge.
+
+**Verification.**
+- Backend: contract test that the propose payload's commit schema accepts every field.
+- Frontend: Forecast tab badge surfaces only when an unfiltered AI-revision row exists.
+
+---
+
 # C. Audit-flagged but not yet roadmapped
 
 ## C.1 — Tree-shaped conversations (Attio Problem 1)
@@ -721,6 +709,7 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-23 | Cost          | A.3 — `stepCountIs` cap (raised to 30 for all models)           | A       |
 | 2026-05-23 | Prompt        | A.4 — Small-model "Capability Notice" no longer enforced        | A       |
 | 2026-05-23 | Billing       | A.5 — `enforcePlanLimit` defaults loose during testing          | A       |
+| 2026-05-29 | Tool surface  | A.7 — Bulk tools exempted from premium model-tier gate (product decision) | A       |
 | 2026-05-23 | Engagement    | B.1 — Streak widget (deferred from Phase 3A → Phase 4)          | B       |
 | 2026-05-23 | UX            | B.2 — Cmd+K global command palette                              | B       |
 | 2026-05-23 | UX            | B.4 — Markdown chat renderer with Shiki                         | B       |
@@ -746,6 +735,16 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-27 | Data safety   | B.30 — Template versioning + restore-prior-version              | B       |
 | 2026-05-27 | Owner panel   | B.31 — Platform Owner Panel Tier B/C deferrals (10 items)       | B       |
 | 2026-05-27 | API surface   | F.1 — `aiNextActions.reasonCode` literals still `reminder_*` (G10 of P1.6.A — deferred for ABI continuity) | F       |
+| 2026-05-27 | Billing       | A.1 / A.2 / A.3 / A.4 / A.5 — all 5 testing-phase restrictions reinstated + LemonSqueezy upgrade flow shipped (P0.1 + P0.2 wave). See `SHIPPED.md`. | A → ✅ |
+| 2026-05-28 | AI / approval | A.6 — Auto-approve `files` flipped to default-OFF (Stage 0 of `DASHBOARD-V2-PLAN.md`); restore via Stage 0.5 commit-shim. | A       |
+| 2026-05-28 | AI / approval | A.6 — ✅ Implemented Stage 0.5 of `DASHBOARD-V2-PLAN.md` — `wrapToolsForApprovalSanitisation` auto-commit shim restored `AUTO_APPROVE_DEFAULTS.files = true`. See `SHIPPED.md`. | A → ✅ |
+| 2026-05-28 | Dashboard UX  | Stage 1 of `DASHBOARD-V2-PLAN.md` — surface polish (AI Cockpit rename, Sparkles/AIMark unification, weekly Generate-now, drop duplicated AI briefing KPI, currency-agnostic icon). See `SHIPPED.md`. | — |
+| 2026-05-29 | Dashboard UX  | Stage 2 of `DASHBOARD-V2-PLAN.md` — Sales Pipeline Panel rewrite (Summary / Velocity / Forecast tabs replace `PipelineCard` + `PipelineVelocityCard`; HubSpot-weighted forecast + 12-week sparkline + coverage-ratio dial; idempotent migration renames `pipeline.velocity` → `pipeline.salesPanel` across orgs + 9 templates). See `SHIPPED.md`. | — |
+| 2026-05-29 | Process       | AGENTS.md RULE 5 added — Convex MCP tools + `npx convex run` hang in this agent runtime; agent emits commands for the user to run locally. | — |
+| 2026-05-29 | Dashboard UX  | Stage 5 of `DASHBOARD-V2-PLAN.md` — AI writes into the UI (5 AI tools + per-user dashboard layout override + 3 new tables + 3 crons + AIPinnedRow + annotation chips). See `SHIPPED.md`. | — |
+| 2026-05-29 | Dashboard UX  | B.32 — Drag-to-reorder for dashboard panels (Stage 5 deferral; `Pin to my dashboard` button covers the AI-write case for v1). | B |
+| 2026-05-29 | Dashboard UX  | B.33 — Per-deal score-dot UX in the Deals widget (Stage 5 deferral; score still accessible via `score_deal` + `explain_deal_score` AI tools). | B |
+| 2026-05-29 | AI tool       | B.34 — `revise_forecast` AI tool deferred (covered by `analyze_metric` in the analytics layer until users explicitly ask for the diff-preview pattern). | B |
 
 ---
 

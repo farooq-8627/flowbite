@@ -21,33 +21,51 @@
  * Messages, Activity, Calendar, Today's focus) is unchanged but each
  * cell is gated on `isEnabled(metricKey)` so industries can opt out of
  * sections (productivity hides Pipeline; sales-only hides Calendar).
+ *
+ * Stage 5 of /DASHBOARD-V2-PLAN.md (2026-05-29) — three-tier dashboard
+ * layout resolution and AI dashboard surfaces:
+ *   1. `user.preferences.dashboardLayoutOverride.layout` (per-user, scoped
+ *      to active org) wins when set.
+ *   2. `org.settings.dashboardLayout` (org default) is the fallback.
+ *   3. Legacy fixed grid below.
+ *
+ * Plus: <AIPinnedRow> renders ephemeral AI-pinned cells above the
+ * regular layout. <DashboardAnnotationChips> in AI Cockpit surfaces
+ * unanchored anomaly chips. Reset to Org Default button shows when
+ * the user has a per-user override.
  */
 
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
+import { RotateCcw } from "lucide-react";
 import { useMemo } from "react";
+import { Button } from "@/components/ui/button";
 import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
+import { resolveActivityRowLimit } from "@/convex/_shared/dashboardDensity";
+import type { WidgetKey } from "@/convex/_shared/widgetRegistry";
 import { AISuggestionsPanel } from "@/core/ai/components/AISuggestionsPanel";
 import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
-import { TimelineActivityWidget } from "@/core/comms/timeline/widgets/TimelineActivityWidget";
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
 import { useCurrentOrg, useMe } from "@/core/shell/shared/hooks/useCurrentOrg";
 import {
+	AICockpitSection,
+	AIPinnedRow,
 	AIPulseRibbon,
 	AIQuickComposerCard,
 	DailyBriefingCard,
+	DashboardAnnotationChips,
+	LiveTasksWidget,
 	MetricStrip,
 	MockDataBanner,
-	PipelineCard,
-	PipelineVelocityCard,
-	ProactiveWorkspaceSection,
-	TasksCard,
-	TodaySummaryCard,
+	RecentActivityWidget,
+	RevenueEstimateHero,
+	SalesPipelinePanel,
 	WeeklyInsightCard,
 } from "./cards";
-import { resolveWidgets } from "./cards/WidgetRegistry";
+import { resolveCanonicalKpiStrip } from "./cards/WidgetRegistry";
+import { DashboardLayoutRenderer } from "./DashboardLayoutRenderer";
 
 const DASHBOARD_TOUR_STEPS: TourStep[] = [
 	{
@@ -58,6 +76,29 @@ const DASHBOARD_TOUR_STEPS: TourStep[] = [
 	},
 ];
 
+/**
+ * Stage 7 of /DASHBOARD-V2-PLAN.md (2026-05-29) — single source of
+ * truth for the dashboard's "how many rows" caps. The user explicitly
+ * asked for these to be configurable (2026-05-29: "Why they are not
+ * updated to take specific no. of items instead of 10"). The values
+ * still flow through:
+ *
+ *   - `getDashboardStats({ recentActivityLimit })` (clamped to [1, 50])
+ *   - `<RecentActivityWidget limit>` (defensive slice)
+ *   - `<MessagesPreviewWidget limit>` (passed to `useRecentMessages`)
+ *
+ * 2026-05-30 — promoted from a hardcoded constant to a per-user
+ * appearance setting (`users.preferences.dashboardActivityRowLimit`).
+ * `useMe()` is already loaded one line below for the layout-override
+ * resolution — we reuse the same subscription so adding the setting
+ * costs 0 extra Convex calls. Falls back to `6` (the historic default)
+ * for users who haven't touched the slider in
+ * Settings → Appearance → Dashboard density.
+ *
+ * Bounds + clamp live in `convex/_shared/dashboardDensity.ts` (SSOT
+ * consumed by the server clamp + this read).
+ */
+
 interface DashboardHomeViewProps {
 	orgSlug: string;
 }
@@ -65,15 +106,48 @@ interface DashboardHomeViewProps {
 export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 	const user = useMe();
 	const { fullOrgEntry: currentOrg } = useCurrentOrg();
+	// 2026-05-30 — per-user dashboard density. Falls back to 6 (the
+	// historic constant) when the slot is undefined. Resolved BEFORE
+	// the `getDashboardStats` query so the server fetch already honours
+	// the user's preferred row count (no over-fetch then re-slice).
+	const activityRowLimit = resolveActivityRowLimit(user?.preferences?.dashboardActivityRowLimit);
 	const stats = useQuery(
 		api.orgs.queries.getDashboardStats,
-		currentOrg ? { orgId: currentOrg.org._id } : "skip",
+		currentOrg
+			? {
+					orgId: currentOrg.org._id,
+					recentActivityLimit: activityRowLimit,
+				}
+			: "skip",
 	);
 
 	const settings = currentOrg?.org.settings;
 	const dashboardMetrics = settings?.dashboardMetrics as string[] | undefined;
+	const orgDashboardLayout = settings?.dashboardLayout as unknown;
+	// Stage 5 — per-user dashboard layout override resolution. The override
+	// only applies when its `orgId` matches the active org so a stale
+	// pointer from a previous workspace doesn't leak across switches.
+	const myOverrideRaw = user?.preferences?.dashboardLayoutOverride;
+	const myOverride =
+		myOverrideRaw && currentOrg && myOverrideRaw.orgId === currentOrg.org._id
+			? myOverrideRaw
+			: undefined;
+	// 3-tier resolution: per-user override → org default → legacy fixed grid.
+	const dashboardLayout = myOverride?.layout ?? orgDashboardLayout;
+	const clearOverride = useMutation(api.users.mutations.clearMyDashboardLayoutOverride);
 
-	const widgets = useMemo(() => resolveWidgets(dashboardMetrics), [dashboardMetrics]);
+	const widgets = useMemo(
+		// 2026-05-30 — KPI strip locked to the canonical 4-card quartet
+		// (Pipeline value · Win rate · Due today · Open leads) per the
+		// dashboard refinement spec. Industries no longer drive the
+		// strip — every workspace renders the same headline KPIs under
+		// the revenue hero. `dashboardMetrics` is still honoured by
+		// section-card gating elsewhere in this file (`isEnabled(key)`)
+		// so templates can still opt out of cards like Week-ahead /
+		// Calendar / Tasks; the strip itself is a fixed shelf now.
+		() => resolveCanonicalKpiStrip(),
+		[],
+	);
 
 	// Each widget key drives whether its companion card renders. The
 	// strip itself uses the widget specs; the larger cards opt-in via
@@ -84,29 +158,52 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 	}, [dashboardMetrics]);
 	const isEnabled = (key: string) => enabledMetrics === null || enabledMetrics.has(key);
 
-	const pipelineStats = useMemo(
-		() =>
-			stats
-				? {
-						dealCount: stats.dealCount,
-						pipelineValue: stats.pipelineValue,
-						dealsWon: stats.dealsWon,
-						dealsLost: stats.dealsLost,
-						currency: stats.currency,
-					}
-				: null,
-		[stats],
-	);
-
 	if (!currentOrg || !stats || user === undefined) {
 		return null;
 	}
 
 	const orgId = currentOrg.org._id;
 
+	// Stage 5 — pinned-cell render callback. Defined here so the same
+	// renderWidget switch the canonical layout uses can dispatch
+	// AI-pinned widgets identically (avoids divergence).
+	const renderPinnedWidget = (key: WidgetKey): React.ReactNode => {
+		switch (key) {
+			case "tasks.list":
+			case "tasks.dueToday":
+				return <LiveTasksWidget orgId={orgId} orgSlug={orgSlug} />;
+			case "messages.recent":
+				return (
+					<MessagesPreviewWidget
+						orgId={orgId}
+						orgSlug={orgSlug}
+						limit={activityRowLimit}
+						className="h-full"
+					/>
+				);
+			case "activity.recent":
+				return (
+					<RecentActivityWidget
+						activity={stats.recentActivity}
+						orgSlug={orgSlug}
+						limit={activityRowLimit}
+						className="h-full"
+					/>
+				);
+			case "calendar.weekAhead":
+				return <WeekAheadWidget orgId={orgId} orgSlug={orgSlug} className="h-full" />;
+			case "calendar.mini":
+				return <MiniCalendarWidget orgSlug={orgSlug} className="h-full" />;
+			case "pipeline.salesPanel":
+				return <SalesPipelinePanel orgId={orgId} orgSlug={orgSlug} className="h-full" />;
+			default:
+				return null;
+		}
+	};
+
 	return (
-		<div className="h-full overflow-y-auto p-4 md:p-6">
-			<div className="grid gap-4">
+		<div className="h-full overflow-y-auto overflow-x-hidden py-2 md:p-6">
+			<div className="grid gap-4 min-w-0">
 				{/* Mock-data banner — only renders when seeded + not dismissed. */}
 				<MockDataBanner
 					orgId={orgId}
@@ -117,12 +214,18 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				{/* P1.14 — Proactive AI suggestions. Pure heuristic, no model call.
 				    Hidden when there are zero suggestions (no panel = no noise).
 
-				    Stage 3-A.5 — wrapped in ProactiveWorkspaceSection so the AI
-				    cluster reads as one logical surface ("Proactive workspace —
-				    what to do next") with a per-user collapse toggle persisted
-				    in `users.preferences.dashboardSectionsCollapsed.proactive`. */}
-				<ProactiveWorkspaceSection>
+				    Stage 3-A.5 — wrapped in AICockpitSection (renamed from
+				    ProactiveWorkspaceSection in Stage 1 of DASHBOARD-V2-PLAN.md,
+				    2026-05-28) so the AI cluster reads as one logical surface
+				    ("AI Cockpit — your workspace, on autopilot") with a
+				    per-user collapse toggle persisted in
+				    `users.preferences.dashboardSectionsCollapsed.proactive`. */}
+				<AICockpitSection>
 					<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
+
+					{/* Stage 5 of DASHBOARD-V2-PLAN.md — unanchored anomaly chips +
+					    AI-tool annotations surface here above the AI Pulse ribbon. */}
+					<DashboardAnnotationChips orgId={orgId} widgetKey="" limit={5} />
 
 					{/* Stage 5 — AI Pulse Ribbon. Top-3 highest-value suggestions,
 					    dismissible per-user, rendered ABOVE the metric strip when
@@ -141,87 +244,170 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 
 					{/* AI Morning Briefing — Sprint 5 daily + weekly cards.
 					    Daily on the left (per-user), Weekly on the right (org-wide).
-					    Both visible only when the template opted in via `ai.morningBriefing`. */}
+					    Both visible only when the template opted in via `ai.morningBriefing`.
+					    Stage 1 of DASHBOARD-V2-PLAN.md (2026-05-28): `auto-rows-fr`
+					    matches sibling card heights so the trimmed daily empty
+					    state stays visually parallel with the weekly card next
+					    to it. */}
 					{isEnabled("ai.morningBriefing") && (
-						<div className="grid gap-4 lg:grid-cols-2">
+						<div className="grid gap-4 lg:grid-cols-2 lg:auto-rows-fr">
 							<DailyBriefingCard orgId={orgId} orgSlug={orgSlug} />
 							<WeeklyInsightCard orgId={orgId} />
 						</div>
 					)}
-				</ProactiveWorkspaceSection>
+				</AICockpitSection>
 
-				{/* Row 1 — Registry-driven metric strip */}
-				<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />
+				{/* Stage 5 of /DASHBOARD-V2-PLAN.md (2026-05-29) — AI-Pinned row
+				    sits above the regular dashboard layout. Renders any
+				    `ephemeralDashboardCells` rows the AI tool `render_widget`
+				    has pinned for THIS user (24h TTL, per-user only). Silent
+				    when there are no cells. */}
+				<AIPinnedRow orgId={orgId} orgSlug={orgSlug} renderWidget={renderPinnedWidget} />
 
-				{/* Row 2 — Tasks + Pipeline.
+				{/* Stage 5 — "Reset to org default" control. Visible only when
+				    the user has an active per-user layout override. Clears
+				    the slot so the dashboard falls back to the org default. */}
+				{myOverride && (
+					<div className="flex items-center justify-end">
+						<Button
+							type="button"
+							variant="ghost"
+							size="sm"
+							className="text-xs text-muted-foreground"
+							onClick={() => {
+								void clearOverride({ orgId });
+							}}
+						>
+							<RotateCcw className="h-3.5 w-3.5 me-1.5" aria-hidden="true" />
+							Reset to org default
+						</Button>
+					</div>
+				)}
+
+				{/* Stage 4 of /DASHBOARD-V2-PLAN.md (2026-05-29) — when the
+				    template seeded an `org.settings.dashboardLayout` blob OR
+				    the user has set a per-user override, the layout-aware
+				    renderer takes over below the AI Cockpit:
+				    hero (full-width) → KPI strip (from `layout.metrics` ?? `dashboardMetrics`) →
+				    panel grid with per-widget `span: 1 | 2 | 3`. The legacy
+				    fixed-grid path (Row 1 → Row 5) below STILL ships for
+				    every workspace whose template hasn't opted into a
+				    layout, preserving full backwards-compat. */}
+				{dashboardLayout ? (
+					<DashboardLayoutRenderer
+						orgId={orgId}
+						orgSlug={orgSlug}
+						stats={stats}
+						layout={dashboardLayout}
+						fallbackMetricKeys={dashboardMetrics}
+					/>
+				) : (
+					<>
+						{/* Stage 7 of /DASHBOARD-V2-PLAN.md (2026-05-29) —
+				    Single bold revenue estimate hero ABOVE the metric
+				    strip. The hero shows the headline forecast number;
+				    2026-05-30 the four deal-related KPI tiles
+				    (Open Deals / Pipeline Value / Deals Won / Deals
+				    Lost) were RESTORED in the strip below to give the
+				    user the per-status breakdown at a glance — the
+				    user explicitly asked for "at least 4 cards with
+				    the numbers big". The hero handles its own empty
+				    state (CTA to add a deal / set up a pipeline) so it
+				    renders unconditionally. */}
+						<RevenueEstimateHero orgId={orgId} orgSlug={orgSlug} />
+
+						{/* Row 1 — Registry-driven 4-tile KPI strip. */}
+						{widgets.length > 0 && (
+							<MetricStrip stats={stats} widgets={widgets} orgSlug={orgSlug} />
+						)}
+
+						{/* Stage 7 (2026-05-29) — Sales Pipeline Panel
+				    promoted to render BEFORE tasks for every org with
+				    deal pipelines, regardless of whether the
+				    template's `dashboardMetrics` array still carries
+				    the legacy `pipeline.velocity` key (some workspaces
+				    were seeded before the rename migration ran). The
+				    panel handles its own empty state — it shows a
+				    motivating "Set up your sales pipeline" CTA when
+				    the org has zero deal pipelines, so rendering it
+				    unconditionally never produces a blank card.
+
+				    The previous gate
+				    `isEnabled("pipeline.salesPanel")` was dropped:
+				    "industry has pipelines → show the panel" is the
+				    user's explicit ask (2026-05-29) and the panel's
+				    self-empty-state subsumes the old binary visibility
+				    decision. */}
+						<SalesPipelinePanel orgId={orgId} orgSlug={orgSlug} />
+
+						{/* Row 2 — Recent messages + Recent activity (50/50).
+
+				    Stage 3 of /DASHBOARD-V2-PLAN.md (2026-05-29) —
+				    <TimelineActivityWidget> swapped for
+				    <RecentActivityWidget>, the Orbitly recent-sales-shape
+				    card. Reads from the already-loaded
+				    `stats.recentActivity` payload (no extra subscription)
+				    and renders avatar + actor name + description +
+				    timestamp per row. Members without
+				    `activityLogs.viewOrg` still see this widget — the
+				    payload comes through `getDashboardStats` which is open
+				    to every member. */}
+						<div className="grid gap-4 lg:grid-cols-2">
+							{isEnabled("messages.recent") && (
+								<MessagesPreviewWidget
+									orgId={orgId}
+									orgSlug={orgSlug}
+									limit={activityRowLimit}
+									className="h-full"
+								/>
+							)}
+							{isEnabled("activity.recent") && (
+								<RecentActivityWidget
+									activity={stats.recentActivity}
+									orgSlug={orgSlug}
+									limit={activityRowLimit}
+									className="h-full"
+								/>
+							)}
+						</div>
+
+						{/* Row 3 — Week ahead (full-width compact strip).
+				    2026-05-30 — `min-h` on each cell removed so the row
+				    collapses to its natural height instead of stretching
+				    to match an `auto-rows-fr` sibling. */}
+						{isEnabled("calendar.weekAhead") && (
+							<WeekAheadWidget orgId={orgId} orgSlug={orgSlug} />
+						)}
+
+						{/* Row 4 — Mini calendar (full-width). Today's focus was
+				    folded into the metric strip (resolveWidgets expands
+				    `today.focus` → KPI tiles), so the standalone card +
+				    its dead 5-col gutter are gone. */}
+						{isEnabled("calendar.mini") && (
+							<MiniCalendarWidget orgSlug={orgSlug} className="h-full" />
+						)}
+
+						{/* Row 5 — Tasks (full-width, LAST row).
+				    2026-05-30 — Tasks moved to the bottom per the user's
+				    ask: "since we are showing tasks we need to make it to
+				    take full width in seprate row… at last please".
+
 				    `tasks.list` is the canonical section-card key (Stage 4D
 				    of TASKS-RENAME-PLAN.md). The KPI-shaped `tasks.dueToday`
 				    variant also gates the card so productivity templates
 				    that lead with the KPI strip still render the panel
-				    underneath. */}
-				<div className="grid gap-4 lg:grid-cols-12">
-					{(isEnabled("tasks.list") || isEnabled("tasks.dueToday")) && (
-						<div className="lg:col-span-7">
-							<TasksCard orgId={orgId} orgSlug={orgSlug} />
-						</div>
-					)}
-					{isEnabled("deals.pipelineValue") && pipelineStats && (
-						<div className="lg:col-span-5">
-							<PipelineCard stats={pipelineStats} orgSlug={orgSlug} />
-						</div>
-					)}
-				</div>
+				    underneath.
 
-				{/* Row 3 — Recent messages + Recent activity */}
-				<div className="grid gap-4 lg:grid-cols-12">
-					{isEnabled("messages.recent") && (
-						<div className="lg:col-span-6">
-							<MessagesPreviewWidget
-								orgId={orgId}
-								orgSlug={orgSlug}
-								limit={8}
-								className="h-full"
-							/>
-						</div>
-					)}
-					{isEnabled("activity.recent") && (
-						<div className="lg:col-span-6">
-							<TimelineActivityWidget orgSlug={orgSlug} limit={6} />
-						</div>
-					)}
-				</div>
-
-				{/* Row 4 — Week ahead (full-width compact strip) */}
-				{isEnabled("calendar.weekAhead") && (
-					<WeekAheadWidget orgId={orgId} orgSlug={orgSlug} />
+				    Stage 3 of /DASHBOARD-V2-PLAN.md (2026-05-29) — the
+				    legacy <TasksCard> 8-row capped list was replaced with
+				    <LiveTasksWidget>, which embeds the same
+				    <TasksDataTable> the /tasks page uses (compact mode,
+				    capped at 10 rows, with an Open all → link). */}
+						{(isEnabled("tasks.list") || isEnabled("tasks.dueToday")) && (
+							<LiveTasksWidget orgId={orgId} orgSlug={orgSlug} />
+						)}
+					</>
 				)}
-
-				{/* Row 5 — Mini calendar + Today's focus */}
-				<div className="grid gap-4 lg:grid-cols-12">
-					{isEnabled("calendar.mini") && (
-						<div className="lg:col-span-7">
-							<MiniCalendarWidget orgSlug={orgSlug} className="h-full" />
-						</div>
-					)}
-					{isEnabled("today.focus") && (
-						<div className="lg:col-span-5">
-							<TodaySummaryCard
-								stats={{
-									remindersDueToday: stats.remindersDueToday,
-									dealsWon: stats.dealsWon,
-									leadCount: stats.leadCount,
-									dealCount: stats.dealCount,
-								}}
-								orgSlug={orgSlug}
-							/>
-						</div>
-					)}
-				</div>
-
-				{/* Row 6 — Stage 7 (SPRINT-PLAN.md) — pipeline velocity. Pure
-				    deterministic per-stage rollup; gated on `pipeline.velocity`
-				    so templates that want it can opt in. */}
-				{isEnabled("pipeline.velocity") && <PipelineVelocityCard orgId={orgId} />}
 			</div>
 			<FirstTimeTour id="dashboard-v1" steps={DASHBOARD_TOUR_STEPS} />
 		</div>

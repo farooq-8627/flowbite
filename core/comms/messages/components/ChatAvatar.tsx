@@ -16,8 +16,8 @@
  *
  * RTL-safe: uses logical `end-*` for the AI badge corner.
  */
-import { Bot } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AIMark } from "@/core/ai/components/AIMark";
 import { cn, getInitials } from "@/lib/utils";
 
 type ChatAvatarProps = {
@@ -67,7 +67,7 @@ export function ChatAvatar({
 					aria-label="Sent on behalf via AI"
 					className="absolute -bottom-1 -end-1 flex size-3.5 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background"
 				>
-					<Bot className="size-2.5" />
+					<AIMark size="size-2.5" tone="inverse" aria-hidden="true" />
 				</span>
 			)}
 		</>

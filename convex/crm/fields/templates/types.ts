@@ -200,6 +200,61 @@ export type CodePrefixesSeed = {
 	task?: string;
 };
 
+// ─── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ─────────────────────
+//
+// Optional, additive layout descriptor. When set, it OVERRIDES the
+// flat `dashboardMetrics` rendering path — the template is asking
+// for a multi-region dashboard with a hero widget, an optional KPI
+// strip, and a panel grid laid out at `lg+` breakpoints. When unset,
+// the renderer falls back to `dashboardMetrics`.
+//
+// Why `widget: string` (not `WidgetKey`): the typed widget-key union
+// lives in `convex/_shared/widgetRegistry.ts`. Importing it from the
+// template types would couple every template literal to that file's
+// build order. Keys are validated at render time
+// (`validateDashboardLayoutShape`) and at seed time (`validators.ts`)
+// against `WIDGET_KEYS`, so unknown keys never reach the runtime path.
+//
+// `forecast.coverageBands` is a per-template override of the default
+// `{healthy: 3, warning: 2}` HubSpot bands consumed by the Forecast
+// tab inside `<SalesPipelinePanel>`. Real-estate / SaaS workspaces
+// usually want different cycle expectations (longer / shorter).
+export type DashboardLayoutSeed = {
+	/** Optional full-width widget rendered above the KPI strip + panels. */
+	hero?: string;
+	/**
+	 * Optional KPI-strip override. When omitted, the renderer falls
+	 * back to `dashboardMetrics`. When set, ONLY these keys appear in
+	 * the strip.
+	 */
+	metrics?: string[];
+	/**
+	 * Panel grid (lg+ breakpoint, 3-column track). `span` is 1 / 2 / 3
+	 * — the renderer collapses spans on smaller breakpoints so the
+	 * mobile path always stacks 1-column.
+	 *
+	 * `id` is a stable string used for React keys + future drag-reorder.
+	 * Convention: `<industry>-<index>` (e.g. `b2b-saas-3`) so it stays
+	 * unique across templates.
+	 */
+	panels: Array<{
+		id: string;
+		span: 1 | 2 | 3;
+		widget: string;
+	}>;
+	/**
+	 * Stage 4 lock-in (DASHBOARD-V2-PLAN.md §5 #4) — per-template
+	 * coverage-ratio bands consumed by the Forecast tab inside
+	 * `<SalesPipelinePanel>`. Defaults to `{healthy: 3, warning: 2}`
+	 * (HubSpot baseline). Real-estate templates may pick higher
+	 * (`{healthy: 5, warning: 3}`) to reflect longer cycles;
+	 * freelancer may pick lower (`{healthy: 2, warning: 1}`).
+	 */
+	forecast?: {
+		coverageBands?: { healthy: number; warning: number };
+	};
+};
+
 // ─── Workspace defaults (org-level settings) ─────────────────────────────────
 
 export type WorkspaceDefaultsSeed = {
@@ -288,6 +343,13 @@ export interface IndustryTemplate {
 
 	// 15. Dashboard metrics (widget keys)
 	dashboardMetrics?: string[];
+
+	// 15a. Dashboard layout (optional, additive — Stage 4 of DASHBOARD-V2-PLAN.md).
+	// When set, supersedes the flat `dashboardMetrics` rendering path
+	// (the template is asking for a multi-region dashboard with a hero
+	// widget + KPI strip + panel grid). Renderer falls back to
+	// `dashboardMetrics` when this slot is undefined.
+	dashboardLayout?: DashboardLayoutSeed;
 
 	// 16. Sidebar slots hidden by default
 	navHiddenSlots?: string[];

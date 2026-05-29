@@ -180,6 +180,7 @@ export const resume = internalAction({
 			"notifications",
 			"analytics",
 			"creative",
+			"dashboard",
 		];
 		const allTools = getToolsForRequest({
 			permissions: memberInfo.permissions,

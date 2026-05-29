@@ -29,8 +29,7 @@ import {
 	CalendarClockIcon,
 	CheckCircle2Icon,
 	ClockIcon,
-	DollarSignIcon,
-	Sparkles,
+	PercentIcon,
 	TrendingDownIcon,
 	TrendingUpIcon,
 	UsersIcon,
@@ -115,8 +114,31 @@ export const WIDGET_REGISTRY: Partial<Record<WidgetKey, WidgetSpec>> = {
 			s.dealCount === 0 && s.pipelineValue === 0
 				? "—"
 				: formatCurrency(s.pipelineValue, s.currency),
-		icon: <DollarSignIcon className="size-3.5" />,
+		// Stage 1 of DASHBOARD-V2-PLAN.md (2026-05-28) — `WalletIcon` is
+		// currency-agnostic; `DollarSignIcon` was inappropriate for
+		// non-USD workspaces (the body already calls
+		// `formatCurrency(value, stats.currency)` and renders ₹ / € / ج.م
+		// / etc. correctly — only the icon was hardcoded).
+		icon: <WalletIcon className="size-3.5" />,
 		accent: "text-foreground",
+	},
+	// 2026-05-30 — Win rate KPI joins the canonical strip. Pure
+	// client-side derivation: `dealsWon / (dealsWon + dealsLost) × 100`,
+	// rounded to the nearest whole percent. Renders `0%` (not `—`)
+	// when no deals have closed yet so the tile lands as a real
+	// number. Doesn't link to `/deals?stage=won` because the metric
+	// is the ratio across BOTH closed states — a deals-page filter
+	// would mislead.
+	"deals.winRate": {
+		key: "deals.winRate",
+		label: WIDGETS["deals.winRate"].label,
+		get: (s) => {
+			const closed = s.dealsWon + s.dealsLost;
+			if (closed === 0) return "0%";
+			return `${Math.round((s.dealsWon / closed) * 100)}%`;
+		},
+		icon: <PercentIcon className="size-3.5" />,
+		accent: "text-emerald-600",
 	},
 	"tasks.dueToday": {
 		key: "tasks.dueToday",
@@ -184,36 +206,142 @@ export const WIDGET_REGISTRY: Partial<Record<WidgetKey, WidgetSpec>> = {
 		accent: "text-amber-600",
 		placeholder: true,
 	},
-	"ai.morningBriefing": {
-		key: "ai.morningBriefing",
-		label: "AI briefing",
-		get: () => "—",
-		icon: <Sparkles className="size-3.5" />,
-		accent: "text-primary",
-	},
+	// Stage 1 of DASHBOARD-V2-PLAN.md (2026-05-28) — `ai.morningBriefing`
+	// removed from the KPI registry. The full-width `<DailyBriefingCard>`
+	// inside the AI Cockpit section IS the briefing surface; rendering
+	// a "—" KPI tile alongside it produced a redundant 5th column in
+	// the metric strip. The data-side `WIDGETS["ai.morningBriefing"]`
+	// entry stays (size: "full") so the section render path in
+	// `DashboardHomeView` via `isEnabled("ai.morningBriefing")` keeps
+	// working — only the KPI tile is gone.
 };
+
+/**
+ * Today's-focus actionable counts, folded into the KPI strip when a
+ * template/layout lists the section key `today.focus`. The standalone
+ * `TodaySummaryCard` was retired 2026-05-29 — these four counts now live
+ * in the always-visible metric strip instead of a lonely bottom card.
+ */
+const TODAY_FOCUS_KPIS: WidgetKey[] = ["tasks.dueToday", "leads.open", "deals.open", "deals.won"];
+
+/**
+ * 2026-05-30 — The dashboard's canonical KPI quartet. Locked across
+ * every industry (sales-only, real-estate, freelancer, b2b-saas, …)
+ * because the user explicitly asked for a single global strip:
+ *
+ *   1. Pipeline value — open value across every pipeline.
+ *   2. Win rate — closed-won ÷ total closed.
+ *   3. Due today — pending tasks + reminders due today.
+ *   4. Open leads — leads not yet converted / lost.
+ *
+ * The `<RevenueEstimateHero>` above the strip already represents
+ * Open Deals / Deals Won / Deals Lost as one bold consolidated
+ * number, so the strip stops doubling those tiles. The dashboard
+ * renderers (`DashboardHomeView`, `DashboardLayoutRenderer`) read
+ * THIS list directly — they no longer call `resolveWidgets` for the
+ * strip — so adding a new industry never accidentally brings back
+ * the old 6-tile shape.
+ */
+export const CANONICAL_KPI_STRIP_KEYS: ReadonlyArray<WidgetKey> = [
+	"deals.pipelineValue",
+	"deals.winRate",
+	"tasks.dueToday",
+	"leads.open",
+];
+
+/**
+ * Resolve `CANONICAL_KPI_STRIP_KEYS` to render specs. Drops any key
+ * whose `WidgetSpec` is missing (defensive — every key in the
+ * canonical list ships a spec in this file). Returned in the
+ * declared order.
+ */
+export function resolveCanonicalKpiStrip(): WidgetSpec[] {
+	const specs: WidgetSpec[] = [];
+	for (const k of CANONICAL_KPI_STRIP_KEYS) {
+		const spec = WIDGET_REGISTRY[k];
+		if (spec) specs.push(spec);
+	}
+	return specs;
+}
+
+/**
+ * Stage 7 of /DASHBOARD-V2-PLAN.md (2026-05-29) — KPI tile keys that
+ * the `<RevenueEstimateHero>` card already represents at the top of
+ * the dashboard. When the hero is mounted, these four tiles are
+ * dropped from the metric strip so the same number doesn't render
+ * twice (once as a small tile, once inside the hero's footnote
+ * breakdown). The filter runs in `resolveWidgets` so it applies to
+ * BOTH render paths (legacy + layout-aware).
+ */
+const REVENUE_HERO_FOLDED_KPIS: ReadonlyArray<WidgetKey> = [
+	"deals.open",
+	"deals.pipelineValue",
+	"deals.won",
+	"deals.lost",
+];
+
+export interface ResolveWidgetsOptions {
+	/**
+	 * When true, drop the four deal-related KPI tiles
+	 * (`deals.open`, `deals.pipelineValue`, `deals.won`, `deals.lost`)
+	 * from the strip — the dashboard hero card is rendering them as
+	 * one bold consolidated number above. When omitted/false the
+	 * strip behaves as it always did (every KPI key in the array
+	 * renders).
+	 */
+	dropRevenueHeroKpis?: boolean;
+}
 
 /**
  * Resolve the metric keys a template wants into widget specs. Drops
  * keys without a tile spec — section-size widgets (`reminders.list`,
- * `messages.recent`, `today.focus`, …) are rendered as cards gated by
- * `isEnabled(key)` in `DashboardHomeView` and intentionally don't
- * appear in the KPI strip. Preserves the template's order.
+ * `messages.recent`, …) are rendered as cards gated by `isEnabled(key)`
+ * in `DashboardHomeView`. The one exception is `today.focus`: it has no
+ * tile but its counts are FOLDED into the strip via `TODAY_FOCUS_KPIS`.
+ * Results are de-duplicated by key (preserving first-seen order) so a
+ * folded KPI never doubles one the template already lists.
+ *
+ * Stage 7 hero-fold (2026-05-29) — when `dropRevenueHeroKpis` is set,
+ * the four deal tiles already represented in `<RevenueEstimateHero>`
+ * are filtered out. The filter applies AFTER `today.focus` expansion so
+ * a template that lists `today.focus` still gets `tasks.dueToday` +
+ * `leads.open` while the deal pieces fold into the hero.
  */
-export function resolveWidgets(metricKeys: string[] | undefined): WidgetSpec[] {
+export function resolveWidgets(
+	metricKeys: string[] | undefined,
+	options?: ResolveWidgetsOptions,
+): WidgetSpec[] {
+	const dropHero = options?.dropRevenueHeroKpis === true;
+	const heroFolded = new Set<string>(dropHero ? REVENUE_HERO_FOLDED_KPIS : []);
 	if (!metricKeys || metricKeys.length === 0) {
 		// Sensible default for orgs without a dashboardMetrics array.
-		return [
-			WIDGET_REGISTRY["leads.open"]!,
-			WIDGET_REGISTRY["contacts.active"]!,
-			WIDGET_REGISTRY["deals.open"]!,
-			WIDGET_REGISTRY["deals.pipelineValue"]!,
+		const defaults: Array<WidgetSpec | undefined> = [
+			WIDGET_REGISTRY["leads.open"],
+			WIDGET_REGISTRY["contacts.active"],
+			heroFolded.has("deals.open") ? undefined : WIDGET_REGISTRY["deals.open"],
+			heroFolded.has("deals.pipelineValue")
+				? undefined
+				: WIDGET_REGISTRY["deals.pipelineValue"],
 		];
+		return defaults.filter((s): s is WidgetSpec => Boolean(s));
 	}
 	const specs: WidgetSpec[] = [];
+	const seen = new Set<string>();
+	const push = (k: WidgetKey) => {
+		if (seen.has(k)) return;
+		if (heroFolded.has(k)) return;
+		const spec = WIDGET_REGISTRY[k];
+		if (spec) {
+			specs.push(spec);
+			seen.add(k);
+		}
+	};
 	for (const k of metricKeys) {
-		const spec = WIDGET_REGISTRY[k as WidgetKey];
-		if (spec) specs.push(spec);
+		if (k === "today.focus") {
+			for (const fk of TODAY_FOCUS_KPIS) push(fk);
+			continue;
+		}
+		push(k as WidgetKey);
 	}
 	return specs;
 }

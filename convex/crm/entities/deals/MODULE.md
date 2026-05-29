@@ -72,6 +72,18 @@ deals: defineTable({
 
 ---
 
+## AI-twin contract (locked 2026-05-30)
+
+`createForAI` makes `pipelineId` and `source` **optional** — public `create` keeps both required.
+
+| Decision | Outcome |
+|---|---|
+| Why pipelineId is optional on `createForAI` | The AI tool only needs `title` to create a deal. The twin resolves the org's default deal pipeline (`isDefault === true`, falling back to first deal pipeline) before calling `createImpl`. AddDealDrawer always passes pipelineId so the public mutation stays strict. This fixes the 2026-05-30 "Create 5 sample deals" regression where every row failed with `ArgumentValidationError: Object is missing the required field 'pipelineId'`. |
+| Why source defaults to `"ai"` | Same story — AI tools shouldn't have to fabricate a source. Public `create` keeps `source: v.string()` required because every UI flow knows its source ("manual", "lead-conversion", "import", etc.). |
+| Stage-aware required fields at create | NOT enforced on create — the deal lands in the pipeline's Default stage which carries minimal required fields by design. Stage-specific required-field gates run at `moveToStage` via `getRequiredFieldsForStage` (transition policy: `block` / `warn` / `off`). |
+
+---
+
 ## Staleness Calculation
 
 Computed inside `listGroupedByStage()`:

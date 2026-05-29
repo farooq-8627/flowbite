@@ -113,7 +113,7 @@ export const genericTemplate: IndustryTemplate = {
 		"today.focus",
 		"messages.recent",
 		"activity.recent",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
 
 	aiPersona:

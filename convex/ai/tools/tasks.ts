@@ -29,9 +29,22 @@
 
 import { z } from "zod";
 import { internal } from "../../_generated/api";
+import {
+	createBulkStats,
+	recordBulkFailure,
+	recordBulkSuccess,
+	summariseBulkResults,
+} from "../../_shared/bulkProgress";
 import { codeString } from "../../_shared/synonyms";
 import { registerTool } from "../toolRegistry";
-import { coerceInt, requirePermission, runTool, type ToolContext, toolMutation } from "./_shared";
+import {
+	coerceInt,
+	propose,
+	requirePermission,
+	runTool,
+	type ToolContext,
+	toolMutation,
+} from "./_shared";
 
 let _toolCtx: ToolContext | null = null;
 export function setTasksContext(ctx: ToolContext): void {
@@ -175,8 +188,125 @@ Type "followup" auto-applies the org cadence defaults when dueAt is omitted.
 	},
 });
 
-// ─── complete_task ───────────────────────────────────────────────────────────
+// ─── bulk_create_tasks ───────────────────────────────────────────────────────
+//
+// Added 2026-05-29 (DASHBOARD-V2-PLAN.md follow-up). Lets the user create
+// many tasks in ONE approval — e.g. "set a follow-up for every lead I added
+// today" — instead of N separate create_task calls that burn the step cap.
 
+const BULK_TASK_ROW = z.object({
+	type: TASK_TYPE,
+	title: z.string().min(1),
+	personCode: z.optional(z.string()),
+	dealCode: z.optional(z.string()),
+	dueAt: z.optional(coerceInt() as unknown as z.ZodNumber),
+	note: z.optional(z.string()),
+	priority: z.optional(TASK_PRIORITY),
+	assignedTo: z.optional(z.string()),
+});
+
+registerTool({
+	name: "bulk_create_tasks",
+	layer: "always",
+	permission: "tasks.create",
+	confirmation: "twoStep",
+	approvalCategory: "bulk",
+	description:
+		"Create MANY tasks at once (max 50) in a SINGLE approval. Use for 'set follow-ups for all these people', 'add a to-do for each deal'. For one task use create_task.",
+	instruction: {
+		whenToCall:
+			"The user wants more than one task created in one go — a follow-up per person, a checklist of to-dos, reminders for several deals. One approval covers the whole batch.",
+		whenNotToCall: "only a single task is needed — use create_task (no approval card).",
+		preflight: ["search_crm"],
+		requiredClarifications: ["tasks"],
+		synonyms: ["bulk follow-ups", "tasks for everyone", "reminders for all", "checklist"],
+		goodExample: {
+			description: "User: 'Add a follow-up call for P-001 and P-002 next week.'",
+			args: {
+				tasks: [
+					{ type: "followup", title: "Follow-up call", personCode: "P-001" },
+					{ type: "followup", title: "Follow-up call", personCode: "P-002" },
+				],
+			},
+		},
+		badExample: {
+			description: "User: 'Remind me to call Sarah.'",
+			args: { tasks: [{ type: "call", title: "Call Sarah" }] },
+			whyBad: "A single task should use create_task.",
+		},
+	},
+	runbook: {
+		onSuccess:
+			"After approval the whole batch is created in one round. Write ONE sentence with the count; the result card lists the failures (if any).",
+		onPartialSuccess:
+			"Report how many succeeded vs failed and why. Offer to retry the failed rows.",
+		onPermissionDenied:
+			"Tell the user they need tasks.create permission. Suggest contacting an admin.",
+	},
+	schema: z.object({
+		tasks: z.array(BULK_TASK_ROW).min(1).max(50),
+	}),
+	execute: async (args) => {
+		const { permissions } = getCtx();
+		requirePermission(permissions, "tasks.create");
+		const titles = (args.tasks as Array<{ title: string }>).map((t) => t.title);
+		return propose("bulk_create_tasks", args, {
+			title: `Create ${args.tasks.length} task${args.tasks.length === 1 ? "" : "s"}`,
+			fields: [
+				{ label: "Count", value: args.tasks.length },
+				{
+					label: "Titles",
+					value:
+						titles.slice(0, 10).join(", ") +
+						(titles.length > 10 ? `, +${titles.length - 10} more` : ""),
+				},
+			],
+		});
+	},
+});
+
+registerTool({
+	name: "commit_bulk_create_tasks",
+	layer: "always",
+	permission: "tasks.create",
+	confirmation: "none",
+	description: "Internal: commit bulk task create. Runs serially to respect rate limits.",
+	schema: z.object({
+		tasks: z.array(BULK_TASK_ROW),
+	}),
+	execute: async (args) =>
+		runTool(async () => {
+			const { orgId, userId, permissions } = getCtx();
+			requirePermission(permissions, "tasks.create");
+			const stats = createBulkStats();
+			for (const t of args.tasks) {
+				try {
+					await toolMutation(getCtx(), "crm/shared/tasks/mutations:create", {
+						orgId,
+						type: t.type,
+						title: t.title,
+						...(t.personCode ? { personCode: t.personCode } : {}),
+						...(t.dealCode ? { dealCode: t.dealCode } : {}),
+						...(t.dueAt !== undefined ? { dueAt: t.dueAt } : {}),
+						...(t.note ? { note: t.note } : {}),
+						...(t.priority ? { priority: t.priority } : {}),
+						assignedTo: t.assignedTo ?? userId,
+					});
+					recordBulkSuccess(stats);
+				} catch (err) {
+					recordBulkFailure(stats, t.title, err);
+				}
+			}
+			const { display, summary } = summariseBulkResults({
+				verb: "create",
+				entityNounPlural: "tasks",
+				stats,
+			});
+			return { ok: true as const, data: { ...stats }, display, summary };
+		}),
+});
+
+// ─── complete_task ───────────────────────────────────────────────────────────
 registerTool({
 	name: "complete_task",
 	layer: "always",

@@ -586,6 +586,57 @@ await enforceRateLimit(ctx, {
 - Before merging or ending a session that touched runtime code: also run `pnpm test`, `pnpm exec vitest run`, `pnpm build`. All green for the **whole repository**, not just the files you touched.
 - Never run interactive git commands (`-i` flags). Convex codegen drift: when in doubt, run `npx convex codegen`.
 
+## ⛔ RULE 5: CONVEX MCP / `npx convex run` HANGS — emit commands, don't run them yourself (NON-NEGOTIABLE)
+
+> Locked 2026-05-29 after the agent stalled on a `status` MCP call mid-migration. **Every Convex MCP tool call AND every `npx convex run …` shell invocation hangs in this agent runtime.** This applies to the dev `unspecified` selector AND the read-only prod selector. Symptoms: the call never returns, the agent waits forever, the user has to interrupt to continue.
+
+### What you must NOT do
+
+- ❌ Call the Convex MCP tools (`status`, `data`, `tables`, `runOneoffQuery`, `run`, `logs`, `functionSpec`, `envGet`, `envList`, `envSet`, `envRemove`, `insights`) without explicit user permission.
+- ❌ Run `npx convex run <module>:<fn>` from the shell tool.
+- ❌ Run `npx convex dev` / `npx convex deploy` from the shell tool.
+- ❌ Wait on a Convex MCP tool to return migration / data results to "verify" before continuing.
+
+### What you MUST do instead
+
+1. **Emit the exact command for the user to run themselves.** Format:
+
+   ```
+   Run this command — paste the output back so I can continue:
+
+   npx convex run _migrations/2026_05_29_renamePipelineVelocityToSalesPanel:run '{"dryRun": true}'
+   ```
+
+2. **Wait for the user to paste the output** before claiming the migration / verification step is "done". Do not mark the task complete until the user responds.
+
+3. **Continue all non-Convex-MCP work in the same message** so the user isn't blocked. Doc cleanup, code edits, tests, biome, build — all of these run fine via the shell tool. Only the Convex *runtime* surface stalls.
+
+4. **Always emit the dry-run version first**, then the real run after the user confirms the dry-run looks correct:
+
+   ```
+   1. Dry-run preview:
+      npx convex run _migrations/<file>:run '{"dryRun": true}'
+   2. Once the dry-run looks right, the real run:
+      npx convex run _migrations/<file>:run '{}'
+   ```
+
+5. **Read-only data inspection** that an MCP tool would normally cover (`data`, `tables`, `runOneoffQuery`) — emit a short shell command instead, e.g.:
+
+   ```
+   npx convex run <module>:<query> '{"orgId": "<id>"}'
+   ```
+
+   …or ask the user to navigate to the Convex dashboard for the lookup.
+
+### When this rule does NOT apply
+
+- Pure code that lives under `convex/**` is still readable + editable + typecheckable + testable via the normal file/code tools. The **vitest test harness** (`pnpm test`) runs Convex modules in isolation via `convex-test`; it does NOT touch the live deployment and is the right way to verify Convex code changes locally.
+- `npx convex codegen` — generates types only, never hits the live deployment. Safe to run.
+
+### Why the rule exists
+
+Each MCP tool stall costs at minimum one round-trip of user attention to interrupt + re-prompt. Over a multi-stage sprint that adds up. The user established this lock-in on 2026-05-29 mid-Stage 2 of `DASHBOARD-V2-PLAN.md`. Honouring it keeps the agent throughput high and the user in control of every live-deployment write.
+
 ---
 
 # ⛔ ABSOLUTE RULE — NO TRAINING DATA

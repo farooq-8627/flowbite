@@ -42,10 +42,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
-import { DataTable } from "@/core/data-display/datatable/components/DataTable";
-import { DataTableToolbar } from "@/core/data-display/datatable/components/DataTableToolbar";
-import { DataTableViewOptions } from "@/core/data-display/datatable/components/DataTableViewOptions";
-import { useDataTable } from "@/core/data-display/datatable/hooks/useDataTable";
 import { CalendarMain } from "@/core/scheduling/calendar/components/CalendarMain";
 import { CalendarToolbar } from "@/core/scheduling/calendar/components/CalendarToolbar";
 import { useCalendarEvents } from "@/core/scheduling/calendar/hooks";
@@ -67,10 +63,10 @@ import { EntityPageLayout } from "@/core/shell/shared/entity-layout";
 import { useCurrentOrg, useMe, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { useTaskColumns } from "../components/columns/useTaskColumns";
 import { TaskCard } from "../components/TaskCard";
 import { TaskEmptyState } from "../components/TaskEmptyState";
 import { TaskForm } from "../components/TaskForm";
+import { TasksDataTable } from "../components/TasksDataTable";
 
 type TaskRow = Doc<"tasks">;
 type ScopeTab = "today" | "open" | "completed" | "all";
@@ -370,24 +366,6 @@ function ListMode({
 		);
 	}, [visibleTasks, search]);
 
-	const columns = useTaskColumns({
-		now,
-		onEdit,
-		onDelete,
-		currentUserId: me,
-	});
-
-	const { table } = useDataTable<TaskRow>({
-		data: filteredTasks,
-		columns,
-		pageCount: Math.max(1, Math.ceil(filteredTasks.length / 25)),
-		initialState: {
-			pagination: { pageSize: 25, pageIndex: 0 },
-			sorting: [{ id: "dueAt", desc: false }],
-		},
-		getRowId: (row) => row._id,
-	});
-
 	return (
 		<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 p-3 xl:p-4">
 			<div className="grid gap-2 grid-cols-2 xl:grid-cols-4">
@@ -445,19 +423,16 @@ function ListMode({
 						variant="filtered"
 						onResetFilters={() => {
 							setSearch("");
-							table.resetColumnFilters();
 						}}
 					/>
 				) : (
-					<DataTable
-						table={table}
-						pageSizeOptions={[10, 25, 50, 100]}
-						onRowClick={onEdit}
-					>
-						<DataTableToolbar table={table}>
-							<DataTableViewOptions table={table} />
-						</DataTableToolbar>
-					</DataTable>
+					<TasksDataTable
+						data={filteredTasks}
+						onEdit={onEdit}
+						onDelete={onDelete}
+						currentUserId={me}
+						now={now}
+					/>
 				)}
 			</Tabs>
 		</div>

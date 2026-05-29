@@ -42,7 +42,7 @@ export function RecentActivityCard({ activity }: RecentActivityCardProps) {
 					<ul className="divide-y">
 						{activity.map((item) => (
 							<li
-								key={`${item.createdAt}-${item.action}`}
+								key={item._id}
 								className="flex items-center justify-between gap-3 py-1.5"
 							>
 								<div className="flex items-center gap-2 min-w-0">

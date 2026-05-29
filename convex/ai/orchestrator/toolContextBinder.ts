@@ -18,6 +18,7 @@ import { setCompaniesContext } from "../tools/companies";
 import { setContextBagToolContext } from "../tools/contextBag";
 import { setCreativeContext } from "../tools/creative";
 import { setCreateEntitiesContext } from "../tools/crud";
+import { setDashboardContext } from "../tools/dashboard";
 import { setFilesContext } from "../tools/files";
 import { setAskChoiceContext } from "../tools/interaction/askChoice";
 import { setAskInputContext } from "../tools/interaction/askInput";
@@ -92,4 +93,5 @@ export function bindAllToolContexts(toolCtx: ToolContext): void {
 	setProactiveContext(toolCtx);
 	setAnalyticsContext(toolCtx);
 	setCreativeContext(toolCtx);
+	setDashboardContext(toolCtx);
 }

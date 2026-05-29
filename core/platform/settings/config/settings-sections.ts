@@ -417,6 +417,26 @@ export function getSettingsSections(
 			],
 		},
 		{
+			id: "appearance.dashboard-density",
+			groupId: "appearance",
+			label: "Dashboard density",
+			description:
+				"How many rows the dashboard's Recent activity and Recent messages widgets show at a glance.",
+			keywords: [
+				"density",
+				"rows",
+				"row count",
+				"limit",
+				"compact",
+				"dashboard",
+				"recent activity",
+				"recent messages",
+				"preview",
+				"slider",
+				"items",
+			],
+		},
+		{
 			id: "appearance.tutorials",
 			groupId: "appearance",
 			label: "Tutorials",

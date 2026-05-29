@@ -549,8 +549,34 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		"messages.recent",
 		"activity.recent",
 		"calendar.weekAhead",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
+
+	// ─── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ────────────────
+	// The B2B SaaS workspace leads with the Sales Pipeline Panel as the
+	// hero (forecasting is THE day-to-day question for AEs / SDRs), then
+	// surfaces ARR cohort trends + the live tasks queue alongside.
+	// Coverage bands are kept at the HubSpot defaults (3:1 healthy /
+	// 2:1 warning) — typical for SaaS with annual contracts.
+	dashboardLayout: {
+		hero: "pipeline.salesPanel",
+		panels: [
+			// 2026-05-30 — ARR cohort widget bumped from `span: 2` to
+			// `span: 3` so it fills the full row instead of leaving a
+			// 1-col gap on the end. The cohort chart's 6-month bar
+			// series benefits from the wider canvas; the standalone
+			// tasks panel that used to sit beside it migrated to the
+			// canonical "tasks always last, full width" slot in
+			// `DashboardLayoutRenderer.tsx`.
+			{ id: "b2b-saas-arr", span: 3, widget: "deals.arrCohort" },
+			{ id: "b2b-saas-activity", span: 2, widget: "activity.recent" },
+			{ id: "b2b-saas-week", span: 1, widget: "today.focus" },
+			{ id: "b2b-saas-week-ahead", span: 3, widget: "calendar.weekAhead" },
+		],
+		forecast: {
+			coverageBands: { healthy: 3, warning: 2 },
+		},
+	},
 
 	// ─── Custom orgRoles ──────────────────────────────────────────────────
 	customRoles: [

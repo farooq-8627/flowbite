@@ -9,9 +9,21 @@
  * `href` is provided the tile becomes a Link with hover affordance —
  * otherwise it's a static read-only card.
  *
- * Used by `<DashboardHomeView />` for the four KPI tiles in row 1
- * (Open leads, Contacts, Open deals, Pipeline value). One file per
- * card (per AGENTS.md "no monolith dashboard view" rule).
+ * 2026-05-30 — number weight bumped from `text-2xl` to `text-4xl` and
+ * a `min-h-[110px]` floor added so KPI numbers read as the headline of
+ * the card (per the "show the numbers big" dashboard feedback). Icon
+ * bumped one size class (size-6 → size-7) for visual parity.
+ *
+ * 2026-05-30 (mobile overflow fix) — value font size made responsive:
+ * `text-3xl sm:text-4xl` so a wide currency string like `$263,500`
+ * fits inside a 2-column mobile grid (each tile is ~144px wide on
+ * a 320px viewport — the prior fixed `text-4xl` rendered the value
+ * at ~260px and forced horizontal overflow). The `min-w-0 truncate`
+ * pair guarantees an even longer string (e.g. `$2,635,500`) clips
+ * cleanly with an ellipsis instead of pushing the dashboard wider.
+ *
+ * Used by `<DashboardHomeView />` for the four KPI tiles in row 1.
+ * One file per card (per AGENTS.md "no monolith dashboard view" rule).
  */
 
 import Link from "next/link";
@@ -30,31 +42,36 @@ interface StatTileProps {
 export function StatTile({ label, value, icon, accent, href }: StatTileProps) {
 	const body = (
 		<>
-			<div className="flex items-center justify-between gap-2">
-				<span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+			<div className="flex items-center justify-between gap-2 min-w-0">
+				<span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground truncate">
 					{label}
 				</span>
 				<span
-					className={`flex size-6 items-center justify-center rounded-[var(--radius)] bg-muted ${accent}`}
+					className={`flex size-7 shrink-0 items-center justify-center rounded-[var(--radius)] bg-muted ${accent}`}
 				>
 					{icon}
 				</span>
 			</div>
-			<span className={`text-2xl font-bold leading-tight ${accent}`}>{value}</span>
+			<span
+				className={`text-3xl sm:text-4xl font-bold leading-none tabular-nums tracking-tight truncate ${accent}`}
+				title={typeof value === "string" ? value : undefined}
+			>
+				{value}
+			</span>
 		</>
 	);
 	if (href) {
 		return (
 			<Link
 				href={href}
-				className="flex flex-col gap-2 rounded-[var(--radius)] border bg-card px-3 py-2.5 transition-colors hover:border-ring/40 hover:bg-accent/30"
+				className="flex flex-col justify-between gap-4 rounded-[var(--radius)] border bg-card px-4 py-4 transition-colors hover:border-ring/40 hover:bg-accent/30 min-h-[110px] min-w-0 overflow-hidden"
 			>
 				{body}
 			</Link>
 		);
 	}
 	return (
-		<div className="flex flex-col gap-2 rounded-[var(--radius)] border bg-card px-3 py-2.5">
+		<div className="flex flex-col justify-between gap-4 rounded-[var(--radius)] border bg-card px-4 py-4 min-h-[110px] min-w-0 overflow-hidden">
 			{body}
 		</div>
 	);

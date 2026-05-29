@@ -283,7 +283,14 @@ function MonthGrid({
 							<div className="flex items-center justify-between gap-1">
 								<span
 									className={cn(
-										"inline-flex size-6 items-center justify-center rounded-full text-xs font-medium",
+										// 2026-05-30 — bumped one Tailwind size step
+										// from `size-6 text-xs` to `size-7 text-sm`
+										// per the dashboard refinement spec. Day
+										// numbers were too small to read at a
+										// glance in the month grid; the new size
+										// matches the WeekGrid below it for
+										// visual parity.
+										"inline-flex size-7 items-center justify-center rounded-full text-sm font-medium",
 										isDayToday && "bg-primary text-primary-foreground",
 									)}
 								>

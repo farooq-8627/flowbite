@@ -23,6 +23,7 @@ import { applyFont, applyThemePreset } from "@/lib/preferences/theme-utils";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 import { SettingsRow } from "../shared/SettingsRow";
 import { SettingsSection } from "../shared/SettingsSection";
+import { DashboardDensitySection } from "./appearance/DashboardDensitySection";
 import { UserEntityDefaultsSection } from "./appearance/UserEntityDefaultsSection";
 
 export function AppearanceGroup() {
@@ -267,6 +268,16 @@ export function AppearanceGroup() {
 					/>
 				</SettingsSection>
 			)}
+
+			<SettingsSection
+				id="appearance.dashboard-density"
+				title="Dashboard density"
+				description="How many rows the dashboard's Recent activity and Recent messages widgets show at a glance."
+			>
+				<DashboardDensitySection
+					currentLimit={me?.preferences?.dashboardActivityRowLimit}
+				/>
+			</SettingsSection>
 
 			<SettingsSection
 				id="appearance.tutorials"

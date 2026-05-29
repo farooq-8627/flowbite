@@ -47,14 +47,13 @@ import {
 	ArrowRight,
 	Info,
 	ListChecks,
-	RefreshCw,
+	Loader2,
 	Sparkles,
 	X,
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
@@ -95,6 +94,41 @@ type FallbackSuggestion = {
 };
 
 const MAX_VISIBLE = 3;
+
+// Cross-mount gate for `lazyWarmForUser` — sessionStorage so the cap is
+// scoped to the current tab. The TTL matches the server's 60s rate-limit
+// window. Without this gate, every dashboard remount (sidebar nav, tab
+// blur/focus, route change back to `/`) re-fires the warm, blowing
+// through the budget within seconds and producing a stream of "Too many
+// requests" errors in the Convex log.
+const LAZY_WARM_TTL_MS = 60_000;
+
+function lazyWarmKey(orgId: string, userId: string): string {
+	return `flowbite:ai:lazyWarm:${orgId}:${userId}`;
+}
+
+function shouldFireLazyWarm(orgId: string, userId: string): boolean {
+	if (typeof window === "undefined") return false;
+	try {
+		const last = window.sessionStorage.getItem(lazyWarmKey(orgId, userId));
+		if (!last) return true;
+		const elapsed = Date.now() - Number(last);
+		return Number.isFinite(elapsed) && elapsed > LAZY_WARM_TTL_MS;
+	} catch {
+		// sessionStorage can throw in Safari private mode / SSR — fail
+		// open and let the server limit handle it.
+		return true;
+	}
+}
+
+function markLazyWarmFired(orgId: string, userId: string): void {
+	if (typeof window === "undefined") return;
+	try {
+		window.sessionStorage.setItem(lazyWarmKey(orgId, userId), String(Date.now()));
+	} catch {
+		// Ignore — see shouldFireLazyWarm.
+	}
+}
 
 interface AIPulseRibbonProps {
 	orgId: Id<"orgs">;
@@ -164,30 +198,51 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	const dismissFallback = useMutation(api.users.mutations.dismissAiPulseSuggestion);
 
 	// Stage 3-A.4 — lazy-warm the ranked store when it's empty for this
-	// user. Fires at most ONCE per session via the `warmRequestedRef`
-	// gate (per AGENTS.md "Never put hook-returned objects in useEffect
-	// deps" — the mutation is destructured + stable). The mutation is
-	// rate-limited at 1/min on the server; the ref is just a UX courtesy
-	// to avoid re-firing during reactive cycles.
+	// user. The server enforces the rate-limit (5/min per user/org) but
+	// we ALSO gate on the client so casual navigation between tabs
+	// (which remounts this component and clears `warmRequestedRef`) does
+	// not produce a torrent of mutations whose only purpose is to be
+	// rejected. The client gate uses `sessionStorage` keyed by
+	// `${orgId}:${userId}` with a 60s TTL — matches the server window.
 	const lazyWarm = useMutation(api.ai.queries.nextActions.lazyWarmForUser);
 	const warmRequestedRef = useRef(false);
-	const isWarming = ranked !== undefined && ranked.count === 0 && warmRequestedRef.current;
+	// Stage 7 hotfix (2026-05-29) — `isWarming` previously stayed true
+	// FOREVER after the first lazy-warm fire whenever the user had zero
+	// suggestions, because `warmRequestedRef.current` never reset and
+	// `ranked.count` stayed at 0 after a clean rebuild. The ribbon got
+	// stuck showing "Refreshing AI suggestions…" indefinitely (user
+	// reported 2026-05-29). Fix: include `generatedAt === null` in the
+	// gate — once the rebuild lands `generatedAt` flips from null to a
+	// timestamp, so we know the warm completed and the empty state is
+	// the legitimate result, not a still-pending refresh.
+	const isWarming =
+		ranked !== undefined &&
+		ranked.count === 0 &&
+		ranked.generatedAt === null &&
+		warmRequestedRef.current;
 
 	useEffect(() => {
 		if (warmRequestedRef.current) return;
 		if (ranked === undefined) return; // still loading
 		if (ranked.count > 0) return; // already populated
 		if (ranked.generatedAt !== null) return; // already generated, just empty (user dismissed all)
+		if (!me?._id) return; // need a userId for the session-scoped gate
 		warmRequestedRef.current = true;
+		// Cross-mount gate: skip the network round-trip if we already
+		// warmed within the last 60s (matches the server rate window).
+		if (!shouldFireLazyWarm(orgId, me._id)) return;
+		markLazyWarmFired(orgId, me._id);
 		void lazyWarm({ orgId }).catch((err) => {
-			// Rate-limit rejections are expected when the user navigates
-			// quickly between tabs; swallow silently. Other errors leave
-			// the ref set so we don't retry until next session.
+			// Server soft-fails on rate-limit now (returns
+			// `{ scheduled: false, rateLimited: true }`), so this
+			// catch only fires for genuine errors. Log them but don't
+			// surface to the user — the ribbon's emptiness is its own
+			// signal.
 			if (typeof console !== "undefined") {
 				console.warn("[AIPulseRibbon] lazyWarmForUser failed:", err);
 			}
 		});
-	}, [ranked, lazyWarm, orgId]);
+	}, [ranked, lazyWarm, orgId, me?._id]);
 
 	const dismissedMap = useMemo(() => {
 		const raw = me?.preferences?.aiPulseDismissed;
@@ -233,49 +288,80 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	}, [ranked, fallbackSuggestions, dismissedMap]);
 
 	if (ranked === undefined && fallbackSuggestions === undefined) return null;
-	// Stage 3-A.4 — render a 3-row skeleton during the warm window so
-	// the user knows the AI is working. Without this the card silently
-	// disappears between "queries returning empty" and "rebuild lands".
+	// Stage 1 of DASHBOARD-V2-PLAN.md (2026-05-28) — single-line
+	// spinner replaces the previous 3-row bar skeleton. The skeleton
+	// shape implied 3 imminent suggestions when in reality the warm
+	// might rebuild zero rows (a clean dashboard) — that produced a
+	// "fake content" feel the user flagged. The spinner is honest:
+	// "AI is refreshing", followed by the actual ribbon (or nothing
+	// when there's nothing to suggest).
 	if (isWarming && (fallbackSuggestions === undefined || fallbackSuggestions.length === 0)) {
 		return (
 			<section
-				aria-label="AI pulse — refreshing actions"
+				aria-label="AI pulse — refreshing"
 				className={cn(
-					"flex flex-col gap-2 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-3",
+					"flex items-center gap-2 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card px-3 py-2",
 					className,
 				)}
 			>
-				<header className="flex items-center gap-2">
-					<span
-						aria-hidden
-						className="flex size-6 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
-					>
-						<Sparkles className="size-3.5" />
-					</span>
-					<h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">
-						AI Pulse
-					</h3>
-					<span className="ms-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-						<RefreshCw className="size-3 animate-spin" aria-hidden />
-						Refreshing actions…
-					</span>
-				</header>
-				<ul className="grid gap-2 md:grid-cols-3">
-					{[0, 1, 2].map((i) => (
-						<li
-							key={i}
-							className="flex flex-col gap-1.5 rounded-[var(--radius)] border bg-card p-2.5 shadow-xs"
-						>
-							<Skeleton className="h-3 w-3/4" />
-							<Skeleton className="h-3 w-full" />
-							<Skeleton className="h-5 w-20" />
-						</li>
-					))}
-				</ul>
+				<span
+					aria-hidden
+					className="flex size-6 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
+				>
+					<Sparkles className="size-3.5" />
+				</span>
+				<Loader2 className="size-3.5 animate-spin text-muted-foreground" aria-hidden />
+				<span className="text-xs text-muted-foreground">Refreshing AI suggestions…</span>
 			</section>
 		);
 	}
-	if (visible.length === 0) return null;
+	// Stage 7 (2026-05-29) — strong empty state replaces the previous
+	// silent `return null`. When the ranker completes with zero rows
+	// AND the heuristic engine has no fallback suggestions either, we
+	// surface a small "Your AI co-pilot is ready" card explaining what
+	// the ribbon will show once data exists. The user explicitly asked
+	// for this (2026-05-29): "show AI widgets properly with proper
+	// state and UX so people will get what actually we are providing
+	// in the platform — instead of just gating on data".
+	if (visible.length === 0) {
+		return (
+			<section
+				aria-label="AI pulse — ready"
+				className={cn(
+					"flex items-start gap-3 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-3",
+					className,
+				)}
+			>
+				<span
+					aria-hidden
+					className="flex size-8 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
+				>
+					<Sparkles className="size-4" />
+				</span>
+				<div className="flex flex-1 flex-col gap-0.5">
+					<p className="text-sm font-semibold text-foreground">
+						Your AI co-pilot is ready
+					</p>
+					<p className="text-xs text-muted-foreground">
+						As you add leads, deals, and tasks, the top 3 highest-value next actions
+						will appear here — re-engage stale leads, push stuck deals, follow up on
+						overdue reminders.
+					</p>
+				</div>
+				<Button
+					asChild
+					size="sm"
+					variant="outline"
+					className="h-7 shrink-0 gap-1 self-center text-xs"
+				>
+					<Link href={`/${orgSlug}/leads`}>
+						Add a lead
+						<ArrowRight className="size-3" aria-hidden />
+					</Link>
+				</Button>
+			</section>
+		);
+	}
 
 	return (
 		<section

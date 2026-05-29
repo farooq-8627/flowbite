@@ -23,13 +23,14 @@
  */
 import { useMutation } from "convex/react";
 import { anyApi } from "convex/server";
-import { Bot, CheckCircle2, User, WrenchIcon, X, XCircle } from "lucide-react";
+import { CheckCircle2, User, WrenchIcon, X, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { Id } from "@/convex/_generated/dataModel";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "../types";
+import { AIMark } from "./AIMark";
 import { ChatConfirmation } from "./ChatConfirmation";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { Markdown } from "./markdown/Markdown";
@@ -135,7 +136,7 @@ function AssistantMessage({
 			    assistant messages without grouped tool messages). */}
 			<div className="flex flex-row-reverse items-center gap-2 min-w-0">
 				<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-					<Bot className="size-3.5 text-primary" />
+					<AIMark size="size-3.5" tone="brand" aria-hidden="true" />
 				</div>
 				<span className="text-xs font-semibold">AI Assistant</span>
 				{message.model && !isLive && (

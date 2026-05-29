@@ -27,7 +27,7 @@ interface MetricStripProps {
 export function MetricStrip({ stats, widgets, orgSlug }: MetricStripProps) {
 	if (widgets.length === 0) return null;
 	return (
-		<div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+		<div className="grid gap-3 grid-cols-2 lg:grid-cols-4 min-w-0">
 			{widgets.map((w) => {
 				// Stage 3-A 3A.2 hotfix — render the widget's own value
 				// even when `placeholder` is true. True placeholders

@@ -13,7 +13,7 @@
  */
 import { useMutation } from "convex/react";
 import { anyApi } from "convex/server";
-import { Bot, Plus, Settings } from "lucide-react";
+import { Plus, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { APP_CONFIG } from "@/config/app-config";
@@ -22,6 +22,7 @@ import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useAIChat } from "../hooks/useAIChat";
 import { useChatRouteContext } from "../hooks/useChatRouteContext";
 import { usePersistedConversationId } from "../hooks/usePersistedConversationId";
+import { AIMark } from "./AIMark";
 import { AssistantTurn } from "./AssistantTurn";
 import { ChatComposer } from "./ChatComposer";
 import { ChatContextCard } from "./ChatContextCard";
@@ -205,7 +206,7 @@ export function ChatSheet({ onOpenSettings }: Props) {
 		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2 border-b border-sidebar-border px-3 py-2">
-				<Bot className="size-4 text-primary shrink-0" />
+				<AIMark size="size-4" tone="brand" className="shrink-0" aria-hidden="true" />
 				<span className="flex-1 truncate font-semibold text-sm" title={headerTitle}>
 					{headerTitle}
 				</span>

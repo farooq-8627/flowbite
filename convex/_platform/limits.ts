@@ -9,10 +9,20 @@
  *   so owner-panel edits are honoured immediately. Existing consumers
  *   keep using the sync version until they're migrated one-by-one.
  *
+ * **2026-05-27 P0.2.E update:** added `maxLeads` + `aiMessageCreditsPerMonth`
+ * to `PlanLimits` to ship the audit's pricing-ladder credit pool. Free
+ * tier tightened (`maxLeads: 100`, `maxDeals: 50`, `maxCustomFieldsPerEntityType: 5`,
+ * `aiMessageCreditsPerMonth: 50`). Pro tier gets the documented
+ * 50,000-credit pool. The new fields are OPTIONAL on the platformTiers
+ * row validator (so existing rows pass schema), but the in-code defaults
+ * are populated; the migration `_migrations/2026_05_27_seedPlanLimitsExtensions.ts`
+ * fills in any DB rows missing the new keys.
+ *
  * RULES:
  *   - Never hardcode plan limits anywhere else. Always import from here.
  *   - Use -1 for "unlimited" (matches the convention in deep-plan).
- *   - Adding a new limit key requires updating PlanLimits + every plan tier.
+ *   - Adding a new limit key requires updating PlanLimits + every plan tier
+ *     + the platformTiers validator + the migration.
  */
 
 import type { QueryCtx } from "../_generated/server";
@@ -24,6 +34,10 @@ export interface PlanLimits {
 	maxPipelinesPerEntityType: number;
 	/** Max active deals per org (open + closed combined). -1 = unlimited. */
 	maxDeals: number;
+	/** Max leads per org. -1 = unlimited. Lead-specific cap so Free can give
+	 * generous deals headroom while gating prospect entry, which is the
+	 * primary growth lever. */
+	maxLeads: number;
 	/** Max members per org. -1 = unlimited. */
 	maxMembers: number;
 	/** Max custom fieldDefinitions per entityType. -1 = unlimited. */
@@ -32,40 +46,63 @@ export interface PlanLimits {
 	maxStorageBytes: number;
 	/** AI tokens per month. -1 = unlimited. 0 = disabled. */
 	aiTokensPerMonth: number;
+	/**
+	 * AI message credits per month — separate from `aiTokensPerMonth`.
+	 *
+	 * Why a second metric: the pricing ladder (LANDING-PAGE.md + audit)
+	 * promises "50,000 credits / month" on Pro. One credit = one user
+	 * turn (one assistant message), regardless of how many tokens that
+	 * turn consumes. Tokens are an observability metric; credits are a
+	 * billing metric. Both gates run independently in `quotaGate.ts`:
+	 * whichever exhausts first blocks the next turn.
+	 *
+	 * -1 = unlimited.  0 = AI message limit not enforced (only tokens
+	 * matter — keeps the legacy "tokens-only" behaviour usable on rows
+	 * the operator hasn't migrated yet).
+	 */
+	aiMessageCreditsPerMonth: number;
 }
 
 export const PLAN_LIMITS: Record<PlanTier, PlanLimits> = {
 	free: {
 		maxPipelinesPerEntityType: 1,
-		maxDeals: 100,
+		maxDeals: 50,
+		maxLeads: 100,
 		maxMembers: 3,
 		maxCustomFieldsPerEntityType: 5,
 		maxStorageBytes: 100 * 1024 * 1024, // 100 MB
-		aiTokensPerMonth: 0, // AI disabled on free
+		aiTokensPerMonth: 0, // AI disabled on free (BYOK still works)
+		aiMessageCreditsPerMonth: 0,
 	},
 	starter: {
 		maxPipelinesPerEntityType: 3,
 		maxDeals: 1_000,
+		maxLeads: 5_000,
 		maxMembers: 10,
 		maxCustomFieldsPerEntityType: 20,
 		maxStorageBytes: 5 * 1024 * 1024 * 1024, // 5 GB
 		aiTokensPerMonth: 100_000,
+		aiMessageCreditsPerMonth: 5_000,
 	},
 	pro: {
 		maxPipelinesPerEntityType: 10,
 		maxDeals: 10_000,
+		maxLeads: 50_000,
 		maxMembers: 50,
 		maxCustomFieldsPerEntityType: 100,
 		maxStorageBytes: 50 * 1024 * 1024 * 1024, // 50 GB
 		aiTokensPerMonth: 1_000_000,
+		aiMessageCreditsPerMonth: 50_000,
 	},
 	enterprise: {
 		maxPipelinesPerEntityType: -1,
 		maxDeals: -1,
+		maxLeads: -1,
 		maxMembers: -1,
 		maxCustomFieldsPerEntityType: -1,
 		maxStorageBytes: -1,
 		aiTokensPerMonth: -1,
+		aiMessageCreditsPerMonth: -1,
 	},
 };
 
@@ -85,6 +122,13 @@ export function getPlanLimits(tier: PlanTier): PlanLimits {
  * (the seed migration ensures this is rare). Use from contexts where the
  * caller already has a Convex `QueryCtx` / `MutationCtx` and wants
  * owner-panel edits honoured.
+ *
+ * **2026-05-27 P0.2.E** — when a DB row was seeded BEFORE the `maxLeads`
+ * + `aiMessageCreditsPerMonth` keys were introduced, we backfill from
+ * the in-code constants for that tier. The migration
+ * `_migrations/2026_05_27_seedPlanLimitsExtensions.ts` writes the
+ * defaults to every existing row idempotently — but the read path
+ * stays defensive so a missing key never crashes a quota gate.
  */
 export async function getPlanLimitsFromDb(ctx: QueryCtx, tier: PlanTier): Promise<PlanLimits> {
 	const row = await ctx.db
@@ -92,7 +136,18 @@ export async function getPlanLimitsFromDb(ctx: QueryCtx, tier: PlanTier): Promis
 		.withIndex("by_key", (q) => q.eq("key", tier))
 		.unique();
 	if (row?.limits) {
-		return row.limits;
+		const fallback = PLAN_LIMITS[tier];
+		return {
+			maxPipelinesPerEntityType: row.limits.maxPipelinesPerEntityType,
+			maxDeals: row.limits.maxDeals,
+			maxLeads: row.limits.maxLeads ?? fallback.maxLeads,
+			maxMembers: row.limits.maxMembers,
+			maxCustomFieldsPerEntityType: row.limits.maxCustomFieldsPerEntityType,
+			maxStorageBytes: row.limits.maxStorageBytes,
+			aiTokensPerMonth: row.limits.aiTokensPerMonth,
+			aiMessageCreditsPerMonth:
+				row.limits.aiMessageCreditsPerMonth ?? fallback.aiMessageCreditsPerMonth,
+		};
 	}
 	return PLAN_LIMITS[tier];
 }

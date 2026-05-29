@@ -34,7 +34,8 @@ export type LayerId =
 	| "timeline"
 	| "notifications"
 	| "analytics"
-	| "creative";
+	| "creative"
+	| "dashboard";
 
 /**
  * Per-tool runbook strings. The system-prompt builder injects a runbook
@@ -316,12 +317,13 @@ function isToolExposed(
 	const { permissions, modelTier, expandedLayers } = args;
 	if (def.layer !== "always" && !expandedLayers.includes(def.layer)) return false;
 	if (def.permission && !permissions.includes(def.permission)) return false;
-	// DEFERRED: see Future-Enhancements.md §A.2 — premium gate is off for
-	//          testing. Re-enable in Phase 6 / Week 6 by uncommenting the
-	//          next line, then keep the same filter in getToolsForRequest +
-	//          getActiveRunbooks. All three sites must stay in sync.
-	// if (def.requiredCapability === "premium" && modelTier === "small") return false;
-	void modelTier;
+	// Premium-capability gate — re-enabled 2026-05-27 (P0.2.B).
+	// Small-tier models (Haiku, gpt-4o-mini, Llama-3.3 free, Kimi small,
+	// Grok-3 mini, Gemini Flash Lite) cannot see tools tagged
+	// `requiredCapability: "premium"`. The propose/commit twoStep flow
+	// is still the primary defence; this is the second layer.
+	// Mirrored in `getActiveRunbooks` so the runbooks block stays in sync.
+	if (def.requiredCapability === "premium" && modelTier === "small") return false;
 	return true;
 }
 
@@ -524,6 +526,8 @@ const LAYER_DESCRIPTIONS: Record<LayerId, string> = {
 		"AI analytical tools (analyze_metric, cohort_analysis, member_performance, get_briefing, refresh_briefing). Quota-gated narratives + cohort rollups + per-member rollups + briefing on demand.",
 	creative:
 		"AI creative drafting tools (draft_message, draft_proposal, summarise_conversation, web_scrape). Drafts are NEVER auto-sent — the user reviews + dispatches via send_message themselves. Quota: 5/min/user + 50/day/user (web_scrape: 30/min/user).",
+	dashboard:
+		"AI dashboard surfaces (render_widget, annotate_widget, score_deal, explain_deal_score, list_anomalies). AI pins per-user widget cells, flags annotations, scores deals. NEVER writes the canonical org-wide layout — pin/promote-to-layout flows run via the user's own gesture.",
 };
 
 // Registered at bottom of this file so it's always included
@@ -560,6 +564,7 @@ use list_entity_fields, list_pipelines, or list_my_permissions first.
 			"notifications",
 			"analytics",
 			"creative",
+			"dashboard",
 		]),
 		reason: z
 			.string()

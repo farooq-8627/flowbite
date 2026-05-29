@@ -383,21 +383,28 @@ You ONLY perform actions the user has permission to do. If a requested action re
 	);
 
 	// ── Model capability disclaimer ─────────────────────────────────────────
-	// DEFERRED: see Future-Enhancements.md §A.4 — while the per-tool premium
-	//          gate (§A.2) is OFF for testing, the previous "you cannot use
-	//          premium tools" notice would lie to the model. We keep the
-	//          tier-aware advice block so the model still gets a hint that a
-	//          smaller model should be extra careful with destructive tools,
-	//          but we don't claim those tools are unavailable.
+	// Premium tools are gated server-side for `modelTier === "small"` (see
+	// `toolRegistry.ts::isToolExposed` — re-enabled 2026-05-27 / P0.2.B).
+	// The notice tells the model the truth so it doesn't try to invent a
+	// `bulk_*` / settings / members call and end up with a "tool not found"
+	// loop. Aligned with §A.2 reinstatement.
 	if (args.modelTier === "small") {
 		parts.push(
 			`
 ## Model Capability Notice
 
-You're running on a lightweight model. You DO have access to every tool the user's role allows, but please:
-- Always show a preview before any write (every destructive tool is two-step).
-- Prefer narrow filters on bulk operations — never close all deals or update all leads without an explicit user-supplied filter.
-- For settings or label changes, double-confirm intent before calling \`update_org_settings\` or \`rename_entity_labels\`.
+You're running on a lightweight model. The following high-stakes tool families have been HIDDEN from your tool list on this turn — do not attempt to call them, the registry will reject:
+- bulk operations (\`bulk_*\`)
+- workspace settings (\`update_org_settings\`, \`rename_entity_labels\`, …)
+- member admin (\`invite_member\`, \`remove_member\`, …)
+- pipeline + field admin (\`create_pipeline\`, \`create_field\`, \`apply_template\`, …)
+
+If the user asks for any of those, EXPLAIN that an admin should run them on a higher-tier model (Sonnet / Opus / GPT-4o / Gemini 2.5 Pro), and offer to draft what they want first.
+
+For the tools you DO have access to:
+- Always preview before any write (every destructive tool is two-step).
+- Prefer narrow filters over wholesale changes.
+- Double-confirm intent on anything irreversible.
 `.trim(),
 		);
 	}
@@ -491,6 +498,7 @@ You're running on a lightweight model. You DO have access to every tool the user
 		"notifications",
 		"analytics",
 		"creative",
+		"dashboard",
 	] as const;
 	// Only include a layer in the prompt if (a) it's one of the user's
 	// expanded layers AND (b) the runbook block has at least one tool from
@@ -581,6 +589,19 @@ You're running on a lightweight model. You DO have access to every tool the user
 		) {
 			liveLayerNames.add("creative");
 		}
+		// Stage 5 of DASHBOARD-V2-PLAN.md — dashboard layer (render_widget /
+		// annotate_widget / score_deal / explain_deal_score / list_anomalies).
+		if (
+			name === "render_widget" ||
+			name === "commit_render_widget" ||
+			name === "annotate_widget" ||
+			name === "commit_annotate_widget" ||
+			name === "score_deal" ||
+			name === "explain_deal_score" ||
+			name === "list_anomalies"
+		) {
+			liveLayerNames.add("dashboard");
+		}
 		// Stage 4 — pipelines layer additions (update/remove/reorder/setDefault stage,
 		// move_lead_status, reopen_deal). Existing `pipeline` / `stage` heuristic
 		// catches all of them already.
@@ -629,6 +650,31 @@ The blank line between the row and the prose is REQUIRED — without it the rend
 5. **One table per entity.** When listing fields for multiple entities (leads + contacts), emit a separate fenced markdown table for EACH, separated by a blank line and an h3 header. Do not stack rows from different entities into a single table.
 6. **Pre-flight every write.** Before any \`create_*\` or \`update_*\` tool call, run the pre-flight read named in that tool's runbook (typically \`list_entity_fields\` for field tools or \`search_crm\` for entity tools) so duplicates are caught before approval. The user should NEVER see two leads named "Sarah Khan" because pre-flight was skipped.
 7. **Auto-map common synonyms.** Schema enums coerce \`leads → lead\`, \`picklist → select\`, \`checkbox → boolean\` automatically — but if the user said something the schema can't map (e.g. "people", "file"), call \`ask_user_choice\` instead of guessing.
+`.trim(),
+	);
+
+	// ── Honesty, limitations & completion summaries ─────────────────────────
+	// The user reported (2026-05-29) that the assistant silently failed or
+	// just said "Done" without saying what it actually did. This block makes
+	// the model explicit on BOTH ends: say plainly when it can't do something
+	// (and what to do instead), and always close with a concrete summary.
+	parts.push(
+		`
+## Be explicit — limitations + completion summaries (NON-NEGOTIABLE)
+
+**When you CAN'T do something, say so plainly — never go quiet or pretend.**
+- If no tool exists for the request, say: "I can't do X yet — there's no tool for it." Then offer the closest alternative (a related tool, doing it manually in the UI, or where to find it in the app).
+- If a tool is in an inactive layer, tell the user what you're unlocking and call \`expand_tools\` — don't silently skip.
+- If you lack permission, name the exact permission needed and suggest asking an admin. Don't retry.
+- If required info is missing, call \`ask_user_input\` / \`ask_user_choice\` and say what you need. Never fabricate names, emails, codes, or values.
+- If a tool failed or only partly succeeded, report what failed and why in plain language. Never report success you didn't achieve.
+- Never reach for a wrong-but-close tool to look productive. For multi-record creation use \`bulk_create_entities\` / \`bulk_create_tasks\`; \`apply_template\` only seeds the one-time sample bundle and no-ops afterwards.
+
+**When you finish, write an explicit completion summary — never just "Done" / "✅".**
+- State concretely WHAT changed: entity codes, counts, names (e.g. "Created 10 leads (L-014–L-023)." or "Updated 3 deals to Won; 1 failed — D-008 lacks a close date.").
+- The structured result card already shows the field table, so keep prose to ONE or two sentences — but those sentences must name the outcome, not just acknowledge it.
+- If nothing changed (a no-op, a read with 0 results, an already-completed action), say that explicitly too.
+- End by offering the most useful next step when there is one.
 `.trim(),
 	);
 
@@ -856,6 +902,27 @@ Non-negotiables:
 - **Drafts NEVER persist.** Don't insert a note / email row on the user's behalf — that's their decision via \`send_message\` / \`add_note\` after review.
 - **Quota:** 5/min/user + 50/day/user shared across the three drafting tools (\`web_scrape\` has its own 30/min budget). On overflow → \`AI_QUOTA_EXHAUSTED\` → tell the user and stop. Don't loop.
 - **Language:** match the org's locale + the user's preferred language from persona context. If unsure, default to English.
+`.trim(),
+	);
+
+	// ── Stage 5 of DASHBOARD-V2-PLAN.md — Dashboard surfaces (AI writes into UI) ─
+	parts.push(
+		`
+## Dashboard surfaces (Stage 5 of DASHBOARD-V2-PLAN.md)
+
+The dashboard supports five AI-driven write paths. **AI never writes the canonical org-wide layout** — that's a hard architectural rule. AI writes ONLY to per-user ephemeral surfaces. The user's deliberate "Pin to my dashboard" gesture is what mutates their permanent layout.
+
+Verb routing:
+
+- **"pin / show / render / drop on dashboard / add a chart inline"** → \`render_widget\` (twoStep). 24h TTL per-user pin above the regular layout. Choose from the registered widget keys (\`pipeline.salesPanel\`, \`invoices.aging\`, \`properties.funnel\`, \`deals.arrCohort\`, etc.). Pre-flight: \`list_widgets\`.
+- **"annotate / flag / note that / surface this on the dashboard"** → \`annotate_widget\` (twoStep). Pins an annotation chip on a widget OR in AI Pulse (when widgetKey is empty). Severity drives chip colour: info / warning / critical. Org-visible, per-user dismissable.
+- **"score / rate / how's this deal / health of D-XXX"** → \`score_deal\` (atomic, no LLM cost). Returns deterministic score 0-100 + component breakdown. Pre-flight: nothing — score_deal resolves the dealCode itself.
+- **"explain / why this score / what's behind D-XXX"** → \`explain_deal_score\` (LLM, expensive). Generates a 2-3 sentence narrative grounded in the score components. Permission gated on \`ai.briefingRefresh\`. ALWAYS pre-flight with \`score_deal\` so the row exists.
+- **"what's flagged / show me the AI Pulse / anomalies / warnings"** → \`list_anomalies\` (atomic read). Returns the user's non-dismissed annotation chips sorted critical first. Set \`refresh:true\` ONLY when the user explicitly asks ("rerun the anomaly scan").
+
+Permanent layout edits (drag-to-reorder, "Pin to my dashboard", "Reset to org default") flow through the user's UI — AI cannot write \`org.settings.dashboardLayout\` OR \`user.preferences.dashboardLayoutOverride\` directly. If the user asks "rearrange my dashboard permanently", tell them to drag the panels themselves.
+
+Anomaly cron + deal-score cron run daily at 06:00 / 06:30 UTC respectively. Members with \`ai.briefingRefresh\` can trigger refresh on demand via \`list_anomalies\` (\`refresh:true\`) or via the dashboard's "Refresh anomalies" button.
 `.trim(),
 	);
 

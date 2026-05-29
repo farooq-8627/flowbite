@@ -7,20 +7,22 @@
  * dispatch to per-event handlers and patch the org doc.
  *
  * Maps LemonSqueezy → our schema:
- *   - subscription_created  → set lemonSqueezy* fields, plan=`starter`/`pro`
+ *   - subscription_created  → set lemonSqueezy* fields, plan resolved
  *   - subscription_updated  → patch status / period end / variant
  *   - subscription_cancelled → status=cancelled, plan stays until period end
  *   - subscription_expired  → plan=free
  *   - subscription_resumed   → status=active
  *   - subscription_paused    → status=paused
  *
- * Variant → plan mapping is read off Convex env vars so swapping plans
- * doesn't require a code deploy:
- *   LEMONSQUEEZY_VARIANT_STARTER, _PRO, _ENTERPRISE
+ * Variant → plan mapping. **2026-05-27 P0.1.2** — DB-first via
+ * `platformTiers.lemonSqueezyVariantId{Monthly,Yearly}`. Owner-panel
+ * edits to a tier's variant ids are picked up immediately by the
+ * webhook handler. The legacy `LEMONSQUEEZY_VARIANT_*` env vars
+ * remain a fallback for backwards compat during the migration window.
  */
 
 import { v } from "convex/values";
-import { internalMutation } from "../_generated/server";
+import { internalMutation, type MutationCtx } from "../_generated/server";
 import type { PlanTier } from "../_platform/limits";
 
 interface LSAttributes {
@@ -29,6 +31,7 @@ interface LSAttributes {
 	status?: string;
 	renews_at?: string | null;
 	ends_at?: string | null;
+	trial_ends_at?: string | null;
 }
 
 interface LSDataObject {
@@ -46,12 +49,37 @@ interface LSWebhookPayload {
 	data?: LSDataObject;
 }
 
-function variantToPlan(variantId: number | undefined): PlanTier {
+/**
+ * Resolve a LemonSqueezy variant id to a `PlanTier`.
+ *
+ * Lookup order:
+ *   1. `platformTiers.lemonSqueezyVariantIdMonthly` / `*Yearly`
+ *      (DB-first — owner-panel edits propagate without redeploy).
+ *   2. `process.env.LEMONSQUEEZY_VARIANT_{STARTER,PRO,ENTERPRISE}`
+ *      (legacy fallback — kept for deployments that haven't yet
+ *      moved variant ids into the panel).
+ *   3. `"free"` when no match — defensive default.
+ */
+async function variantToPlan(ctx: MutationCtx, variantId: string | undefined): Promise<PlanTier> {
 	if (variantId === undefined) return "free";
-	const idStr = String(variantId);
-	if (idStr === process.env.LEMONSQUEEZY_VARIANT_ENTERPRISE) return "enterprise";
-	if (idStr === process.env.LEMONSQUEEZY_VARIANT_PRO) return "pro";
-	if (idStr === process.env.LEMONSQUEEZY_VARIANT_STARTER) return "starter";
+
+	// 1. DB lookup against platformTiers.
+	const tiers = await ctx.db.query("platformTiers").collect();
+	for (const tier of tiers) {
+		if (
+			tier.lemonSqueezyVariantIdMonthly === variantId ||
+			tier.lemonSqueezyVariantIdYearly === variantId
+		) {
+			return tier.key as PlanTier;
+		}
+	}
+
+	// 2. Env-var fallback (legacy).
+	if (variantId === process.env.LEMONSQUEEZY_VARIANT_ENTERPRISE) return "enterprise";
+	if (variantId === process.env.LEMONSQUEEZY_VARIANT_PRO) return "pro";
+	if (variantId === process.env.LEMONSQUEEZY_VARIANT_STARTER) return "starter";
+
+	// 3. Defensive default — variant unknown.
 	return "free";
 }
 
@@ -106,6 +134,9 @@ export const applyWebhookEvent = internalMutation({
 		const status = normaliseStatus(attrs.status);
 		const renewsAt = attrs.renews_at ? Date.parse(attrs.renews_at) : undefined;
 		const endsAt = attrs.ends_at ? Date.parse(attrs.ends_at) : undefined;
+		// `trial_ends_at` is the natural period boundary while a sub is
+		// `on_trial` — we use it for the past_due grace calc later.
+		const trialEndsAt = attrs.trial_ends_at ? Date.parse(attrs.trial_ends_at) : undefined;
 
 		// Locate the org.
 		let orgId: string | undefined = customDataOrgId;
@@ -128,15 +159,20 @@ export const applyWebhookEvent = internalMutation({
 		const org = await ctx.db.get(orgId as never);
 		if (!org) return { ok: false, reason: "org_not_found" };
 
-		const plan: PlanTier = (() => {
+		const plan: PlanTier = await (async () => {
 			if (args.eventName === "subscription_expired") return "free";
 			if (args.eventName === "subscription_cancelled") {
 				// Plan remains until period ends; we keep the existing plan.
 				return ((org as { plan?: string }).plan as PlanTier) ?? "free";
 			}
-			if (variantId !== undefined) return variantToPlan(Number(variantId));
+			if (variantId !== undefined) return variantToPlan(ctx, variantId);
 			return ((org as { plan?: string }).plan as PlanTier) ?? "free";
 		})();
+
+		// Period-end resolution: prefer trial_ends_at while on_trial,
+		// fall back to renews_at, then ends_at. This is what the quota
+		// gate's grace-period calc consumes.
+		const periodEnd = status === "on_trial" && trialEndsAt ? trialEndsAt : (renewsAt ?? endsAt);
 
 		await ctx.db.patch(orgId as never, {
 			plan,
@@ -144,7 +180,7 @@ export const applyWebhookEvent = internalMutation({
 			lemonSqueezySubscriptionId: subscriptionId,
 			lemonSqueezyVariantId: variantId,
 			lemonSqueezySubscriptionStatus: status,
-			lemonSqueezyCurrentPeriodEnd: renewsAt ?? endsAt,
+			lemonSqueezyCurrentPeriodEnd: periodEnd,
 			updatedAt: Date.now(),
 		});
 

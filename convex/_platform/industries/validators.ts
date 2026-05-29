@@ -141,6 +141,100 @@ function validateDefinitionShape(
 		});
 	}
 
+	// ── Dashboard layout (Stage 4 of DASHBOARD-V2-PLAN.md) ───────────────
+	// Light shape check only — heavier `validateDashboardLayoutShape`
+	// in `_shared/widgetRegistry.ts` runs at the template-row write
+	// boundary AND at the dashboard render boundary.
+	if (def.dashboardLayout !== undefined) {
+		if (!isObject(def.dashboardLayout)) {
+			errors.push({
+				path: "definition.dashboardLayout",
+				message: "dashboardLayout must be an object when set.",
+			});
+		} else {
+			const layout = def.dashboardLayout as Record<string, unknown>;
+			if (!isArray(layout.panels)) {
+				errors.push({
+					path: "definition.dashboardLayout.panels",
+					message: "dashboardLayout.panels is required and must be an array.",
+				});
+			} else {
+				layout.panels.forEach((p, i) => {
+					if (!isObject(p)) {
+						errors.push({
+							path: `definition.dashboardLayout.panels[${i}]`,
+							message: "panel must be an object.",
+						});
+						return;
+					}
+					if (!isString(p.id)) {
+						errors.push({
+							path: `definition.dashboardLayout.panels[${i}].id`,
+							message: "panel id is required.",
+						});
+					}
+					if (p.span !== 1 && p.span !== 2 && p.span !== 3) {
+						errors.push({
+							path: `definition.dashboardLayout.panels[${i}].span`,
+							message: "panel span must be 1, 2, or 3.",
+						});
+					}
+					if (!isString(p.widget)) {
+						errors.push({
+							path: `definition.dashboardLayout.panels[${i}].widget`,
+							message: "panel widget must be a string.",
+						});
+					}
+				});
+			}
+			if (layout.metrics !== undefined && !isArray(layout.metrics)) {
+				errors.push({
+					path: "definition.dashboardLayout.metrics",
+					message: "dashboardLayout.metrics must be an array of widget keys when set.",
+				});
+			}
+			if (layout.hero !== undefined && !isString(layout.hero)) {
+				errors.push({
+					path: "definition.dashboardLayout.hero",
+					message: "dashboardLayout.hero must be a string when set.",
+				});
+			}
+			if (layout.forecast !== undefined) {
+				if (!isObject(layout.forecast)) {
+					errors.push({
+						path: "definition.dashboardLayout.forecast",
+						message: "dashboardLayout.forecast must be an object when set.",
+					});
+				} else {
+					const cb = (layout.forecast as Record<string, unknown>).coverageBands;
+					if (cb !== undefined) {
+						if (!isObject(cb)) {
+							errors.push({
+								path: "definition.dashboardLayout.forecast.coverageBands",
+								message: "coverageBands must be an object.",
+							});
+						} else {
+							const c = cb as Record<string, unknown>;
+							if (typeof c.healthy !== "number" || typeof c.warning !== "number") {
+								errors.push({
+									path: "definition.dashboardLayout.forecast.coverageBands",
+									message:
+										"coverageBands.healthy + coverageBands.warning must be numbers.",
+								});
+							} else if (c.healthy <= c.warning) {
+								errors.push({
+									path: "definition.dashboardLayout.forecast.coverageBands",
+									message:
+										"coverageBands.healthy must be greater than coverageBands.warning.",
+								});
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return errors.length === 0;
 }
 
@@ -468,6 +562,7 @@ export function definitionFromTemplate(template: IndustryTemplate): {
 		customRoles,
 		savedViews,
 		mockData,
+		dashboardLayout,
 	} = template;
 
 	const definition: Record<string, unknown> = {};
@@ -486,6 +581,7 @@ export function definitionFromTemplate(template: IndustryTemplate): {
 	if (fileUpload !== undefined) definition.fileUpload = fileUpload;
 	if (aiPersona !== undefined) definition.aiPersona = aiPersona;
 	if (dashboardMetrics !== undefined) definition.dashboardMetrics = dashboardMetrics;
+	if (dashboardLayout !== undefined) definition.dashboardLayout = dashboardLayout;
 	if (navHiddenSlots !== undefined) definition.navHiddenSlots = navHiddenSlots;
 	if (customRoles !== undefined) definition.customRoles = customRoles;
 	if (savedViews !== undefined) definition.savedViews = savedViews;

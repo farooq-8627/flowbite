@@ -50,9 +50,17 @@ registerTool({
 	confirmation: "twoStep",
 	approvalCategory: "settings",
 	description: "Apply or re-apply an industry template. Additive — never deletes existing data.",
+	instruction: {
+		whenToCall:
+			"The user wants to set up their workspace for an industry (fields, pipeline stages, a one-time sample bundle). Run once during onboarding.",
+		whenNotToCall:
+			"the user wants to create leads/contacts/deals/companies or 'dummy/sample data' — use `bulk_create_entities` for that. apply_template ONLY seeds the one-time industry sample bundle and is a NO-OP once the workspace already has data, so re-applying it creates 0 records.",
+		requiredClarifications: ["templateId", "templateName"],
+		synonyms: ["set up workspace", "industry preset", "configure CRM for"],
+	},
 	runbook: {
 		onSuccess:
-			"Confirm with the template name. Mention that existing data was preserved (templates are additive).",
+			"Confirm with the template name. Mention that existing data was preserved (templates are additive). If the user actually wanted records created, route them to bulk_create_entities — apply_template no-ops after the first seed.",
 		onPermissionDenied:
 			"Tell the user they need org.editSettings permission. Suggest contacting an admin.",
 	},

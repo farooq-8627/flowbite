@@ -136,6 +136,35 @@ export const sumTokensThisMonth = internalQuery({
 	},
 });
 
+/**
+ * Count assistant messages an org has emitted this calendar month.
+ *
+ * One assistant message = one user turn = one "credit". This metric
+ * complements `sumTokensThisMonth` so the AI quota gate can enforce
+ * the audit's pricing-ladder credit pool ($199 = 50,000 credits)
+ * independently of token usage.
+ *
+ * Indexed on `aiMessages.by_org_role_created` so the scan is bounded
+ * by `(orgId, role="assistant", createdAt >= start)` — at the Pro tier
+ * cap (50K rows) this is still a single bounded index range read.
+ */
+export const sumMessagesThisMonth = internalQuery({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const start = startOfMonth(Date.now());
+		const rows = await ctx.db
+			.query("aiMessages")
+			.withIndex("by_org_role_created", (q) =>
+				q.eq("orgId", args.orgId).eq("role", "assistant").gte("createdAt", start),
+			)
+			.collect();
+		return {
+			messageCount: rows.length,
+			windowStart: start,
+		};
+	},
+});
+
 /** First-of-the-month timestamp (UTC) for the month containing `now`. */
 export function startOfMonth(now: number): number {
 	const d = new Date(now);

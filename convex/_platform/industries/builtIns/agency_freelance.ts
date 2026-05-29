@@ -374,7 +374,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		"tasks.list",
 		"messages.recent",
 		"today.focus",
-		"pipeline.velocity",
+		"pipeline.salesPanel",
 	],
 
 	customRoles: [

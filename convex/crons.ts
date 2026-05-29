@@ -193,4 +193,50 @@ crons.interval(
  */
 crons.interval("owner-otp-gc", { hours: 24 }, internal._platform.otp.mutations.deleteExpired, {});
 
+/**
+ * Stage 5 of DASHBOARD-V2-PLAN.md (locked decisions #8 + #9) — three
+ * dashboard insight crons. Each is a separate entry per locked
+ * decision #8 ("two/three separate entries — easier to disable
+ * independently, cleaner per-cron logs"). Cadence per locked decision
+ * #9 — daily UTC, staggered so they don't compete for the same
+ * runtime window.
+ */
+
+/**
+ * Daily anomaly detection (06:00 UTC).
+ *
+ * Iterates every starter+/pro/enterprise org, runs the deterministic
+ * anomaly scan, writes up to 10 `dashboardAnnotations` per org. Free-
+ * plan orgs see anomalies only on demand via `refreshForOrgForAI`.
+ *
+ * Idempotent — replaces prior cron-written rows for the org each tick.
+ */
+crons.cron("detect-anomalies", "0 6 * * *", internal.ai.insights.anomalies.detectAllOrgs, {});
+
+/**
+ * Daily deal-score rebuild (06:30 UTC).
+ *
+ * Iterates every starter+/pro/enterprise org, recomputes the
+ * deterministic 0-100 score for every open deal. Pure DB rollup, no
+ * LLM cost. Soft-deleted deals are skipped; their existing score rows
+ * reap via the daily TTL sweep (next cron entry below).
+ */
+crons.cron("rebuild-deal-scores", "30 6 * * *", internal.ai.insights.dealScores.rebuildAllOrgs, {});
+
+/**
+ * Daily TTL purge (07:00 UTC).
+ *
+ * Sweeps three tables in one mutation:
+ *   - `ephemeralDashboardCells` (24h TTL, per-user AI pins)
+ *   - `dealScores` (14d TTL, soft-deleted deals)
+ *   - `dashboardAnnotations` with `expiresAt` set (cron-written rows
+ *     have a 7d TTL; user-tool-written rows leave expiresAt undefined)
+ */
+crons.cron(
+	"purge-dashboard-ephemeral",
+	"0 7 * * *",
+	internal.ai.insights.dealScores.purgeExpiredCellsAndScores,
+	{},
+);
+
 export default crons;

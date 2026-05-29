@@ -2,7 +2,7 @@
  * convex/ai/tools/crud/createLead.ts
  *
  * Two-step lead creation:
- *   - `create_lead` proposes the write (rendered in chat as a LeadPreviewCard)
+ *   - `create_lead` proposes the write (rendered in chat as an EntityPreviewCard)
  *   - `commit_create_lead` runs the actual mutation after approval
  *
  * Schema design:

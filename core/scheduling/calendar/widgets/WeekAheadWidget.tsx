@@ -98,7 +98,7 @@ export function WeekAheadWidget({ orgId, orgSlug, className }: WeekAheadWidgetPr
 									<Link
 										href={`/${orgSlug}/tasks?view=calendar&date=${key}`}
 										className={cn(
-											"flex h-full min-h-[120px] flex-col gap-1.5 rounded-[var(--radius)] border p-2 transition-colors hover:border-ring/40 hover:bg-accent/30 lg:min-h-[110px] lg:p-1.5",
+											"flex h-full flex-col gap-1.5 rounded-[var(--radius)] border p-2 transition-colors hover:border-ring/40 hover:bg-accent/30 lg:p-1.5",
 											isDayToday && "ring-1 ring-primary/40",
 										)}
 									>

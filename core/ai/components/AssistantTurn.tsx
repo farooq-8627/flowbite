@@ -23,9 +23,9 @@
  * reject buttons appear directly under the row title where the user is
  * already looking.
  */
-import { Bot } from "lucide-react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { AIMessage } from "../types";
+import { AIMark } from "./AIMark";
 import { ChatConfirmation } from "./ChatConfirmation";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { Markdown } from "./markdown/Markdown";
@@ -81,7 +81,7 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 			    LTR / left in RTL — `flex-row-reverse` handles both). */}
 			<div className="flex flex-row-reverse items-center gap-2 min-w-0">
 				<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10">
-					<Bot className="size-3.5 text-primary" />
+					<AIMark size="size-3.5" tone="brand" aria-hidden="true" />
 				</div>
 				<span className="text-xs font-semibold">AI Assistant</span>
 				{assistant.model && !isLive && (

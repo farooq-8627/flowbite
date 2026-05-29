@@ -115,6 +115,55 @@ export const refreshNow = orgMutation({
 	},
 });
 
+/**
+ * Stage 1 of DASHBOARD-V2-PLAN.md (2026-05-28). Manually trigger a
+ * fresh weekly-org insight. Gates on `ai.briefingRefresh` (same
+ * permission as the daily refresh — Owner / Admin by default per
+ * `permissions/catalog.ts`). Rate-limited to **1 per day per org**
+ * via a custom rate-limit shape (`max: 1, periodMs: 86_400_000`)
+ * because each weekly insight calls a heavier model than the daily
+ * (per `briefingsActions.generateWeeklyForOrg` — standard tier
+ * with a 700-token output budget) and is org-scoped (every member
+ * shares the result).
+ *
+ * Schedules `ai/briefingsActions:generateWeeklyForOrg` with
+ * `trigger: "manual"`. The action handles model resolution
+ * (BYOK → platform DB key → env), data collection, generation,
+ * and persists a fresh `aiBriefings` row with `scope: "weekly-org"`
+ * that supersedes the prior week's row. `WeeklyInsightCard`'s
+ * `thisWeekForOrg` query reads that row.
+ */
+export const refreshWeeklyNow = orgMutation({
+	args: { orgId: v.id("orgs") },
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMember(ctx, args.orgId);
+		requireRole(member.permissions, "ai.briefingRefresh");
+
+		// 1/day/org — keyed on orgId only so all members share the budget.
+		// `enforceRateLimit` accepts any periodMs; the 5/min `RATE_LIMITS.ai`
+		// preset is per-user and would let every member burn one
+		// generation each. Scoping the key to `orgId` is the SSOT.
+		await enforceRateLimit(ctx, {
+			scope: "ai.briefing.refreshWeekly",
+			key: `${args.orgId}`,
+			max: 1,
+			periodMs: 86_400_000,
+		});
+
+		await ctx.scheduler.runAfter(
+			0,
+			// biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref
+			"ai/briefingsActions:generateWeeklyForOrg" as any,
+			{
+				orgId: args.orgId,
+				trigger: "manual",
+			} as never,
+		);
+
+		return { scheduled: true };
+	},
+});
+
 // ─── Stage 7 (SPRINT-PLAN.md) — ForAI twins ─────────────────────────────
 //
 // Per AGENTS.md non-negotiable rule, every public query/mutation an AI

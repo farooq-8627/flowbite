@@ -70,8 +70,18 @@ export function RecentActivityWidget({
 	const labels = useEntityLabels();
 
 	const visibleActivity = useMemo(() => {
-		if (limit >= activity.length) return activity;
-		return activity.slice(0, limit);
+		// Hide org-level bootstrap entries (`Created organization …`,
+		// `Applied industry template`, role-edits, etc.) from the
+		// glance widget. These are real audit-log facts and stay
+		// visible on the full /timeline page + the admin activity log,
+		// but on a fresh workspace they're the ONLY rows in the table —
+		// making the dashboard widget render a single "you created your
+		// own org" line instead of the empty-state CTA the user expects.
+		// Filter is widget-only (the underlying query is shared with
+		// other surfaces, so we slice in the component, not the API).
+		const meaningful = activity.filter((row) => row.entityType !== "org");
+		if (limit >= meaningful.length) return meaningful;
+		return meaningful.slice(0, limit);
 	}, [activity, limit]);
 
 	const actorMap = useMemo(() => {

@@ -678,6 +678,70 @@ The blank line between the row and the prose is REQUIRED — without it the rend
 `.trim(),
 	);
 
+	// ── Seed / sample / exploration data — realistic populated rows ────────
+	// Locked 2026-05-30 after the user reported "create 10 leads to explore"
+	// produced rows with EVERY optional + custom field empty. Root cause:
+	// nothing in the prompt told the model that exploration verbs are a
+	// signal to fill in optional + custom fields from `## Your organisation's
+	// schema` table. Without the carve-out, small models default to
+	// "minimum-viable args" — correct for surgical writes, useless for
+	// exploration.
+	parts.push(
+		`
+## Seed / sample / exploration data (NON-NEGOTIABLE)
+
+Verbs that fire this rule (NOT exhaustive, treat as semantic match): "create N leads/contacts/deals", "seed", "sample", "dummy", "test", "explore", "play around", "give me data to look at", "populate so I can try out the kanban", "throw some records in", "make me a few leads to explore". When ANY of these fire:
+
+1. **Use \`bulk_create_entities\`** for the multi-record create (NEVER call \`create_lead\` in a loop, NEVER call \`apply_template\` — that only seeds the one-time industry sample bundle and no-ops afterwards).
+2. **Read the \`## Your organisation's schema\` table above** for the target entity. For EVERY OPTIONAL column field AND EVERY CUSTOM field listed there, populate a value PER ROW via the row's top-level keys (column fields) or its \`customFields\` map (custom fields). For \`select\` / \`multi_select\` fields, ONLY pick from the listed option values — never invent options that aren't in the table. **Vary the picks across rows** so the dataset is useful for exploration (don't set \`industry_vertical: "SaaS"\` on all 10 — pick a different value per row from the option list).
+3. **Realistic names + emails + phones — never \`@example.com\` / \`@test.com\` / \`555-0100\` placeholders.**
+   - **Names: pick from a culturally diverse list** so the user can test sort, filter, search across cultures. Mix at least 5 cultural backgrounds across 10 rows. Examples: Anglo (Sarah Wilson, James O'Connor), South Asian (Priya Sharma, Arjun Patel, Aisha Rahman, Ravi Krishnan), East Asian (Wei Chen, Mei Lin, Hiroshi Tanaka, Min-jun Park), Arabic (Omar Al-Mansoori, Fatima Hassan, Khalid Al-Rashid, Layla Karim), Latin (Lucia Garcia, Carlos Mendez, Sofia Hernandez), African (Kwame Asante, Amara Okafor), European (Anna Müller, Sofia Rossi, Pieter de Vries).
+   - **Emails: realistic public providers** — \`gmail.com\`, \`outlook.com\`, \`yahoo.com\`, \`hotmail.com\`, \`icloud.com\`, \`proton.me\`. Format \`firstname.lastname@provider\` (lowercased, no spaces, no diacritics). Spread the providers across rows; don't put 10 on gmail.
+   - **Phones: match the workspace timezone** in \`## Workspace Context\`. Use these country codes by default:
+     - \`Asia/Dubai\` / \`Asia/Riyadh\` / \`Asia/Qatar\` / \`Asia/Kuwait\` → \`+971\` / \`+966\` / \`+974\` / \`+965\` followed by 8-9 local digits
+     - \`Asia/Kolkata\` / \`Asia/Karachi\` / \`Asia/Dhaka\` → \`+91\` / \`+92\` / \`+880\` followed by 10 local digits
+     - \`Asia/Singapore\` / \`Asia/Hong_Kong\` / \`Asia/Shanghai\` / \`Asia/Tokyo\` → \`+65\` / \`+852\` / \`+86\` / \`+81\`
+     - \`America/*\` (any) → \`+1\` followed by 10 local digits
+     - \`Europe/London\` → \`+44\`; \`Europe/Paris\` → \`+33\`; \`Europe/Berlin\` → \`+49\`; \`Europe/Madrid\` → \`+34\`
+     - Australia/* → \`+61\`
+     - Default (UTC / unknown) → \`+1\` 10-digit
+   - Format suggestion: \`+CC-AA-NNNNNNN\` with a separator so the user can read it (e.g. \`+971-50-123-4567\`, \`+91-98-7654-3210\`, \`+1-415-555-0142\`). Validators accept any non-empty string.
+4. **Tell the user these are SYNTHETIC sample records in your completion summary** ("Created 10 sample leads — synthetic records for exploration; don't email/call them."). The user must never be confused about whether records are real.
+5. **For SURGICAL creates** (the user named the record(s) and the values: "Add Sarah Khan, SaaS, 51-200, sarah.khan@gmail.com") use ONLY the values the user named. Do NOT fabricate optional fields they didn't ask for. The exploration carve-out fires ONLY for the verbs in the list at the top of this block.
+
+When the user follows up with **"fill in more details for the leads I just made"**, **"enrich what you just created"**, or **"add more fields to those leads"**, do NOT call \`bulk_create_entities\` again. Use \`bulk_update_entities\` with the \`createdIds\` from your prior \`commit_bulk_create_entities\` tool result. If those IDs are no longer in your tool history, pre-flight \`search_crm\` filtered to records you can see in \`## Recently touched (last 24h)\` to recover the personCodes.
+`.trim(),
+	);
+
+	// ── URL-sourced data ingestion (web_scrape → bulk_create_entities) ────
+	// Locked 2026-05-30 alongside the seed/sample block. The user can
+	// already chain web_scrape + bulk_create_entities manually; this
+	// block makes the chain explicit so the model doesn't get stuck
+	// waiting for a non-existent "import_url" tool. The single-record
+	// equivalent is enrich_record (different waterfall, different UX).
+	parts.push(
+		`
+## Ingesting data from a URL or web page
+
+Verbs that fire this rule: "import these leads from <URL>", "scrape this page and add them to my CRM", "make leads from <directory URL>", "pull contacts off this site", "ingest from <URL>". When fired:
+
+1. **Make sure the \`creative\` layer is expanded.** If you don't already have \`web_scrape\` in your tool list, call \`expand_tools({ layer: "creative", reason: "ingest URL into CRM" })\` first.
+2. **Call \`web_scrape({ url, mode: "markdown" })\`** to fetch the page. \`maxChars\` defaults to 8000; bump to 32000 (the hard cap) for a long directory. The tool is rate-limited at 30/min/user; one page per ingest is the right granularity.
+3. **Parse the returned markdown for entity-shaped data** — names, emails, phones, companies, job titles, industries, deal values. The \`## Your organisation's schema\` table above tells you what fields the workspace expects.
+4. **Map each extracted record to the target entity's schema.** Top-level row keys for column fields (\`displayName\`, \`email\`, \`phone\`, \`source\`); the \`customFields\` map for custom fields. Keys MUST match the \`name\` column of the schema table. Values for \`select\` / \`multi_select\` MUST be one of the listed options — if the source page uses a different label, pick the closest matching option from the schema OR drop that field for that row.
+5. **Call \`bulk_create_entities\`** with the mapped rows. Be EXPLICIT about the source in your completion summary ("Imported 12 leads from https://example.com/team — these are real records pulled from the page; review before contacting.") so the user can audit.
+6. **If a row's data is partial** (missing required fields like \`displayName\`), SKIP that row in your proposed batch — don't call \`ask_user_input\` per row. Surface the skipped count in the propose summary so the user sees the gap.
+7. **NEVER fabricate values that weren't on the source page.** URL-sourced rows must reflect the source. The \`## Seed / sample / exploration data\` carve-out does NOT apply to URL-sourced rows.
+8. **Set \`source: "web"\`** on every URL-sourced lead so they're distinguishable from manual entries in pipeline analytics.
+
+For SINGLE-record enrichment of an existing CRM record ("find Sarah's LinkedIn", "fill in P-007's company website"), use \`enrich_record\` instead — it has a built-in 4-step waterfall (web search → LinkedIn lookup → email finder → domain WHOIS) and confidence scoring per field, with one approval card per record.
+
+For CSV uploads (the user attaches a CSV file via the chat composer), use \`import_csv\` instead of \`web_scrape\` — it has a quarantined parser, dedup decisions per row, and a richer preview UI.
+
+You CANNOT ingest from URLs that require authentication (login walls, paywalls, gated portals); \`web_scrape\` only sees what an unauthenticated request sees. Tell the user plainly when this happens — don't fabricate the rows you couldn't read.
+`.trim(),
+	);
+
 	// ── Messaging (Stage 2 of SPRINT-PLAN.md) ───────────────────────────────
 	// Steady-state policy block telling the model when to call send_message
 	// vs add_note vs create_task. The verb-based routing matters because
@@ -772,6 +836,15 @@ For free-form "Sara joined Acme as VP Sales", call \`add_person_to_company\` fir
 When the user says "delete X" without an obvious tool match, prefer \`delete_entity\` (twoStep) — it routes by \`entityType\` to the right \`*ForAI\` softDelete and surfaces a cascade-impact preview ("this will trash 3 deals + 2 notes"). Use the dedicated entity-specific delete tools (delete_note) only when the user has clearly named the entity type AND the tool is more direct.
 
 Soft-delete only — every entity goes to trash and can be restored via \`restore_entity\`. Notes are the exception (hard-delete; the propose card says so).
+
+For deleting MANY records at once — **"delete all empty leads"**, **"trash these 5 deals"**, **"delete leads P-001 through P-005"**, **"clean up duplicates"**, **"clear out the leads with no email"** — call \`bulk_delete_entities\` (twoStep, layer \`bulk\`). Pass \`entityType\` plus \`entityIds[]\`. The IDs can be raw Convex \`_id\`s OR public codes (P-XXX, D-XXX, CO-XXX) — mix and match in the same array. The tool resolves codes to \`_id\`s automatically per row; unresolvable codes fail per-row with a "no <entity> with code X" message rather than failing the whole batch. NEVER use \`bulk_update_entities\` to fake a delete by clearing fields — that leaves zombie rows in the table; \`bulk_delete_entities\` is the right path and every row goes to trash.
+
+When the user names a FILTER ("delete all leads with empty fields", "remove leads that haven't been contacted in 90 days") and not specific codes:
+1. Pre-flight \`search_crm\` (or \`list_leads\` / a focused query) to enumerate the matching records.
+2. Surface the count + the codes ("Found 8 leads with no email or phone: P-009..P-016. Trash them all?") so the user knows the blast radius BEFORE the propose card.
+3. Call \`bulk_delete_entities\` with their codes once the user confirms the filter is correct.
+
+Same code-vs-\`_id\` rule applies to \`bulk_update_entities\` and \`bulk_close_deals\` — pass codes when you have them (cheaper to remember from a prior \`search_crm\`), pass \`_id\`s when you read them off a tool result.
 `.trim(),
 	);
 

@@ -2,9 +2,10 @@
 
 import { useConvexAuth, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import { clearSentryOrg, clearSentryUser, setSentryOrg, setSentryUser } from "@/lib/sentry-context";
 import { type EntityLabels, mergeEntityLabelDefaults } from "./entity-labels-types";
 import { OrgEntityLabelsContext } from "./org-entity-labels-context";
 
@@ -62,6 +63,16 @@ type Me = NonNullable<FunctionReturnType<typeof api.users.queries.me>>;
  */
 type FullOrgEntry = NonNullable<FunctionReturnType<typeof api.orgs.queries.listMyOrgs>>[number];
 
+/**
+ * Pending invitation addressed to the signed-in user, returned by
+ * `api.invitations.queries.listPendingForMe`. Surfaced to the
+ * WorkspaceSwitcher so a user who's already inside one org can see and
+ * accept a fresh invite from another org without digging through email.
+ */
+type PendingInviteForMe = NonNullable<
+	FunctionReturnType<typeof api.invitations.queries.listPendingForMe>
+>[number];
+
 type OrgEntry = {
 	name: string;
 	slug: string;
@@ -81,6 +92,13 @@ type OrgContextValue = {
 	fullOrgEntry: FullOrgEntry | undefined;
 	/** ALL orgs the current user belongs to (for switcher / multi-org views). */
 	allOrgs: ReadonlyArray<FullOrgEntry> | undefined;
+	/**
+	 * Pending invitations addressed to the signed-in user, across ALL orgs.
+	 * Used by the WorkspaceSwitcher to render "you've been invited to <org>"
+	 * entries inside the org-switcher dropdown. Empty array (not undefined)
+	 * once the query has resolved with no matches.
+	 */
+	pendingInvitations: ReadonlyArray<PendingInviteForMe> | undefined;
 	isLoading: boolean;
 
 	/** Current authenticated user (`api.users.queries.me`). Undefined while loading. */
@@ -167,6 +185,19 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 		isAuthenticated ? {} : "skip",
 	);
 
+	// Pending invitations addressed to the signed-in user, across ALL orgs.
+	// Hoisted here for the same reason every other session-scoped
+	// subscription lives in this provider — see AGENTS.md "Identity/auth/
+	// labels via context, not subscriptions". The WorkspaceSwitcher reads
+	// from `useCurrentOrg().pendingInvitations` instead of firing its own
+	// `useQuery`. Backed by the `by_email_and_status` index on
+	// `invitations` — see the query's docstring for the access-control
+	// rationale.
+	const pendingInvitations = useQuery(
+		api.invitations.queries.listPendingForMe,
+		isAuthenticated ? {} : "skip",
+	);
+
 	const value = useMemo<OrgContextValue>(() => {
 		const entry = orgs?.find((o) => o.org.slug === orgSlug);
 		const memberMap = new Map<string, MemberWithUser>();
@@ -183,6 +214,7 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 				: undefined,
 			fullOrgEntry: entry,
 			allOrgs: orgs,
+			pendingInvitations,
 			isLoading: orgs === undefined,
 			me: me ?? undefined,
 			membership,
@@ -194,7 +226,44 @@ export function OrgProvider({ orgSlug, children }: { orgSlug: string; children: 
 			entityLabels: mergeEntityLabelDefaults(entry?.org.entityLabels),
 			featureFlags,
 		};
-	}, [orgs, orgSlug, me, membership, members, featureFlags]);
+	}, [orgs, orgSlug, me, membership, members, featureFlags, pendingInvitations]);
+
+	// ── Sentry user + org context binding ────────────────────────────
+	//
+	// Rebind the Sentry scope every time the signed-in user OR the
+	// active org changes. Previously every error captured in production
+	// landed in Sentry as `User: anonymous` — making it impossible to
+	// triage "is one user hitting this 500 times or are 500 users hitting
+	// it once?" or to filter by `tag:orgId` when chasing a workspace-
+	// specific bug. The helper itself no-ops if Sentry's DSN is unset.
+	//
+	// Cleared on sign-out (when `me` flips back to undefined) so a
+	// stale identity isn't carried into subsequent anonymous errors.
+	// Same effect on workspace switch — `setSentryOrg` overwrites the
+	// previous org's tags + context.
+	useEffect(() => {
+		if (me?._id) {
+			setSentryUser({
+				id: String(me._id),
+				email: me.email ?? null,
+				name: me.name ?? null,
+			});
+		} else {
+			clearSentryUser();
+		}
+	}, [me]);
+
+	useEffect(() => {
+		if (value.org && value.orgId) {
+			setSentryOrg({
+				id: String(value.orgId),
+				slug: value.org.slug,
+				plan: value.org.plan,
+			});
+		} else {
+			clearSentryOrg();
+		}
+	}, [value.org, value.orgId]);
 
 	return (
 		<OrgContext.Provider value={value}>

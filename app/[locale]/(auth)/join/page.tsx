@@ -8,14 +8,24 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
+import { extractInviteToken } from "@/lib/invite-token";
 
 /**
- * JoinPage — Enter an invite token to join a workspace.
- * Redirects to /join/[token] which handles the actual acceptance.
+ * JoinPage — Enter an invite link or token to join a workspace.
+ *
+ * The form accepts every common shape an inviter might paste — full URL
+ * with locale prefix, bare URL, or raw token — via the shared
+ * `extractInviteToken` util, then redirects to `/join/<token>` which
+ * renders the standard accept-card. Without that extraction step a
+ * paste of `http://localhost:3000/en/join/<token>` would push to
+ * `/en/join/http://localhost:3000/en/join/<token>` and 404. See
+ * `lib/invite-token.ts` + `lib/invite-token.test.ts` for the parser.
  */
 export default function JoinPage() {
 	const router = useRouter();
-	const [token, setToken] = useState("");
+	const [input, setInput] = useState("");
+
+	const token = extractInviteToken(input);
 
 	return (
 		<AuthShellLayout
@@ -37,7 +47,7 @@ export default function JoinPage() {
 				<div className="space-y-2 text-center">
 					<h1 className="font-medium text-3xl">Join a workspace</h1>
 					<p className="text-muted-foreground text-sm">
-						Enter your invite token to join an existing workspace.
+						Paste the invite link or token from your admin.
 					</p>
 				</div>
 
@@ -45,18 +55,17 @@ export default function JoinPage() {
 					className="space-y-4"
 					onSubmit={(e) => {
 						e.preventDefault();
-						const t = token.trim();
-						if (t) router.push(`/join/${t}`);
+						if (token) router.push(`/join/${token}`);
 					}}
 				>
 					<FieldGroup>
 						<Field className="gap-1.5">
-							<FieldLabel htmlFor="join-token">Invite token</FieldLabel>
+							<FieldLabel htmlFor="join-token">Invite link or token</FieldLabel>
 							<Input
 								id="join-token"
-								placeholder="Paste your invite token here"
-								value={token}
-								onChange={(e) => setToken(e.target.value)}
+								placeholder="Paste your invite link here"
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
 								required
 							/>
 						</Field>
@@ -64,7 +73,7 @@ export default function JoinPage() {
 					<Button
 						className="w-full rounded-[var(--radius)]"
 						type="submit"
-						disabled={!token.trim()}
+						disabled={!token}
 					>
 						Continue
 					</Button>

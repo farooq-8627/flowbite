@@ -8,6 +8,12 @@
  *   pathname starts with `/xowner`. The middleware itself runs in this
  *   runtime, so any error thrown inside the owner-panel slug rewrite logic
  *   is also dropped.
+ *
+ * NOISE FILTERS (2026-05-30):
+ *   Same Next.js-navigation-signal drops as the Node config. The edge
+ *   runtime is more limited — no `process.cwd()`, no Node-only stdlib,
+ *   etc. — but the navigation-signal pattern is identical, so we
+ *   mirror it here.
  */
 import * as Sentry from "@sentry/nextjs";
 
@@ -25,14 +31,34 @@ function isOwnerPanelUrl(url: string | undefined): boolean {
 	}
 }
 
+const IGNORE_ERRORS: Array<string | RegExp> = [
+	"NEXT_REDIRECT",
+	"NEXT_NOT_FOUND",
+	"NEXT_PERMANENT_REDIRECT",
+	/NEXT_HTTP_ERROR_FALLBACK/,
+	"AbortError",
+];
+
 if (dsn) {
 	Sentry.init({
 		dsn,
 		environment,
 		tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? (isProd ? 0.1 : 1)),
 		sendDefaultPii: !isProd || process.env.SENTRY_SEND_PII === "true",
-		beforeSend: (event) => {
+		ignoreErrors: IGNORE_ERRORS,
+		beforeSend: (event, hint) => {
 			if (isOwnerPanelUrl(event.request?.url)) return null;
+			const err = hint?.originalException;
+			if (err && typeof err === "object" && "digest" in err) {
+				const digest = String((err as { digest?: unknown }).digest ?? "");
+				if (
+					digest === "NEXT_REDIRECT" ||
+					digest === "NEXT_NOT_FOUND" ||
+					digest.startsWith("NEXT_HTTP_ERROR_FALLBACK")
+				) {
+					return null;
+				}
+			}
 			return event;
 		},
 		beforeSendTransaction: (event) => {

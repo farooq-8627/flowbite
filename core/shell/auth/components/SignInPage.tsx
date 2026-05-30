@@ -13,7 +13,36 @@ import { Field, FieldContent, FieldGroup, FieldLabel } from "@/components/ui/fie
 import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
+import { setClientCookie } from "@/lib/cookie.client";
 import { toast } from "@/lib/toast";
+
+/**
+ * "Remember me" cookie key. The Next.js middleware reads this on every
+ * request and feeds the value into `convexAuthNextjsMiddleware`'s
+ * `cookieConfig.maxAge`:
+ *
+ *   - `"1"` (or absent) → 30-day persistent auth cookies.
+ *   - `"0"`             → session cookies (cleared when the browser
+ *                          closes).
+ *
+ * We write the cookie BEFORE calling `signIn(...)` because the auth
+ * library's proxy at `/api/auth/*` is what mints the auth cookies, and
+ * that proxy runs through our middleware on the very same request that
+ * follows the form submit. Setting the cookie afterwards would only
+ * take effect on the next sign-in.
+ *
+ * For OAuth, the click handler also writes the cookie before calling
+ * `signIn(provider)` so the post-callback cookie write picks it up.
+ *
+ * The cookie itself has a 365-day lifetime — it's a UI preference, not
+ * an auth credential, so it should outlive a single 30-day session and
+ * remember the user's pick across re-logins.
+ */
+const REMEMBER_ME_COOKIE = "flowbite_remember";
+const REMEMBER_ME_PREF_LIFETIME_DAYS = 365;
+function persistRememberMePreference(remember: boolean): void {
+	setClientCookie(REMEMBER_ME_COOKIE, remember ? "1" : "0", REMEMBER_ME_PREF_LIFETIME_DAYS);
+}
 
 /**
  * Whitelist of post-auth redirect targets the signin page is allowed to
@@ -69,7 +98,7 @@ export function SignInPage() {
 	const { signIn } = useAuthActions();
 	const [loading, setLoading] = useState(false);
 	const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
-	const [remember, setRemember] = useState(false);
+	const [remember, setRemember] = useState(true);
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
@@ -78,12 +107,29 @@ export function SignInPage() {
 	const postAuthHref = redirectTarget ?? "/";
 
 	const handleOAuth = (provider: "github" | "google") => {
+		// Persist the remember-me preference BEFORE redirecting to the
+		// OAuth provider — the post-callback cookie write at
+		// `/api/auth/callback/<provider>` is what reads it.
+		persistRememberMePreference(remember);
 		setOauthLoading(provider);
-		void signIn(provider).catch((err: Error) => {
-			posthog.capture("oauth_sign_in_failed", { provider, error_message: err.message });
-			toast.authError(err);
-			setOauthLoading(null);
-		});
+		// Pass `redirectTo` so the OAuth callback returns the user to
+		// the original target (e.g. `/join/<token>` for invite links)
+		// instead of falling back to `/`. Convex Auth stores `redirectTo`
+		// in a state cookie at the start of the OAuth handshake and reads
+		// it on the callback to drive the final 302. Without this, an
+		// invited user clicking "Continue with Google" lands on `/`,
+		// which then routes a no-org user into `/onboarding` — bypassing
+		// the invite-accept screen entirely.
+		// Refs:
+		//   - @convex-dev/auth signIn.ts (`if (args.params?.redirectTo)`)
+		//   - @convex-dev/auth cookies.ts (`redirectToParamCookie`)
+		void signIn(provider, redirectTarget ? { redirectTo: redirectTarget } : undefined).catch(
+			(err: Error) => {
+				posthog.capture("oauth_sign_in_failed", { provider, error_message: err.message });
+				toast.authError(err);
+				setOauthLoading(null);
+			},
+		);
 	};
 
 	return (
@@ -163,13 +209,34 @@ export function SignInPage() {
 							const formData = new FormData(e.currentTarget);
 							const email = formData.get("email") as string;
 							formData.set("flow", "signIn");
+							// Persist the remember-me preference BEFORE
+							// `signIn` so the auth proxy's cookie writes
+							// inherit the right `cookieConfig.maxAge` from
+							// our middleware. See the note at the top of
+							// this file for why timing matters.
+							persistRememberMePreference(remember);
+							// `signIn` returns `{ signingIn, redirect? }`.
+							// With `Password({ verify: ResendOTP })` configured
+							// (see `convex/auth.ts`), signIn for an account
+							// whose email hasn't been verified does NOT
+							// authenticate the user — it re-sends the OTP
+							// and returns `signingIn === false`. In that
+							// case route to `/verify-email?email=...` so
+							// the user can finish verification.
 							void signIn("password", formData)
-								.then(() => {
+								.then((result) => {
 									posthog.identify(email, { email });
 									posthog.capture("user_signed_in", {
 										email,
 										method: "password",
+										needs_verification: !result.signingIn,
 									});
+									if (!result.signingIn) {
+										router.push(
+											`/verify-email?email=${encodeURIComponent(email)}`,
+										);
+										return;
+									}
 									router.push(postAuthHref);
 								})
 								.catch((err: Error) => {
@@ -194,14 +261,11 @@ export function SignInPage() {
 								/>
 							</Field>
 							<Field className="gap-1.5">
-								<FieldLabel htmlFor="signin-password">Password</FieldLabel>
-								<div className="flex items-center justify-between">
-									<FieldLabel htmlFor="signin-password" className="sr-only">
-										Password
-									</FieldLabel>
+								<div className="flex items-center justify-between gap-2">
+									<FieldLabel htmlFor="signin-password">Password</FieldLabel>
 									<Link
 										prefetch={false}
-										className="ms-auto text-muted-foreground text-xs underline underline-offset-4 hover:text-foreground"
+										className="text-muted-foreground text-xs underline underline-offset-4 hover:text-foreground"
 										href="/forgot-password"
 									>
 										Forgot password?

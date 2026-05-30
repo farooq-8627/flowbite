@@ -4,7 +4,7 @@
  * All queries are org-scoped and require `members.invite` permission to read.
  */
 import { v } from "convex/values";
-import { orgQuery } from "../_functions/authenticated";
+import { authenticatedQuery, orgQuery } from "../_functions/authenticated";
 import { internalQuery, query } from "../_generated/server";
 import { requireRole } from "../_shared/permissions";
 import { getOrgMember } from "../orgs/helpers";
@@ -83,6 +83,95 @@ export const listPending = orgQuery({
 			roleName: roleMap.get(r.roleId)?.name ?? "Member",
 			roleColor: roleMap.get(r.roleId)?.color ?? null,
 		}));
+	},
+});
+
+/**
+ * List pending invitations addressed to the signed-in user (across every
+ * org). Powers the "you've been invited to <org>" entries in the
+ * WorkspaceSwitcher dropdown so a user who's already signed in to one
+ * workspace can accept a fresh invite from another workspace without
+ * digging through their email for the magic link.
+ *
+ * SCOPE
+ * ─────
+ * Returns ONLY invitations whose `email` exactly matches the signed-in
+ * user's email AND whose `status === "pending"` AND whose `expiresAt` is
+ * still in the future. Soft-filters expired-but-not-yet-cleaned-up rows
+ * client-side so the dropdown doesn't show stale entries between the
+ * expiry tick and the next admin cleanup pass.
+ *
+ * SECURITY
+ * ────────
+ * Public auth required (no org-scoped permission needed — these are
+ * invitations addressed to the user themselves). The query reads only
+ * `ctx.user.email` to filter, so a user can never enumerate invitations
+ * sent to another email.
+ *
+ * INDEX
+ * ─────
+ * Backed by `invitations.by_email_and_status` (added 2026-05-30) — gives
+ * O(log n) on the (email, status) pair without scanning the full table.
+ */
+export const listPendingForMe = authenticatedQuery({
+	args: {},
+	handler: async (ctx) => {
+		const myEmail = ctx.user.email;
+		if (!myEmail) return [];
+
+		const now = Date.now();
+
+		const rows = await ctx.db
+			.query("invitations")
+			.withIndex("by_email_and_status", (q) => q.eq("email", myEmail).eq("status", "pending"))
+			// Capped — a user with > 50 simultaneous pending invites is
+			// extraordinarily unusual; the dropdown UI only renders the
+			// first few anyway.
+			.take(50);
+
+		const fresh = rows.filter((r) => r.expiresAt > now);
+
+		// Resolve org names + role names in one batch each. Both lists are
+		// tiny (≤ 50 entries) so a parallel hydrate is cheaper than
+		// per-row lookups in the UI.
+		const orgIds = Array.from(new Set(fresh.map((r) => r.orgId)));
+		const roleIds = Array.from(new Set(fresh.map((r) => r.roleId)));
+
+		const [orgs, roles] = await Promise.all([
+			Promise.all(orgIds.map((id) => ctx.db.get(id))),
+			Promise.all(roleIds.map((id) => ctx.db.get(id))),
+		]);
+
+		const orgMap = new Map(orgs.filter((o) => o !== null).map((o) => [o!._id, o!]));
+		const roleMap = new Map(roles.filter((r) => r !== null).map((r) => [r!._id, r!]));
+
+		// Drop invitations whose org or role was deleted between insert and
+		// read — the accept page would error on them anyway, so don't
+		// surface them in the switcher.
+		const enriched = fresh
+			.map((r) => {
+				const org = orgMap.get(r.orgId);
+				const role = roleMap.get(r.roleId);
+				if (!org || !role) return null;
+				if (org.deletedAt !== undefined) return null;
+				return {
+					_id: r._id,
+					token: r.token,
+					email: r.email,
+					expiresAt: r.expiresAt,
+					orgId: r.orgId,
+					orgName: org.name,
+					orgSlug: org.slug,
+					roleName: role.name,
+					roleColor: role.color ?? null,
+				};
+			})
+			.filter((row): row is NonNullable<typeof row> => row !== null)
+			// Newest invitation first so the most recent "please join us"
+			// floats to the top of the dropdown.
+			.sort((a, b) => b.expiresAt - a.expiresAt);
+
+		return enriched;
 	},
 });
 

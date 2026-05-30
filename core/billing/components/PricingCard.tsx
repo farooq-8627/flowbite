@@ -204,12 +204,23 @@ export function PricingCard({
 				</Button>
 			)}
 
-			{mode === "upgrade" && !variantId && !isFree && !isEnterprise ? (
-				<p className="text-[11px] text-amber-700 dark:text-amber-400">
-					This tier is missing a LemonSqueezy variant id. Set it under{" "}
-					<code className="font-mono">/xowner/tiers</code> to enable upgrade.
-				</p>
-			) : null}
+			{/*
+			 * Variant-id misconfig is an OPERATOR concern, not a
+			 * customer concern. Surfacing the internal `/xowner/tiers`
+			 * path or "LemonSqueezy variant id" jargon to a paying user
+			 * (a) leaks the existence of the hidden owner panel, (b)
+			 * exposes the billing provider name, and (c) blames the
+			 * customer for missing config they have no power to fix.
+			 * The disabled CTA button above already communicates "this
+			 * tier isn't purchasable right now" — that's the only thing
+			 * the user needs. The owner panel + Convex insights surface
+			 * the same gap to the operator side.
+			 *
+			 * If we ever want a customer-friendly fallback (e.g.
+			 * "Contact sales" mailto for unsold tiers), wire it through
+			 * `tier.contactSalesUrl` from the public tiers query — never
+			 * via a string that names the internal slug.
+			 */}
 		</div>
 	);
 }

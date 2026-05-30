@@ -452,3 +452,68 @@ export function coerceInt<T extends z.ZodTypeAny = z.ZodNumber>(
 		return v;
 	}, inner) as z.ZodTypeAny;
 }
+
+/**
+ * Coerces "stringly-typed" arrays from less-strict LLMs (NVIDIA NIM
+ * Llama-3.3-70B, OpenRouter free-tier Llama, Kimi K2) before delegating
+ * to a normal `z.array(...)` chain. The same family of models that
+ * produces `"100"` for a number field also produces `"P-001,P-002"`
+ * (comma-joined) or `'["P-001","P-002"]'` (JSON-encoded) for an array
+ * field — both sneak past Convex's validator on the propose step but
+ * fail Zod parse on the commit step in `resume.ts`.
+ *
+ * 2026-05-30 regression: reproduced when the user said
+ * "delete all empty leads" and Llama-3.3-70B emitted
+ * `entityIds: "P-001,P-002,P-003"`. The propose handler accepted it
+ * (record-of-unknown), the user approved, and `commit_bulk_delete_entities`
+ * rejected it with `entityIds: Invalid input: expected array, received string`.
+ * The user saw a malformed-payload card and had to retry from scratch.
+ *
+ * The fix is `coerceStringArray` — a `z.preprocess` that runs BEFORE
+ * the inner array validator and:
+ *   1. JSON-parses any string that starts with `[`. If it parses to an
+ *      array, forward it as-is.
+ *   2. Falls back to splitting on commas / whitespace / newlines and
+ *      filters empty fragments.
+ *   3. Wraps a single non-array primitive in a one-element array, so a
+ *      model that emits `entityIds: "P-001"` succeeds with `["P-001"]`.
+ *   4. Forwards arrays unchanged.
+ *
+ * Drop-in replacement for `z.array(z.string())` inside a tool schema:
+ *
+ *   entityIds: coerceStringArray(z.array(z.string()).min(1).max(200)),
+ *
+ * The builder form is a positional argument so callers keep `.min()` /
+ * `.max()` / `.describe()` ergonomics from the wrapped array.
+ */
+export function coerceStringArray<T extends z.ZodTypeAny = z.ZodArray<z.ZodString>>(
+	inner?: T,
+): z.ZodTypeAny {
+	const schema = (inner ?? z.array(z.string())) as z.ZodTypeAny;
+	return z.preprocess((v) => {
+		if (Array.isArray(v)) return v;
+		if (typeof v === "string") {
+			const trimmed = v.trim();
+			if (trimmed === "") return [];
+			// Try JSON-array first — handles `'["P-001","P-002"]'`.
+			if (trimmed.startsWith("[")) {
+				try {
+					const parsed = JSON.parse(trimmed);
+					if (Array.isArray(parsed)) return parsed;
+				} catch {
+					// fall through to comma-split
+				}
+			}
+			// Fallback: split on commas / whitespace / newlines.
+			const parts = trimmed
+				.split(/[,\n\r\t]+/)
+				.map((s) => s.trim())
+				.filter((s) => s.length > 0);
+			return parts.length > 0 ? parts : [trimmed];
+		}
+		// Wrap a lone primitive (number, boolean) so the inner array
+		// validator can either accept or reject it cleanly.
+		if (v === null || v === undefined) return v;
+		return [v];
+	}, schema) as z.ZodTypeAny;
+}

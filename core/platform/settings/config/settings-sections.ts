@@ -553,7 +553,7 @@ export function getSettingsSections(
 			groupId: "billing",
 			label: "Invoices",
 			description: "Past invoices and payment history.",
-			keywords: ["receipt", "payment", "history", "portal", "lemonsqueezy"],
+			keywords: ["receipt", "payment", "history", "portal", "subscription", "billing"],
 			permission: "org.viewBilling",
 		},
 

@@ -9,6 +9,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
+import { maskEmail } from "@/lib/format";
 import { toast } from "@/lib/toast";
 
 /**
@@ -90,8 +91,11 @@ export function VerifyEmailPage() {
 					<h1 className="font-medium text-3xl">Verify your email</h1>
 					<p className="text-muted-foreground text-sm">
 						We sent a 6-digit code to{" "}
-						<span className="font-medium text-foreground">
-							{emailFromUrl || "your email"}
+						<span
+							className="font-medium text-foreground"
+							title="Email partially hidden for your security"
+						>
+							{maskEmail(emailFromUrl) || "your email"}
 						</span>
 						. Enter it below to continue.
 					</p>

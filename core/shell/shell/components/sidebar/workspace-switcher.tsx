@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Check, ChevronsUpDown, Command, LogOut, Plus, UserPlus } from "lucide-react";
+import { Check, ChevronsUpDown, Command, LogOut, Mail, Plus, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -33,11 +33,23 @@ import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
  * context, not subscriptions"): components MUST NOT call `listMyOrgs`,
  * `getMyMembership`, `listMembers`, `getEntityLabels`, or `users.me` via
  * `useQuery` directly.
+ *
+ * PENDING INVITATIONS
+ * ───────────────────
+ * The dropdown also surfaces pending invitations addressed to the
+ * signed-in user (across every org). This solves the "I'm a member of
+ * org A and got invited to org B but didn't see the email — how do I
+ * accept?" problem: the moment the user is signed in to ANY org, any
+ * pending invite shows up here. Clicking the invite navigates to
+ * `/join/<token>` which renders the standard accept-card.
+ *
+ * The invitations subscription itself lives in `OrgProvider` per the
+ * "subscriptions live in the layout, components read from context" rule.
  */
 export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }) {
 	const { signOut } = useAuthActions();
 	const router = useRouter();
-	const { allOrgs: orgs, org: currentOrg, fullOrgEntry } = useCurrentOrg();
+	const { allOrgs: orgs, org: currentOrg, fullOrgEntry, pendingInvitations } = useCurrentOrg();
 	// `currentOrg` from context is the trimmed `{name, slug, plan}` shape.
 	// The switcher needs `platformOrgId` for the small ORB-xxx label, so we
 	// pull the full org doc from `fullOrgEntry`.
@@ -58,6 +70,19 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 
 	const displayName = currentOrg?.name ?? APP_CONFIG.name;
 
+	// Member orgs other than the currently active one.
+	const otherOrgs = orgs.filter(({ org }) => org.slug !== currentOrgSlug);
+
+	// Pending invitations — but only those for orgs the user isn't ALREADY
+	// a member of. (If they accepted via another tab and the invite row is
+	// still pending until the next reactive tick, we don't want to show
+	// the "you've been invited" CTA AND the active membership at the same
+	// time.) Cap to the 5 most recent so the dropdown stays compact.
+	const memberOrgIds = new Set(orgs.map(({ org }) => org._id));
+	const pendingInvites = (pendingInvitations ?? [])
+		.filter((inv) => !memberOrgIds.has(inv.orgId))
+		.slice(0, 5);
+
 	return (
 		<SidebarMenu>
 			<SidebarMenuItem>
@@ -68,6 +93,25 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 							<span className="flex-1 truncate text-sm font-medium">
 								{displayName}
 							</span>
+							{pendingInvites.length > 0 && (
+								// Subtle dot — telegraphs "you have an
+								// invite waiting" without yelling. The
+								// dropdown reveals the detail. Marked
+								// `aria-hidden` because a bare `<span>`
+								// doesn't support `aria-label` per ARIA
+								// spec; the screen-reader copy lives in
+								// the sibling `<span class="sr-only">`.
+								<>
+									<span
+										aria-hidden="true"
+										className="size-2 shrink-0 rounded-full bg-primary"
+									/>
+									<span className="sr-only">
+										{pendingInvites.length} pending invitation
+										{pendingInvites.length === 1 ? "" : "s"}
+									</span>
+								</>
+							)}
 							<ChevronsUpDown className="ms-auto size-4 shrink-0 opacity-50" />
 						</SidebarMenuButton>
 					</DropdownMenuTrigger>
@@ -90,19 +134,43 @@ export function WorkspaceSwitcher({ currentOrgSlug }: { currentOrgSlug: string }
 							</div>
 						</DropdownMenuLabel>
 						<DropdownMenuSeparator />
-						{orgs.length > 1 && (
+						{otherOrgs.length > 0 && (
 							<>
-								{orgs
-									.filter(({ org }) => org.slug !== currentOrgSlug)
-									.map(({ org }) => (
-										<DropdownMenuItem key={org._id} asChild>
-											<Link href={`/${org.slug}`}>
-												<Command className="size-4 shrink-0 opacity-50" />
-												<span className="flex-1 truncate">{org.name}</span>
-												<Check className="ms-auto size-4 shrink-0 opacity-0" />
-											</Link>
-										</DropdownMenuItem>
-									))}
+								<DropdownMenuLabel className="px-3 py-1 text-muted-foreground text-xs font-normal">
+									Switch workspace
+								</DropdownMenuLabel>
+								{otherOrgs.map(({ org }) => (
+									<DropdownMenuItem key={org._id} asChild>
+										<Link href={`/${org.slug}`}>
+											<Command className="size-4 shrink-0 opacity-50" />
+											<span className="flex-1 truncate">{org.name}</span>
+											<Check className="ms-auto size-4 shrink-0 opacity-0" />
+										</Link>
+									</DropdownMenuItem>
+								))}
+								<DropdownMenuSeparator />
+							</>
+						)}
+						{pendingInvites.length > 0 && (
+							<>
+								<DropdownMenuLabel className="px-3 py-1 text-muted-foreground text-xs font-normal">
+									Pending invitations
+								</DropdownMenuLabel>
+								{pendingInvites.map((invite) => (
+									<DropdownMenuItem key={invite._id} asChild>
+										<Link href={`/join/${invite.token}`}>
+											<Mail className="size-4 shrink-0 text-primary" />
+											<span className="flex min-w-0 flex-1 flex-col leading-tight">
+												<span className="truncate text-sm font-medium">
+													{invite.orgName}
+												</span>
+												<span className="truncate text-muted-foreground text-xs">
+													Invited as {invite.roleName}
+												</span>
+											</span>
+										</Link>
+									</DropdownMenuItem>
+								))}
 								<DropdownMenuSeparator />
 							</>
 						)}

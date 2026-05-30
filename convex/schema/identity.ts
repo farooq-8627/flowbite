@@ -544,4 +544,12 @@ export const invitations = defineTable({
 })
 	.index("by_orgId_and_email", ["orgId", "email"])
 	.index("by_token", ["token"])
-	.index("by_orgId_and_status", ["orgId", "status"]);
+	.index("by_orgId_and_status", ["orgId", "status"])
+	// Lets `invitations.queries.listPendingForMe` resolve every pending
+	// invitation addressed to the signed-in user's email across ALL orgs
+	// in O(log n) — used by the WorkspaceSwitcher to surface "you've been
+	// invited to <org>" entries directly in the org-switcher dropdown.
+	// Adding a secondary index over an existing field is a non-breaking
+	// schema change (no row data shape changes), so no migration is
+	// required — Convex builds the index lazily on first push.
+	.index("by_email_and_status", ["email", "status"]);

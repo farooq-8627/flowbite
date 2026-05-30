@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation } from "convex/react";
-import { Copy, Plus } from "lucide-react";
+import { CheckIcon, Copy, Plus } from "lucide-react";
+import { Select as SelectPrimitive } from "radix-ui";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod/v4";
@@ -24,13 +25,7 @@ import {
 	FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { useSettingsForm } from "../../../hooks/useSettingsForm";
@@ -233,17 +228,40 @@ export function InviteMemberDialog({
 											</FormControl>
 											<SelectContent>
 												{inviteRoles.map((role) => (
-													<SelectItem key={role._id} value={role._id}>
-														<span className="font-medium">
-															{role.name}
+													// We use SelectPrimitive.Item directly (not the
+													// shared SelectItem) so we can split what gets
+													// projected into the trigger from what only
+													// renders in the dropdown. ItemText holds just
+													// the role NAME — that's what mirrors into the
+													// trigger via Radix, keeping it short so the
+													// dialog can't overflow when a long description
+													// is selected. The description sibling renders
+													// only in the dropdown row.
+													<SelectPrimitive.Item
+														key={role._id}
+														value={role._id}
+														className="relative flex w-full cursor-default items-center gap-1 rounded-sm py-1.5 pe-8 ps-2 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+													>
+														<span
+															data-slot="select-item-indicator"
+															className="absolute end-2 flex size-3.5 items-center justify-center"
+														>
+															<SelectPrimitive.ItemIndicator>
+																<CheckIcon className="size-4" />
+															</SelectPrimitive.ItemIndicator>
 														</span>
+														<SelectPrimitive.ItemText>
+															<span className="font-medium">
+																{role.name}
+															</span>
+														</SelectPrimitive.ItemText>
 														{role.description && (
 															<span className="text-muted-foreground">
 																{" "}
 																— {role.description}
 															</span>
 														)}
-													</SelectItem>
+													</SelectPrimitive.Item>
 												))}
 											</SelectContent>
 										</Select>

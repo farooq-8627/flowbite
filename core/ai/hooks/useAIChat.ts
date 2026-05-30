@@ -76,16 +76,57 @@ export function useAIChat(args: {
 	const archiveConversation = useMutation(anyApi.ai.conversations.archive);
 
 	const isStreaming = useMemo(() => {
-		const last = (messages as Array<{ role: string; thinkingState?: string }> | undefined)?.at(
-			-1,
-		);
-		if (!last || last.role !== "assistant") return false;
-		const ts = last.thinkingState;
-		// Anything other than `done` / `error` means the request is still in
-		// flight (a live thinkingState) OR the field is undefined on a freshly
-		// inserted placeholder — in either case the composer should stay
-		// disabled until the orchestrator settles the message.
-		return ts !== "done" && ts !== "error";
+		const msgs = messages as
+			| Array<{ role: string; thinkingState?: string; confirmationState?: string }>
+			| undefined;
+		if (!msgs || msgs.length === 0) return false;
+
+		// Look at the tail since the last user message — that's the in-flight
+		// assistant turn. The previous implementation looked only at
+		// `messages.at(-1)` which broke during the gap between rounds of a
+		// multi-tool turn: when a tool message landed last, role !== "assistant",
+		// `isStreaming` flipped to false, the composer swapped the red Stop
+		// button for the disabled Send button, and the user lost the ability
+		// to cancel mid-turn until the next assistant message started streaming.
+		// Reproduced 2026-05-30 by the user across two screenshots
+		// (search_crm finished → "Preparing response…" → Send button instead
+		// of Stop).
+		const lastUserIdx = msgs.map((m) => m.role).lastIndexOf("user");
+		const tail = lastUserIdx === -1 ? msgs : msgs.slice(lastUserIdx + 1);
+
+		// User just sent — orchestrator dispatching, no tail yet. Stay streaming
+		// so the Stop button is visible from the very first frame.
+		if (tail.length === 0) return true;
+
+		// Tool awaiting user approval → orchestrator paused. The propose card
+		// owns the next step; hide the Stop button so the user notices the
+		// approval prompt instead.
+		if (tail.some((m) => m.role === "tool" && m.confirmationState === "pending")) {
+			return false;
+		}
+
+		// Any assistant in the tail with a non-terminal thinkingState — still
+		// thinking / calling a tool / streaming text. Show Stop.
+		if (
+			tail.some(
+				(m) =>
+					m.role === "assistant" &&
+					m.thinkingState !== "done" &&
+					m.thinkingState !== "error",
+			)
+		) {
+			return true;
+		}
+
+		// Last message is a tool result with no pending approval → orchestrator
+		// is between rounds, about to schedule the next assistant message. Treat
+		// as streaming so Stop stays visible across the gap. (If the orchestrator
+		// has actually died, the user can still click Stop to clear the state;
+		// the cancel mutation is idempotent.)
+		const last = tail[tail.length - 1];
+		if (last.role === "tool") return true;
+
+		return false;
 	}, [messages]);
 
 	// Week 3.4 — true when the last assistant turn is settled and no tool

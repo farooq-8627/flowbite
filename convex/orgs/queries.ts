@@ -200,6 +200,40 @@ export const listMembersForAI = internalQuery({
 });
 
 /**
+ * AI-callable internal twin that returns the org's `settings.modules` array.
+ *
+ * Why a dedicated query instead of forwarding `getFullSettings`: tools that
+ * need to read-merge-write the modules array (e.g. `set_entity_default_view`)
+ * only need this one slice. Returning the whole settings object would push
+ * dozens of unrelated keys (rateLimits, mockData stamps, briefingDefaults,
+ * etc.) through the agent's context budget for every read.
+ *
+ * Returns `[]` when the org has no modules yet — the writer rebuilds the
+ * array from scratch using the entity slot list as the source of truth.
+ */
+export const getOrgModulesForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return [];
+		const modules = (org.settings?.modules ?? []) as Array<{
+			slot: string;
+			label?: string;
+			hidden?: boolean;
+			order?: number;
+			defaultView?: "list" | "board";
+			cardFields?: string[];
+			listColumns?: string[];
+			boardGroupBy?: string;
+			defaultFilters?: string[];
+			meta?: unknown;
+		}>;
+		return modules;
+	},
+});
+
+/**
  * Get the current user's membership in a specific org.
  *
  * HOW IT WORKS:

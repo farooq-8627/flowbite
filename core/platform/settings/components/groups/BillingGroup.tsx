@@ -132,7 +132,7 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 			<SettingsSection
 				id="billing.choose"
 				title="Choose a plan"
-				description="Limits, copy, and pricing are managed in the platform owner panel — what you see here is what every visitor sees on the marketing site."
+				description="Pick the plan that fits your team. Switch any time — your workspace data, integrations, and AI history come with you."
 				action={
 					<div className="flex items-center gap-2 text-xs">
 						<span

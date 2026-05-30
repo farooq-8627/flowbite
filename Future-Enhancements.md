@@ -759,7 +759,7 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | Status | Backlog |
 | Files involved | `core/auth/components/SignUpPage.tsx`, `core/auth/components/VerifyEmailPage.tsx` |
 
-- **Wire email verification into SignUp flow** (MEDIUM) — after signup, redirect to `/verify-email?email=...` if Convex Auth requires it. The `VerifyEmailPage` is built; sign-up just doesn't route to it today.
+- ✅ **Wire email verification into SignUp flow** — shipped 2026-05-30. `convex/ResendOTP.ts` + `verify: ResendOTP` on the `Password({...})` config; `SignUpPage`/`SignInPage` branch on `signIn(...).then(r => r.signingIn === false)` to route through `/verify-email?email=...`. See SHIPPED.md "Auth hardening — signup OTP verification + …".
 - **OAuth-specific error handling** (LOW) — currently the OAuth path shows a generic toast (`OAuthAccountNotLinked`); could be more specific (account-already-linked, provider-revoked, etc.).
 
 ## H.2 — Shell topnav (Phase 2)

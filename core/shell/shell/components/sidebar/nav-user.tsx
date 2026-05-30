@@ -3,6 +3,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Bell, CircleUser, CreditCard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
 	DropdownMenu,
@@ -41,6 +42,7 @@ import { getInitials } from "@/lib/utils";
 export function NavUser({ orgSlug }: { orgSlug?: string }) {
 	const { isMobile } = useSidebar();
 	const { signOut } = useAuthActions();
+	const router = useRouter();
 	const user = useMe();
 	const permissions = useOrgPermissions();
 
@@ -156,7 +158,18 @@ export function NavUser({ orgSlug }: { orgSlug?: string }) {
 							)}
 						</DropdownMenuGroup>
 						<DropdownMenuSeparator />
-						<DropdownMenuItem onClick={() => void signOut()}>
+						<DropdownMenuItem
+							onClick={() => {
+								// Sign out, then navigate. Routing only AFTER signOut
+								// resolves prevents the brief render where the
+								// dashboard tree is still mounted with `isAuthenticated`
+								// flipping to false — which is what triggers the
+								// "WebSocket reconnect" log spam + React error #310.
+								// Symmetric with `WorkspaceSwitcher` so both logout
+								// surfaces behave identically.
+								void signOut().then(() => router.push("/signin"));
+							}}
+						>
 							<LogOut className="size-4 shrink-0" />
 							Log out
 						</DropdownMenuItem>

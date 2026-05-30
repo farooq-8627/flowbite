@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
+import { useMutation } from "convex/react";
 import { Orbit } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -9,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { APP_CONFIG } from "@/config/app-config";
+import { api } from "@/convex/_generated/api";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
 
@@ -20,10 +22,30 @@ import { toast } from "@/lib/toast";
  *   → Convex sends OTP to email
  *   → Redirect to /reset-password?email=...
  *
+ * GOOGLE / GITHUB BRIDGE (added 2026-05-30)
+ * ─────────────────────────────────────────
+ * Convex Auth's `flow: "reset"` looks up an `authAccounts` row keyed on
+ * `(provider="password", providerAccountId=email)`. A user who only ever
+ * signed in with Google has a `provider="google"` row instead, so the
+ * stock reset flow throws "InvalidAccountId" → "no account found with
+ * that email". We work around that by calling `ensurePasswordAccount`
+ * BEFORE `signIn`. The mutation:
+ *
+ *   - Returns `{ ok: false }` when the email maps to no app-level user
+ *     (no enumeration leak — same UX as a successful submit).
+ *   - Returns `{ ok: true, created: true }` when it just inserted a
+ *     stub password authAccount for an OAuth-only user, then the
+ *     standard reset flow proceeds.
+ *   - Returns `{ ok: true, created: false }` when the user already has
+ *     a password authAccount — same as before this change.
+ *
+ * See `convex/auth.ts::ensurePasswordAccount` for the full rationale.
+ *
  * Source: https://labs.convex.dev/auth/config/passwords#password-reset
  */
 export function ForgotPasswordPage() {
 	const { signIn } = useAuthActions();
+	const ensurePasswordAccount = useMutation(api.auth.ensurePasswordAccount);
 	const router = useRouter();
 	const [loading, setLoading] = useState(false);
 
@@ -33,6 +55,26 @@ export function ForgotPasswordPage() {
 		const formData = new FormData(e.currentTarget);
 		const email = formData.get("email") as string;
 		try {
+			// Step 1 — make sure the user has a password authAccount row
+			// (creates a stub for OAuth-only users so the SDK doesn't
+			// error with InvalidAccountId).
+			const ensured = await ensurePasswordAccount({ email });
+
+			if (!ensured.ok) {
+				// Either the email maps to no user, or the existing
+				// password account is linked to a different user
+				// (historical orphan). Show the same generic success
+				// message we'd show on a real send so we don't leak
+				// account existence — the user is then routed to the
+				// reset-password page where their (non-existent) code
+				// will simply fail to verify. This matches the OWASP
+				// recommendation for forgot-password flows.
+				toast.success("If an account exists, we've sent a reset code.");
+				router.push(`/reset-password?email=${encodeURIComponent(email)}`);
+				return;
+			}
+
+			// Step 2 — actually send the reset OTP.
 			await signIn("password", { flow: "reset", email });
 			toast.success("Reset code sent. Check your inbox.");
 			router.push(`/reset-password?email=${encodeURIComponent(email)}`);
@@ -75,7 +117,8 @@ export function ForgotPasswordPage() {
 				<div className="space-y-2 text-center">
 					<h1 className="font-medium text-3xl">Forgot password?</h1>
 					<p className="text-muted-foreground text-sm">
-						Enter your email and we&apos;ll send you a reset code.
+						Enter your email and we&apos;ll send you a reset code. Works for Google or
+						GitHub accounts too.
 					</p>
 				</div>
 

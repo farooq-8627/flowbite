@@ -41,7 +41,9 @@ function resolveAppUrl(): string {
 
 export const APP_CONFIG = {
 	name: process.env.NEXT_PUBLIC_APP_NAME ?? "Orbitly",
-	description: process.env.NEXT_PUBLIC_APP_DESCRIPTION ?? "AI-Powered CRM for Gulf Businesses",
+	description:
+		process.env.NEXT_PUBLIC_APP_DESCRIPTION ??
+		"The AI-powered CRM that adapts to your industry.",
 	url: resolveAppUrl(),
 	version: "0.1.0",
 	/**

@@ -10,7 +10,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import { APP_CONFIG } from "@/config/app-config";
 import { AuthShellLayout } from "@/core/shell/auth/layouts/AuthShellLayout";
 import { toast } from "@/lib/toast";
@@ -63,7 +62,6 @@ export function SignUpPage() {
 	const { signIn } = useAuthActions();
 	const [loading, setLoading] = useState(false);
 	const [oauthLoading, setOauthLoading] = useState<"github" | "google" | null>(null);
-	const [joinExisting, setJoinExisting] = useState(false);
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
@@ -75,11 +73,25 @@ export function SignUpPage() {
 
 	const handleOAuth = (provider: "github" | "google") => {
 		setOauthLoading(provider);
-		void signIn(provider).catch((err: Error) => {
-			posthog.capture("oauth_sign_up_failed", { provider, error_message: err.message });
-			toast.authError(err);
-			setOauthLoading(null);
-		});
+		// Pass `redirectTo` so the OAuth callback returns the user to
+		// the original target (e.g. `/join/<token>` for invite links)
+		// instead of falling back to `/onboarding`. Convex Auth stores
+		// `redirectTo` in a state cookie at the start of the OAuth
+		// handshake and reads it on the callback to drive the final 302.
+		// Without this, a user invited to a workspace who picks "Continue
+		// with Google" on signup lands on `/` → `/onboarding`, which
+		// prompts them to create a SECOND workspace instead of joining
+		// the one they were invited to.
+		// Refs:
+		//   - @convex-dev/auth signIn.ts (`if (args.params?.redirectTo)`)
+		//   - @convex-dev/auth cookies.ts (`redirectToParamCookie`)
+		void signIn(provider, redirectTarget ? { redirectTo: redirectTarget } : undefined).catch(
+			(err: Error) => {
+				posthog.capture("oauth_sign_up_failed", { provider, error_message: err.message });
+				toast.authError(err);
+				setOauthLoading(null);
+			},
+		);
 	};
 
 	return (
@@ -93,8 +105,8 @@ export function SignUpPage() {
 					body: "Set up your workspace and invite your team right away.",
 				},
 				bottomRight: {
-					heading: "Joining a team?",
-					body: "Enter your org ID and we'll send a request to the admin.",
+					heading: "Built for every industry",
+					body: "Templates for SaaS, real estate, agencies, freelancers, and more.",
 				},
 			}}
 		>
@@ -168,13 +180,33 @@ export function SignUpPage() {
 							}
 
 							formData.set("flow", "signUp");
+							// `signIn` returns `{ signingIn, redirect? }`.
+							// With `Password({ verify: ResendOTP })` configured
+							// (see `convex/auth.ts`), signUp does NOT
+							// authenticate the user immediately — it sends
+							// an OTP and returns `signingIn === false`.
+							// Branch on that here:
+							//   - signingIn === false → user must verify the
+							//     email; route to `/verify-email?email=...`.
+							//   - signingIn === true → email verification is
+							//     disabled or not required for this account;
+							//     route to onboarding (or whatever the
+							//     post-signup target is, e.g. an invitation
+							//     accept page).
 							void signIn("password", formData)
-								.then(() => {
+								.then((result) => {
 									posthog.identify(email, { email });
 									posthog.capture("user_signed_up", {
 										email,
 										method: "password",
+										needs_verification: !result.signingIn,
 									});
+									if (!result.signingIn) {
+										router.push(
+											`/verify-email?email=${encodeURIComponent(email)}`,
+										);
+										return;
+									}
 									router.push(postSignupHref);
 								})
 								.catch((err: Error) => {
@@ -232,43 +264,6 @@ export function SignUpPage() {
 							{loading ? "Creating account…" : "Register"}
 						</Button>
 					</form>
-
-					<div>
-						<Separator className="my-2" />
-						<button
-							type="button"
-							className="w-full text-center text-muted-foreground text-sm hover:text-foreground transition-colors"
-							onClick={() => setJoinExisting((v) => !v)}
-						>
-							{joinExisting ? "▲ Hide" : "▼ Joining an existing workspace?"}
-						</button>
-
-						{joinExisting && (
-							<div className="mt-3 space-y-3 rounded-[var(--radius)] border border-border bg-muted/40 p-4">
-								<p className="text-muted-foreground text-xs">
-									Enter the Org ID shared by your admin. A confirmation request
-									will be sent to them.
-								</p>
-								<Field className="gap-1.5">
-									<FieldLabel htmlFor="org-id">Org ID</FieldLabel>
-									<Input
-										id="org-id"
-										name="orgId"
-										placeholder="org_xxxxxxxx"
-										autoComplete="off"
-									/>
-								</Field>
-								<Button
-									variant="outline"
-									className="w-full rounded-[var(--radius)]"
-									type="button"
-									disabled
-								>
-									Request to Join (coming soon)
-								</Button>
-							</div>
-						)}
-					</div>
 				</div>
 			</div>
 

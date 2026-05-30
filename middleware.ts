@@ -65,12 +65,50 @@ import {
 	createRouteMatcher,
 	nextjsMiddlewareRedirect,
 } from "@convex-dev/auth/nextjs/server";
-import type { NextRequest } from "next/server";
+import type { NextFetchEvent, NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import createIntlMiddleware from "next-intl/middleware";
 import { routing } from "./i18n/routing";
 
 const intlMiddleware = createIntlMiddleware(routing);
+
+// ─── Auth cookie / "Remember me" ─────────────────────────────────────────────
+//
+// `convexAuthNextjsMiddleware` accepts a `cookieConfig.maxAge` option that
+// drives the lifetime of the auth cookies (`__convexAuthJWT_*` +
+// `__convexAuthRefreshToken_*`). When unset OR `null`, those cookies are
+// SESSION cookies — they vanish the moment the browser closes, no matter
+// what the dashboard says about "Remember me for 30 days". That's the bug
+// users reported on 2026-05-30: signed in fresh, closed the laptop lid,
+// reopened the next morning, found themselves on /signin again.
+//
+// The fix is per-request dynamic config:
+//
+//   1. The signin page sets `flowbite_remember=1` (checkbox checked) or
+//      `flowbite_remember=0` (unchecked) BEFORE calling `signIn(...)`.
+//   2. This middleware reads the cookie on every request that flows
+//      through Convex Auth's proxy at `/api/auth/*` (the path that mints
+//      the auth cookies after sign-in / OAuth callback).
+//   3. We instantiate `convexAuthNextjsMiddleware` per request with the
+//      right `cookieConfig` so the auth cookies inherit that lifetime.
+//
+// Default = remember (30 days). The checkbox defaults to ON and the
+// cookie is only set to "0" when the user explicitly unchecks it.
+//
+// Refs:
+//   - convex-auth nextjs/server/index.d.ts — `cookieConfig.maxAge`.
+//   - convex-auth nextjs/server/utils.js — `setAuthCookies` reads
+//     cookieConfig at every cookie write.
+const REMEMBER_ME_COOKIE = "flowbite_remember";
+const REMEMBER_ME_MAX_AGE_S = 30 * 24 * 60 * 60; // 30 days
+
+function resolveCookieMaxAge(request: NextRequest): number | null {
+	const value = request.cookies.get(REMEMBER_ME_COOKIE)?.value;
+	// Explicit opt-out — value === "0" → session cookie (browser-close lifetime).
+	if (value === "0") return null;
+	// Default + explicit "1" → 30-day persistent cookie.
+	return REMEMBER_ME_MAX_AGE_S;
+}
 
 // ─── Owner panel ─────────────────────────────────────────────────────────────
 
@@ -141,9 +179,10 @@ function buildOwnerRewriteUrl(req: NextRequest): URL {
 }
 
 /**
- * Auth pages (signin, signup). Authenticated users get bounced off these
- * to `/` so they can't see the form while logged in. Patterns cover both
- * the un-prefixed path (`/signin` — before intl runs) and the locale-
+ * Auth pages (signin, signup, forgot-password, reset-password,
+ * verify-email). Authenticated users get bounced off these to `/` so
+ * they can't see the form while logged in. Patterns cover both the
+ * un-prefixed path (`/signin` — before intl runs) and the locale-
  * prefixed path (`/en/signin` — after intl runs).
  *
  * NOTE: `/join/<token>` is NOT in this list. It's a protected route (see
@@ -153,7 +192,18 @@ function buildOwnerRewriteUrl(req: NextRequest): URL {
  * `/join/<token>` always see the accept screen — even owners on a fresh
  * incognito tab.
  */
-const isAuthPage = createRouteMatcher(["/signin", "/signup", "/:locale/signin", "/:locale/signup"]);
+const isAuthPage = createRouteMatcher([
+	"/signin",
+	"/signup",
+	"/forgot-password",
+	"/reset-password",
+	"/verify-email",
+	"/:locale/signin",
+	"/:locale/signup",
+	"/:locale/forgot-password",
+	"/:locale/reset-password",
+	"/:locale/verify-email",
+]);
 
 /**
  * Routes that require authentication. Everything except `/`, the auth
@@ -167,6 +217,14 @@ const isAuthPage = createRouteMatcher(["/signin", "/signup", "/:locale/signin", 
  * `/signin?redirect=/join/<token>` — the only way an invited brand-new
  * user gets bounced through auth and then back to the accept screen
  * instead of getting dumped into onboarding.
+ *
+ * NEGATIVE LOOKAHEAD on `/:locale/<slug>/...` (the catchall): excludes
+ * every public auth page (`signin`, `signup`, `forgot-password`,
+ * `reset-password`, `verify-email`), `onboarding`, `profile`, `join`,
+ * and the framework / telemetry endpoints. Without `forgot-password` etc.
+ * in this list, an unauthenticated user clicking "Forgot password?" was
+ * bounced through `/signin?redirect=/en/forgot-password` and never got
+ * to enter their email. Fixed 2026-05-30.
  */
 const isProtectedRoute = createRouteMatcher([
 	"/onboarding",
@@ -179,15 +237,28 @@ const isProtectedRoute = createRouteMatcher([
 	"/:locale/profile",
 	"/:locale/profile/(.*)",
 	"/:locale/join/:token",
-	// All workspace routes /[locale]/[orgSlug]/(...) — but exclude the
-	// auth + onboarding + profile paths above, which we already match.
-	// Anything under "/<locale>/<slug>" with slug not in (signin, signup,
-	// onboarding, profile, join, api, _next, ingest, monitoring) is org-
-	// scoped and protected.
-	"/:locale/((?!signin$|signup$|onboarding|profile|join|api|_next|ingest|monitoring).+)",
+	// All workspace routes /[locale]/[orgSlug]/(...) — but exclude every
+	// public auth page (signin, signup, forgot-password, reset-password,
+	// verify-email), onboarding, profile, join, plus framework/telemetry
+	// paths. Anything else under "/<locale>/<slug>" is org-scoped and
+	// protected.
+	"/:locale/((?!signin$|signup$|forgot-password$|reset-password$|verify-email$|onboarding|profile|join|api|_next|ingest|monitoring).+)",
 ]);
 
-export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
+// ─── Inner middleware handler (auth + owner panel + i18n) ────────────────────
+//
+// Extracted from the default export so the wrapper below can re-create
+// `convexAuthNextjsMiddleware` per request with the right
+// `cookieConfig.maxAge` (see "Auth cookie / Remember me" section above).
+async function authMiddlewareHandler(
+	request: NextRequest,
+	{
+		convexAuth,
+	}: {
+		event: NextFetchEvent;
+		convexAuth: { getToken: () => Promise<string | undefined> };
+	},
+) {
 	// ─── Owner panel — runs FIRST so it short-circuits everything else ────
 	const ownerKind = classifyOwnerRequest(request);
 	if (ownerKind === "block") {
@@ -260,7 +331,25 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
 
 	// Otherwise let next-intl handle locale negotiation + prefix.
 	return intlMiddleware(request);
-});
+}
+
+// ─── Top-level export — per-request wrapper ──────────────────────────────────
+//
+// `convexAuthNextjsMiddleware` reads `cookieConfig` at the moment it
+// signs/refreshes auth cookies. Because we want the cookie lifetime to
+// depend on the user's "Remember me" choice (a per-request signal),
+// we re-instantiate the middleware on every request with the resolved
+// `cookieConfig.maxAge`. The factory call is cheap — no network, no
+// shared mutable state — and Next.js middlewares are themselves
+// per-request anyway. Functional-equivalent to `convexAuth.use({ ... })`
+// in other web frameworks.
+export default async function middleware(request: NextRequest, event: NextFetchEvent) {
+	const maxAge = resolveCookieMaxAge(request);
+	const inner = convexAuthNextjsMiddleware(authMiddlewareHandler, {
+		cookieConfig: { maxAge },
+	});
+	return inner(request, event);
+}
 
 export const config = {
 	matcher: [

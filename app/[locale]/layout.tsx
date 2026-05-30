@@ -11,6 +11,7 @@ import { PreferencesInitializer } from "@/components/providers/PreferencesInitia
 import { ThemeBootScript } from "@/components/scripts/theme-boot";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { APP_CONFIG } from "@/config/app-config";
 import { routing } from "@/i18n/routing";
 import { fontVars } from "@/lib/fonts/registry";
 import { PREFERENCE_DEFAULTS } from "@/lib/preferences/preferences-config";
@@ -38,8 +39,8 @@ import { PreferencesProvider } from "@/stores/preferences/preferences-provider";
  */
 
 export const metadata: Metadata = {
-	title: "Orbitly",
-	description: "AI-Powered CRM for Gulf Businesses",
+	title: APP_CONFIG.name,
+	description: APP_CONFIG.description,
 	icons: { icon: "/convex.svg" },
 };
 

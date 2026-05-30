@@ -1,22 +1,21 @@
 "use client";
 
 /**
- * Owner-panel users view (Stage 5 — real implementation).
+ * Owner-panel organisations view.
  *
- * Cursor-paginated table over all platform users. Search by email/name
- * (post-pagination, see queries.ts comment). Click a row to open a
- * drawer with the user's owned/joined orgs, per-org tier-change UI,
- * and lifecycle controls (suspend / delete + the inverses).
+ * Mirrors `UsersListView` — cursor-paginated table with search, drawer
+ * on row-click. The drawer shows:
+ *   - org metadata (name, slug, plan, industry, created)
+ *   - member list with their role names
+ *   - tier picker (changeOrgTier)
+ *   - lifecycle actions: Suspend / Unsuspend / Delete / Restore
  *
- * NEVER displays per-org content (locked decision L7 — no leads, deals,
- * notes, etc.). Only metadata: email, name, role, lastActive, plan tier.
+ * Two destructive actions (Suspend, Delete) are guarded by an
+ * `<AlertDialog>` confirmation. Reversible actions (Unsuspend, Restore)
+ * fire on first click to keep recovery friction-free.
  *
- * Lifecycle (added 2026-05-30):
- *   - Suspend: reversible lockout, no data destroyed.
- *   - Soft delete: marks `deletedAt`. User filtered out everywhere.
- *   - Restore / Unsuspend: clear the slot. Both are friction-free
- *     (single click) because they're recovery paths.
- *   - Self-target is refused server-side (FORBIDDEN).
+ * NEVER displays per-org content (locked decision L7) — the panel only
+ * surfaces metadata + memberships + roles.
  */
 import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import { Loader2, PauseCircle, PlayCircle, RotateCcw, Search, Trash2 } from "lucide-react";
@@ -71,12 +70,12 @@ const TIER_OPTIONS: ReadonlyArray<{ key: TierKey; label: string }> = [
 	{ key: "enterprise", label: "Enterprise" },
 ];
 
-export function UsersListView() {
+export function OrganizationsListView() {
 	const [search, setSearch] = useState("");
-	const [openUser, setOpenUser] = useState<Id<"users"> | null>(null);
+	const [openOrg, setOpenOrg] = useState<Id<"orgs"> | null>(null);
 
 	const { results, status, loadMore } = usePaginatedQuery(
-		api._platform.users.queries.listAllUsers,
+		api._platform.orgs.queries.listAllOrgs,
 		{ search: search.trim() || undefined },
 		{ initialNumItems: PAGE_SIZE },
 	);
@@ -84,8 +83,8 @@ export function UsersListView() {
 	return (
 		<>
 			<OwnerSettingsCard
-				title="All users"
-				description="Search across every platform user. Click a row to view orgs, change a subscription, or manage lifecycle."
+				title="All organisations"
+				description="Search across every workspace. Click a row to view members + change tier or lifecycle state."
 			>
 				<div className="mb-4 flex items-center gap-2">
 					<div className="relative max-w-sm flex-1">
@@ -93,7 +92,7 @@ export function UsersListView() {
 						<Input
 							value={search}
 							onChange={(e) => setSearch(e.target.value)}
-							placeholder="Search email or name…"
+							placeholder="Search workspace name or slug…"
 							className="ps-9"
 							autoComplete="off"
 						/>
@@ -102,58 +101,54 @@ export function UsersListView() {
 
 				{status === "LoadingFirstPage" ? (
 					<div className="flex items-center gap-2 text-sm text-muted-foreground">
-						<Loader2 className="h-4 w-4 animate-spin" /> Loading users…
+						<Loader2 className="h-4 w-4 animate-spin" /> Loading organisations…
 					</div>
 				) : results.length === 0 ? (
-					<p className="text-sm text-muted-foreground">No users match your filter.</p>
+					<p className="text-sm text-muted-foreground">
+						No workspaces match your filter.
+					</p>
 				) : (
 					<div className="overflow-x-auto">
 						<Table>
 							<TableHeader>
 								<TableRow>
-									<TableHead>Email</TableHead>
 									<TableHead>Name</TableHead>
-									<TableHead>Platform role</TableHead>
+									<TableHead>Slug</TableHead>
+									<TableHead>Plan</TableHead>
+									<TableHead>Members</TableHead>
 									<TableHead>Status</TableHead>
-									<TableHead>Last active</TableHead>
 									<TableHead className="text-end">Actions</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
-								{results.map((u) => (
-									<TableRow key={u._id}>
+								{results.map((o) => (
+									<TableRow key={o._id}>
+										<TableCell className="text-sm font-medium">
+											{o.name}
+										</TableCell>
 										<TableCell className="font-mono text-xs">
-											{u.email}
-										</TableCell>
-										<TableCell className="text-sm">{u.name ?? "—"}</TableCell>
-										<TableCell>
-											{u.platformRole === "super_admin" ? (
-												<span className="rounded-[var(--radius)] bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-amber-700 dark:text-amber-400">
-													super_admin
-												</span>
-											) : (
-												<span className="text-xs text-muted-foreground">
-													user
-												</span>
-											)}
+											/{o.slug}
 										</TableCell>
 										<TableCell>
-											<UserStatusBadge
-												suspendedAt={u.suspendedAt}
-												deletedAt={u.deletedAt}
-											/>
+											<span className="rounded-[var(--radius)] bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+												{o.plan}
+											</span>
 										</TableCell>
 										<TableCell className="text-xs text-muted-foreground">
-											{u.lastActiveAt
-												? new Date(u.lastActiveAt).toLocaleString()
-												: "—"}
+											{o.memberCount}
+										</TableCell>
+										<TableCell>
+											<OrgStatusBadge
+												suspendedAt={o.suspendedAt}
+												deletedAt={o.deletedAt}
+											/>
 										</TableCell>
 										<TableCell className="text-end">
 											<Button
 												type="button"
 												variant="ghost"
 												size="sm"
-												onClick={() => setOpenUser(u._id as Id<"users">)}
+												onClick={() => setOpenOrg(o._id as Id<"orgs">)}
 											>
 												View
 											</Button>
@@ -190,14 +185,14 @@ export function UsersListView() {
 				</div>
 			</OwnerSettingsCard>
 
-			<UserDrawer userId={openUser} onClose={() => setOpenUser(null)} />
+			<OrgDrawer orgId={openOrg} onClose={() => setOpenOrg(null)} />
 		</>
 	);
 }
 
-// ─── Status badge ────────────────────────────────────────────────────────────
+// ─── Status badge — small visual marker for the table cell ───────────────────
 
-function UserStatusBadge({
+function OrgStatusBadge({
 	suspendedAt,
 	deletedAt,
 }: {
@@ -225,32 +220,30 @@ function UserStatusBadge({
 	);
 }
 
-// ─── Drawer ──────────────────────────────────────────────────────────────────
+// ─── Drawer — full org detail + lifecycle actions ────────────────────────────
 
-function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: () => void }) {
-	const summary = useQuery(
-		api._platform.users.queries.getUserSummary,
-		userId ? { userId } : "skip",
-	);
-	const changeUserTier = useMutation(api._platform.tiers.mutations.changeUserTier);
-	const suspendUser = useMutation(api._platform.users.mutations.suspendUser);
-	const unsuspendUser = useMutation(api._platform.users.mutations.unsuspendUser);
-	const softDeleteUser = useMutation(api._platform.users.mutations.softDeleteUser);
-	const restoreUser = useMutation(api._platform.users.mutations.restoreUser);
+function OrgDrawer({ orgId, onClose }: { orgId: Id<"orgs"> | null; onClose: () => void }) {
+	const summary = useQuery(api._platform.orgs.queries.getOrgSummary, orgId ? { orgId } : "skip");
+
+	const changeOrgTier = useMutation(api._platform.orgs.mutations.changeOrgTier);
+	const suspendOrg = useMutation(api._platform.orgs.mutations.suspendOrg);
+	const unsuspendOrg = useMutation(api._platform.orgs.mutations.unsuspendOrg);
+	const softDeleteOrg = useMutation(api._platform.orgs.mutations.softDeleteOrg);
+	const restoreOrg = useMutation(api._platform.orgs.mutations.restoreOrg);
 
 	const [confirming, setConfirming] = useState<null | "suspend" | "delete">(null);
 	const [busy, setBusy] = useState(false);
 
 	const handleConfirm = async () => {
-		if (!summary || !userId || !confirming) return;
+		if (!summary || !orgId || !confirming) return;
 		setBusy(true);
 		try {
 			if (confirming === "suspend") {
-				await suspendUser({ userId });
-				toast.success(`${summary.user.email} suspended`);
+				await suspendOrg({ orgId });
+				toast.success(`${summary.org.name} suspended`);
 			} else if (confirming === "delete") {
-				await softDeleteUser({ userId });
-				toast.success(`${summary.user.email} marked deleted`);
+				await softDeleteOrg({ orgId });
+				toast.success(`${summary.org.name} marked deleted`);
 			}
 			setConfirming(null);
 		} catch (err) {
@@ -262,14 +255,12 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 
 	return (
 		<>
-			<Sheet open={userId !== null} onOpenChange={(v) => (v ? null : onClose())}>
+			<Sheet open={orgId !== null} onOpenChange={(v) => (v ? null : onClose())}>
 				<SheetContent side="end" className="w-full overflow-y-auto sm:max-w-2xl">
 					<SheetHeader>
-						<SheetTitle>
-							{summary?.user.name ?? summary?.user.email ?? "User"}
-						</SheetTitle>
+						<SheetTitle>{summary?.org.name ?? "Workspace"}</SheetTitle>
 						<SheetDescription className="font-mono">
-							{summary?.user.email}
+							{summary ? `/${summary.org.slug}` : ""}
 						</SheetDescription>
 					</SheetHeader>
 
@@ -278,41 +269,41 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 							<Loader2 className="h-4 w-4 animate-spin" /> Loading…
 						</div>
 					) : summary === null ? (
-						<p className="p-6 text-sm text-muted-foreground">User not found.</p>
+						<p className="p-6 text-sm text-muted-foreground">Workspace not found.</p>
 					) : (
 						<div className="space-y-5 px-4 pb-6 pt-4">
-							{/* Status banner */}
-							{(summary.user.suspendedAt !== null ||
-								summary.user.deletedAt !== null) && (
+							{/* Status banner — communicates lifecycle state */}
+							{(summary.org.suspendedAt !== null ||
+								summary.org.deletedAt !== null) && (
 								<div className="rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/5 p-3 text-xs">
-									{summary.user.deletedAt !== null ? (
+									{summary.org.deletedAt !== null ? (
 										<>
 											<p className="font-medium text-destructive">
-												Account deleted
+												Marked for deletion
 											</p>
 											<p className="mt-0.5 text-muted-foreground">
 												Soft-deleted on{" "}
-												{new Date(summary.user.deletedAt).toLocaleString()}.
-												The account is locked out. Restore to undo.
+												{new Date(summary.org.deletedAt).toLocaleString()}.
+												Members are locked out. Restore to undo.
 											</p>
 										</>
 									) : (
 										<>
 											<p className="font-medium text-amber-700 dark:text-amber-400">
-												Account suspended
+												Workspace suspended
 											</p>
 											<p className="mt-0.5 text-muted-foreground">
 												Suspended on{" "}
-												{summary.user.suspendedAt !== null
+												{summary.org.suspendedAt !== null
 													? new Date(
-															summary.user.suspendedAt,
+															summary.org.suspendedAt,
 														).toLocaleString()
 													: "—"}
-												. The user can't sign in until you unsuspend.
+												. Members can't sign in until you unsuspend.
 											</p>
-											{summary.user.suspensionReason ? (
+											{summary.org.suspensionReason ? (
 												<p className="mt-1 italic text-muted-foreground">
-													Reason: {summary.user.suspensionReason}
+													Reason: {summary.org.suspensionReason}
 												</p>
 											) : null}
 										</>
@@ -320,80 +311,93 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 								</div>
 							)}
 
+							{/* Metadata */}
 							<dl className="grid grid-cols-3 gap-2 text-xs">
-								<dt className="text-muted-foreground">Joined</dt>
+								<dt className="text-muted-foreground">Created</dt>
 								<dd className="col-span-2">
-									{new Date(summary.user.createdAt).toLocaleString()}
+									{new Date(summary.org.createdAt).toLocaleString()}
 								</dd>
-								<dt className="text-muted-foreground">Last active</dt>
-								<dd className="col-span-2">
-									{summary.user.lastActiveAt
-										? new Date(summary.user.lastActiveAt).toLocaleString()
-										: "—"}
-								</dd>
-								<dt className="text-muted-foreground">Platform role</dt>
+								<dt className="text-muted-foreground">Industry</dt>
+								<dd className="col-span-2">{summary.org.industry ?? "—"}</dd>
+								<dt className="text-muted-foreground">Team size</dt>
+								<dd className="col-span-2">{summary.org.teamSize ?? "—"}</dd>
+								<dt className="text-muted-foreground">Subscription</dt>
 								<dd className="col-span-2 font-mono text-xs">
-									{summary.user.platformRole ?? "user"}
+									{summary.org.lemonSqueezySubscriptionStatus ?? "—"}
 								</dd>
 							</dl>
 
+							{/* Tier picker */}
+							<div className="rounded-[var(--radius)] border border-border p-3">
+								<div className="flex items-center justify-between gap-3">
+									<div className="min-w-0">
+										<p className="text-sm font-semibold">Plan tier</p>
+										<p className="mt-0.5 text-xs text-muted-foreground">
+											Change the workspace's tier. Data is preserved across
+											any change.
+										</p>
+									</div>
+									<TierPicker
+										currentPlan={summary.org.plan as TierKey}
+										onChange={async (newKey) => {
+											try {
+												await changeOrgTier({
+													orgId: summary.org._id as Id<"orgs">,
+													newKey,
+												});
+												toast.success(
+													`${summary.org.name} switched to ${newKey}`,
+												);
+											} catch (err) {
+												toast.error(
+													normalizeError(err, "Failed to change tier"),
+												);
+											}
+										}}
+									/>
+								</div>
+							</div>
+
+							{/* Members */}
 							<div>
-								<h3 className="mb-2 text-sm font-semibold">Organisations</h3>
-								{summary.orgs.length === 0 ? (
+								<h3 className="mb-2 text-sm font-semibold">
+									Members ({summary.members.length})
+								</h3>
+								{summary.members.length === 0 ? (
 									<p className="text-xs text-muted-foreground">
-										This user is not a member of any organisation.
+										This workspace has no active members.
 									</p>
 								) : (
-									<ul className="space-y-2">
-										{summary.orgs.map((org) => (
+									<ul className="space-y-1.5">
+										{summary.members.map((m) => (
 											<li
-												key={org._id}
-												className="flex flex-col gap-2 rounded-[var(--radius)] border border-border p-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+												key={m._id}
+												className="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-border p-2.5 text-xs"
 											>
 												<div className="min-w-0">
 													<p className="truncate text-sm font-medium">
-														{org.name}
-														{org.deletedAt !== null ? (
-															<span className="ms-2 rounded-[var(--radius)] bg-destructive/10 px-1.5 py-0.5 text-[10px] uppercase text-destructive">
-																deleted
-															</span>
-														) : org.suspendedAt !== null ? (
-															<span className="ms-2 rounded-[var(--radius)] bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase text-amber-700 dark:text-amber-400">
-																suspended
-															</span>
-														) : null}
+														{m.name ?? m.email}
 													</p>
 													<p className="truncate font-mono text-[11px] text-muted-foreground">
-														/{org.slug} · joined{" "}
-														{new Date(
-															org.memberSince,
-														).toLocaleDateString()}
-														{org.isOwnerLike ? " · admin/owner" : ""}
+														{m.email}
 													</p>
 												</div>
-												<TierPicker
-													currentPlan={org.plan as TierKey}
-													onChange={async (newKey) => {
-														try {
-															await changeUserTier({
-																userId: summary.user
-																	._id as Id<"users">,
-																orgId: org._id as Id<"orgs">,
-																newKey,
-															});
-															toast.success(
-																`Switched ${org.name} to ${newKey}`,
-															);
-														} catch (err) {
-															toast.error(
-																normalizeError(
-																	err,
-																	"Failed to change tier",
-																),
-															);
-														}
-													}}
-												/>
+												<div className="flex items-center gap-2">
+													{m.suspendedAt !== null ? (
+														<span className="rounded-[var(--radius)] bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase text-amber-700 dark:text-amber-400">
+															suspended
+														</span>
+													) : null}
+													<span
+														className={`rounded-[var(--radius)] px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+															m.isOwnerLike
+																? "bg-primary/10 text-primary"
+																: "bg-muted text-muted-foreground"
+														}`}
+													>
+														{m.roleName}
+													</span>
+												</div>
 											</li>
 										))}
 									</ul>
@@ -404,11 +408,11 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 							<div className="rounded-[var(--radius)] border border-border p-3">
 								<h3 className="mb-2 text-sm font-semibold">Lifecycle</h3>
 								<p className="mb-3 text-xs text-muted-foreground">
-									Suspend locks the user out without destroying data. Delete
-									soft-deletes the account; both are reversible from here.
+									Suspend locks every member out without destroying data. Delete
+									soft-deletes the workspace; both are reversible from here.
 								</p>
 								<div className="flex flex-wrap items-center gap-2">
-									{summary.user.deletedAt !== null ? (
+									{summary.org.deletedAt !== null ? (
 										<Button
 											type="button"
 											variant="outline"
@@ -418,10 +422,10 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 											onClick={async () => {
 												setBusy(true);
 												try {
-													await restoreUser({
-														userId: summary.user._id as Id<"users">,
+													await restoreOrg({
+														orgId: summary.org._id as Id<"orgs">,
 													});
-													toast.success(`${summary.user.email} restored`);
+													toast.success(`${summary.org.name} restored`);
 												} catch (err) {
 													toast.error(
 														normalizeError(err, "Failed to restore"),
@@ -436,7 +440,7 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 										</Button>
 									) : (
 										<>
-											{summary.user.suspendedAt !== null ? (
+											{summary.org.suspendedAt !== null ? (
 												<Button
 													type="button"
 													variant="outline"
@@ -446,12 +450,12 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 													onClick={async () => {
 														setBusy(true);
 														try {
-															await unsuspendUser({
-																userId: summary.user
-																	._id as Id<"users">,
+															await unsuspendOrg({
+																orgId: summary.org
+																	._id as Id<"orgs">,
 															});
 															toast.success(
-																`${summary.user.email} unsuspended`,
+																`${summary.org.name} unsuspended`,
 															);
 														} catch (err) {
 															toast.error(
@@ -490,7 +494,7 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 												onClick={() => setConfirming("delete")}
 											>
 												<Trash2 className="size-3.5" aria-hidden />
-												Delete user
+												Delete workspace
 											</Button>
 										</>
 									)}
@@ -498,9 +502,9 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 							</div>
 
 							<p className="rounded-[var(--radius)] bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
-								This drawer never displays org-scoped content — only the user's
-								membership and the org's plan tier. Tier changes never delete data
-								(see Data Preservation rule in `.github/agents/base/rbac.md`).
+								This drawer never displays workspace content — only metadata,
+								members, and lifecycle controls. Every action writes a row to the
+								platform audit log.
 							</p>
 						</div>
 					)}
@@ -515,12 +519,14 @@ function UserDrawer({ userId, onClose }: { userId: Id<"users"> | null; onClose: 
 				<AlertDialogContent>
 					<AlertDialogHeader>
 						<AlertDialogTitle>
-							{confirming === "delete" ? "Delete this user?" : "Suspend this user?"}
+							{confirming === "delete"
+								? "Delete this workspace?"
+								: "Suspend this workspace?"}
 						</AlertDialogTitle>
 						<AlertDialogDescription>
 							{confirming === "delete"
-								? "The user is locked out immediately. Account data is preserved and can be restored from this panel until the daily purge cron runs after the retention window."
-								: "The user can't sign in until you unsuspend. All workspaces they belong to keep working for other members."}
+								? "All members will lose access immediately. Workspace data is preserved and can be restored from this panel until the daily purge cron runs after the retention window."
+								: "All members will be locked out until you unsuspend. Workspace data stays intact."}
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

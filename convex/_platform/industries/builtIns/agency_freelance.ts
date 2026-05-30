@@ -11,6 +11,7 @@
  *   Company → Agency (for sub-contractors / partner agencies)
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { agencyFreelanceMockData } from "../mockData/agency_freelance";
 
 export const agencyFreelanceTemplate: IndustryTemplate = {
 	id: "agency-freelance",
@@ -266,7 +267,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "project_type", "budget_range", "deadline"],
 			listColumns: [
 				"displayName",
@@ -283,7 +284,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "company_name", "payment_terms"],
 			listColumns: [
 				"displayName",
@@ -314,7 +315,7 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		{
 			slot: "company",
 			order: 3,
-			defaultView: "list",
+			defaultView: "board",
 			hidden: true,
 			cardFields: ["name", "industry"],
 			listColumns: ["name", "companyCode", "industry", "assignedTo"],
@@ -512,134 +513,8 @@ export const agencyFreelanceTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
-	mockData: {
-		companies: [
-			{
-				key: "northwind-creative",
-				name: "Northwind Creative",
-				industry: "Agency",
-				website: "https://northwind.example.com",
-			},
-		],
-		leads: [
-			{
-				displayName: "Tom Bauer",
-				email: "tom.b@example.com",
-				phone: "+1 415 555 0301",
-				status: "new",
-				fieldValues: {
-					project_type: "Branding",
-					budget_range: "$15K–$50K",
-					deadline: Date.now() + 30 * 86_400_000,
-					referral_source: "Portfolio",
-				},
-			},
-			{
-				displayName: "Eva Larsson",
-				email: "eva.l@example.com",
-				status: "contacted",
-				fieldValues: {
-					project_type: "Website",
-					budget_range: "$5K–$15K",
-					deadline: Date.now() + 21 * 86_400_000,
-					referral_source: "Referral",
-				},
-			},
-			{
-				displayName: "Carlos Mendes",
-				email: "carlos@example.com",
-				status: "new",
-				fieldValues: {
-					project_type: "Video",
-					budget_range: "$1K–$5K",
-					referral_source: "Social media",
-				},
-			},
-		],
-		contacts: [
-			{
-				displayName: "Aria Thompson",
-				email: "aria@example.com",
-				phone: "+1 213 555 0310",
-				companyKey: "northwind-creative",
-				fieldValues: {
-					company_name: "Northwind Creative",
-					payment_terms: "50% upfront",
-				},
-			},
-			{
-				displayName: "Riku Yamada",
-				email: "riku@example.com",
-				fieldValues: {
-					payment_terms: "Milestone-based",
-				},
-			},
-		],
-		deals: [
-			{
-				title: "Northwind — Website redesign",
-				stageCode: "WIP",
-				value: 12000,
-				contactDisplayName: "Aria Thompson",
-				companyKey: "northwind-creative",
-				fieldValues: {
-					scope_summary:
-						"Marketing site redesign — homepage + 6 inner pages + CMS migration.",
-					quoted_amount: 12000,
-					deposit_amount: 6000,
-					estimated_hours: 80,
-					hourly_rate: 150,
-					delivery_date: Date.now() + 21 * 86_400_000,
-				},
-				tags: ["Repeat client"],
-			},
-			{
-				title: "Riku — Brand identity",
-				stageCode: "REV",
-				value: 8500,
-				contactDisplayName: "Riku Yamada",
-				fieldValues: {
-					scope_summary: "Logo + brand guide + business card mockups.",
-					quoted_amount: 8500,
-					estimated_hours: 60,
-					delivery_date: Date.now() + 7 * 86_400_000,
-					revision_count: 2,
-				},
-			},
-		],
-		notes: [
-			{
-				content: "Northwind kickoff call — confirmed scope + signed deposit invoice.",
-				categoryName: "Brief",
-				anchorTo: { kind: "deal", title: "Northwind — Website redesign" },
-			},
-			{
-				content: "Riku requested third revision on logo color palette. Track scope.",
-				categoryName: "Review",
-				anchorTo: { kind: "deal", title: "Riku — Brand identity" },
-			},
-			{
-				content: "Tom asked for portfolio samples in agency style — send Wednesday.",
-				categoryName: "Today",
-				anchorTo: { kind: "lead", displayName: "Tom Bauer" },
-			},
-		],
-		tasks: [
-			{
-				title: "Northwind — homepage v1 to client",
-				dueOffsetDays: 3,
-				priority: "high",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "Northwind — Website redesign" },
-			},
-			{
-				title: "Riku — present revised logo set",
-				dueOffsetDays: 1,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Riku — Brand identity" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/agency_freelance.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: agencyFreelanceMockData,
 };

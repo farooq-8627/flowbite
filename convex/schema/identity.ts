@@ -27,6 +27,21 @@ export const users = defineTable({
 	preferredLanguage: v.optional(v.string()),
 	notificationPreferences: v.optional(notificationPreferencesValidator),
 	platformRole: v.optional(v.literal("super_admin")),
+	/**
+	 * Platform-owner suspend slot. When set, `resolveUser` throws
+	 * `USER_SUSPENDED` so the user is logged out on next request without
+	 * destroying any data — distinct from soft-delete (`deletedAt`)
+	 * which is permanent removal.
+	 *
+	 * Set/cleared from the platform-owner panel:
+	 *   - `_platform/users/mutations.ts::suspendUser` writes `Date.now()`
+	 *   - `_platform/users/mutations.ts::unsuspendUser` clears the slot
+	 *
+	 * Additive optional → no migration; pre-existing rows have
+	 * `suspendedAt === undefined` and behave exactly as before.
+	 */
+	suspendedAt: v.optional(v.number()),
+	suspensionReason: v.optional(v.string()),
 	preferences: v.optional(
 		v.object({
 			entityDefaultView: v.optional(
@@ -488,6 +503,21 @@ export const orgs = defineTable({
 		),
 	),
 	lemonSqueezyCurrentPeriodEnd: v.optional(v.number()),
+	/**
+	 * Platform-owner suspend slot. When set, every `requireOrgMember`
+	 * call throws `ORG_SUSPENDED` so members are kicked out of the
+	 * workspace without destroying any data — distinct from
+	 * soft-delete (`deletedAt`) which permanently removes the workspace.
+	 *
+	 * Set/cleared from the platform-owner panel:
+	 *   - `_platform/orgs/mutations.ts::suspendOrg` writes `Date.now()`
+	 *   - `_platform/orgs/mutations.ts::unsuspendOrg` clears the slot
+	 *
+	 * Additive optional → no migration; pre-existing rows have
+	 * `suspendedAt === undefined` and behave exactly as before.
+	 */
+	suspendedAt: v.optional(v.number()),
+	suspensionReason: v.optional(v.string()),
 	...timestamps,
 	...softDelete,
 })

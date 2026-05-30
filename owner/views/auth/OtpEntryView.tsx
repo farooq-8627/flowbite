@@ -29,6 +29,7 @@ import {
 } from "@/app/xowner/auth/actions";
 import { Button } from "@/components/ui/button";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { maskEmail } from "@/lib/format";
 import { useOwnerPublicPrefix } from "../../hooks/useOwnerPublicPrefix";
 
 const RESEND_LOCKOUT_SEC = 30;
@@ -211,8 +212,13 @@ function VerifyStep({
 			{request ? (
 				<p className="text-sm text-muted-foreground">
 					We sent a code to{" "}
-					<span className="font-medium text-foreground">{request.email}</span>. It expires
-					in {formatCountdown(secondsLeft)}.
+					<span
+						className="font-medium text-foreground"
+						title="Email partially hidden for your security"
+					>
+						{maskEmail(request.email) || "your email"}
+					</span>
+					. It expires in {formatCountdown(secondsLeft)}.
 				</p>
 			) : null}
 

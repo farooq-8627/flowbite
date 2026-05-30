@@ -217,12 +217,13 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 			 * take effect.
 			 */}
 			<div className="grid grid-cols-1 gap-4 min-w-0">
-				{/* Mock-data banner — only renders when seeded + not dismissed. */}
-				<MockDataBanner
-					orgId={orgId}
-					mockDataSeededAt={settings?.mockDataSeededAt}
-					mockDataDismissedAt={settings?.mockDataDismissedAt}
-				/>
+				{/* Mock-data banner — renders on every refresh until the
+				    user clears the sample data. The "X" close button is
+				    wired to the same clearMockData mutation as the primary
+				    CTA (locked 2026-05-30): closing the banner IS clearing
+				    the data. There is no separate dismiss-without-clearing
+				    flow any more. */}
+				<MockDataBanner orgId={orgId} mockDataSeededAt={settings?.mockDataSeededAt} />
 
 				{/* P1.14 — Proactive AI suggestions. Pure heuristic, no model call.
 				    Hidden when there are zero suggestions (no panel = no noise).

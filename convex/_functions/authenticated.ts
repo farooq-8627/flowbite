@@ -88,6 +88,10 @@ async function resolveUser(ctx: QueryCtx | MutationCtx): Promise<AuthenticatedCt
 	if (userId === null) throw new ConvexError(ERRORS.UNAUTHORIZED);
 	const user = await ctx.db.get(userId);
 	if (!user || user.deletedAt !== undefined) throw new ConvexError(ERRORS.USER_NOT_FOUND);
+	// Platform-owner suspension — distinct from soft-delete. Throws so the
+	// frontend logs the user out on their next round-trip; the row + all
+	// the user's data is preserved and `unsuspendUser` reverses it cleanly.
+	if (user.suspendedAt !== undefined) throw new ConvexError(ERRORS.USER_SUSPENDED);
 	return { user, userId };
 }
 
@@ -137,6 +141,11 @@ export async function requireOrgMember(
 
 	const org = await ctx.db.get(orgId);
 	if (!org || org.deletedAt !== undefined) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+	// Platform-owner suspension at the workspace level. Surfaces a
+	// distinct error so the UI can render a "workspace suspended" panel
+	// instead of the generic "not found" 404 — same data preservation
+	// rule as the user-level suspend.
+	if (org.suspendedAt !== undefined) throw new ConvexError(ERRORS.ORG_SUSPENDED);
 
 	const member = await ctx.db
 		.query("orgMembers")
@@ -199,9 +208,11 @@ export async function requireOrgMemberByIds(
 ): Promise<OrgCtx> {
 	const user = await ctx.db.get(userId);
 	if (!user || user.deletedAt !== undefined) throw new ConvexError(ERRORS.USER_NOT_FOUND);
+	if (user.suspendedAt !== undefined) throw new ConvexError(ERRORS.USER_SUSPENDED);
 
 	const org = await ctx.db.get(orgId);
 	if (!org || org.deletedAt !== undefined) throw new ConvexError(ERRORS.ORG_NOT_FOUND);
+	if (org.suspendedAt !== undefined) throw new ConvexError(ERRORS.ORG_SUSPENDED);
 
 	const member = await ctx.db
 		.query("orgMembers")

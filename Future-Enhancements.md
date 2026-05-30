@@ -580,6 +580,39 @@ Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now 
 
 ---
 
+## B.35 — Remove `mockDataDismissedAt` schema field once the 2026-05-30 migration has run on prod
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Schema cleanup                                                                     |
+| Phase to ship   | After `npx convex run _migrations/2026_05_30_clearMockDataDismissedAt:run '{}'` has run on prod (≥ 1 prod release after 2026-05-30) |
+| Owners          | `convex/schema/identity.ts`, `core/platform/settings/types.ts`                     |
+| Risk if skipped | Low — field is now optional, vestigial, and unused. Leaving it costs nothing functionally; removing it shrinks the schema validator + the TS surface. |
+| Files involved  | `convex/schema/identity.ts:472-473`, `convex/orgs/mutations.ts:569` (defensive `mockDataDismissedAt: undefined` patch in `clearMockDataImpl` — drop), `convex/orgs/mutations.ts:753` (`orgUpdateArgs.settings.mockDataDismissedAt: v.optional(v.number())` — drop), `core/platform/settings/types.ts:93` (TS slot — drop) |
+
+**Why we deferred.** Locked 2026-05-30 mock-data UX overhaul: `<MockDataBanner />`'s X button used to call `dismissMockDataBanner` (set `mockDataDismissedAt = now` so the banner stayed hidden while data remained). User explicitly asked for the banner to STAY visible until the data is cleared, so the dismiss-without-clearing flow is a footgun. In the same change: (a) the banner X was rewired to call `clearMockData`, (b) the `dismissMockDataBanner` mutation was deleted, (c) the AI-tool `update_org_settings` allowlist dropped the key, and (d) the per-org `dashboardHomeView` stopped passing the prop. The schema field was kept as `v.optional(v.number())` so the migration's writes (which set it to `undefined`) don't fail validation. Once the migration has run on prod, the field becomes a pure no-op and can be removed.
+
+**Benefits when reinstated (= the field is removed).**
+- Smaller schema surface — one fewer optional slot the validator has to walk on every `orgs.settings` write.
+- Cleaner TS — `OrgSettings` type stops surfacing a slot that no consumer reads.
+- Removes any chance of the field being accidentally re-introduced as a pre-existing knob ("oh, the schema already supports this — let me wire it back up").
+
+**Implementation sketch when re-enabling.**
+1. Confirm `npx convex run _migrations/2026_05_30_clearMockDataDismissedAt:run '{"dryRun": true}'` reports `patched: 0` (every prod org is clean).
+2. Drop `mockDataDismissedAt: v.optional(v.number())` from `convex/schema/identity.ts:472-473`.
+3. Drop `mockDataDismissedAt: v.optional(v.number())` from `convex/orgs/mutations.ts::orgUpdateArgs.settings`.
+4. Drop the defensive `mockDataDismissedAt: undefined` line in `clearMockDataImpl` — it's a no-op once the schema slot is gone.
+5. Drop the TS slot in `core/platform/settings/types.ts`.
+6. Drop the migration file itself (`convex/_migrations/2026_05_30_clearMockDataDismissedAt.ts`) — it's served its purpose.
+7. Run `pnpm typecheck` + `pnpm exec biome check .` + `pnpm test` + `pnpm build`.
+
+**Verification.**
+- `pnpm exec convex schema:validate` (built-in dev check) passes — every existing org's `settings` blob still satisfies the validator.
+- `grep -rn "mockDataDismissedAt" .` returns 0 results outside `SHIPPED.md` history.
+
+---
+
 # C. Audit-flagged but not yet roadmapped
 
 ## C.1 — Tree-shaped conversations (Attio Problem 1)

@@ -18,6 +18,7 @@
  *   - Customer Success      — owns post-sale relationship
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { b2bSaasMockData } from "../mockData/b2b_saas";
 
 export const b2bSaasTemplate: IndustryTemplate = {
 	id: "b2b-saas",
@@ -425,7 +426,7 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "company_size", "industry_vertical", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -442,7 +443,7 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "job_title", "seniority", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -477,7 +478,7 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		{
 			slot: "company",
 			order: 3,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["name", "headcount", "industry"],
 			listColumns: ["name", "companyCode", "domain", "industry", "headcount", "assignedTo"],
 			boardGroupBy: "industry",
@@ -789,165 +790,8 @@ export const b2bSaasTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
-	mockData: {
-		companies: [
-			{
-				key: "acme-corp",
-				name: "Acme Corp",
-				industry: "SaaS",
-				website: "https://acme.example.com",
-				fieldValues: {
-					domain: "acme.example.com",
-					headcount: 120,
-				},
-			},
-		],
-		leads: [
-			{
-				displayName: "Julia Rodriguez",
-				email: "julia.r@acme.example.com",
-				phone: "+1 415 555 0201",
-				status: "new",
-				fieldValues: {
-					company_size: "51-200",
-					industry_vertical: "SaaS",
-					lead_source_detail: "Inbound — website",
-				},
-				tags: ["ICP fit", "Inbound"],
-			},
-			{
-				displayName: "Marcus Lee",
-				email: "marcus@buildplex.example.com",
-				phone: "+1 213 555 0202",
-				status: "contacted",
-				fieldValues: {
-					company_size: "201-1000",
-					industry_vertical: "Logistics",
-					lead_source_detail: "Outbound — LinkedIn",
-				},
-				tags: ["Champion"],
-			},
-			{
-				displayName: "Fatima Al-Hassan",
-				email: "fatima.h@novatech.example.com",
-				phone: "+44 20 7946 0203",
-				status: "new",
-				fieldValues: {
-					company_size: "11-50",
-					industry_vertical: "Fintech",
-					lead_source_detail: "Event / conference",
-				},
-				tags: ["ICP fit", "Decision maker"],
-			},
-		],
-		contacts: [
-			{
-				displayName: "Daniel Kim",
-				email: "daniel.k@acme.example.com",
-				companyKey: "acme-corp",
-				fieldValues: {
-					job_title: "VP Engineering",
-					seniority: "VP",
-					is_decision_maker: true,
-					linkedin_url: "https://linkedin.com/in/daniel-kim-example",
-				},
-				tags: ["Champion", "Decision maker"],
-			},
-			{
-				displayName: "Sarah Chen",
-				email: "sarah.c@acme.example.com",
-				companyKey: "acme-corp",
-				fieldValues: {
-					job_title: "Senior Engineering Manager",
-					seniority: "Senior Manager / Director",
-					is_decision_maker: false,
-				},
-				tags: ["Influencer"],
-			},
-		],
-		deals: [
-			{
-				title: "Acme Corp — Pro plan, 50 seats",
-				stageCode: "DISC",
-				value: 60000,
-				contactDisplayName: "Daniel Kim",
-				companyKey: "acme-corp",
-				fieldValues: {
-					mrr_usd: 5000,
-					acv_usd: 60000,
-					product_line: "Pro",
-					primary_use_case: "Internal CRM consolidation across BD + AE teams",
-					evaluation_criteria: "Stage-aware fields + AI assistant + India compliance",
-				},
-				tags: ["ICP fit", "Inbound"],
-			},
-			{
-				title: "Buildplex — Enterprise rollout",
-				stageCode: "PROP",
-				value: 240000,
-				fieldValues: {
-					mrr_usd: 20000,
-					acv_usd: 240000,
-					product_line: "Enterprise",
-					budget_band: "$100K+",
-					decision_maker: "Marcus Lee (VP Operations)",
-					decision_timeline: "Next quarter",
-					champion: "Marcus Lee",
-					contract_term_months: 12,
-					billing_cycle: "Annual",
-				},
-				tags: ["Champion", "ICP fit"],
-			},
-		],
-		notes: [
-			{
-				content:
-					"Discovery call done — Daniel confirmed BANT. Acme uses HubSpot today, frustrated with stage-field mapping. Strong fit.",
-				categoryName: "Discovery",
-				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
-			},
-			{
-				content:
-					"Demo scheduled Thursday 2pm PT for Acme. Prep: industry-template flow + AI assistant teaser.",
-				categoryName: "Demo Prep",
-				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
-			},
-			{
-				content:
-					"Buildplex sent revised proposal — they want 12-month term + 15% discount. Need to confirm with sales leadership.",
-				categoryName: "Urgent",
-				anchorTo: { kind: "deal", title: "Buildplex — Enterprise rollout" },
-			},
-			{
-				content:
-					"Fatima at NovaTech mentioned competitor X — research how we differentiate.",
-				categoryName: "Today",
-				anchorTo: { kind: "lead", displayName: "Fatima Al-Hassan" },
-			},
-		],
-		tasks: [
-			{
-				title: "Acme demo prep — finalize deck",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Acme Corp — Pro plan, 50 seats" },
-			},
-			{
-				title: "Send Buildplex revised proposal",
-				dueOffsetDays: 1,
-				priority: "urgent",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "Buildplex — Enterprise rollout" },
-			},
-			{
-				title: "Discovery call — Fatima at NovaTech",
-				dueOffsetDays: 2,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Fatima Al-Hassan" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/b2b_saas.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: b2bSaasMockData,
 };

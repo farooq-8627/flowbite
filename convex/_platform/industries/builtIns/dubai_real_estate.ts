@@ -30,6 +30,7 @@
  *   - https://u.ae/ — UAE government portal (rent + tenancy laws)
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { dubaiRealEstateMockData } from "../mockData/dubai_real_estate";
 
 export const dubaiRealEstateTemplate: IndustryTemplate = {
 	id: "real-estate-dubai",
@@ -455,7 +456,7 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "preferred_area", "budget_aed", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -472,7 +473,7 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "nationality", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -510,7 +511,7 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		{
 			slot: "company",
 			order: 3,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["name", "rera_orn", "industry"],
 			listColumns: ["name", "companyCode", "rera_orn", "trade_license", "assignedTo"],
 			boardGroupBy: "assignedTo",
@@ -748,153 +749,8 @@ export const dubaiRealEstateTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
-	mockData: {
-		companies: [
-			{
-				key: "driven-properties",
-				name: "Driven Properties LLC",
-				industry: "Real Estate",
-				website: "https://drivenproperties.example.ae",
-				fieldValues: { rera_orn: "ORN-12345", trade_license: "TL-987654" },
-			},
-		],
-		leads: [
-			{
-				displayName: "Sarah Khan",
-				email: "sarah.khan@example.com",
-				phone: "+971 50 123 4567",
-				status: "new",
-				fieldValues: {
-					preferred_area: "Dubai Marina",
-					property_type: "Apartment",
-					bedrooms: "2BR",
-					budget_aed: 1800000,
-					intent: "Buy",
-				},
-				tags: ["Hot inquiry", "End user"],
-			},
-			{
-				displayName: "Ahmed Al-Maktoum",
-				email: "ahmed.al@example.com",
-				phone: "+971 55 987 6543",
-				status: "contacted",
-				fieldValues: {
-					preferred_area: "JVC",
-					property_type: "Villa",
-					bedrooms: "3BR",
-					budget_aed: 2500000,
-					intent: "Buy",
-				},
-				tags: ["Cash buyer", "VIP client"],
-			},
-			{
-				displayName: "Priya Sharma",
-				email: "priya.s@example.com",
-				phone: "+971 52 456 7890",
-				status: "new",
-				fieldValues: {
-					preferred_area: "Business Bay",
-					property_type: "Office",
-					bedrooms: "Studio",
-					budget_aed: 950000,
-					intent: "Rent — Annual",
-				},
-				tags: ["Mortgage required"],
-			},
-		],
-		contacts: [
-			{
-				displayName: "Omar Hassan",
-				email: "omar.hassan@example.com",
-				phone: "+971 50 111 2222",
-				companyKey: "driven-properties",
-				fieldValues: { nationality: "UAE", preferred_language: "Arabic" },
-			},
-			{
-				displayName: "Lisa Chen",
-				email: "lisa.chen@example.com",
-				phone: "+971 56 333 4444",
-				fieldValues: { nationality: "Singapore", preferred_language: "English" },
-				tags: ["Investor"],
-			},
-		],
-		deals: [
-			{
-				title: "Marina Heights — 2BR Rental",
-				stageCode: "VIEW",
-				value: 145000,
-				contactDisplayName: "Lisa Chen",
-				fieldValues: {
-					property_address: "Marina Heights Tower, Dubai Marina",
-					rera_permit_number: "RP-2024-0001",
-					asking_price_aed: 145000,
-					commission_pct: 5,
-				},
-				tags: ["Hot inquiry"],
-			},
-			{
-				title: "JVC District 14 — 3BR Villa Sale",
-				stageCode: "FORMF",
-				value: 2400000,
-				contactDisplayName: "Omar Hassan",
-				companyKey: "driven-properties",
-				fieldValues: {
-					property_address: "District 14, Jumeirah Village Circle",
-					rera_permit_number: "RP-2024-0002",
-					asking_price_aed: 2500000,
-					agreed_price_aed: 2400000,
-					commission_pct: 2,
-				},
-				tags: ["Form F submitted", "Cash buyer"],
-			},
-		],
-		notes: [
-			{
-				content:
-					"Sarah called — wants to see Marina Heights this Saturday at 4pm. Bring floor plans + service charge breakdown.",
-				categoryName: "Today",
-				anchorTo: { kind: "lead", displayName: "Sarah Khan" },
-			},
-			{
-				content: "Ahmed pre-approved for AED 2.5M mortgage. Ready to move on JVC villa.",
-				categoryName: "Hot Inquiry",
-				anchorTo: { kind: "lead", displayName: "Ahmed Al-Maktoum" },
-			},
-			{
-				content:
-					"Form F signed. Awaiting Emirates ID copy from buyer + Ejari registration this week.",
-				categoryName: "Urgent",
-				anchorTo: { kind: "deal", title: "JVC District 14 — 3BR Villa Sale" },
-			},
-			{
-				content: "Lisa interested in second viewing — wants to bring her husband.",
-				categoryName: "Viewing Notes",
-				anchorTo: { kind: "deal", title: "Marina Heights — 2BR Rental" },
-			},
-		],
-		tasks: [
-			{
-				title: "Marina Heights viewing — Sarah Khan",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Sarah Khan" },
-			},
-			{
-				title: "Collect Emirates ID copy — JVC sale",
-				dueOffsetDays: 1,
-				priority: "urgent",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "JVC District 14 — 3BR Villa Sale" },
-			},
-			{
-				title: "Call Priya re: Business Bay availability",
-				dueOffsetDays: 2,
-				priority: "normal",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Priya Sharma" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/dubai_real_estate.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: dubaiRealEstateMockData,
 };

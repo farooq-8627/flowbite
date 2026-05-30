@@ -13,10 +13,14 @@ export const ERRORS = {
 	UNAUTHORIZED: "Unauthorized: user not authenticated.",
 	FORBIDDEN: "Forbidden: insufficient permissions.",
 	USER_NOT_FOUND: "User not found.",
+	USER_SUSPENDED:
+		"Your account is temporarily suspended. Contact support if you believe this is a mistake.",
 	SUPER_ADMIN_REQUIRED: "Forbidden: platform super_admin role required.",
 
 	// ── Orgs ──────────────────────────────────────────────────────────────────
 	ORG_NOT_FOUND: "Organization not found.",
+	ORG_SUSPENDED:
+		"This workspace is temporarily suspended. Contact support if you believe this is a mistake.",
 	ORG_SLUG_TAKEN: "Organization slug is already taken.",
 	ORG_MEMBER_NOT_FOUND: "Organization member not found.",
 	ORG_ALREADY_MEMBER: "User is already a member of this organization.",

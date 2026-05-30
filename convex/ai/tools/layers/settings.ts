@@ -53,7 +53,6 @@ const ALLOWED_ORG_SETTINGS_KEYS = new Set<string>([
 	"dashboardMetrics",
 	"softDeleteRetentionDays",
 	"mockDataSeededAt",
-	"mockDataDismissedAt",
 	"deletionScheduledAt",
 ]);
 

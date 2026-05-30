@@ -27,6 +27,16 @@
  *     to the org's default category if none matches.
  *   - `anchorTo` (notes / tasks) → resolves the entity's code/id at
  *     seed time and links via the appropriate field (personCode, dealCode).
+ *
+ * FIELD VALUES (added 2026-05-30):
+ *   Templates declare per-record `fieldValues: { [fieldName]: value }`.
+ *   For every fieldDefinition with `storage === "fieldValues"`, the
+ *   seeder now writes a row into the `fieldValues` table so the value
+ *   actually shows up in lists, boards, and detail pages. Without this,
+ *   the dashboard renders sample records with all-empty industry-specific
+ *   columns and the user sees "this CRM is broken" before they touch a
+ *   single button. Field-name → fieldId resolution uses an in-memory map
+ *   built once per seed pass.
  */
 
 import type { Id } from "../../../_generated/dataModel";
@@ -102,6 +112,68 @@ export async function seedMockEntities(
 	for (const c of cats) catNameToId.set(c.name.toLowerCase(), c._id);
 	const defaultCategoryId = cats.find((c) => c.isDefault && !c.isArchived)?._id ?? cats[0]?._id;
 
+	// ── Resolve fieldDefinitions per entity (2026-05-30) ─────────────
+	// Build `${entityType}:${fieldName}` → { id, storage } so writeFieldValues()
+	// can dispatch to the right table without a second DB hit per row.
+	// fieldDefinitions only exposes the `by_org_and_entity` index, so we
+	// fan out across the four entity types and concat.
+	const fieldDefs = (
+		await Promise.all(
+			(["lead", "contact", "deal", "company"] as const).map((entityType) =>
+				ctx.db
+					.query("fieldDefinitions")
+					.withIndex("by_org_and_entity", (q) =>
+						q.eq("orgId", orgId).eq("entityType", entityType),
+					)
+					.collect(),
+			),
+		)
+	).flat();
+	const fieldDefByKey = new Map<string, { id: Id<"fieldDefinitions">; storage: string }>();
+	for (const f of fieldDefs) {
+		fieldDefByKey.set(`${f.entityType}:${f.name}`, {
+			id: f._id,
+			storage: f.storage ?? "fieldValues",
+		});
+	}
+
+	/**
+	 * Persist a record's `fieldValues` blob. Only handles
+	 * `storage === "fieldValues"` rows (the bulk of industry-specific
+	 * custom fields). System columns (status, email, phone, etc.) are
+	 * already passed through the per-entity insert payloads above —
+	 * those have `storage === "column"` and are intentionally skipped
+	 * here so we don't double-write.
+	 *
+	 * Returns the number of fieldValues rows actually inserted (for
+	 * test assertions / observability).
+	 */
+	async function writeFieldValues(
+		entityType: "lead" | "contact" | "deal" | "company",
+		entityId: string,
+		values: Record<string, unknown> | undefined,
+	): Promise<number> {
+		if (!values) return 0;
+		let written = 0;
+		for (const [name, value] of Object.entries(values)) {
+			if (value === undefined || value === null) continue;
+			const def = fieldDefByKey.get(`${entityType}:${name}`);
+			if (!def) continue; // template author referenced a field that wasn't seeded — skip
+			if (def.storage !== "fieldValues") continue;
+			await ctx.db.insert("fieldValues", {
+				orgId,
+				entityType,
+				entityId,
+				fieldId: def.id,
+				fieldName: name,
+				value,
+				updatedAt: now,
+			});
+			written += 1;
+		}
+		return written;
+	}
+
 	let inserted = 0;
 
 	// ── Insert companies ─────────────────────────────────────────────
@@ -122,6 +194,7 @@ export async function seedMockEntities(
 		companyKeyToId.set(seed.key, id);
 		companyKeyToCode.set(seed.key, companyCode);
 		await applyOrgStat(ctx, orgId, "companies.active", +1);
+		await writeFieldValues("company", id, seed.fieldValues);
 		inserted += 1;
 	}
 
@@ -147,6 +220,7 @@ export async function seedMockEntities(
 		leadDisplayNameToId.set(seed.displayName, id);
 		await applyOrgStat(ctx, orgId, "leads.open", +1);
 		await applyOrgStat(ctx, orgId, "leads.total", +1);
+		await writeFieldValues("lead", id, seed.fieldValues);
 		inserted += 1;
 
 		// Attach tags via entityTags table.
@@ -186,6 +260,7 @@ export async function seedMockEntities(
 		contactDisplayNameToCode.set(seed.displayName, personCode);
 		contactDisplayNameToId.set(seed.displayName, id);
 		await applyOrgStat(ctx, orgId, "contacts.active", +1);
+		await writeFieldValues("contact", id, seed.fieldValues);
 		inserted += 1;
 
 		for (const tagName of seed.tags ?? []) {
@@ -244,6 +319,7 @@ export async function seedMockEntities(
 			if (seed.value) {
 				await applyOrgStat(ctx, orgId, "deals.pipelineValue", seed.value);
 			}
+			await writeFieldValues("deal", id, seed.fieldValues);
 			inserted += 1;
 
 			for (const tagName of seed.tags ?? []) {

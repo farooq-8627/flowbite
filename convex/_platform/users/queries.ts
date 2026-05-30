@@ -54,6 +54,8 @@ export const listAllUsers = query({
 			platformRole: u.platformRole ?? null,
 			lastActiveAt: u.lastActiveAt ?? null,
 			deletedAt: u.deletedAt ?? null,
+			suspendedAt: u.suspendedAt ?? null,
+			suspensionReason: u.suspensionReason ?? null,
 			onboardingCompleted: u.onboardingCompleted,
 			createdAt: u._creationTime,
 		}));
@@ -91,12 +93,14 @@ export const getUserSummary = query({
 			plan: string;
 			memberSince: number;
 			isOwnerLike: boolean;
+			suspendedAt: number | null;
+			deletedAt: number | null;
 		}> = [];
 
 		for (const m of memberships) {
 			if (m.deletedAt !== undefined) continue;
 			const org = await ctx.db.get(m.orgId);
-			if (!org || org.deletedAt !== undefined) continue;
+			if (!org) continue;
 
 			// Resolve role name to surface "is the user effectively an
 			// owner of this org?" in the UI without leaking permissions.
@@ -114,6 +118,8 @@ export const getUserSummary = query({
 				plan: org.plan,
 				memberSince: m.joinedAt,
 				isOwnerLike,
+				suspendedAt: org.suspendedAt ?? null,
+				deletedAt: org.deletedAt ?? null,
 			});
 		}
 
@@ -126,6 +132,9 @@ export const getUserSummary = query({
 				platformRole: user.platformRole ?? null,
 				lastActiveAt: user.lastActiveAt ?? null,
 				createdAt: user._creationTime,
+				suspendedAt: user.suspendedAt ?? null,
+				suspensionReason: user.suspensionReason ?? null,
+				deletedAt: user.deletedAt ?? null,
 			},
 			orgs,
 		};

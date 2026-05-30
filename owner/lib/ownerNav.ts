@@ -20,6 +20,7 @@ import {
 	Shield,
 	Tags,
 	Users,
+	Workflow,
 } from "lucide-react";
 
 export type OwnerNavItem = {
@@ -49,6 +50,12 @@ export const OWNER_NAV: readonly OwnerNavItem[] = [
 		label: "Users",
 		icon: Users,
 		description: "Search and manage user subscriptions across the platform.",
+	},
+	{
+		href: "/organizations",
+		label: "Organisations",
+		icon: Workflow,
+		description: "Search and manage workspaces — tier, members, suspend, delete.",
 	},
 	{
 		href: "/tiers",

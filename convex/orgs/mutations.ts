@@ -560,6 +560,21 @@ async function clearMockDataImpl(
 		for (const link of tagLinks) {
 			await ctx.db.delete(link._id);
 		}
+
+		// 2026-05-30 — `mockSeeder.ts` now writes `fieldValues` rows for
+		// every industry-specific custom field (RERA permit, MRR, Iqama,
+		// etc.). Clear them in lock-step so the dashboard counts + the
+		// fieldValues table stay consistent after the user clicks the
+		// banner / settings clear button.
+		const fieldValueRows = await ctx.db
+			.query("fieldValues")
+			.withIndex("by_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", entityType).eq("entityId", entityId),
+			)
+			.collect();
+		for (const fv of fieldValueRows) {
+			await ctx.db.delete(fv._id);
+		}
 	}
 
 	await ctx.db.patch(args.orgId, {
@@ -601,33 +616,6 @@ export const clearMockDataForAI = internalMutation({
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "org.editSettings");
 		return clearMockDataImpl(ctx, args);
-	},
-});
-
-/**
- * Dismiss the dashboard "sample data" banner WITHOUT deleting the records.
- * Lets the banner stop nagging while the data stays in place — useful for
- * users still exploring the workspace.
- *
- * Permission: org.editSettings.
- */
-export const dismissMockDataBanner = orgMutation({
-	args: { orgId: v.id("orgs") },
-	handler: async (ctx, args) => {
-		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
-		if (!member || member.deletedAt !== undefined)
-			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
-		requireRole(member.permissions, "org.editSettings");
-
-		const org = await ctx.db.get(args.orgId);
-		if (!org) return;
-		await ctx.db.patch(args.orgId, {
-			settings: {
-				...org.settings,
-				mockDataDismissedAt: Date.now(),
-			},
-			updatedAt: Date.now(),
-		});
 	},
 });
 

@@ -25,6 +25,7 @@
  * of CODE-ARCHITECTURE-PHASE-3A.md for the full Phase 4 specification.
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { productivityMockData } from "../mockData/productivity";
 
 export const productivityTemplate: IndustryTemplate = {
 	id: "productivity",
@@ -130,7 +131,7 @@ export const productivityTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "email"],
 			listColumns: ["displayName", "personCode", "email", "phone"],
 			boardGroupBy: "assignedTo",
@@ -267,81 +268,8 @@ export const productivityTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (4 tasks, 2 ideas in notes — minimal on purpose) ───────
-	mockData: {
-		deals: [
-			{
-				title: "Finish quarterly report",
-				stageCode: "DOING",
-				fieldValues: {
-					priority: "High",
-					due_date: Date.now() + 2 * 86_400_000,
-					estimated_hours: 4,
-					project: "Q3-2026",
-				},
-				tags: ["#work"],
-			},
-			{
-				title: "Reply to client emails",
-				stageCode: "TODO",
-				fieldValues: {
-					priority: "Urgent",
-					due_date: Date.now() - 1 * 86_400_000, // overdue
-					estimated_hours: 1,
-					project: "Inbox-zero",
-				},
-				tags: ["#work", "#waiting"],
-			},
-			{
-				title: "Draft side-project landing page",
-				stageCode: "REV",
-				fieldValues: {
-					priority: "Normal",
-					due_date: Date.now() + 3 * 86_400_000,
-					estimated_hours: 6,
-					project: "Side-project",
-				},
-				tags: ["#side-project"],
-			},
-			{
-				title: "Pick up groceries",
-				stageCode: "DONE",
-				fieldValues: {
-					priority: "Low",
-					due_date: Date.now() - 1 * 86_400_000,
-					estimated_hours: 1,
-					project: "Personal",
-				},
-				tags: ["#personal"],
-			},
-		],
-		notes: [
-			{
-				content:
-					"Idea: build a tiny CLI that surfaces today's overdue tasks as a daily morning email. Could ship in a weekend.",
-				categoryName: "Idea",
-			},
-			{
-				content:
-					"Reference: prefer focused 90-min blocks for deep work; protect the 10am-12pm window from meetings.",
-				categoryName: "Reference",
-			},
-		],
-		tasks: [
-			{
-				title: "Quarterly report due — start drafting",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Finish quarterly report" },
-			},
-			{
-				title: "Inbox zero — clear by EOD",
-				dueOffsetDays: 0,
-				priority: "urgent",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Reply to client emails" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/productivity.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: productivityMockData,
 };

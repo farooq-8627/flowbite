@@ -21,6 +21,7 @@
  * override what they need; everything else falls through to these defaults.
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { genericMockData } from "../mockData/generic";
 
 export const genericTemplate: IndustryTemplate = {
 	id: "generic",
@@ -65,6 +66,52 @@ export const genericTemplate: IndustryTemplate = {
 			},
 		],
 	},
+
+	// ─── Modules slot map (default view = "board" for every visible slot,
+	//     locked 2026-05-30: every fresh workspace lands on the board so
+	//     drag-and-drop pipeline progression is the first interaction). ──
+	modules: [
+		{
+			slot: "lead",
+			order: 0,
+			defaultView: "board",
+			cardFields: ["displayName", "email", "phone", "status", "assignedTo"],
+			listColumns: ["displayName", "personCode", "email", "phone", "assignedTo", "status"],
+			boardGroupBy: "status",
+		},
+		{
+			slot: "contact",
+			order: 1,
+			defaultView: "board",
+			cardFields: ["displayName", "email", "phone", "assignedTo"],
+			listColumns: ["displayName", "personCode", "email", "phone", "companyId", "assignedTo"],
+			boardGroupBy: "assignedTo",
+		},
+		{
+			slot: "deal",
+			order: 2,
+			defaultView: "board",
+			cardFields: ["title", "value", "currentStageId", "assignedTo", "expectedCloseDate"],
+			listColumns: [
+				"dealCode",
+				"title",
+				"companyId",
+				"value",
+				"currentStageId",
+				"assignedTo",
+				"expectedCloseDate",
+			],
+			boardGroupBy: "currentStageId",
+		},
+		{
+			slot: "company",
+			order: 3,
+			defaultView: "board",
+			cardFields: ["name", "industry", "assignedTo"],
+			listColumns: ["name", "companyCode", "industry", "website", "assignedTo"],
+			boardGroupBy: "assignedTo",
+		},
+	],
 
 	noteCategories: [
 		{ name: "Urgent", bgColor: "#fecaca", isDefault: false, position: 0 },
@@ -119,102 +166,8 @@ export const genericTemplate: IndustryTemplate = {
 	aiPersona:
 		"You are a CRM assistant. Help the user track leads, qualify them into contacts, and progress deals through the pipeline. Use the org's defined entity labels, custom fields, and pipeline stages — never invent new ones. Always confirm before destructive actions.",
 
-	// ─── Mock data (Phase 3A — minimal, generic feel) ────────────────────
-	mockData: {
-		companies: [
-			{
-				key: "sample-co",
-				name: "Sample Co.",
-				industry: "Professional Services",
-				website: "https://sampleco.example.com",
-			},
-		],
-		leads: [
-			{
-				displayName: "Alex Park",
-				email: "alex.p@example.com",
-				phone: "+1 555 010 0001",
-				status: "new",
-				tags: ["Hot", "Follow up"],
-			},
-			{
-				displayName: "Jamie Carter",
-				email: "jamie.c@example.com",
-				phone: "+1 555 010 0003",
-				status: "contacted",
-				tags: ["Warm"],
-			},
-		],
-		contacts: [
-			{
-				displayName: "Sam Lee",
-				email: "sam.lee@example.com",
-				phone: "+1 555 010 0002",
-				companyKey: "sample-co",
-				tags: ["VIP"],
-			},
-			{
-				displayName: "Jordan Rivera",
-				email: "jordan.r@example.com",
-				phone: "+1 555 010 0004",
-				tags: ["Follow up"],
-			},
-		],
-		deals: [
-			{
-				title: "Sample Co. — Q3 contract",
-				stageCode: "PROP",
-				value: 8500,
-				contactDisplayName: "Sam Lee",
-				companyKey: "sample-co",
-				tags: ["Hot"],
-			},
-			{
-				title: "Jordan — initial outreach",
-				stageCode: "CONT",
-				value: 3000,
-				contactDisplayName: "Jordan Rivera",
-				tags: ["Warm"],
-			},
-		],
-		notes: [
-			{
-				content:
-					"Welcome! This is sample data — explore the CRM then clear it from Settings → Workspace → Template when you're ready.",
-				categoryName: "Today",
-			},
-			{
-				content:
-					"Sam Lee at Sample Co. is expecting a revised proposal by Friday. Adjust the deal value and move to Negotiation when sent.",
-				categoryName: "In Progress",
-				anchorTo: { kind: "deal", title: "Sample Co. — Q3 contract" },
-			},
-			{
-				content: "Idea: set up a saved view for all open deals closing this month.",
-				categoryName: "Idea",
-			},
-		],
-		tasks: [
-			{
-				title: "Send revised proposal to Sam Lee",
-				dueOffsetDays: 2,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Sample Co. — Q3 contract" },
-			},
-			{
-				title: "Follow up with Jamie Carter",
-				dueOffsetDays: 1,
-				priority: "normal",
-				source: "followup",
-				anchorTo: { kind: "lead", displayName: "Jamie Carter" },
-			},
-			{
-				title: "Clear sample data once explored — Settings → Workspace",
-				dueOffsetDays: 0,
-				priority: "normal",
-				source: "manual",
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/generic.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: genericMockData,
 };

@@ -25,6 +25,7 @@
  * region.
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { realEstateMockData } from "../mockData/real_estate";
 
 export const realEstateTemplate: IndustryTemplate = {
 	id: "real-estate-global",
@@ -239,7 +240,7 @@ export const realEstateTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "preferred_area", "budget", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -256,7 +257,7 @@ export const realEstateTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "assignedTo"],
 			listColumns: ["displayName", "personCode", "phone", "email", "assignedTo"],
 			boardGroupBy: "assignedTo",
@@ -286,7 +287,7 @@ export const realEstateTemplate: IndustryTemplate = {
 		{
 			slot: "company",
 			order: 3,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["name", "industry"],
 			listColumns: ["name", "companyCode", "industry", "assignedTo"],
 			boardGroupBy: "assignedTo",
@@ -409,147 +410,8 @@ export const realEstateTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
-	mockData: {
-		companies: [
-			{
-				key: "bay-area-realty",
-				name: "Bay Area Realty Group",
-				industry: "Real Estate",
-				website: "https://bayarearealty.example.com",
-			},
-		],
-		leads: [
-			{
-				displayName: "Maria Rodriguez",
-				email: "maria.r@example.com",
-				phone: "+1 415 555 0101",
-				status: "new",
-				fieldValues: {
-					property_type: "House",
-					intent: "Buy",
-					bedrooms: "3",
-					preferred_area: "Mission District, San Francisco",
-					budget: 1200000,
-				},
-				tags: ["Cash buyer", "Hot inquiry"],
-			},
-			{
-				displayName: "James O'Connor",
-				email: "j.oconnor@example.com",
-				phone: "+44 20 7946 0123",
-				status: "contacted",
-				fieldValues: {
-					property_type: "Apartment",
-					intent: "Rent",
-					bedrooms: "1",
-					preferred_area: "Shoreditch, London",
-					budget: 2500,
-				},
-				tags: ["End user"],
-			},
-			{
-				displayName: "Yuki Tanaka",
-				email: "yuki.t@example.com",
-				phone: "+1 650 555 0190",
-				status: "new",
-				fieldValues: {
-					property_type: "Condo",
-					intent: "Buy",
-					bedrooms: "2",
-					preferred_area: "Palo Alto, CA",
-					budget: 1800000,
-				},
-				tags: ["Investor"],
-			},
-		],
-		contacts: [
-			{
-				displayName: "Sofia Martinez",
-				email: "sofia@example.com",
-				phone: "+1 213 555 0199",
-				companyKey: "bay-area-realty",
-				tags: ["Agent"],
-			},
-			{
-				displayName: "Ben Holloway",
-				email: "ben.h@example.com",
-				phone: "+44 7700 900 012",
-				tags: ["Landlord"],
-			},
-		],
-		deals: [
-			{
-				title: "Mission St — 3BR Family Home",
-				stageCode: "VIEW",
-				value: 1150000,
-				contactDisplayName: "Sofia Martinez",
-				companyKey: "bay-area-realty",
-				fieldValues: {
-					property_address: "1247 Mission St, San Francisco, CA",
-					property_type: "House",
-					asking_price: 1200000,
-					commission_pct: 2.5,
-				},
-				tags: ["Hot inquiry"],
-			},
-			{
-				title: "Shoreditch Studio — 1BR Rental",
-				stageCode: "OFR",
-				value: 2400,
-				contactDisplayName: "Ben Holloway",
-				fieldValues: {
-					property_address: "42 Bethnal Green Rd, Shoreditch, London",
-					property_type: "Apartment",
-					asking_price: 2500,
-					agreed_price: 2400,
-					commission_pct: 8,
-				},
-				tags: ["Counter-offer"],
-			},
-		],
-		notes: [
-			{
-				content:
-					"Maria is pre-approved up to $1.2M and looking to close before end of quarter. Schedule viewing Saturday AM.",
-				categoryName: "Hot Inquiry",
-				anchorTo: { kind: "lead", displayName: "Maria Rodriguez" },
-			},
-			{
-				content:
-					"James prefers viewings on weekends only. Needs service charge breakdown + broadband speed before committing.",
-				categoryName: "Today",
-				anchorTo: { kind: "lead", displayName: "James O'Connor" },
-			},
-			{
-				content:
-					"Counter-offer at £2,400/month accepted by landlord (Ben). Send tenancy agreement draft.",
-				categoryName: "Done",
-				anchorTo: { kind: "deal", title: "Shoreditch Studio — 1BR Rental" },
-			},
-		],
-		tasks: [
-			{
-				title: "Send Mission St listing photos to Maria",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Maria Rodriguez" },
-			},
-			{
-				title: "Lease signing — Shoreditch",
-				dueOffsetDays: 3,
-				priority: "high",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "Shoreditch Studio — 1BR Rental" },
-			},
-			{
-				title: "Call Yuki — Palo Alto condo shortlist",
-				dueOffsetDays: 1,
-				priority: "normal",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Yuki Tanaka" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/real_estate.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: realEstateMockData,
 };

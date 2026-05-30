@@ -27,6 +27,7 @@
  *   - REGA (Real Estate General Authority) tenancy regulations
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { realEstateSaudiMockData } from "../mockData/real_estate_saudi";
 
 export const realEstateSaudiTemplate: IndustryTemplate = {
 	id: "real-estate-saudi",
@@ -329,7 +330,7 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "preferred_area", "budget_sar", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -346,7 +347,7 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "phone", "nationality", "assignedTo"],
 			listColumns: [
 				"displayName",
@@ -383,7 +384,7 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 		{
 			slot: "company",
 			order: 3,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["name", "rega_license"],
 			listColumns: ["name", "companyCode", "rega_license", "assignedTo"],
 			boardGroupBy: "assignedTo",
@@ -590,150 +591,8 @@ export const realEstateSaudiTemplate: IndustryTemplate = {
 		},
 	],
 
-	// ─── Mock data (Phase 3A — deletable sample records) ──────────────────
-	mockData: {
-		companies: [
-			{
-				key: "riyadh-properties",
-				name: "Riyadh Premier Properties",
-				industry: "Real Estate",
-				fieldValues: {
-					rega_license: "REGA-1100123",
-					commercial_registration: "CR-7894561",
-				},
-			},
-		],
-		leads: [
-			{
-				displayName: "Khalid Al-Saud",
-				email: "khalid.alsaud@example.com",
-				phone: "+966 50 123 4567",
-				status: "new",
-				fieldValues: {
-					preferred_area: "Riyadh - Al Malqa",
-					property_type: "Villa",
-					bedrooms: "4BR",
-					budget_sar: 3500000,
-					intent: "Buy",
-				},
-				tags: ["Cash buyer", "VIP client"],
-			},
-			{
-				displayName: "Fatimah Al-Rashid",
-				email: "fatimah.r@example.com",
-				phone: "+966 55 987 6543",
-				status: "contacted",
-				fieldValues: {
-					preferred_area: "Jeddah - Al Hamra",
-					property_type: "Apartment",
-					bedrooms: "2BR",
-					budget_sar: 80000,
-					intent: "Rent — Annual",
-				},
-				tags: ["Mortgage required"],
-			},
-			{
-				displayName: "Tariq Al-Otaibi",
-				email: "tariq.o@example.com",
-				phone: "+966 53 456 7890",
-				status: "new",
-				fieldValues: {
-					preferred_area: "Al Khobar - Corniche",
-					property_type: "Apartment",
-					bedrooms: "3BR",
-					budget_sar: 1200000,
-					intent: "Off-plan",
-				},
-				tags: ["Off-plan"],
-			},
-		],
-		contacts: [
-			{
-				displayName: "Yousef Al-Harbi",
-				email: "yousef@example.com",
-				phone: "+966 50 222 3333",
-				companyKey: "riyadh-properties",
-				fieldValues: { nationality: "Saudi", preferred_language: "Arabic" },
-			},
-			{
-				displayName: "Noor Al-Qahtani",
-				email: "noor.q@example.com",
-				phone: "+966 56 444 5555",
-				fieldValues: { nationality: "Saudi", preferred_language: "Arabic" },
-			},
-		],
-		deals: [
-			{
-				title: "Al Malqa Villa — 4BR Sale",
-				stageCode: "VIEW",
-				value: 3400000,
-				contactDisplayName: "Yousef Al-Harbi",
-				companyKey: "riyadh-properties",
-				fieldValues: {
-					property_address: "Al Malqa District, Riyadh",
-					asking_price_sar: 3500000,
-					commission_pct: 2.5,
-				},
-				tags: ["Cash buyer"],
-			},
-			{
-				title: "Al Hamra Apartment — Annual Lease",
-				stageCode: "EJAR",
-				value: 75000,
-				contactDisplayName: "Noor Al-Qahtani",
-				fieldValues: {
-					property_address: "Al Hamra District, Jeddah",
-					asking_price_sar: 80000,
-					agreed_price_sar: 75000,
-					commission_pct: 5,
-				},
-				tags: ["Ejar pending"],
-			},
-		],
-		notes: [
-			{
-				content: "Khalid wants to view Al Malqa villa Saturday 5pm. Confirmed.",
-				categoryName: "Today",
-				anchorTo: { kind: "lead", displayName: "Khalid Al-Saud" },
-			},
-			{
-				content: "Fatimah needs Sakani-approved property — narrow listings to those.",
-				categoryName: "Hot Inquiry",
-				anchorTo: { kind: "lead", displayName: "Fatimah Al-Rashid" },
-			},
-			{
-				content: "Ejar registration submitted — awaiting REGA confirmation.",
-				categoryName: "Documents Pending",
-				anchorTo: { kind: "deal", title: "Al Hamra Apartment — Annual Lease" },
-			},
-			{
-				content: "Yousef pre-approved up to SAR 4M. Ready to make offer.",
-				categoryName: "Urgent",
-				anchorTo: { kind: "deal", title: "Al Malqa Villa — 4BR Sale" },
-			},
-		],
-		tasks: [
-			{
-				title: "Al Malqa villa viewing — Khalid",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Khalid Al-Saud" },
-			},
-			{
-				title: "Follow up on Ejar registration status",
-				dueOffsetDays: 2,
-				priority: "urgent",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "Al Hamra Apartment — Annual Lease" },
-			},
-			{
-				title: "Send Sakani-eligible properties to Fatimah",
-				dueOffsetDays: 1,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "lead", displayName: "Fatimah Al-Rashid" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/real_estate_saudi.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: realEstateSaudiMockData,
 };

@@ -33,6 +33,7 @@ export const OWNER_PATHS = {
 	root: ownerPath(),
 	overview: ownerPath("/overview"),
 	users: ownerPath("/users"),
+	organizations: ownerPath("/organizations"),
 	tiers: ownerPath("/tiers"),
 	billing: ownerPath("/billing"),
 	flags: ownerPath("/flags"),

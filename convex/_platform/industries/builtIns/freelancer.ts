@@ -24,6 +24,7 @@
  *   Company → hidden (`entityVisibility.company: false`)
  */
 import type { IndustryTemplate } from "../../../crm/fields/templates/types";
+import { freelancerMockData } from "../mockData/freelancer";
 
 export const freelancerTemplate: IndustryTemplate = {
 	id: "freelancer",
@@ -166,7 +167,7 @@ export const freelancerTemplate: IndustryTemplate = {
 		{
 			slot: "lead",
 			order: 0,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "project_type", "deadline"],
 			listColumns: [
 				"displayName",
@@ -181,7 +182,7 @@ export const freelancerTemplate: IndustryTemplate = {
 		{
 			slot: "contact",
 			order: 1,
-			defaultView: "list",
+			defaultView: "board",
 			cardFields: ["displayName", "email", "phone"],
 			listColumns: ["displayName", "personCode", "email", "phone"],
 			boardGroupBy: "assignedTo",
@@ -309,101 +310,8 @@ export const freelancerTemplate: IndustryTemplate = {
 		},
 	],
 
-	mockData: {
-		leads: [
-			{
-				displayName: "Nina Patel",
-				email: "nina.p@example.com",
-				phone: "+1 415 555 0100",
-				status: "new",
-				fieldValues: {
-					project_type: "Design",
-					deadline: Date.now() + 14 * 86_400_000,
-				},
-				tags: ["Referral"],
-			},
-			{
-				displayName: "Lukas Weber",
-				email: "lukas.w@example.com",
-				status: "contacted",
-				fieldValues: {
-					project_type: "Development",
-					deadline: Date.now() + 30 * 86_400_000,
-				},
-			},
-		],
-		contacts: [
-			{
-				displayName: "Aisha Bakr",
-				email: "aisha@example.com",
-				phone: "+1 213 555 0150",
-				tags: ["Repeat client"],
-			},
-			{
-				displayName: "Hiroshi Tanaka",
-				email: "hiroshi@example.com",
-			},
-		],
-		deals: [
-			{
-				title: "Logo redesign — Aisha",
-				stageCode: "WIP",
-				value: 1500,
-				contactDisplayName: "Aisha Bakr",
-				fieldValues: {
-					project_type: "Design",
-					scope: "Logo + brand mark variations + style guide.",
-					quoted_amount: 1500,
-					deadline: Date.now() + 7 * 86_400_000,
-					hourly_rate: 75,
-				},
-				tags: ["Repeat client"],
-			},
-			{
-				title: "Marketing site copy — Hiroshi",
-				stageCode: "QUOTE",
-				value: 800,
-				contactDisplayName: "Hiroshi Tanaka",
-				fieldValues: {
-					project_type: "Writing",
-					scope: "Homepage + 4 product pages.",
-					quoted_amount: 800,
-					deadline: Date.now() + 14 * 86_400_000,
-				},
-			},
-		],
-		notes: [
-			{
-				content: "Aisha approved sketches — proceed with vector + color exploration.",
-				categoryName: "Today",
-				anchorTo: { kind: "deal", title: "Logo redesign — Aisha" },
-			},
-			{
-				content: "Send Hiroshi a revised quote — he wants 2 product pages added.",
-				categoryName: "Urgent",
-				anchorTo: { kind: "deal", title: "Marketing site copy — Hiroshi" },
-			},
-			{
-				content:
-					"Idea: package logo + brand-guide + landing-page copy as a 'starter kit' offer.",
-				categoryName: "Idea",
-			},
-		],
-		tasks: [
-			{
-				title: "Send logo v2 to Aisha",
-				dueOffsetDays: 0,
-				priority: "high",
-				source: "manual",
-				anchorTo: { kind: "deal", title: "Logo redesign — Aisha" },
-			},
-			{
-				title: "Follow up on Hiroshi's revised quote",
-				dueOffsetDays: 2,
-				priority: "high",
-				source: "followup",
-				anchorTo: { kind: "deal", title: "Marketing site copy — Hiroshi" },
-			},
-		],
-	},
+	// ─── Mock data (Phase 3A — deletable sample records) ──────────────
+	// Lives in ../mockData/freelancer.ts so this file stays focused on
+	// the structural template (pipelines, fields, modules, etc.).
+	mockData: freelancerMockData,
 };

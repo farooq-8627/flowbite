@@ -315,7 +315,9 @@ async function authMiddlewareHandler(
 	// signed-in users clicking an invite link must reach the accept
 	// screen.
 	if (isAuthPage(request) && token) {
-		return nextjsMiddlewareRedirect(request, "/");
+		// `?continue=1` tells the landing page to resolve the user's workspace
+		// and route them in. Without it, the landing just shows (no auto-redirect).
+		return nextjsMiddlewareRedirect(request, "/?continue=1");
 	}
 
 	// Unauthenticated user on a protected route → bounce to signin, but

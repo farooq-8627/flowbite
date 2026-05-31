@@ -79,6 +79,7 @@ export default defineSchema({
 	activityLogs: system.activityLogs,
 	files: system.files,
 	orgStats: system.orgStats,
+	contactSubmissions: system.contactSubmissions,
 
 	// AI (Phase 3)
 	aiConversations: ai.aiConversations,

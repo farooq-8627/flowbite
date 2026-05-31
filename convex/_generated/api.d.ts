@@ -314,6 +314,8 @@ import type * as auth from "../auth.js";
 import type * as billing_actions from "../billing/actions.js";
 import type * as billing_internal from "../billing/internal.js";
 import type * as billing_queries from "../billing/queries.js";
+import type * as contact from "../contact.js";
+import type * as contactActions from "../contactActions.js";
 import type * as crm_entities_companies_mutations from "../crm/entities/companies/mutations.js";
 import type * as crm_entities_companies_queries from "../crm/entities/companies/queries.js";
 import type * as crm_entities_contacts_mutations from "../crm/entities/contacts/mutations.js";
@@ -711,6 +713,8 @@ declare const fullApi: ApiFromModules<{
   "billing/actions": typeof billing_actions;
   "billing/internal": typeof billing_internal;
   "billing/queries": typeof billing_queries;
+  contact: typeof contact;
+  contactActions: typeof contactActions;
   "crm/entities/companies/mutations": typeof crm_entities_companies_mutations;
   "crm/entities/companies/queries": typeof crm_entities_companies_queries;
   "crm/entities/contacts/mutations": typeof crm_entities_contacts_mutations;

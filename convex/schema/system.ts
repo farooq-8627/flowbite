@@ -127,3 +127,20 @@ export const orgStats = defineTable({
 	value: v.number(),
 	updatedAt: v.number(),
 }).index("by_org_and_key", ["orgId", "key"]);
+
+/**
+ * Landing-page contact-form submissions. NOT org-scoped — these come from
+ * anonymous public visitors. Every submission is stored here (so the data is
+ * never lost even if email delivery isn't configured) and an email is sent to
+ * the operator when `CONTACT_TO_EMAIL` is set. `emailStatus` records what
+ * happened with the email side.
+ */
+export const contactSubmissions = defineTable({
+	name: v.string(),
+	email: v.string(),
+	company: v.optional(v.string()),
+	interest: v.string(),
+	message: v.string(),
+	emailStatus: v.union(v.literal("sent"), v.literal("skipped_no_recipient"), v.literal("failed")),
+	...timestamps,
+}).index("by_createdAt", ["createdAt"]);

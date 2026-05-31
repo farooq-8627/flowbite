@@ -65,6 +65,7 @@ export default async function RootLayout({
 		<ConvexAuthNextjsServerProvider>
 			<html
 				lang={locale}
+				className="scroll-smooth"
 				dir={locale === "ar" ? "rtl" : "ltr"}
 				data-theme-mode={PREFERENCE_DEFAULTS.theme_mode}
 				data-theme-preset={PREFERENCE_DEFAULTS.theme_preset}

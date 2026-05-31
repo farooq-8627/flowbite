@@ -613,6 +613,48 @@ Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now 
 
 ---
 
+## B.36 — Contact-form endpoint hardening (rate-limit + CAPTCHA)
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Rate limit / Abuse prevention                                                      |
+| Phase to ship   | Before running paid ads or any high-traffic promotion of the landing page         |
+| Owners          | `convex/contact.ts`                                                                |
+| Risk if skipped | The public `contact.submit` Convex action is unauthenticated and triggers outbound email (via Resend). Without a rate-limit/CAPTCHA it can be spammed, burning Resend quota and flooding the operator inbox. |
+| Files involved  | `convex/contact.ts` (`"use node"` public action — has a `SECURITY` comment pointing here); `core/landing/components/contact-section.tsx` (calls it via `useAction`) |
+
+**Why we deferred.** Shipped 2026-05-31 with the landing page; reworked the same day from a Next.js API route into a Convex `"use node"` action (`convex/contact.ts`) so it reuses the project's existing Resend integration (`lib/email.ts`) and fixes the cross-route fetch that was erroring. The action has zod-equivalent validation, length caps, and a honeypot (`website`) that silently drops bots, which covers casual spam. A real per-identity/IP rate limit + CAPTCHA (Turnstile / hCaptcha) is the next layer but wasn't needed for launch.
+
+**Benefits when reinstated.** Caps email spend, protects the operator inbox, and stops automated abuse of an unauthenticated action.
+
+**Implementation sketch.** (1) Wrap `contact.submit` as a `mutation` that `enforceRateLimit`s (per email/IP) then schedules the `"use node"` email action — actions alone can't easily rate-limit (no `ctx.db`). (2) Add Cloudflare Turnstile (or hCaptcha) to `contact-section.tsx`, pass the token, verify server-side before sending. (3) Optionally persist submissions to a `contactSubmissions` table for an in-app inbox.
+
+**Verification.** Manual: call `contact.submit` >N×/min → rejected. Submit without a valid CAPTCHA token → rejected. Honeypot still drops bots silently.
+
+---
+
+## B.37 — Landing multi-page expansion (`/pricing`, `/for-*`, `/vs/*`, blog, changelog) + domain split
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Marketing / SEO / GEO                                                              |
+| Phase to ship   | After the single-page landing has measured conversion (per `LANDING-PAGE.md §10.9`) |
+| Owners          | `core/landing/*`, `app/(root)/*`                                                   |
+| Risk if skipped | Low — the single root page covers the core funnel. The extra pages are SEO/GEO surface area, not a launch blocker. |
+| Files involved  | New routes under `app/(root)/` + new views/sections in `core/landing/` |
+
+**Why we deferred.** Shipped 2026-05-31 as a single high-quality root page (the user's explicit ask was "all landing page in root page.tsx"). The original `LANDING-PAGE.md` spec also envisages `/pricing`, `/for-solopreneurs`, `/for-real-estate`, `/vs/{competitor}`, `/blog`, and `/changelog` as separate GEO/SEO pages, plus an `app.{domain}` vs root-domain split. Those are additive and best built once the single page's conversion is measured.
+
+**Benefits when reinstated.** Dedicated industry + comparison pages are strong GEO plays (LLMs cite comparison tables and named-entity pages); a changelog is proof-of-life for AEO; the domain split anchors SEO weight on the apex.
+
+**Implementation sketch.** Add thin wrappers under `app/(root)/pricing`, `app/(root)/for-[industry]`, `app/(root)/vs/[competitor]` (the latter via `generateStaticParams`), each rendering a view from `core/landing/views/`. Reuse the existing section components + `lib/content.ts` data. Add each new URL to `app/sitemap.ts`. Wire the `app.{domain}` host split in `middleware.ts` per `LANDING-PAGE.md §2`.
+
+**Verification.** `pnpm build` lists each new static route; sitemap includes them; Lighthouse SEO ≥ 95 per page.
+
+---
+
 # C. Audit-flagged but not yet roadmapped
 
 ## C.1 — Tree-shaped conversations (Attio Problem 1)
@@ -778,6 +820,8 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-29 | Dashboard UX  | B.32 — Drag-to-reorder for dashboard panels (Stage 5 deferral; `Pin to my dashboard` button covers the AI-write case for v1). | B |
 | 2026-05-29 | Dashboard UX  | B.33 — Per-deal score-dot UX in the Deals widget (Stage 5 deferral; score still accessible via `score_deal` + `explain_deal_score` AI tools). | B |
 | 2026-05-29 | AI tool       | B.34 — `revise_forecast` AI tool deferred (covered by `analyze_metric` in the analytics layer until users explicitly ask for the diff-preview pattern). | B |
+| 2026-05-31 | Abuse prevention | B.36 — Contact-form endpoint hardening (per-IP rate-limit + CAPTCHA) deferred; honeypot + zod validation cover casual spam at launch. | B |
+| 2026-05-31 | Marketing / SEO | B.37 — Landing multi-page expansion (`/pricing`, `/for-*`, `/vs/*`, blog, changelog) + `app.{domain}` split deferred; single root page ships first. | B |
 
 ---
 

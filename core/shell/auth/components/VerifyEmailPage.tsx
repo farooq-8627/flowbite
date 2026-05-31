@@ -47,7 +47,7 @@ export function VerifyEmailPage() {
 				code: code.trim(),
 			});
 			toast.success("Email verified! Welcome aboard.");
-			router.push("/");
+			router.push("/?continue=1");
 		} catch (err) {
 			toast.authError(err as Error);
 			setLoading(false);

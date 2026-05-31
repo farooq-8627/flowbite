@@ -52,7 +52,7 @@ export function ResetPasswordPage() {
 				newPassword,
 			});
 			toast.success("Password reset successfully. You're now signed in.");
-			router.push("/");
+			router.push("/?continue=1");
 		} catch (err) {
 			toast.authError(err as Error);
 			setLoading(false);

@@ -48,8 +48,12 @@ const TIER_FALLBACK_DEFAULTS: Record<
 		],
 		highlight: false,
 	},
+	// Display-name mapping (internal key → customer-facing name): the four
+	// canonical tiers are shown as Free / Pro / Team / Enterprise. The keys
+	// stay `free`/`starter`/`pro`/`enterprise` (used by orgs.plan + LemonSqueezy
+	// variant mapping); only the labels differ. Owner-panel edits override these.
 	starter: {
-		displayName: "Starter",
+		displayName: "Pro",
 		monthlyPriceUSD: 19,
 		yearlyPriceUSD: 190,
 		trialDays: 14,
@@ -64,7 +68,7 @@ const TIER_FALLBACK_DEFAULTS: Record<
 		highlight: false,
 	},
 	pro: {
-		displayName: "Pro",
+		displayName: "Team",
 		monthlyPriceUSD: 49,
 		yearlyPriceUSD: 490,
 		trialDays: 14,

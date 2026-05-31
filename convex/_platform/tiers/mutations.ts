@@ -51,8 +51,10 @@ const TIER_FALLBACK_DEFAULTS: Record<
 		],
 		highlight: false,
 	},
+	// Display-name mapping (internal key → customer-facing name): Free / Pro /
+	// Team / Enterprise. Keys stay free/starter/pro/enterprise; only labels differ.
 	starter: {
-		displayName: "Starter",
+		displayName: "Pro",
 		monthlyPriceUSD: 19,
 		yearlyPriceUSD: 190,
 		trialDays: 14,
@@ -67,7 +69,7 @@ const TIER_FALLBACK_DEFAULTS: Record<
 		highlight: false,
 	},
 	pro: {
-		displayName: "Pro",
+		displayName: "Team",
 		monthlyPriceUSD: 49,
 		yearlyPriceUSD: 490,
 		trialDays: 14,

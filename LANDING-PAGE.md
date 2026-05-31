@@ -10,6 +10,21 @@
 
 ---
 
+## ✅ Implementation status — SHIPPED 2026-05-31 (single-page v1)
+
+> A first, high-quality version of this landing page is **live at the bare root `/`** (not `app/(marketing)/` — see the deviation note). The original spec below stays as the full roadmap; this block records what's actually built so the next session knows the gap.
+
+**What shipped (v1):** A single, polished marketing page at `/`, rebuilt in the project's own design language (oklch tokens, `rounded-[var(--radius)]`, RTL-safe logical classes, `.dark` toggle, `APP_CONFIG.name`), inspired by the shadcnstore template. All UI lives in **`core/landing/`** (`views/LandingView.tsx` + 13 section components + `lib/{content,contact,contact-schema,icons}.ts`); `app/` stays thin. Sections: navbar · hero (propose/approve product mock, no screenshots) · logos+stats · 6 features · daily-routine timeline · honest comparison matrix · **services offer (custom CRM / custom website / done-for-you)** · 4-plan pricing · FAQ · contact form · CTA · footer. Contact form → `app/api/contact/route.ts` → `submitContact` (zod + honeypot + best-effort Resend, always logs). SEO/AEO/GEO: page metadata + JSON-LD (`Organization`/`SoftwareApplication`/`FAQPage`) + dynamic `app/robots.ts` + `app/sitemap.ts` + `app/llms.txt/route.ts`. Routing: `middleware.ts` serves `/` directly (no `/en` bounce); CTAs → `/signin` + `/signup` → existing auth → onboarding → dashboard. Verified: typecheck 0 · biome 0/0/0 · `pnpm build` ✅ (`/` prerendered static).
+
+**Deviations from the spec below (intentional):**
+- **Location:** embedded at `app/(root)/` (the existing bare-root route group) instead of `app/(marketing)/`. Reason: the user wanted the landing on the literal root page, and `app/(root)` already exists as a dedicated root layout for bare-domain traffic. The §1 "embed" recommendation still holds; only the folder differs.
+- **Single page, not multi-page:** `/pricing`, `/for-solopreneurs`, `/for-real-estate`, `/vs/{competitor}`, `/blog`, `/changelog` are **not** built yet — pricing/FAQ/comparison are sections on the one page. Multi-page expansion is tracked in `Future-Enhancements.md §B.37`.
+- **No domain split yet** (`app.{domain}` vs root) — §2 deferred to `Future-Enhancements.md §B.37`.
+
+**Still pending (see §8 + Future-Enhancements):** real product screenshots (§M11), contact-endpoint rate-limit/CAPTCHA (`Future-Enhancements.md §B.36`), the Free-Pro lifecycle emails + `earlyAccessGrant` mechanic (§6/§M10), and the LemonSqueezy upgrade flow (pre-existing P0.1) before paid signups.
+
+---
+
 ## 0 — What's actually shipped today (the honesty foundation)
 
 Every marketing claim must map back to one of these. If a feature isn't here, don't claim it on the homepage.

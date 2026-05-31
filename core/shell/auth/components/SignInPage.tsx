@@ -104,7 +104,7 @@ export function SignInPage() {
 	const redirectTarget = safeRedirectTarget(searchParams.get("redirect"));
 	// Where to send the user after successful auth. Defaults to "/" (which
 	// then routes onward to onboarding or the user's default org).
-	const postAuthHref = redirectTarget ?? "/";
+	const postAuthHref = redirectTarget ?? "/?continue=1";
 
 	const handleOAuth = (provider: "github" | "google") => {
 		// Persist the remember-me preference BEFORE redirecting to the

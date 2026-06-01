@@ -118,14 +118,17 @@ export function useAIChat(args: {
 			return true;
 		}
 
-		// Last message is a tool result with no pending approval → orchestrator
-		// is between rounds, about to schedule the next assistant message. Treat
-		// as streaming so Stop stays visible across the gap. (If the orchestrator
-		// has actually died, the user can still click Stop to clear the state;
-		// the cancel mutation is idempotent.)
-		const last = tail[tail.length - 1];
-		if (last.role === "tool") return true;
-
+		// Reaching here means: no tool approval is pending AND every assistant
+		// in the tail is already terminal (done/error). The turn is therefore
+		// COMPLETE — even if a `tool` row sorts last in the list. There is one
+		// assistant message per turn (the AI SDK drives multi-step internally),
+		// and tool rows are created *after* that placeholder, so a turn that
+		// ends in a tool call (e.g. creating a task) leaves a trailing tool row.
+		// Previously this branch returned `true` for any trailing tool row,
+		// which pinned the Stop button on forever and made it a no-op (the
+		// cancel mutation targets the already-settled last message). Fixed
+		// 2026-06-01 — a trailing tool row after a settled assistant is a
+		// finished turn, not an in-flight gap.
 		return false;
 	}, [messages]);
 

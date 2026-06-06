@@ -800,3 +800,63 @@ export const patchAssistantSubagent = internalMutation({
 		await ctx.db.patch(args.messageId, { subagent: args.subagent });
 	},
 });
+
+// ─── Internal mutation: reap stale assistant streams (cron) ───────────────────
+
+/**
+ * Stale-stream reaper — fired every minute by `convex/crons.ts`.
+ *
+ * If the `runChatTurn` action crashes mid-turn (provider 500, OOM, isolate
+ * timeout) the assistant `aiMessages` row is left in a non-terminal
+ * `thinkingState` ("thinking" | "calling_tool" | "streaming") forever — the
+ * user sees a bubble that spins until they refresh. Nothing else ever flips
+ * that row to a terminal state because the only writer (the orchestrator)
+ * is dead.
+ *
+ * This reaper flips any non-terminal row older than `STALE_STREAM_THRESHOLD_MS`
+ * to a terminal `done` state with `aborted: true` and a `[stalled]` marker —
+ * the SAME shape `cancelStream` produces, so `<AssistantTurn>` already renders
+ * it correctly (stops the spinner, shows the aborted badge) with zero UI work.
+ *
+ * Bounded: queries the `by_thinkingState` index per non-terminal state with a
+ * `createdAt < cutoff` range (no `.filter()` full scan, per guidelines) and
+ * `.take(REAP_BATCH_PER_STATE)`. A backlog drains over successive ticks.
+ *
+ * Idempotent: a reaped row is `done`, so it never matches the non-terminal
+ * range again. The 5-minute threshold is comfortably longer than any healthy
+ * turn (longest observed tool-heavy turn ≈ 60 s) so live streams are untouched.
+ */
+const STALE_STREAM_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+const REAP_BATCH_PER_STATE = 100;
+const NON_TERMINAL_STATES = ["thinking", "calling_tool", "streaming"] as const;
+
+export const reapStaleStreams = internalMutation({
+	args: {},
+	handler: async (ctx) => {
+		const cutoff = Date.now() - STALE_STREAM_THRESHOLD_MS;
+		let reaped = 0;
+
+		for (const state of NON_TERMINAL_STATES) {
+			const stale = await ctx.db
+				.query("aiMessages")
+				.withIndex("by_thinkingState", (q) =>
+					q.eq("thinkingState", state).lt("createdAt", cutoff),
+				)
+				.take(REAP_BATCH_PER_STATE);
+
+			for (const msg of stale) {
+				const stamped = msg.content
+					? `${msg.content}\n\n_[stalled — please retry]_`
+					: "_[stalled — no response received, please retry]_";
+				await ctx.db.patch(msg._id, {
+					content: stamped,
+					thinkingState: "done",
+					aborted: true,
+				});
+				reaped++;
+			}
+		}
+
+		return { reaped };
+	},
+});

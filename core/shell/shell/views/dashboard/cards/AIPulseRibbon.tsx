@@ -12,20 +12,32 @@
  * closes capability-audit gap T-4 by surfacing confidence on every
  * suggestion).
  *
- * Source priority
- * ───────────────
- *   1. `convex.ai.queries.nextActions:listForUser` — the ranked store.
- *      Covers reminders, stale leads, stuck deals, high-value deal
- *      stalls. Each row has `score (0-100)`, `confidence (high|medium|low)`
- *      and a chat-prefill `suggestedIntent`.
- *   2. Fallback: `convex.ai.suggestions:list` — the Stage 5 heuristic
- *      engine. Used when the cron hasn't fired yet for this user (first
- *      ribbon render after seed) so the dashboard never feels empty.
+ * Merged sources (single proactive surface)
+ * ───────────────────────────────────────────
+ *   1. `convex.ai.queries.nextActions:listForUser` — the ranked store
+ *      (per-user, assignment-driven). Covers reminders, stale leads,
+ *      stuck deals, high-value deal stalls. Each row has `score (0-100)`,
+ *      `confidence (high|medium|low)` and a chat-prefill `suggestedIntent`.
+ *   2. `convex.ai.suggestions:list` (scope "org") — the heuristic engine,
+ *      now MERGED IN permanently (not just a cold-start fallback). It
+ *      carries org-level signals the per-user ranker can't see (e.g. a
+ *      stale lead owned by a teammate). This folds the old standalone
+ *      "AI suggestions" panel into this one surface.
  *
- * The cron rebuild deletes a user's previous rows before inserting the
- * fresh ranked top-100 — `listForUser` therefore always reflects the
- * latest tick. Confidence chip colours: high → primary, medium → amber,
- * low → muted.
+ * Both sources are permission-scoped SERVER-SIDE: `listForUser` only
+ * returns record kinds the member may view (leads/deals/tasks/contacts/
+ * companies), and `suggestions:list` gates each category the same way.
+ * The client merge dedupes — an anchored heuristic suggestion is dropped
+ * when a ranked row already covers the same record; anchorless org
+ * aggregates (e.g. "N leads untouched") are always kept. Results are
+ * sorted most-urgent-first and capped at `MAX_VISIBLE`; the exhaustive
+ * list lives at `/ai/next-actions`.
+ *
+ * Collapse: the header bar is a per-user collapse toggle (persisted in
+ * `users.preferences.dashboardSectionsCollapsed.aiPulse`) mirroring the
+ * AICockpitSection pattern, so the pulse can fold independently of the
+ * whole cockpit. Confidence chip colours: high → primary, medium →
+ * amber, low → muted.
  *
  * Per-user dismiss
  * ────────────────
@@ -94,7 +106,10 @@ type FallbackSuggestion = {
 	anchor?: { entityType: string; code: string };
 };
 
-const MAX_VISIBLE = 3;
+// Merged surface (ranked next-actions + permission-scoped org signals)
+// shows up to this many chips; the exhaustive ranked list lives at
+// /ai/next-actions via the "All next actions" link.
+const MAX_VISIBLE = 9;
 
 // Cross-mount gate for `lazyWarmForUser` — sessionStorage so the cap is
 // scoped to the current tab. The TTL matches the server's 60s rate-limit
@@ -179,6 +194,17 @@ function rankedToHeadline(row: RankedRow): string {
 	}
 }
 
+/**
+ * Canonical key used to dedupe an org-wide heuristic suggestion against a
+ * ranked row that already covers the same record. Reminders live in the
+ * `tasks` table, so the ranked `reminder` kind normalises to `task` to
+ * line up with the heuristic anchor's `entityType` ("task" / "deal").
+ */
+function rankedDedupeKey(recordKind: string, recordCode: string): string {
+	const kind = recordKind === "reminder" ? "task" : recordKind;
+	return `${kind}:${recordCode}`;
+}
+
 export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps) {
 	const me = useMe();
 	const ranked = useQuery(api.ai.queries.nextActions.listForUser, {
@@ -186,10 +212,12 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 		limit: 20,
 	}) as RankedListResult | undefined;
 
-	// Fallback only fires when the ranked store is empty so that the
-	// dashboard never goes silent. We pass the same anyApi reference the
-	// existing AISuggestionsPanel uses to keep the Convex subscription
-	// table de-duped.
+	// Org-wide heuristic suggestions — always merged into the pulse (no
+	// longer just a cold-start fallback). This is the surface that
+	// replaced the standalone "AI suggestions" panel: it carries
+	// org-level signals the per-user ranker can't see. The server gates
+	// each category by the member's view permissions, so this only ever
+	// returns categories the role is allowed to see.
 	const fallbackSuggestions = useQuery(anyApi.ai.suggestions.list, {
 		orgId,
 		scope: "org",
@@ -197,6 +225,13 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 
 	const dismissRanked = useMutation(api.ai.queries.nextActions.dismissNextAction);
 	const dismissFallback = useMutation(api.users.mutations.dismissAiPulseSuggestion);
+
+	// Per-user collapse state for the merged pulse — mirrors the
+	// AICockpitSection toggle but scoped to just this surface so the user
+	// can fold the pulse without folding the whole cockpit. Persisted in
+	// `users.preferences.dashboardSectionsCollapsed.aiPulse`.
+	const setCollapsed = useMutation(api.users.mutations.setDashboardSectionCollapsed);
+	const collapsed = me?.preferences?.dashboardSectionsCollapsed?.aiPulse === true;
 
 	// Stage 3-A.4 — lazy-warm the ranked store when it's empty for this
 	// user. The server enforces the rate-limit (5/min per user/org) but
@@ -251,15 +286,20 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	}, [me?.preferences?.aiPulseDismissed]);
 
 	const visible = useMemo<DisplayRow[]>(() => {
-		// Source 1: ranked store. We treat it as the source of truth.
+		const rows: DisplayRow[] = [];
+		const rankedKeys = new Set<string>();
+
+		// Source 1 — the ranked store (per-user, scored). The server
+		// already permission-scopes which record kinds come back, so we
+		// render whatever it returns. Track each row's canonical key so
+		// the heuristic merge below can avoid double-listing the same
+		// record.
 		if (ranked && ranked.count > 0) {
-			return ranked.rows
-				.filter((r) => {
-					const fingerprint = `${r.recordKind}:${r.recordCode}:${r.reasonCode}`;
-					return !(fingerprint in dismissedMap);
-				})
-				.slice(0, MAX_VISIBLE)
-				.map<DisplayRow>((r) => ({
+			for (const r of ranked.rows) {
+				const fingerprint = `${r.recordKind}:${r.recordCode}:${r.reasonCode}`;
+				if (fingerprint in dismissedMap) continue;
+				rankedKeys.add(rankedDedupeKey(r.recordKind, r.recordCode));
+				rows.push({
 					id: `ranked:${r.id}`,
 					source: "ranked",
 					headline: rankedToHeadline(r),
@@ -268,24 +308,41 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 					confidence: r.confidence,
 					intent: r.suggestedIntent,
 					rankedActionId: r.id,
-				}));
+				});
+			}
 		}
-		// Source 2: heuristic engine. Only shown while the ranked store
-		// is still warming up.
-		if (!fallbackSuggestions) return [];
-		return [...fallbackSuggestions]
-			.filter((s) => !(s.id in dismissedMap))
-			.sort((a, b) => severityRank(a.severity) - severityRank(b.severity))
-			.slice(0, MAX_VISIBLE)
-			.map<DisplayRow>((s) => ({
-				id: `fallback:${s.id}`,
-				source: "fallback",
-				headline: s.headline,
-				body: s.body,
-				severity: s.severity,
-				intent: s.intent,
-				fallbackSuggestionId: s.id,
-			}));
+
+		// Source 2 — org-wide heuristic suggestions, MERGED IN (not just a
+		// cold-start fallback). This is what folds the old "AI suggestions"
+		// panel into the single pulse: org-level signals the per-user
+		// ranker can't see (e.g. stale leads owned by a teammate) still
+		// surface here. The server gates each category by permission, so
+		// anything present is already allowed for this role. Dedupe rule:
+		// drop an anchored suggestion when a ranked row already covers the
+		// same record; keep anchorless aggregates (e.g. the "N leads
+		// untouched" rollup) which have no per-record ranked equivalent.
+		if (fallbackSuggestions) {
+			for (const s of fallbackSuggestions) {
+				if (s.id in dismissedMap) continue;
+				if (s.anchor && rankedKeys.has(`${s.anchor.entityType}:${s.anchor.code}`)) {
+					continue;
+				}
+				rows.push({
+					id: `fallback:${s.id}`,
+					source: "fallback",
+					headline: s.headline,
+					body: s.body,
+					severity: s.severity,
+					intent: s.intent,
+					fallbackSuggestionId: s.id,
+				});
+			}
+		}
+
+		// Most urgent first (critical → warning → info). The sort is
+		// stable, so ranked rows keep their score order within a tier.
+		rows.sort((a, b) => severityRank(a.severity) - severityRank(b.severity));
+		return rows.slice(0, MAX_VISIBLE);
 	}, [ranked, fallbackSuggestions, dismissedMap]);
 
 	if (ranked === undefined && fallbackSuggestions === undefined) return null;
@@ -373,18 +430,31 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 			)}
 		>
 			<header className="flex items-center gap-2">
-				<span
-					aria-hidden
-					className="flex size-6 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
+				{/* The icon + title + count form the collapse toggle —
+				    mirrors AICockpitSection (whole bar toggles, no chevron;
+				    `aria-expanded` conveys state). The "All next actions"
+				    link is a sibling, not nested, so clicking it navigates
+				    without toggling. */}
+				<button
+					type="button"
+					onClick={() => void setCollapsed({ section: "aiPulse", collapsed: !collapsed })}
+					className="flex flex-1 cursor-pointer items-center gap-2 text-start"
+					aria-expanded={!collapsed}
+					aria-controls="ai-pulse-body"
 				>
-					<Sparkles className="size-3.5" />
-				</span>
-				<h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">
-					AI Pulse
-				</h3>
-				<span className="ms-auto text-[10px] uppercase tracking-wide text-muted-foreground/70">
-					Top {visible.length}
-				</span>
+					<span
+						aria-hidden
+						className="flex size-6 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary"
+					>
+						<Sparkles className="size-3.5" />
+					</span>
+					<h3 className="text-xs font-semibold uppercase tracking-wide text-foreground">
+						AI Pulse
+					</h3>
+					<span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+						Top {visible.length}
+					</span>
+				</button>
 				<Button
 					asChild
 					size="sm"
@@ -397,7 +467,10 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 					</Link>
 				</Button>
 			</header>
-			<ul className="grid grid-cols-1 gap-2 md:grid-cols-3">
+			<ul
+				id="ai-pulse-body"
+				className={cn("grid grid-cols-1 gap-2 md:grid-cols-3", collapsed && "hidden")}
+			>
 				{visible.map((row) => (
 					<PulseChip
 						key={row.id}

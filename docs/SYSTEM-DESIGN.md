@@ -106,7 +106,7 @@ orbitly/
 ├── stores/                   Zustand stores — UI-only state (locked decision #1)
 ├── i18n/                     next-intl routing + request config (en, ar)
 ├── messages/                 Translation JSON
-├── middleware.ts             Auth guard + locale routing + owner-panel rewrite
+├── proxy.ts                  Auth guard + locale routing + owner-panel rewrite (formerly middleware.ts)
 ├── trigger/                  Trigger.dev background jobs (CSV import processor, drip emails)
 ├── docs/                     Architecture deep-dives + runbooks
 ├── owner/                    Owner-panel UI (super-admin)

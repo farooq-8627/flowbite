@@ -180,6 +180,24 @@ crons.interval(
 );
 
 /**
+ * Stale AI-stream reaper (every 1 min).
+ *
+ * If the `runChatTurn` action crashes mid-turn (provider 500, OOM, isolate
+ * timeout) the assistant `aiMessages` row is stranded in a non-terminal
+ * `thinkingState` ("thinking" | "calling_tool" | "streaming") forever — the
+ * user sees a bubble that spins until they refresh. No other code path flips
+ * it because the only writer (the orchestrator) is dead.
+ *
+ * `reapStaleStreams` flips any non-terminal row older than 5 minutes to a
+ * terminal `done` + `aborted: true` state with a `[stalled]` marker — the same
+ * shape `cancelStream` produces, so the UI already renders it (spinner stops,
+ * aborted badge shows). Bounded per tick via the `by_thinkingState` index +
+ * `.take()`; a backlog drains over successive ticks. Idempotent — a reaped row
+ * is `done` and never re-matches. Pure DB scan, no LLM cost.
+ */
+crons.interval("reap-stale-ai-streams", { minutes: 1 }, internal.ai.messages.reapStaleStreams, {});
+
+/**
  * Daily owner-panel OTP garbage collection.
  *
  * Each OTP row has a 15-minute TTL. We keep them around for an

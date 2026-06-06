@@ -127,8 +127,26 @@ export function getModel(args: {
 	resolvedKey: { encryptedKey: string; baseUrl: string | null; scope: "user" | "org" } | null;
 	decryptedKey?: string | null;
 	plan: OrgPlan;
+	/**
+	 * Decrypted owner-managed platform keys (from the `platformAiKeys` DB
+	 * table, set in the Owner panel). Resolved + decrypted by the Node caller
+	 * (`resolveModelAndKey`) and passed in so this pure function can prefer a
+	 * DB key over the env var WITHOUT becoming async. When a provider isn't in
+	 * this map we fall back to `process.env.*_API_KEY` via `getPlatformKey`.
+	 * Both resolve to `usageMode: "platform"` — only BYOK is metered as byok.
+	 */
+	platformKeys?: Partial<Record<ProviderId, { key: string; baseUrl: string | null }>>;
 }): GetModelResult {
 	const { resolvedKey, decryptedKey, plan } = args;
+
+	// Platform-key resolver: owner-managed DB key first (so operators rotate
+	// keys in the panel with no redeploy), then the env-var fallback.
+	const platformKeyFor = (p: ProviderId): { key: string; baseUrl?: string } | null => {
+		const db = args.platformKeys?.[p];
+		if (db?.key) return { key: db.key, baseUrl: db.baseUrl ?? undefined };
+		const env = getPlatformKey(p);
+		return env ? { key: env } : null;
+	};
 
 	let modelKey = args.modelKey ?? null;
 	if (!modelKey) modelKey = process.env.AI_DEFAULT_MODEL ?? PLATFORM_DEFAULT_MODEL;
@@ -170,18 +188,18 @@ export function getModel(args: {
 	const pickAnyConfiguredModel = (): {
 		key: string;
 		info: ModelInfo;
-		platformKey: string;
+		platformKey: { key: string; baseUrl?: string };
 	} | null => {
 		const candidates = Object.entries(MODEL_REGISTRY)
 			.filter(([, m]) => allowedTiers.has(m.tier))
 			.sort((a, b) => b[1].inputCostPerMTok - a[1].inputCostPerMTok);
 		for (const [key, m] of candidates) {
-			const k = getPlatformKey(m.provider as ProviderId);
+			const k = platformKeyFor(m.provider as ProviderId);
 			if (k) return { key, info: m, platformKey: k };
 		}
 		// No allowed-tier match — try any model regardless of plan tier.
 		for (const [key, m] of Object.entries(MODEL_REGISTRY)) {
-			const k = getPlatformKey(m.provider as ProviderId);
+			const k = platformKeyFor(m.provider as ProviderId);
 			if (k) return { key, info: m, platformKey: k };
 		}
 		return null;
@@ -194,7 +212,8 @@ export function getModel(args: {
 			model: buildLanguageModel({
 				provider: fallback.info.provider as ProviderId,
 				modelId: fallback.info.modelId,
-				apiKey: fallback.platformKey,
+				apiKey: fallback.platformKey.key,
+				baseUrl: fallback.platformKey.baseUrl,
 			}),
 			provider: fallback.info.provider as ProviderId,
 			modelKey: fallback.key,
@@ -204,13 +223,14 @@ export function getModel(args: {
 		};
 	}
 
-	const platformKey = getPlatformKey(info.provider as ProviderId);
+	const platformKey = platformKeyFor(info.provider as ProviderId);
 	if (platformKey) {
 		return {
 			model: buildLanguageModel({
 				provider: info.provider as ProviderId,
 				modelId: info.modelId,
-				apiKey: platformKey,
+				apiKey: platformKey.key,
+				baseUrl: platformKey.baseUrl,
 			}),
 			provider: info.provider as ProviderId,
 			modelKey: finalModelKey,
@@ -222,14 +242,15 @@ export function getModel(args: {
 
 	// Requested provider has no platform key — try ANY other configured provider
 	// before giving up so the chat keeps working as long as one platform key
-	// exists somewhere in the env.
+	// exists somewhere (DB or env).
 	const fallback = pickAnyConfiguredModel();
 	if (!fallback) throw new Error(`Platform API key not configured: ${info.provider}`);
 	return {
 		model: buildLanguageModel({
 			provider: fallback.info.provider as ProviderId,
 			modelId: fallback.info.modelId,
-			apiKey: fallback.platformKey,
+			apiKey: fallback.platformKey.key,
+			baseUrl: fallback.platformKey.baseUrl,
 		}),
 		provider: fallback.info.provider as ProviderId,
 		modelKey: fallback.key,

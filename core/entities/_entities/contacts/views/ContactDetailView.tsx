@@ -15,7 +15,6 @@ import { ArrowRightCircleIcon, PencilIcon, Undo2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
@@ -41,7 +40,6 @@ import {
 } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
-import { buildEntityBoardTour } from "@/core/entities/shared/tours";
 import {
 	getHiddenCardFieldsForGrouping,
 	getRevealedCardFieldForGrouping,
@@ -548,17 +546,6 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				orgId={orgId}
 				contact={editingContact}
 			/>
-
-			{/* First-time coachmarks for the contacts board. Fires once per device. */}
-			{view === "board" && (
-				<FirstTimeTour
-					id="contacts-board-v2"
-					steps={buildEntityBoardTour({
-						primaryActionVerb: "Edit",
-						groupedBy: "status",
-					})}
-				/>
-			)}
 		</>
 	);
 }

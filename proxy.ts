@@ -1,5 +1,9 @@
 /**
- * Next.js Middleware — Auth guard + i18n locale routing + Owner-panel rewrite.
+ * Next.js Proxy (formerly Middleware) — Auth guard + i18n locale routing + Owner-panel rewrite.
+ *
+ * Renamed from `middleware.ts` per the Next 16 deprecation
+ * (https://nextjs.org/docs/messages/middleware-to-proxy). Same runtime
+ * behaviour; the file + default export are now named `proxy`.
  *
  * PATTERN
  * ───────
@@ -345,7 +349,7 @@ async function authMiddlewareHandler(
 // shared mutable state — and Next.js middlewares are themselves
 // per-request anyway. Functional-equivalent to `convexAuth.use({ ... })`
 // in other web frameworks.
-export default async function middleware(request: NextRequest, event: NextFetchEvent) {
+export default async function proxy(request: NextRequest, event: NextFetchEvent) {
 	const maxAge = resolveCookieMaxAge(request);
 	const inner = convexAuthNextjsMiddleware(authMiddlewareHandler, {
 		cookieConfig: { maxAge },

@@ -43,8 +43,6 @@ import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import { resolveActivityRowLimit } from "@/convex/_shared/dashboardDensity";
 import type { WidgetKey } from "@/convex/_shared/widgetRegistry";
-import { AISuggestionsPanel } from "@/core/ai/components/AISuggestionsPanel";
-import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
 import { MessagesPreviewWidget } from "@/core/comms/messages/components/MessagesPreviewWidget";
 import { MiniCalendarWidget } from "@/core/scheduling/calendar/widgets/MiniCalendarWidget";
 import { WeekAheadWidget } from "@/core/scheduling/calendar/widgets/WeekAheadWidget";
@@ -67,12 +65,48 @@ import {
 import { resolveCanonicalKpiStrip } from "./cards/WidgetRegistry";
 import { DashboardLayoutRenderer } from "./DashboardLayoutRenderer";
 
-const DASHBOARD_TOUR_STEPS: TourStep[] = [
+// Login / onboarding tour — the FIRST coachmark a new user sees, mounted once
+// on the dashboard (the only route where the sidebar, top nav, AND AI Cockpit
+// are all on screen together). Walks the shell top-to-bottom: workspace
+// switcher → sidebar sections → the top-nav action buttons → the AI Cockpit.
+// Fires once per device (id `onboarding-v1`); bump the id on meaningful edits.
+// Targets resolve globally via `data-tour="…"`; missing ones are skipped.
+const ONBOARDING_TOUR_STEPS: TourStep[] = [
+	{
+		target: "workspace-switcher",
+		title: "Your workspace",
+		body: "Switch between workspaces, see pending invitations, or create a new one — all from here at the top of the sidebar.",
+		side: "end",
+	},
+	{
+		target: "sidebar-nav",
+		title: "Navigate your CRM",
+		body: "Every section — leads, contacts, deals, companies, tasks, and more — lives here. Your workspace decides which modules show.",
+		side: "end",
+	},
 	{
 		target: "quick-add",
 		title: "Create from anywhere",
-		body: "Press the + button in the top nav (or Cmd/Ctrl + K) to create leads, contacts, deals, and companies without leaving the page.",
+		body: "Use the + button to add a lead, contact, deal, or company without leaving the page you're on.",
 		side: "bottom",
+	},
+	{
+		target: "topnav-notifications",
+		title: "Notifications",
+		body: "Assignments, reminders, and mentions land here. The dot means something's unread.",
+		side: "bottom",
+	},
+	{
+		target: "topnav-ai",
+		title: "Your AI assistant",
+		body: "Open the AI panel to chat, ask it to act on your CRM, or get a briefing of what changed.",
+		side: "bottom",
+	},
+	{
+		target: "ai-cockpit",
+		title: "AI Cockpit",
+		body: "Your workspace on autopilot — today's pulse, the top things to act on, and AI suggestions, all in one place.",
+		side: "top",
 	},
 ];
 
@@ -225,18 +259,15 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 				    flow any more. */}
 				<MockDataBanner orgId={orgId} mockDataSeededAt={settings?.mockDataSeededAt} />
 
-				{/* P1.14 — Proactive AI suggestions. Pure heuristic, no model call.
-				    Hidden when there are zero suggestions (no panel = no noise).
-
-				    Stage 3-A.5 — wrapped in AICockpitSection (renamed from
-				    ProactiveWorkspaceSection in Stage 1 of DASHBOARD-V2-PLAN.md,
-				    2026-05-28) so the AI cluster reads as one logical surface
-				    ("AI Cockpit — your workspace, on autopilot") with a
-				    per-user collapse toggle persisted in
+				{/* AI Cockpit — the single AI cluster on the dashboard,
+				    wrapped under one collapsible H2 (Stage 1 of
+				    DASHBOARD-V2-PLAN.md). The standalone org-scope
+				    "AI suggestions" panel was folded into <AIPulseRibbon>
+				    (2026-06-06): one permission-scoped, collapsible surface
+				    instead of two overlapping ones. Per-user cockpit
+				    collapse persists in
 				    `users.preferences.dashboardSectionsCollapsed.proactive`. */}
 				<AICockpitSection>
-					<AISuggestionsPanel orgId={orgId} scope="org" onTakeAction={sendChatPrefill} />
-
 					{/* Stage 5 of DASHBOARD-V2-PLAN.md — unanchored anomaly chips +
 					    AI-tool annotations surface here above the AI Pulse ribbon. */}
 					<DashboardAnnotationChips orgId={orgId} widgetKey="" limit={5} />
@@ -423,7 +454,7 @@ export function DashboardHomeView({ orgSlug }: DashboardHomeViewProps) {
 					</>
 				)}
 			</div>
-			<FirstTimeTour id="dashboard-v1" steps={DASHBOARD_TOUR_STEPS} />
+			<FirstTimeTour id="onboarding-v1" steps={ONBOARDING_TOUR_STEPS} />
 		</div>
 	);
 }

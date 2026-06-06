@@ -150,11 +150,14 @@ export function AppSidebar({
 
 	return (
 		<Sidebar {...props} variant={sidebar_variant} collapsible={sidebar_collapsible}>
-			<SidebarHeader className="py-2">
+			<SidebarHeader className="py-2" data-tour="workspace-switcher">
 				<WorkspaceSwitcher currentOrgSlug={orgSlug ?? ""} />
 			</SidebarHeader>
 
-			<SidebarContent className="gap-1 group-data-[collapsible=icon]:gap-3">
+			<SidebarContent
+				className="gap-1 group-data-[collapsible=icon]:gap-3"
+				data-tour="sidebar-nav"
+			>
 				{navGroups.map((group) => (
 					<NavGroupSection
 						key={group.id}

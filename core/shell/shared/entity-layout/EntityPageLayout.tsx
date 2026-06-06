@@ -33,7 +33,6 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import { Input } from "@/components/ui/input";
 import type { Id } from "@/convex/_generated/dataModel";
 import { useOrgPermission } from "@/features/orgs/hooks/useOrgPermission";
@@ -43,29 +42,13 @@ import type { ViewKind } from "./types";
 import { ViewToggleIcons } from "./ViewToggleIcons";
 
 /**
- * Entity-layout tour — fires ONCE per device, at the first entity page the
- * user opens (any of leads/contacts/deals/companies). Explains the chrome
- * elements that look the same everywhere: the search box, the view toggle,
- * and the View Options trigger. Per-entity tours stay focused on cards (drag
- * to change status, click to convert, etc.).
- *
- * Bump the id (`entity-layout-v1` → `entity-layout-v2`) when these steps
- * change meaningfully so existing users see the updated tour.
+ * Entity-layout tour anchors live here (`data-tour="entity-search"`,
+ * `data-tour="entity-create"`); the view-toggle anchor lives in
+ * `ViewToggleIcons`. The single, device-wide entity coachmark that
+ * consumes them is mounted ONCE in `EntityListPage` (`entity-tour-v1`)
+ * so it never repeats across the four entity pages — see
+ * `core/entities/shared/tours.ts`.
  */
-const ENTITY_LAYOUT_TOUR_STEPS: TourStep[] = [
-	{
-		target: "view-toggle-board",
-		title: "Switch to a board",
-		body: "Tap the second icon to flip into a kanban-style board grouped by status / stage.",
-		side: "bottom",
-	},
-	{
-		target: "view-options-trigger",
-		title: "Tune what you see",
-		body: "Pick which fields appear on cards or in the table, change the group-by axis on the board, and reveal hidden columns.",
-		side: "bottom",
-	},
-];
 
 export type PrimaryActionConfig = {
 	label: string;
@@ -135,7 +118,7 @@ export function EntityPageLayout({
 			<div className="flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3">
 				<div className="flex min-w-0 flex-1 items-center gap-1.5">
 					{search && (
-						<div className="relative flex items-center">
+						<div data-tour="entity-search" className="relative flex items-center">
 							<SearchIcon className="pointer-events-none absolute start-2 size-3.5 text-muted-foreground" />
 							<Input
 								ref={searchRef}
@@ -177,6 +160,7 @@ export function EntityPageLayout({
 							<Button
 								size="sm"
 								onClick={primaryAction.onClick}
+								data-tour="entity-create"
 								className={cn(
 									"h-7 gap-1 px-2 text-xs sm:px-3",
 									hasSecondary && "rounded-e-none",
@@ -215,10 +199,6 @@ export function EntityPageLayout({
 
 			{/* Body */}
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
-
-			{/* Global entity-layout tour — one-time, device-wide. Fires on the
-			    first entity page the user lands on. */}
-			<FirstTimeTour id="entity-layout-v1" steps={ENTITY_LAYOUT_TOUR_STEPS} />
 		</div>
 	);
 }

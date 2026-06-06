@@ -44,6 +44,7 @@ import type * as _migrations_2026_05_30_backfillDashboardLayoutFromTemplate from
 import type * as _migrations_2026_05_30_clearMockDataDismissedAt from "../_migrations/2026_05_30_clearMockDataDismissedAt.js";
 import type * as _migrations_2026_06_04_approvalsToAutonomy from "../_migrations/2026_06_04_approvalsToAutonomy.js";
 import type * as _migrations_2026_06_05_seedDefaultWhatsappTemplates from "../_migrations/2026_06_05_seedDefaultWhatsappTemplates.js";
+import type * as _migrations_2026_06_06_backfillRecordsViewAll from "../_migrations/2026_06_06_backfillRecordsViewAll.js";
 import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
@@ -123,6 +124,7 @@ import type * as _shared_permissions_catalog from "../_shared/permissions/catalo
 import type * as _shared_permissions_derive from "../_shared/permissions/derive.js";
 import type * as _shared_permissions_helpers from "../_shared/permissions/helpers.js";
 import type * as _shared_permissions_index from "../_shared/permissions/index.js";
+import type * as _shared_permissions_recordScope from "../_shared/permissions/recordScope.js";
 import type * as _shared_rateLimit from "../_shared/rateLimit.js";
 import type * as _shared_rateLimitMutation from "../_shared/rateLimitMutation.js";
 import type * as _shared_recordCodes from "../_shared/recordCodes.js";
@@ -393,6 +395,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/2026_05_30_clearMockDataDismissedAt": typeof _migrations_2026_05_30_clearMockDataDismissedAt;
   "_migrations/2026_06_04_approvalsToAutonomy": typeof _migrations_2026_06_04_approvalsToAutonomy;
   "_migrations/2026_06_05_seedDefaultWhatsappTemplates": typeof _migrations_2026_06_05_seedDefaultWhatsappTemplates;
+  "_migrations/2026_06_06_backfillRecordsViewAll": typeof _migrations_2026_06_06_backfillRecordsViewAll;
   "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;
@@ -472,6 +475,7 @@ declare const fullApi: ApiFromModules<{
   "_shared/permissions/derive": typeof _shared_permissions_derive;
   "_shared/permissions/helpers": typeof _shared_permissions_helpers;
   "_shared/permissions/index": typeof _shared_permissions_index;
+  "_shared/permissions/recordScope": typeof _shared_permissions_recordScope;
   "_shared/rateLimit": typeof _shared_rateLimit;
   "_shared/rateLimitMutation": typeof _shared_rateLimitMutation;
   "_shared/recordCodes": typeof _shared_recordCodes;

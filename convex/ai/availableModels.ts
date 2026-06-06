@@ -22,16 +22,27 @@ import { PROVIDER_IDS, type ProviderId } from "./encryptionTypes";
 import { getPlatformKey } from "./models";
 
 /**
- * Returns the list of providers whose platform env-var key is currently set.
- * Auth-gated to any signed-in user (no PII or secret material is leaked,
- * but we still avoid making the answer publicly enumerable).
+ * Returns the list of providers usable from the platform side — the union of:
+ *   - providers whose platform env-var key is set (`getPlatformKey`), and
+ *   - providers with an active owner-managed key in `platformAiKeys`
+ *     (added via the Owner panel → AI keys).
+ *
+ * This is what lets a user with NO BYOK key see the platform's models in the
+ * chat picker: the owner sets a key once in the panel and every member can
+ * pick from that provider's models. Auth-gated to any signed-in user (no PII
+ * or secret material is leaked — provider ids only).
  */
 export const listPlatformProviders = action({
 	args: {},
 	handler: async (ctx): Promise<ProviderId[]> => {
 		const userId = await getAuthUserId(ctx);
 		if (!userId) throw new ConvexError(ERRORS.UNAUTHORIZED);
-		return PROVIDER_IDS.filter((p) => getPlatformKey(p) !== null);
+		const dbProviderIds = (await ctx.runQuery(
+			internal._platform.aiKeys.queries.listActivePlatformProviderIds,
+			{},
+		)) as string[];
+		const dbProviders = new Set(dbProviderIds);
+		return PROVIDER_IDS.filter((p) => getPlatformKey(p) !== null || dbProviders.has(p));
 	},
 });
 

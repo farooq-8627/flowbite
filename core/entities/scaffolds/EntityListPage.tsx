@@ -14,6 +14,7 @@
  */
 
 import type { ColumnDef, Table } from "@tanstack/react-table";
+import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import type { Id } from "@/convex/_generated/dataModel";
 import { DataTable } from "@/core/data-display/datatable/components/DataTable";
 import { DataTableViewOptions } from "@/core/data-display/datatable/components/DataTableViewOptions";
@@ -22,6 +23,7 @@ import {
 	KanbanBoard,
 	type KanbanColumnConfig,
 } from "@/core/data-display/kanban/components/KanbanBoard";
+import { ENTITY_TOUR_ID, ENTITY_TOUR_STEPS } from "@/core/entities/shared/tours";
 import {
 	EmptyState,
 	EntityPageLayout,
@@ -129,47 +131,58 @@ export function EntityListPage<TRow extends { id: string }>({
 	});
 
 	return (
-		<EntityPageLayout
-			views={views}
-			view={view}
-			onViewChange={onViewChange}
-			primaryAction={primaryAction}
-			orgId={orgId}
-			search={search}
-			toolbarExtras={
-				<>
-					{renderToolbarExtras?.(table)}
-					{view === "list" && <DataTableViewOptions table={table} />}
-				</>
-			}
-		>
-			{isLoading ? null : isEmpty ? (
-				<EmptyState
-					title={emptyTitle ?? "Nothing here yet"}
-					description={emptyDescription}
-					action={emptyAction}
-				/>
-			) : view === "list" ? (
-				<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 py-3 xl:p-4">
-					{aboveBody?.(table)}
-					<DataTable table={table} pageSizeOptions={[10, 25, 50, 100]} />
-				</div>
-			) : boardColumns && itemsByColumnId && renderCard && onCardMove ? (
-				<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 py-3 xl:p-4">
-					{aboveBody?.(table)}
-					<div className="flex min-h-0 min-w-0 flex-1">
-						<KanbanBoard
-							columns={boardColumns}
-							itemsByColumnId={itemsByColumnId}
-							renderCard={renderCard}
-							onCardMove={onCardMove}
-							renderColumnFooter={renderColumnFooter}
-							onAddToColumn={onAddToColumn}
-							onColumnReorder={onColumnReorder}
-						/>
+		<>
+			<EntityPageLayout
+				views={views}
+				view={view}
+				onViewChange={onViewChange}
+				primaryAction={primaryAction}
+				orgId={orgId}
+				search={search}
+				toolbarExtras={
+					<>
+						{renderToolbarExtras?.(table)}
+						{view === "list" && <DataTableViewOptions table={table} />}
+					</>
+				}
+			>
+				{isLoading ? null : isEmpty ? (
+					<EmptyState
+						title={emptyTitle ?? "Nothing here yet"}
+						description={emptyDescription}
+						action={emptyAction}
+					/>
+				) : view === "list" ? (
+					<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 py-3 xl:p-4">
+						{aboveBody?.(table)}
+						<DataTable table={table} pageSizeOptions={[10, 25, 50, 100]} />
 					</div>
-				</div>
-			) : null}
-		</EntityPageLayout>
+				) : boardColumns && itemsByColumnId && renderCard && onCardMove ? (
+					<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2 py-3 xl:p-4">
+						{aboveBody?.(table)}
+						<div className="flex min-h-0 min-w-0 flex-1">
+							<KanbanBoard
+								columns={boardColumns}
+								itemsByColumnId={itemsByColumnId}
+								renderCard={renderCard}
+								onCardMove={onCardMove}
+								renderColumnFooter={renderColumnFooter}
+								onAddToColumn={onAddToColumn}
+								onColumnReorder={onColumnReorder}
+							/>
+						</div>
+					</div>
+				) : null}
+			</EntityPageLayout>
+
+			{/* ONE entity coachmark, device-wide. Mounted here (not in
+			    EntityPageLayout, which Notes also uses) so it fires only on
+			    entity list/board pages — and only when the board has cards so
+			    the drag/quick-action anchors resolve. Single id ⇒ once across
+			    leads/contacts/deals/companies. See core/entities/shared/tours.ts. */}
+			{view === "board" && !isLoading && !isEmpty && (
+				<FirstTimeTour id={ENTITY_TOUR_ID} steps={ENTITY_TOUR_STEPS} />
+			)}
+		</>
 	);
 }

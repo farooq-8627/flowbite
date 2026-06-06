@@ -3,11 +3,13 @@
 /**
  * AICockpitSection — Stage 1 of `DASHBOARD-V2-PLAN.md` (2026-05-28).
  *
- * Wraps the dashboard's AI cluster (AISuggestionsPanel + AIPulseRibbon
- * + AIQuickComposerCard + DailyBriefingCard + WeeklyInsightCard) under
- * a single H2 header so the user reads the cluster as one logical
- * surface ("AI Cockpit — your workspace, on autopilot"). The cluster
- * is collapsible per-user via
+ * Wraps the dashboard's AI cluster (DashboardAnnotationChips +
+ * AIPulseRibbon + AIQuickComposerCard + DailyBriefingCard +
+ * WeeklyInsightCard) under a single H2 header so the user reads the
+ * cluster as one logical surface ("AI Cockpit — your workspace, on
+ * autopilot"). (2026-06-06: the standalone org-scope AISuggestionsPanel
+ * was folded into AIPulseRibbon — one merged, permission-scoped pulse
+ * instead of two overlapping panels.) The cluster is collapsible per-user via
  * `users.preferences.dashboardSectionsCollapsed.proactive` (key
  * unchanged so existing per-user preferences carry over — only the
  * surface label changed).
@@ -125,6 +127,7 @@ export function AICockpitSection({ children, className }: AICockpitSectionProps)
 	return (
 		<section
 			aria-label="AI Cockpit"
+			data-tour="ai-cockpit"
 			className={cn(
 				"flex flex-col gap-3 rounded-[var(--radius)] border bg-card/50 p-3",
 				className,

@@ -15,7 +15,6 @@ import {
 import { GlobalEntityShortcuts } from "@/core/shell/shell/components/GlobalEntityShortcuts";
 import { RouteProgress } from "@/core/shell/shell/components/RouteProgress";
 import { AppSidebar } from "@/core/shell/shell/components/sidebar/app-sidebar";
-import { SearchDialog } from "@/core/shell/shell/components/sidebar/search-dialog";
 import { TopNav } from "@/core/shell/shell/components/TopNav";
 import { NavSlotProvider } from "@/core/shell/shell/context/nav-slot-context";
 import { useIsBelowXl } from "@/hooks/use-tablet";
@@ -55,7 +54,6 @@ export function DashboardLayoutClient({
 	const isBelowXl = useIsBelowXl();
 
 	const [chatOpen, setChatOpen] = useState(initialChatOpen);
-	const [searchOpen, setSearchOpen] = useState(false);
 	const [chatWidth, setChatWidth] = useState(CHAT_DEFAULT_WIDTH);
 	const [isDragging, setIsDragging] = useState(false);
 	const [isRTL, setIsRTL] = useState(false);
@@ -177,11 +175,12 @@ export function DashboardLayoutClient({
 							}}
 						>
 							<NavSlotProvider>
-								<TopNav
-									onToggleChat={toggleChat}
-									onToggleSearch={() => setSearchOpen(true)}
-								/>
-								<SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
+								<TopNav onToggleChat={toggleChat} />
+								{/* DEFERRED: <SearchDialog> (cmd+K palette) is unmounted
+								    until search is implemented — see
+								    Future-Enhancements.md §B.2. The component file
+								    stays; re-add the trigger in TopNav + re-wire
+								    onToggleSearch here to re-enable. */}
 								<main
 									data-page-scroll="true"
 									className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
@@ -231,7 +230,7 @@ export function DashboardLayoutClient({
 									</button>
 								)}
 								<div className="pointer-events-auto">
-									<AIChatPanel side={isRTL ? "left" : "right"} />
+									<AIChatPanel side={isRTL ? "left" : "right"} open={chatOpen} />
 								</div>
 							</SidebarProvider>
 						</div>
@@ -246,7 +245,7 @@ export function DashboardLayoutClient({
 							side={isRTL ? "left" : "right"}
 							width={CHAT_SHEET_WIDTH}
 						>
-							<AIChatPanelContent />
+							<AIChatPanelContent open={chatOpen} />
 						</AppSheet>
 					)}
 				</CrmDataProvider>

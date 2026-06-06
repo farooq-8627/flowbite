@@ -13,18 +13,24 @@ import { Sidebar, SidebarContent } from "@/components/ui/sidebar";
 import { ChatSheet } from "@/core/ai/components/ChatSheet";
 import { usePreferencesStore } from "@/lib/stores/preferences-store";
 
-export function AIChatPanel({ side = "right" }: { side?: "left" | "right" }) {
+export function AIChatPanel({
+	side = "right",
+	open = false,
+}: {
+	side?: "left" | "right";
+	open?: boolean;
+}) {
 	const sidebar_variant = usePreferencesStore((s) => s.sidebar_variant);
 
 	return (
 		<Sidebar side={side} variant={sidebar_variant} collapsible="offcanvas">
 			<SidebarContent className="p-0">
-				<ChatSheet />
+				<ChatSheet open={open} />
 			</SidebarContent>
 		</Sidebar>
 	);
 }
 
-export function AIChatPanelContent() {
-	return <ChatSheet />;
+export function AIChatPanelContent({ open = false }: { open?: boolean }) {
+	return <ChatSheet open={open} />;
 }

@@ -8,11 +8,17 @@
 
 import type { EntitySlot, ViewKind } from "../types";
 
+// Board-first everywhere (locked 2026-06-06, per the user): every entity in
+// every industry defaults to the kanban board so drag-to-progress is the first
+// interaction. All 9 industry templates already seed `defaultView: "board"`
+// on every module slot; this fallback only kicks in when a workspace has no
+// module config for a slot (or for a non-seeded slot) — keeping it "board" too
+// means there is no surface anywhere that silently lands the user on the table.
 export const DEFAULT_VIEW: Record<EntitySlot, ViewKind> = {
-	lead: "list",
-	contact: "list",
+	lead: "board",
+	contact: "board",
 	deal: "board",
-	company: "list",
+	company: "board",
 };
 
 export const DEFAULT_BOARD_GROUP_BY: Record<EntitySlot, string> = {

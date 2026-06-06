@@ -644,3 +644,109 @@ describe("Stage 6 — pure anomaly detector", () => {
 		expect(anomaliesTest.classifySeverity(-50)).toBe("critical");
 	});
 });
+
+// ─── Per-category RBAC (2026-06-06) ───────────────────────────────────────
+//
+// The ranked store mixes lead / deal / reminder rows in one list, so
+// `listForUser` must filter to the kinds the member's ROLE permits — not
+// dump every kind once the user can see any one of them. These tests pin
+// that contract: a tasks-only role sees reminders but not stale leads, and
+// a role with no relevant view permission sees nothing at all.
+
+describe("Stage 6 — listForUser per-category RBAC", () => {
+	async function seedOrgWithPerms(
+		t: ReturnType<typeof convexTest>,
+		userId: string,
+		permissions: string[],
+	) {
+		return t.run(async (ctx) => {
+			const now = Date.now();
+			const orgId = await ctx.db.insert("orgs", {
+				name: "RBAC Org",
+				slug: `rbac-${now}-${Math.random().toString(36).slice(2, 6)}`,
+				plan: "free",
+				platformOrgId: "ORB-RBAC",
+				settings: { defaultCurrency: "USD" },
+				createdAt: now,
+				updatedAt: now,
+			});
+			const roleId = await ctx.db.insert("orgRoles", {
+				orgId,
+				name: "Custom",
+				permissions,
+				isSystem: false,
+				isDefault: false,
+				createdAt: now,
+				updatedAt: now,
+			});
+			await ctx.db.insert("orgMembers", { orgId, userId, roleId, joinedAt: now });
+			return orgId;
+		});
+	}
+
+	async function seedStaleLeadAndOverdueTask(
+		t: ReturnType<typeof convexTest>,
+		orgId: string,
+		userId: string,
+	) {
+		const now = Date.now();
+		await t.run(async (ctx) => {
+			await ctx.db.insert("leads", {
+				orgId: orgId as unknown as Doc<"leads">["orgId"],
+				personCode: "P-001",
+				displayName: "Sara Khan",
+				status: "New",
+				source: "manual",
+				assignedTo: userId as unknown as Doc<"leads">["assignedTo"],
+				createdAt: now - 20 * ONE_DAY_MS,
+				updatedAt: now - 20 * ONE_DAY_MS,
+			});
+			await ctx.db.insert("tasks", {
+				orgId: orgId as unknown as Doc<"tasks">["orgId"],
+				taskCode: "T-001",
+				type: "todo",
+				personCode: "P-001",
+				entityType: "lead",
+				entityId: "ignored",
+				title: "Call Sara",
+				dueAt: now - ONE_DAY_MS,
+				assignedTo: userId as unknown as Doc<"tasks">["assignedTo"],
+				status: "pending",
+				createdAt: now - 5 * ONE_DAY_MS,
+			});
+		});
+	}
+
+	it("hides record kinds the member's role can't view (tasks.view only)", async () => {
+		const t = convexTest(schema, modules);
+		const { userId, asUser } = await seedUser(t);
+		const orgId = await seedOrgWithPerms(t, userId, ["tasks.view"]);
+		await seedStaleLeadAndOverdueTask(t, orgId, userId);
+
+		await t.action(internal.ai.actions.rankNextActions.rebuildForUserNow, { orgId, userId });
+
+		const out = await asUser.query(api.ai.queries.nextActions.listForUser, {
+			orgId,
+			limit: 10,
+		});
+		const codes = out.rows.map((r) => r.recordCode);
+		expect(codes).toContain("T-001"); // reminder visible — has tasks.view
+		expect(codes).not.toContain("P-001"); // lead hidden — no leads.view
+	});
+
+	it("returns empty (no throw) when the role has no relevant view permission", async () => {
+		const t = convexTest(schema, modules);
+		const { userId, asUser } = await seedUser(t);
+		const orgId = await seedOrgWithPerms(t, userId, ["members.view"]);
+		await seedStaleLeadAndOverdueTask(t, orgId, userId);
+
+		await t.action(internal.ai.actions.rankNextActions.rebuildForUserNow, { orgId, userId });
+
+		const out = await asUser.query(api.ai.queries.nextActions.listForUser, {
+			orgId,
+			limit: 10,
+		});
+		expect(out.count).toBe(0);
+		expect(out.rows).toEqual([]);
+	});
+});

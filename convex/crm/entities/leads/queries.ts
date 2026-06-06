@@ -10,7 +10,13 @@ import {
 } from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../../../_generated/server";
-import { requireRole } from "../../../_shared/permissions";
+import {
+	requireRole,
+	resolveAssigneeFilter,
+	resolveRecordScope,
+	rowInScope,
+	scopeAssignee,
+} from "../../../_shared/permissions";
 
 export const list = orgQuery({
 	args: {
@@ -21,8 +27,16 @@ export const list = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
+
+		// Row-level scope: a member without `records.viewAll` only ever sees
+		// rows assigned to them. Resolve the effective assignee — a scoped
+		// member who asked for someone else's records sees nothing.
+		const scope = resolveRecordScope(member.permissions, userId);
+		const assignee = resolveAssigneeFilter(scope, args.assignedTo);
+		if (assignee.empty) return [];
+		const effectiveAssignee = assignee.assignedTo;
 
 		const cap = args.limit ?? 100;
 
@@ -36,11 +50,11 @@ export const list = orgQuery({
 				.withIndex("by_org_and_status", (qi) =>
 					qi.eq("orgId", args.orgId).eq("status", args.status!),
 				);
-		} else if (args.assignedTo) {
+		} else if (effectiveAssignee) {
 			q = ctx.db
 				.query("leads")
 				.withIndex("by_org_and_assignee", (qi) =>
-					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+					qi.eq("orgId", args.orgId).eq("assignedTo", effectiveAssignee),
 				);
 		}
 
@@ -52,7 +66,7 @@ export const list = orgQuery({
 		// visible + lets the user revert a mistaken conversion from its row.
 		return results
 			.filter((l) => l.deletedAt === undefined)
-			.filter((l) => !args.assignedTo || l.assignedTo === args.assignedTo)
+			.filter((l) => !effectiveAssignee || l.assignedTo === effectiveAssignee)
 			.filter((l) => !args.source || l.source === args.source)
 			.slice(0, cap);
 	},
@@ -61,11 +75,13 @@ export const list = orgQuery({
 export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), leadId: v.id("leads") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
 
 		const lead = await ctx.db.get(args.leadId);
 		if (!lead || lead.orgId !== args.orgId || lead.deletedAt !== undefined) return null;
+		// Row-level scope — a scoped member can't open a record not theirs.
+		if (!rowInScope(resolveRecordScope(member.permissions, userId), lead)) return null;
 		return lead;
 	},
 });
@@ -82,9 +98,11 @@ async function getByPersonCodeImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; per
 export const getByPersonCode = orgQuery({
 	args: { orgId: v.id("orgs"), personCode: v.string() },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
-		return getByPersonCodeImpl(ctx, args);
+		const lead = await getByPersonCodeImpl(ctx, args);
+		if (lead && !rowInScope(resolveRecordScope(member.permissions, userId), lead)) return null;
+		return lead;
 	},
 });
 
@@ -94,7 +112,10 @@ export const getByPersonCodeForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "leads.view");
-		return getByPersonCodeImpl(ctx, args);
+		const lead = await getByPersonCodeImpl(ctx, args);
+		if (lead && !rowInScope(resolveRecordScope(member.permissions, args.userId), lead))
+			return null;
+		return lead;
 	},
 });
 
@@ -110,7 +131,13 @@ export const getByPersonCodeForAI = internalQuery({
  */
 async function searchLeadsImpl(
 	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; query: string; limit?: number; excludeFromAI?: boolean },
+	args: {
+		orgId: Id<"orgs">;
+		query: string;
+		limit?: number;
+		excludeFromAI?: boolean;
+		scopeAssignee?: Id<"users">;
+	},
 ) {
 	const cap = args.limit ?? 10;
 	const q = args.query.trim().toLowerCase();
@@ -124,6 +151,8 @@ async function searchLeadsImpl(
 	const matches: typeof rows = [];
 	for (const r of rows) {
 		if (r.deletedAt !== undefined) continue;
+		// Row-level scope — when set, only rows assigned to this user match.
+		if (args.scopeAssignee !== undefined && r.assignedTo !== args.scopeAssignee) continue;
 		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
 		const haystack = [
 			r.displayName,
@@ -149,9 +178,10 @@ export const searchLeads = orgQuery({
 		excludeFromAI: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "leads.view");
-		return searchLeadsImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, userId);
+		return searchLeadsImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });
 
@@ -167,6 +197,7 @@ export const searchLeadsForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "leads.view");
-		return searchLeadsImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, args.userId);
+		return searchLeadsImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery } from "convex/react";
-import { Bell, CheckCheck, Search } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -30,15 +30,12 @@ import { QuickAddMenu } from "./QuickAddMenu";
  */
 export function TopNav({
 	onToggleChat,
-	onToggleSearch,
 	onToggleNotifications,
 }: {
 	onToggleChat?: () => void;
-	onToggleSearch?: () => void;
 	onToggleNotifications?: () => void;
 }) {
 	const scAI = useShortcut("toggleAIPanel");
-	const scSearch = useShortcut("search");
 	const slot = useNavSlotNode();
 
 	useEffect(() => {
@@ -47,14 +44,10 @@ export function TopNav({
 				e.preventDefault();
 				onToggleChat?.();
 			}
-			if (matchesShortcut(e, scSearch)) {
-				e.preventDefault();
-				onToggleSearch?.();
-			}
 		}
 		document.addEventListener("keydown", handleKeyDown);
 		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [scAI, scSearch, onToggleChat, onToggleSearch]);
+	}, [scAI, onToggleChat]);
 
 	return (
 		<header
@@ -87,22 +80,12 @@ export function TopNav({
 				{/* Right */}
 				<div className="flex shrink-0 items-center sm:gap-1">
 					<QuickAddMenu />
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								size="icon"
-								variant="ghost"
-								onClick={onToggleSearch}
-								aria-label="Search"
-								className="size-8 text-muted-foreground hover:text-foreground"
-							>
-								<Search className="size-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent side="bottom" className="flex items-center gap-1">
-							Search <Kbd>{scSearch.display}</Kbd>
-						</TooltipContent>
-					</Tooltip>
+					{/* DEFERRED: global search (cmd+K command palette) is hidden until
+					    the search backend is implemented — see Future-Enhancements.md
+					    §B.2 (Cmd+K global command palette). The <SearchDialog> stub +
+					    `search` shortcut stay in the codebase; re-add the trigger here
+					    (and re-wire onToggleSearch in DashboardLayoutClient) once the
+					    palette is functional. */}
 
 					<NotificationBell onToggleNotifications={onToggleNotifications} />
 
@@ -113,6 +96,7 @@ export function TopNav({
 								variant="ghost"
 								onClick={onToggleChat}
 								aria-label="Toggle AI Assistant"
+								data-tour="topnav-ai"
 								className="size-8 text-muted-foreground hover:text-foreground"
 							>
 								<AIMark size="size-4" tone="muted" aria-hidden="true" />
@@ -184,6 +168,7 @@ function NotificationBell({
 							size="icon"
 							variant="ghost"
 							aria-label="Notifications"
+							data-tour="topnav-notifications"
 							className="relative size-8 text-muted-foreground hover:text-foreground"
 						>
 							<Bell className="size-4" />

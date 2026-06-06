@@ -29,7 +29,6 @@ import { CheckCircle2Icon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { FirstTimeTour } from "@/components/ui/first-time-tour";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import { AddDealDrawer } from "@/core/entities/_entities/deals/components/AddDealDrawer";
@@ -58,7 +57,6 @@ import {
 } from "@/core/entities/shared/hooks/useEntityMutations";
 import { useEntityTagsMap } from "@/core/entities/shared/hooks/useEntityTagsMap";
 import { useViewToggle } from "@/core/entities/shared/hooks/useViewToggle";
-import { buildEntityBoardTour } from "@/core/entities/shared/tours";
 import {
 	getHiddenCardFieldsForGrouping,
 	getRevealedCardFieldForGrouping,
@@ -582,13 +580,6 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							setFillDialog(null);
 						}
 					}}
-				/>
-			)}
-
-			{view === "board" && (
-				<FirstTimeTour
-					id="deals-board-v2"
-					steps={buildEntityBoardTour({ primaryActionVerb: "Edit", groupedBy: "stage" })}
 				/>
 			)}
 

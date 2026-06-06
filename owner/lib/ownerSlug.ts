@@ -4,7 +4,7 @@
  * Reads `OWNER_PANEL_SLUG` from process.env. Never imported into a client
  * component (the slug must not ship in the JS bundle). Safe to import in:
  *   - Server components (`app/xowner/**`)
- *   - Middleware (`middleware.ts`)
+ *   - Proxy (`proxy.ts`)
  *   - Convex functions (server runtime)
  *
  * Importing this from a "use client" file is a bug — Next.js will inline

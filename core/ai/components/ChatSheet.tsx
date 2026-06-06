@@ -29,14 +29,19 @@ import { ChatContextCard } from "./ChatContextCard";
 import { ChatHistoryDropdown } from "./ChatHistoryDropdown";
 import { ChatLandingPane } from "./ChatLandingPane";
 import { ChatMessage } from "./ChatMessage";
+import { ChatOfflineBanner } from "./ChatOfflineBanner";
 import { Suggestions } from "./composer/Suggestions";
 
 interface Props {
 	/** Called when user navigates to Settings → AI */
 	onOpenSettings?: () => void;
+	/** Whether the chat panel is on screen. Forwarded to <ChatLandingPane>
+	 * so its first-time coachmark fires only when the panel is open (the
+	 * desktop panel stays mounted off-screen when closed). */
+	open?: boolean;
 }
 
-export function ChatSheet({ onOpenSettings }: Props) {
+export function ChatSheet({ onOpenSettings, open = false }: Props) {
 	const { fullOrgEntry } = useCurrentOrg();
 	const orgId = fullOrgEntry?.org._id;
 
@@ -204,6 +209,8 @@ export function ChatSheet({ onOpenSettings }: Props) {
 
 	return (
 		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+			{/* Offline banner — pinned above the header; renders null when online. */}
+			<ChatOfflineBanner />
 			{/* Header */}
 			<div className="flex shrink-0 items-center gap-2 border-b border-sidebar-border px-3 py-2">
 				<AIMark size="size-4" tone="brand" className="shrink-0" aria-hidden="true" />
@@ -259,6 +266,7 @@ export function ChatSheet({ onOpenSettings }: Props) {
 								onSelectConversation={(id) => setConversationId(id)}
 								onSend={(body) => void handleSend(body)}
 								routeContext={routeContext}
+								tourEnabled={open}
 							/>
 						)}
 						{(() => {

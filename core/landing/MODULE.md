@@ -38,7 +38,7 @@ The thin route wrappers are `app/(root)/{layout,page}.tsx`, `app/api/contact/rou
 
 | # | Decision | Outcome |
 |---|----------|---------|
-| 1 | Landing lives at the bare root `/` via the existing `app/(root)` route group — NOT `app/(marketing)/`. | `middleware.ts` returns `NextResponse.next()` for exact `/` so next-intl doesn't bounce it to `/en`. The page renders for everyone, including authed users (no Convex on the marketing route). |
+| 1 | Landing lives at the bare root `/` via the existing `app/(root)` route group — NOT `app/(marketing)/`. | `proxy.ts` returns `NextResponse.next()` for exact `/` so next-intl doesn't bounce it to `/en`. The page renders for everyone, including authed users (no Convex on the marketing route). |
 | 2 | The `(root)` layout is a lean marketing root: shared `globals.css` + `ThemeBootScript` + `fontVars` + `Toaster` only. No Convex/i18n/PostHog. | Fast, static-friendly page; the design tokens (`--radius`, presets, `.dark`) match the app for brand consistency. |
 | 3 | Dark mode uses a self-contained `theme-toggle` that writes the same `orbitly-pref-theme_mode` cookie `ThemeBootScript` reads. | Preference carries over to the app and survives refresh with no FOUC, without mounting the full preferences store. |
 | 4 | All copy is data in `lib/content.ts`; icons referenced by name and resolved via `lib/icons.ts`. | Copy edits never touch JSX; sections stay declarative. |

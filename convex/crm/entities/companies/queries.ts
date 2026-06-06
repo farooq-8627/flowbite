@@ -10,7 +10,13 @@ import {
 } from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../../../_generated/server";
-import { requireRole } from "../../../_shared/permissions";
+import {
+	requireRole,
+	resolveAssigneeFilter,
+	resolveRecordScope,
+	rowInScope,
+	scopeAssignee,
+} from "../../../_shared/permissions";
 
 export const list = orgQuery({
 	args: {
@@ -19,36 +25,47 @@ export const list = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
+
+		// Row-level scope: a member without `records.viewAll` only ever sees
+		// companies assigned to them.
+		const scope = resolveRecordScope(member.permissions, userId);
+		const assignee = resolveAssigneeFilter(scope, args.assignedTo);
+		if (assignee.empty) return [];
+		const effectiveAssignee = assignee.assignedTo;
 
 		const cap = args.limit ?? 100;
 
 		// Init with the broad index so `q`'s type is inferred, then narrow.
 		let q = ctx.db.query("companies").withIndex("by_org", (qi) => qi.eq("orgId", args.orgId));
-		if (args.assignedTo) {
+		if (effectiveAssignee) {
 			q = ctx.db
 				.query("companies")
 				.withIndex("by_org_and_assignee", (qi) =>
-					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+					qi.eq("orgId", args.orgId).eq("assignedTo", effectiveAssignee),
 				);
 		}
 
 		const results = await q.take(cap * 3);
 
-		return results.filter((c) => c.deletedAt === undefined).slice(0, cap);
+		return results
+			.filter((c) => c.deletedAt === undefined)
+			.filter((c) => !effectiveAssignee || c.assignedTo === effectiveAssignee)
+			.slice(0, cap);
 	},
 });
 
 export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), companyId: v.id("companies") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
 
 		const company = await ctx.db.get(args.companyId);
 		if (!company || company.orgId !== args.orgId || company.deletedAt !== undefined)
 			return null;
+		if (!rowInScope(resolveRecordScope(member.permissions, userId), company)) return null;
 		return company;
 	},
 });
@@ -68,9 +85,12 @@ async function getByCompanyCodeImpl(
 export const getByCompanyCode = orgQuery({
 	args: { orgId: v.id("orgs"), companyCode: v.string() },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
-		return getByCompanyCodeImpl(ctx, args);
+		const company = await getByCompanyCodeImpl(ctx, args);
+		if (company && !rowInScope(resolveRecordScope(member.permissions, userId), company))
+			return null;
+		return company;
 	},
 });
 
@@ -80,7 +100,10 @@ export const getByCompanyCodeForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "companies.view");
-		return getByCompanyCodeImpl(ctx, args);
+		const company = await getByCompanyCodeImpl(ctx, args);
+		if (company && !rowInScope(resolveRecordScope(member.permissions, args.userId), company))
+			return null;
+		return company;
 	},
 });
 
@@ -92,7 +115,13 @@ export const getByCompanyCodeForAI = internalQuery({
  */
 async function searchCompaniesImpl(
 	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; query: string; limit?: number; excludeFromAI?: boolean },
+	args: {
+		orgId: Id<"orgs">;
+		query: string;
+		limit?: number;
+		excludeFromAI?: boolean;
+		scopeAssignee?: Id<"users">;
+	},
 ) {
 	const cap = args.limit ?? 10;
 	const q = args.query.trim().toLowerCase();
@@ -106,6 +135,7 @@ async function searchCompaniesImpl(
 	const matches: typeof rows = [];
 	for (const r of rows) {
 		if (r.deletedAt !== undefined) continue;
+		if (args.scopeAssignee !== undefined && r.assignedTo !== args.scopeAssignee) continue;
 		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
 		const haystack = [r.name, r.companyCode ?? "", r.website ?? "", r.industry ?? ""]
 			.join(" ")
@@ -124,9 +154,10 @@ export const searchCompanies = orgQuery({
 		excludeFromAI: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "companies.view");
-		return searchCompaniesImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, userId);
+		return searchCompaniesImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });
 
@@ -142,7 +173,8 @@ export const searchCompaniesForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "companies.view");
-		return searchCompaniesImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, args.userId);
+		return searchCompaniesImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });
 

@@ -145,6 +145,11 @@ interface ChatLandingPaneProps {
 	/** Optional entity context — when present, we surface a "Last
 	 * visited" line so the user can re-anchor on the same record. */
 	routeContext?: RouteContextLite | null;
+	/** Whether the chat panel is actually open/visible. The desktop panel
+	 * stays mounted off-screen when "closed", so the first-time coachmark
+	 * must NOT fire until the panel is genuinely on screen — otherwise it
+	 * points at off-screen anchors. Defaults to false (fire only when told). */
+	tourEnabled?: boolean;
 }
 
 export function ChatLandingPane({
@@ -153,6 +158,7 @@ export function ChatLandingPane({
 	onSelectConversation,
 	onSend,
 	routeContext,
+	tourEnabled = false,
 }: ChatLandingPaneProps) {
 	const me = useMe();
 
@@ -373,9 +379,15 @@ export function ChatLandingPane({
 				</ul>
 			</section>
 
-			{/* First-time coachmark — fires once per device. Bump the id
-			    (`v1` → `v2`) to re-show after meaningful step changes. */}
-			<FirstTimeTour id="chat-landing-v1" steps={CHAT_LANDING_TOUR_STEPS} />
+			{/* First-time coachmark — the 3 pulse actions. Fires once per
+			    device, and ONLY when the chat panel is actually open
+			    (`tourEnabled`) so it never points at off-screen anchors while
+			    the panel is mounted-but-closed on desktop. */}
+			<FirstTimeTour
+				id="chat-panel-v1"
+				steps={CHAT_LANDING_TOUR_STEPS}
+				enabled={tourEnabled}
+			/>
 		</div>
 	);
 }

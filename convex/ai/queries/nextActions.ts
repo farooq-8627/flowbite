@@ -62,7 +62,8 @@ import {
 	type MutationCtx,
 	type QueryCtx,
 } from "../../_generated/server";
-import { requireRole } from "../../_shared/permissions/helpers";
+import { ERRORS } from "../../_shared/errors";
+import { hasPermission } from "../../_shared/permissions/helpers";
 import { enforceRateLimit } from "../../_shared/rateLimit";
 
 // ─── Tunables (single source of truth) ───────────────────────────────────
@@ -373,6 +374,41 @@ export const rebuildForUser = internalMutation({
 	},
 });
 
+// ─── Per-category RBAC ────────────────────────────────────────────────────
+
+/**
+ * Map a member's permission array to the set of next-action record kinds
+ * they may see. The ranked store mixes kinds in one list, so this is the
+ * single place that decides "which categories does this role unlock?".
+ * Mirrors the per-module view permissions in the catalog (`leads.view`,
+ * `deals.view`, `contacts.view`, `companies.view`); reminders are sourced
+ * from the `tasks` table so they gate on `tasks.view`. An empty set means
+ * the member sees no proactive rows at all.
+ */
+function resolveAllowedKinds(permissions: readonly string[]): Set<NextActionRecordKind> {
+	const allowed = new Set<NextActionRecordKind>();
+	if (hasPermission(permissions, "leads.view")) allowed.add("lead");
+	if (hasPermission(permissions, "contacts.view")) allowed.add("contact");
+	if (hasPermission(permissions, "deals.view")) allowed.add("deal");
+	if (hasPermission(permissions, "tasks.view")) allowed.add("reminder");
+	if (hasPermission(permissions, "companies.view")) allowed.add("company");
+	return allowed;
+}
+
+/**
+ * Coarse "may this member use the pulse at all?" guard for the warm /
+ * dismiss / snooze mutations. Throws FORBIDDEN only when the member can
+ * view NONE of the proactive categories — replaces the old leads-specific
+ * gate so a deals-only or tasks-only role can still warm + manage their
+ * own ranked rows. Row-level ownership is still enforced separately by
+ * `loadOwnedAction`.
+ */
+function requirePulseAccess(permissions: readonly string[]): void {
+	if (resolveAllowedKinds(permissions).size === 0) {
+		throw new ConvexError(ERRORS.FORBIDDEN);
+	}
+}
+
 // ─── Public: list for current user ────────────────────────────────────────
 
 export const listForUser = orgQuery({
@@ -382,13 +418,20 @@ export const listForUser = orgQuery({
 	},
 	handler: async (ctx, args) => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		// Read access is gated on `leads.view` — the same low bar as the
-		// existing AISuggestionsPanel + briefings card. If a user can't
-		// see the workspace at all, the ranked list is meaningless.
-		requireRole(member.permissions, "leads.view");
+		// Per-category RBAC: the ranked store mixes lead / deal / reminder
+		// (and future contact / company) rows in one list, so a single
+		// coarse gate would leak a category the member's role can't see.
+		// Resolve the kinds this member may view and filter to them. A
+		// member with NO relevant view permission gets an empty list
+		// (silent) instead of a thrown FORBIDDEN — the pulse just has
+		// nothing to show.
+		const allowedKinds = resolveAllowedKinds(member.permissions);
+		if (allowedKinds.size === 0) {
+			return { count: 0, generatedAt: null, rows: [] };
+		}
 
 		const limit = Math.max(1, Math.min(args.limit ?? NEXT_ACTIONS_PER_USER_CAP, 100));
-		return readRanked(ctx, args.orgId, userId, limit);
+		return readRanked(ctx, args.orgId, userId, limit, allowedKinds);
 	},
 });
 
@@ -400,23 +443,37 @@ export const listForUserForAI = internalQuery({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
-		requireRole(member.permissions, "leads.view");
+		const allowedKinds = resolveAllowedKinds(member.permissions);
+		if (allowedKinds.size === 0) {
+			return { count: 0, generatedAt: null, rows: [] };
+		}
 
 		const limit = Math.max(1, Math.min(args.limit ?? NEXT_ACTIONS_PER_USER_CAP, 100));
-		return readRanked(ctx, args.orgId, args.userId, limit);
+		return readRanked(ctx, args.orgId, args.userId, limit, allowedKinds);
 	},
 });
 
-async function readRanked(ctx: QueryCtx, orgId: Id<"orgs">, userId: Id<"users">, limit: number) {
+async function readRanked(
+	ctx: QueryCtx,
+	orgId: Id<"orgs">,
+	userId: Id<"users">,
+	limit: number,
+	allowedKinds: ReadonlySet<NextActionRecordKind>,
+) {
 	const now = Date.now();
+	// Take the full per-user cap (the rebuild never stores more than
+	// NEXT_ACTIONS_PER_USER_CAP rows) so the permission filter below can't
+	// undercount — a naive `take(limit * 2)` could be filled entirely with
+	// kinds the member can't view, starving the kinds they can.
 	const rows = await ctx.db
 		.query("aiNextActions")
 		.withIndex("by_org_and_user_and_score", (q) => q.eq("orgId", orgId).eq("userId", userId))
 		.order("desc")
-		.take(limit * 2);
+		.take(NEXT_ACTIONS_PER_USER_CAP);
 
 	const visible = rows
 		.filter((r) => r.snoozedUntil === undefined || r.snoozedUntil <= now)
+		.filter((r) => allowedKinds.has(r.recordKind as NextActionRecordKind))
 		.slice(0, limit);
 
 	return {
@@ -461,7 +518,7 @@ export const dismissNextAction = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, userId);
 
 		// Reuse the Stage 5 dismiss map so the next rebuild can suppress this
@@ -498,7 +555,7 @@ export const snoozeNextAction = orgMutation({
 	},
 	handler: async (ctx, args) => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, userId);
 
 		const days = Math.max(1, Math.min(args.days ?? 7, 30));
@@ -523,7 +580,7 @@ export const dismissNextActionForAI = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, args.userId);
 
 		const fingerprint = `${row.recordKind}:${row.recordCode}:${row.reasonCode}`;
@@ -560,7 +617,7 @@ export const snoozeNextActionForAI = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, args.userId);
 
 		const days = Math.max(1, Math.min(args.days ?? 7, 30));
@@ -631,7 +688,7 @@ export const lazyWarmForUser = orgMutation({
 	args: { orgId: v.id("orgs") },
 	handler: async (ctx, args): Promise<LazyWarmResult> => {
 		const { userId, member } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 
 		const gate = await tryEnforceLazyWarmLimit(ctx, { orgId: args.orgId, userId });
 		if (!gate.ok) {
@@ -651,7 +708,7 @@ export const lazyWarmForUserForAI = internalMutation({
 	args: { orgId: v.id("orgs"), userId: v.id("users") },
 	handler: async (ctx, args): Promise<LazyWarmResult> => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
-		requireRole(member.permissions, "leads.view");
+		requirePulseAccess(member.permissions);
 
 		const gate = await tryEnforceLazyWarmLimit(ctx, {
 			orgId: args.orgId,

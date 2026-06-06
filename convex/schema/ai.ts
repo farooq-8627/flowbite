@@ -165,7 +165,13 @@ export const aiMessages = defineTable({
 	// 2026-05-27 P0.1.1 — added so the AI quota gate can count assistant
 	// turns per org per calendar month efficiently. Used by
 	// `convex/ai/telemetry.ts::sumMessagesThisMonth`.
-	.index("by_org_role_created", ["orgId", "role", "createdAt"]);
+	.index("by_org_role_created", ["orgId", "role", "createdAt"])
+	// 2026-06-06 — stale-stream reaper (`reapStaleStreams` cron, every 1 min).
+	// Ranges on the explicit `createdAt` field (same convention as every
+	// other aiMessages index) so the reaper does
+	// `q.eq("thinkingState", state).lt("createdAt", cutoff)` per non-terminal
+	// state — a bounded index range, no `.filter()` full scan.
+	.index("by_thinkingState", ["thinkingState", "createdAt"]);
 
 /**
  * BYOK (Bring Your Own Key) — one row per key per (org or user).

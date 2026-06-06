@@ -1,57 +1,66 @@
 "use client";
 
 /**
- * Entity tour steps — shared across leads/contacts/deals/companies kanban
- * boards. The same `data-tour` anchors are placed on EntityCard's grip and
- * primary shortcut button.
+ * Entity tour — ONE shared coachmark that fires exactly ONCE per device
+ * across every entity page (leads / contacts / deals / companies).
  *
- * Tour scope decision (round 5):
- *   - The CHROME (search box, view toggle, View Options trigger) is explained
- *     ONCE per device by the global `entity-layout-v1` tour mounted in
- *     `EntityPageLayout`. Don't duplicate those steps here.
- *   - Each entity's per-board tour focuses on CARD gestures: drag-to-change,
- *     primary action click, etc. Those are entity-specific and benefit from
- *     a dedicated walkthrough on each entity page the first time it opens.
+ * Why one tour, one id (locked 2026-06-06, per the user)
+ * ──────────────────────────────────────────────────────
+ * Every entity uses the SAME list/board chrome (`EntityPageLayout`) and the
+ * SAME card (`EntityCard`). Running a separate per-board walkthrough on each
+ * entity meant the user saw "Drag to move / Click to act / Search / View
+ * toggle" four times. Now a single `<FirstTimeTour id="entity-tour-v1">`
+ * mounted once in `EntityListPage` explains it on whichever entity the user
+ * opens first and never shows again on any other entity page.
  *
- * Each consuming view passes a unique `id` (e.g. "leads-board-v1") so each
- * board fires its own tour exactly once per device.
+ * Targeting (`data-tour="…"` contract):
+ *   - entity-search      → the toolbar search box        (EntityPageLayout)
+ *   - view-toggle-board  → the list/board switch          (ViewToggleIcons)
+ *   - entity-create      → the primary "Add …" button     (EntityPageLayout)
+ *   - lead-card-grip     → the drag grip on any card       (EntityCard — generic)
+ *   - lead-card-convert  → the per-card primary action     (EntityCard — leads only)
+ *
+ * Missing targets are skipped automatically (FirstTimeTour). The card-action
+ * step only resolves on the leads board (only leads have a convert button);
+ * on contacts/deals/companies it's skipped, which is the intended
+ * "…and the same gestures on the other entities" behaviour.
+ *
+ * Bump the id (`entity-tour-v1` → `-v2`) when these steps change meaningfully.
  */
 
 import type { TourStep } from "@/components/ui/first-time-tour";
 
-export interface EntityTourLabels {
-	primaryActionVerb: string; // "Convert", "Move", "Edit"
-	primaryActionTarget?: string; // optional secondary noun ("the lead → contact")
-	groupedBy: string; // "status" | "stage" | "industry"
-}
+export const ENTITY_TOUR_ID = "entity-tour-v1";
 
-export function buildEntityBoardTour(labels: EntityTourLabels): TourStep[] {
-	return [
-		{
-			target: "lead-card-convert",
-			title: `${labels.primaryActionVerb} with one click`,
-			body: `Click the action button on a card to ${labels.primaryActionVerb.toLowerCase()}${
-				labels.primaryActionTarget ? ` ${labels.primaryActionTarget}` : ""
-			} instantly. Double-click for the full options drawer.`,
-			side: "top",
-		},
-		{
-			target: "lead-card-lost",
-			title: "Trash without losing data",
-			body: "The trash icon flags the record as inactive — it stays in the audit trail and can be unhidden from view options at any time.",
-			side: "top",
-		},
-		{
-			target: "lead-card-grip",
-			title: `Drag to change ${labels.groupedBy}`,
-			body: `Grab the grip on the right edge of any card and drop it onto a different column to update its ${labels.groupedBy}.`,
-			side: "start",
-		},
-		{
-			target: "view-options-trigger",
-			title: "Tune what you see",
-			body: "Pick which fields appear on cards, change the group-by axis, and reveal hidden columns.",
-			side: "bottom",
-		},
-	];
-}
+export const ENTITY_TOUR_STEPS: TourStep[] = [
+	{
+		target: "entity-search",
+		title: "Search this list",
+		body: "Type to filter records instantly — matches jump to the top so you spot them fast.",
+		side: "bottom",
+	},
+	{
+		target: "view-toggle-board",
+		title: "List or board",
+		body: "Switch between a spreadsheet-style table and a drag-and-drop kanban board grouped by status or stage.",
+		side: "bottom",
+	},
+	{
+		target: "entity-create",
+		title: "Add a record",
+		body: "Create a new record here. The form only asks for what the current stage needs.",
+		side: "bottom",
+	},
+	{
+		target: "lead-card-grip",
+		title: "Drag to move",
+		body: "Grab the grip on the edge of any card and drop it into another column to update its status or stage.",
+		side: "start",
+	},
+	{
+		target: "lead-card-convert",
+		title: "Quick actions on a card",
+		body: "Single-click the action button to act instantly. Double-click to open the full form with options.",
+		side: "top",
+	},
+];

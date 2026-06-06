@@ -10,7 +10,13 @@ import {
 } from "../../../_functions/authenticated";
 import type { Id } from "../../../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../../../_generated/server";
-import { requireRole } from "../../../_shared/permissions";
+import {
+	requireRole,
+	resolveAssigneeFilter,
+	resolveRecordScope,
+	rowInScope,
+	scopeAssignee,
+} from "../../../_shared/permissions";
 import {
 	getRequiredFieldsForStage,
 	getStagePinnedFields,
@@ -26,8 +32,15 @@ export const list = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
+
+		// Row-level scope: a member without `records.viewAll` only ever sees
+		// deals assigned to them.
+		const scope = resolveRecordScope(member.permissions, userId);
+		const assignee = resolveAssigneeFilter(scope, args.assignedTo);
+		if (assignee.empty) return [];
+		const effectiveAssignee = assignee.assignedTo;
 
 		const cap = args.limit ?? 200;
 
@@ -39,11 +52,11 @@ export const list = orgQuery({
 				.withIndex("by_org_and_pipeline", (qi) =>
 					qi.eq("orgId", args.orgId).eq("pipelineId", args.pipelineId!),
 				);
-		} else if (args.assignedTo) {
+		} else if (effectiveAssignee) {
 			q = ctx.db
 				.query("deals")
 				.withIndex("by_org_and_assignee", (qi) =>
-					qi.eq("orgId", args.orgId).eq("assignedTo", args.assignedTo!),
+					qi.eq("orgId", args.orgId).eq("assignedTo", effectiveAssignee),
 				);
 		}
 
@@ -51,7 +64,7 @@ export const list = orgQuery({
 
 		return results
 			.filter((d) => d.deletedAt === undefined)
-			.filter((d) => !args.assignedTo || d.assignedTo === args.assignedTo)
+			.filter((d) => !effectiveAssignee || d.assignedTo === effectiveAssignee)
 			.slice(0, cap);
 	},
 });
@@ -60,8 +73,9 @@ export const list = orgQuery({
 export const listGroupedByStage = orgQuery({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
+		const scope = resolveRecordScope(member.permissions, userId);
 
 		const [pipeline, deals] = await Promise.all([
 			ctx.db.get(args.pipelineId),
@@ -88,6 +102,8 @@ export const listGroupedByStage = orgQuery({
 
 		for (const deal of deals) {
 			if (deal.deletedAt !== undefined) continue;
+			// Row-level scope — scoped members only see deals assigned to them.
+			if (!rowInScope(scope, deal)) continue;
 			const stage = stageMap.get(deal.currentStageId);
 			const daysInStage = (now - deal.stageEnteredAt) / 86_400_000;
 			const isStale =
@@ -104,11 +120,12 @@ export const listGroupedByStage = orgQuery({
 export const getById = orgQuery({
 	args: { orgId: v.id("orgs"), dealId: v.id("deals") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
 
 		const deal = await ctx.db.get(args.dealId);
 		if (!deal || deal.orgId !== args.orgId || deal.deletedAt !== undefined) return null;
+		if (!rowInScope(resolveRecordScope(member.permissions, userId), deal)) return null;
 		return deal;
 	},
 });
@@ -125,9 +142,11 @@ async function getByDealCodeImpl(ctx: QueryCtx, args: { orgId: Id<"orgs">; dealC
 export const getByDealCode = orgQuery({
 	args: { orgId: v.id("orgs"), dealCode: v.string() },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
-		return getByDealCodeImpl(ctx, args);
+		const deal = await getByDealCodeImpl(ctx, args);
+		if (deal && !rowInScope(resolveRecordScope(member.permissions, userId), deal)) return null;
+		return deal;
 	},
 });
 
@@ -137,7 +156,10 @@ export const getByDealCodeForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "deals.view");
-		return getByDealCodeImpl(ctx, args);
+		const deal = await getByDealCodeImpl(ctx, args);
+		if (deal && !rowInScope(resolveRecordScope(member.permissions, args.userId), deal))
+			return null;
+		return deal;
 	},
 });
 
@@ -150,7 +172,13 @@ export const getByDealCodeForAI = internalQuery({
  */
 async function searchDealsImpl(
 	ctx: QueryCtx,
-	args: { orgId: Id<"orgs">; query: string; limit?: number; excludeFromAI?: boolean },
+	args: {
+		orgId: Id<"orgs">;
+		query: string;
+		limit?: number;
+		excludeFromAI?: boolean;
+		scopeAssignee?: Id<"users">;
+	},
 ) {
 	const cap = args.limit ?? 10;
 	const q = args.query.trim().toLowerCase();
@@ -164,6 +192,7 @@ async function searchDealsImpl(
 	const matches: typeof rows = [];
 	for (const r of rows) {
 		if (r.deletedAt !== undefined) continue;
+		if (args.scopeAssignee !== undefined && r.assignedTo !== args.scopeAssignee) continue;
 		if (args.excludeFromAI === false && r.excludeFromAI === true) continue;
 		const haystack = [r.title, r.dealCode ?? "", r.personCode ?? ""].join(" ").toLowerCase();
 		if (haystack.includes(q)) matches.push(r);
@@ -180,9 +209,10 @@ export const searchDeals = orgQuery({
 		excludeFromAI: v.optional(v.boolean()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
-		return searchDealsImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, userId);
+		return searchDealsImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });
 
@@ -198,7 +228,8 @@ export const searchDealsForAI = internalQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "deals.view");
-		return searchDealsImpl(ctx, args);
+		const scope = resolveRecordScope(member.permissions, args.userId);
+		return searchDealsImpl(ctx, { ...args, scopeAssignee: scopeAssignee(scope) });
 	},
 });
 
@@ -218,8 +249,9 @@ export const listByPersonCode = orgQuery({
 		limit: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { userId, member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "deals.view");
+		const scope = resolveRecordScope(member.permissions, userId);
 
 		const cap = args.limit ?? 5;
 		const rows = await ctx.db
@@ -230,6 +262,7 @@ export const listByPersonCode = orgQuery({
 			.take(cap * 2);
 		return rows
 			.filter((d) => d.deletedAt === undefined)
+			.filter((d) => rowInScope(scope, d))
 			.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
 			.slice(0, cap);
 	},

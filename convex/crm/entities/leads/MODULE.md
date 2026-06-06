@@ -103,6 +103,15 @@ leads: defineTable({
 
 All mutations and queries check RBAC via `assertPermission(ctx, orgId, permission)` before executing.
 
+### Record visibility (row-level scope) — `records.viewAll`
+
+Cross-cutting, applies identically to leads / contacts / companies / deals (locked decision #28 in `AGENTS.md`):
+
+- A member whose role HAS `records.viewAll` sees every record (historical default).
+- A member whose role LACKS it is scoped to `assignedTo === own userId` — enforced on `list`, `getById`, `getByPersonCode` (+ `*ForAI`), and `searchLeads` (+ `*ForAI`). Unassigned rows are hidden.
+- The ONLY enforcement path is `convex/_shared/permissions/recordScope.ts` (`resolveRecordScope` / `rowInScope` / `resolveAssigneeFilter` / `scopeAssignee`). Don't re-implement the predicate inline.
+- The owner controls it per role in the role editor; seeded to all 4 system roles + backfilled onto every existing role (`_migrations/2026_06_06_backfillRecordsViewAll`) so behaviour is unchanged until a role drops the key.
+
 ---
 
 ## Rules

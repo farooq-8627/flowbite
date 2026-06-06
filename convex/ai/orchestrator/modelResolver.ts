@@ -13,6 +13,7 @@
  */
 import type { Id } from "../../_generated/dataModel";
 import { decryptApiKey } from "../encryption";
+import type { ProviderId } from "../encryptionTypes";
 import { getModel, MODEL_REGISTRY, type OrgPlan } from "../models";
 
 // biome-ignore lint/suspicious/noExplicitAny: _ref/_anyArgs casts required for pre-codegen cross-module refs
@@ -87,12 +88,36 @@ export async function resolveModelAndKey(args: {
 		}
 	}
 
+	// Owner-managed platform keys (the `platformAiKeys` table, set in the
+	// Owner panel → AI keys). Decrypt them here (Node) and hand the map to
+	// the pure `getModel`, which prefers a DB key over the env var. This is
+	// what lets a user with NO BYOK key chat on the platform's key by
+	// default — without being asked to bring their own. Failure-tolerant:
+	// a bad/undecryptable row is skipped and we still fall back to env keys.
+	const platformRows = (await args.ctx.runQuery(
+		_ref("_platform/aiKeys/queries:listActivePlatformKeys"),
+		_anyArgs({}),
+	)) as Array<{ provider: string; encryptedKey: string; baseUrl: string | null }> | null;
+
+	const platformKeys: Partial<Record<ProviderId, { key: string; baseUrl: string | null }>> = {};
+	for (const row of platformRows ?? []) {
+		try {
+			platformKeys[row.provider as ProviderId] = {
+				key: decryptApiKey(row.encryptedKey),
+				baseUrl: row.baseUrl,
+			};
+		} catch {
+			// Skip an undecryptable row — env fallback still applies.
+		}
+	}
+
 	return getModel({
 		modelKey: requestedModelKey,
 		provider,
 		resolvedKey: byokResult,
 		decryptedKey,
 		plan: args.plan,
+		platformKeys,
 	});
 }
 

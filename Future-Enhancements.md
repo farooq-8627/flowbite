@@ -99,9 +99,11 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 | Phase to ship   | Phase 4                                                                            |
 | Owners          | `core/data-display/command-palette/`                                               |
 | Risk if skipped | None functional — just a power-user accelerator.                                   |
-| Files involved  | `core/data-display/command-palette/MODULE.md` already drafts the design.           |
+| Files involved  | `core/data-display/command-palette/MODULE.md` already drafts the design. Re-enable sites: `core/shell/shell/components/TopNav.tsx` (Search button), `core/shell/shell/layouts/DashboardLayoutClient.tsx` (`<SearchDialog>` mount + `onToggleSearch` wiring). |
 
 **Implementation sketch.** Use `cmdk` library; index all routes + entities + slash commands; respect locale; reuse `useEntityLabels`.
+
+**UI hidden 2026-06-06 (per the user — "we didn't implement cmd+k … hide it from the UI for now, after implementation enable it again").** The TopNav search button was removed and the stub `<SearchDialog>` (only routed to "Dashboard") was unmounted from `DashboardLayoutClient`. The `SearchDialog` component file and the `search` shortcut definition (`stores/shortcuts/shortcuts-store.ts`) are intentionally kept so re-enabling is a 2-site re-wire (TopNav button + layout mount). Nothing else consumes the search trigger.
 
 ---
 
@@ -610,7 +612,7 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 
 **Benefits when reinstated.** Dedicated industry + comparison pages are strong GEO plays (LLMs cite comparison tables and named-entity pages); a changelog is proof-of-life for AEO; the domain split anchors SEO weight on the apex.
 
-**Implementation sketch.** Add thin wrappers under `app/(root)/pricing`, `app/(root)/for-[industry]`, `app/(root)/vs/[competitor]` (the latter via `generateStaticParams`), each rendering a view from `core/landing/views/`. Reuse the existing section components + `lib/content.ts` data. Add each new URL to `app/sitemap.ts`. Wire the `app.{domain}` host split in `middleware.ts` per `LANDING-PAGE.md §2`.
+**Implementation sketch.** Add thin wrappers under `app/(root)/pricing`, `app/(root)/for-[industry]`, `app/(root)/vs/[competitor]` (the latter via `generateStaticParams`), each rendering a view from `core/landing/views/`. Reuse the existing section components + `lib/content.ts` data. Add each new URL to `app/sitemap.ts`. Wire the `app.{domain}` host split in `proxy.ts` per `LANDING-PAGE.md §2`.
 
 **Verification.** `pnpm build` lists each new static route; sitemap includes them; Lighthouse SEO ≥ 95 per page.
 
@@ -698,6 +700,32 @@ V2 capabilities live at `convex/crm/shared/bulk/capabilities.ts` (added to `BULK
 ## ✅ B.44 — Surface native web-search citations + grounding metadata in the chat timeline — SHIPPED 2026-06-06
 
 Sources rail under settled assistant turns (numbered chips → external link, hostname fallback when title missing, snippet line-clamp-2). Backend captures Firecrawl `web_search` envelopes during the stream + Google `providerMetadata.google.groundingMetadata` post-stream, dedupes by URL, persists to `aiMessages.metadata.citations`. Schema add was additive (`v.optional(v.any())`) so no migration. Files: `convex/schema/ai.ts`, `convex/ai/runtime/host.ts` (Citation type + extractors + dedupe), `convex/ai/messages.ts::patchAssistantBody`, `convex/ai/orchestrator/run.ts` (settle forwards metadata), `core/ai/components/SourcesRail.tsx` (NEW), `core/ai/components/AssistantTurn.tsx` (extractCitations + render). See `SHIPPED.md` 2026-06-06 entry "AI agent loop headroom + B.44 web-search citations rail + entity-label-aware tool calls".
+
+---
+
+## B.45 — Extend `records.viewAll` row-level scope to aggregate + secondary surfaces
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog (follow-up to the 2026-06-06 row-level-visibility ship)                    |
+| Category        | RBAC / Row-level visibility                                                         |
+| Phase to ship   | Next RBAC pass / when a customer enables assigned-only roles in production          |
+| Owners          | `convex/orgs/queries.ts`, `convex/_shared/orgStats.ts`, `convex/crm/entities/companies/queries.ts`, timeline queries |
+| Risk if skipped | A member WITHOUT `records.viewAll` still sees org-wide AGGREGATES (dashboard counts/pipeline value), the org activity timeline, and company-membership rosters/pickers. The PRIMARY record lists/boards/detail/search ARE scoped (shipped). The gap leaks counts + secondary names, not the primary record rows. |
+| Files involved  | `convex/orgs/queries.ts::getDashboardStats` (reads denormalised `orgStats` counters — O(1), not per-user); org timeline / `activityLogs` queries; `convex/crm/entities/companies/queries.ts` join/picker helpers: `getByPersonCode`, `listPersonsForCompany`, `listAllPersonsWithCompany`, `listPersonsWithoutCompany`, `listCompaniesByPersonCodes` |
+
+**Why we deferred:** the central scope helper (`convex/_shared/permissions/recordScope.ts`) + the primary CRM read surfaces (list / board / detail / search + AI `search_crm` via the `*ForAI` twins) shipped 2026-06-06 and form the real security boundary for individual record rows. The three remaining surfaces each need MORE than a predicate filter:
+- **Dashboard aggregates** read `orgStats` denormalised counters (O(1), written by every mutation). A scoped member can't get a correct "my assigned" count without either per-user counter partitioning or a bounded scan of the member's `by_org_and_assignee` index — a separate design.
+- **Org-wide activity timeline** rows (`activityLogs`) don't carry `assignedTo`; scoping them needs a per-row resolve back to the referenced record's current assignee (or denormalising assignee onto the log).
+- **Company-membership join/picker helpers** surface person rosters; scoping them risks breaking the company-association UX (a scoped member managing a company may legitimately need its full roster). Needs a UX decision on "roster of a company I'm assigned to" vs strict per-row.
+
+**Benefits when reinstated:** a fully consistent assigned-only experience — a scoped member sees their own numbers on the dashboard, only timeline events for their records, and only the people they can see in pickers.
+**Use cases / who it protects:** orgs that put external/junior reps on an assigned-only custom role and don't want them to infer pipeline size or teammates' books from aggregate widgets.
+**Implementation sketch:**
+1. `getDashboardStats` — when `!canViewAllRecords(permissions)`, compute counts from the caller's `by_org_and_assignee` indexes (bounded `take`) instead of `orgStats`; OR add per-(org,user) counter rows to `orgStats`.
+2. Timeline — denormalise `assignedTo` onto `activityLogs` (or resolve per row) and filter with `rowInScope`.
+3. Company helpers — decide the roster rule, then thread `resolveRecordScope` into the 5 listed queries.
+**Verification:** extend `convex/recordScope.test.ts` with a scoped-member dashboard-count case + a company-roster case; assert a scoped member's dashboard `leadCount`/`dealCount` reflect only their assigned rows.
 
 ---
 
@@ -841,6 +869,7 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-31 | Marketing / SEO | B.37 — Landing multi-page expansion (`/pricing`, `/for-*`, `/vs/*`, blog, changelog) + `app.{domain}` split | B |
 | 2026-06-05 | Operator setup | B.41 — WhatsApp Agent Profile (Mode C) external prerequisites: WhatsApp Business approval + `agentChannels` row seed + master-switch flip | B |
 | 2026-06-05 | Schema cleanup | B.42 — Remove `users.preferences.aiApprovals` tombstone slot from `convex/schema/identity.ts` once `2026_06_04_approvalsToAutonomy` migration has run on prod | B |
+| 2026-06-06 | RBAC          | B.45 — Extend `records.viewAll` row-level scope to dashboard aggregates, org timeline, and company-join/picker helpers | B |
 
 ---
 
@@ -1008,6 +1037,7 @@ When deploying these to a fresh production environment, run once on each:
 | Pre-seed-categories notes | `npx convex run _migrations/seedNoteCategories:run` | Seeds 6 default note categories per org + backfills `categoryId` from legacy `color`. Idempotent. |
 | Audio MIME categories | `npx convex run _migrations/allowAudioUploads:run` | Patches `"audio"` into older orgs' `org.settings.fileUpload.allowedMimeCategories`. Idempotent. Default-allow-all orgs are skipped. |
 | Permission catalog backfill | `npx convex run orgs/mutations:backfillRolePermissions` | When a new permission key is added to `convex/_shared/permissions/catalog.ts`, run this to patch existing role docs. Idempotent. |
+| Record visibility backfill | `npx convex run _migrations/2026_06_06_backfillRecordsViewAll:run` | Grants the new `records.viewAll` key to EVERY existing role (system + custom) so no workspace silently flips to assigned-only on deploy. Run dry first: `… :run '{"dryRun": true}'`. Idempotent. (The system-role-only `backfillRolePermissions` does NOT cover custom roles, which is why this dedicated migration exists.) |
 | AI morning briefing widget backfill | `_migrations._2026_05_27_addAiMorningBriefingMetric:run` | Inserts `ai.morningBriefing` BEFORE `ai.pulseRibbon` for existing orgs. Idempotent. |
 | Standing-orders firstFireAt index | `_migrations._2026_05_28_addStandingOrderFirstFireAt:run` | Backfills `firstFireAt` for every existing enabled standing order. Idempotent. |
 | Dashboard widget normalize | `_migrations._2026_05_26_normalizeDashboardMetrics:run` | Rewrites `calendar.miniWidget` → `calendar.mini`. Already ran in Stage 1; alias map now scoped inside the migration. |

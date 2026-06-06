@@ -31,7 +31,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { FirstTimeTour, type TourStep } from "@/components/ui/first-time-tour";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
 import { usePersistedColumnOrder } from "@/core/data-display/kanban/hooks/usePersistedColumnOrder";
@@ -83,44 +82,6 @@ const LEAD_SEARCH_FIELDS = [
 	"status",
 	"source",
 ] as const;
-
-/**
- * One-time coachmarks that play the first time a user sees the leads board.
- * Each step's `target` is matched against `data-tour="…"` on a DOM node.
- *
- * SCOPE: per-entity. The `id` carries the entity slug (`leads-board-v2`) so
- * the contacts board / deals board / companies board run their own tours
- * even on the same device. Adding view-options + lost-button steps bumped
- * the version from v1 → v2 so users see the updated walkthrough.
- *
- * Bump the id again when the steps change meaningfully.
- */
-const LEADS_BOARD_TOUR_STEPS: TourStep[] = [
-	{
-		target: "lead-card-convert",
-		title: "Convert with one click",
-		body: "Click the + on a card to instantly convert the lead into a contact. Double-click to open the full convert form with the deal option.",
-		side: "top",
-	},
-	{
-		target: "lead-card-lost",
-		title: "Mark a lead as lost",
-		body: "The trash icon flags the lead as lost without deleting it — the record stays in the audit trail and can be unhidden from view options.",
-		side: "top",
-	},
-	{
-		target: "lead-card-grip",
-		title: "Drag to change status",
-		body: "Grab the grip on the right edge of any card and drop it onto a different column to update its status.",
-		side: "start",
-	},
-	{
-		target: "view-options-trigger",
-		title: "Tune what you see",
-		body: "Pick which fields appear on cards, swap the group-by axis, and reveal hidden columns like Converted or Lost.",
-		side: "bottom",
-	},
-];
 
 export function LeadsView(_props: { orgSlug: string }) {
 	const labels = useEntityLabels();
@@ -753,11 +714,6 @@ export function LeadsView(_props: { orgSlug: string }) {
 				orgId={orgId}
 				lead={editingLead as unknown as Doc<"leads"> | null}
 			/>
-
-			{/* First-time coachmarks for the leads board. Fires once per device. */}
-			{view === "board" && (rankedItems.items?.length ?? 0) > 0 && (
-				<FirstTimeTour id="leads-board-v2" steps={LEADS_BOARD_TOUR_STEPS} />
-			)}
 		</>
 	);
 }

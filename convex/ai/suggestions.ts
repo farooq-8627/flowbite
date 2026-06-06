@@ -27,7 +27,7 @@ import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../_functions/authenticated";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
-import { requireRole } from "../_shared/permissions/helpers";
+import { hasPermission } from "../_shared/permissions/helpers";
 
 export type SuggestionSeverity = "info" | "warning" | "critical";
 
@@ -75,90 +75,117 @@ export const list = orgQuery({
 	},
 	handler: async (ctx, args): Promise<Suggestion[]> => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
-		// Caller MUST be able to view leads at minimum (the panel is a
-		// read-only summary; we don't filter to assigned-to-me yet).
-		requireRole(member.permissions, "leads.view");
-
+		// Per-category RBAC — no blanket `leads.view` throw. Each heuristic
+		// block below is gated on its own module view permission, so a role
+		// that can see deals but not leads gets deal suggestions and
+		// nothing else, and a role with none of the relevant view
+		// permissions gets an empty list.
 		if (args.scope === "org") {
-			return suggestForOrg(ctx, args.orgId);
+			return suggestForOrg(ctx, args.orgId, member.permissions);
 		}
 		if (!args.entityType || !args.entityCode) return [];
-		return suggestForEntity(ctx, args.orgId, args.entityType, args.entityCode);
+		return suggestForEntity(
+			ctx,
+			args.orgId,
+			args.entityType,
+			args.entityCode,
+			member.permissions,
+		);
 	},
 });
 
 // ─── Org-scope heuristics ────────────────────────────────────────────
 
-async function suggestForOrg(ctx: QueryCtx, orgId: Id<"orgs">): Promise<Suggestion[]> {
+async function suggestForOrg(
+	ctx: QueryCtx,
+	orgId: Id<"orgs">,
+	permissions: readonly string[],
+): Promise<Suggestion[]> {
 	const out: Suggestion[] = [];
+	const canTasks = hasPermission(permissions, "tasks.view");
+	const canLeads = hasPermission(permissions, "leads.view");
+	const canDeals = hasPermission(permissions, "deals.view");
+	// Short-circuit when the role unlocks none of the surfaced categories
+	// — the panel stays empty rather than scanning data the user can't see.
+	if (!canTasks && !canLeads && !canDeals) return [];
 
 	// 1. Overdue follow-ups (status="pending" + dueAt < now). Up to 3.
-	const reminders = (await ctx.db
-		.query("tasks")
-		.withIndex("by_org_and_status_and_due", (q) => q.eq("orgId", orgId).eq("status", "pending"))
-		.take(50)) as Doc<"tasks">[];
-	const overdue = reminders.filter((r) => r.dueAt < Date.now()).slice(0, 3);
-	for (const r of overdue) {
-		const days = daysAgo(r.dueAt);
-		out.push({
-			id: `overdue:${r._id}`,
-			kind: "overdue_followup",
-			headline: `Follow-up ${r.taskCode} is overdue`,
-			body:
-				days <= 0
-					? `${r.title} is due today.`
-					: `${r.title} was due ${days} day${days === 1 ? "" : "s"} ago.`,
-			intent: `Show me follow-up ${r.taskCode} and help me complete or reschedule it`,
-			severity: days >= 3 ? "critical" : "warning",
-			anchor: { entityType: "task", code: r.taskCode },
-		});
+	//    Gated on `tasks.view` — reminders live in the `tasks` table.
+	if (canTasks) {
+		const reminders = (await ctx.db
+			.query("tasks")
+			.withIndex("by_org_and_status_and_due", (q) =>
+				q.eq("orgId", orgId).eq("status", "pending"),
+			)
+			.take(50)) as Doc<"tasks">[];
+		const overdue = reminders.filter((r) => r.dueAt < Date.now()).slice(0, 3);
+		for (const r of overdue) {
+			const days = daysAgo(r.dueAt);
+			out.push({
+				id: `overdue:${r._id}`,
+				kind: "overdue_followup",
+				headline: `Follow-up ${r.taskCode} is overdue`,
+				body:
+					days <= 0
+						? `${r.title} is due today.`
+						: `${r.title} was due ${days} day${days === 1 ? "" : "s"} ago.`,
+				intent: `Show me follow-up ${r.taskCode} and help me complete or reschedule it`,
+				severity: days >= 3 ? "critical" : "warning",
+				anchor: { entityType: "task", code: r.taskCode },
+			});
+		}
 	}
 
 	// 2. Stale leads — last touched > STALE_LEAD_DAYS, not closed.
-	const leads = (await ctx.db
-		.query("leads")
-		.withIndex("by_org", (q) => q.eq("orgId", orgId))
-		.take(200)) as Doc<"leads">[];
-	const cutoff = Date.now() - STALE_LEAD_DAYS * 86_400_000;
-	const staleAll = leads.filter(
-		(l) =>
-			!l.deletedAt &&
-			l.status !== "Won" &&
-			l.status !== "Lost" &&
-			(l.updatedAt ?? 0) < cutoff,
-	);
-	const stale = staleAll.slice(0, 2);
-	if (stale.length > 0) {
-		out.push({
-			id: `stale_leads:${stale[0]._id}`,
-			kind: "stale_leads",
-			headline: `${staleAll.length} lead${staleAll.length === 1 ? "" : "s"} haven't been touched in ${STALE_LEAD_DAYS}+ days`,
-			body: `e.g. ${stale.map((l) => `${l.personCode} (${l.displayName})`).join(", ")}.`,
-			intent: `Show me my stale leads from the last ${STALE_LEAD_DAYS} days and help me follow up`,
-			severity: "warning",
-		});
+	//    Gated on `leads.view`.
+	if (canLeads) {
+		const leads = (await ctx.db
+			.query("leads")
+			.withIndex("by_org", (q) => q.eq("orgId", orgId))
+			.take(200)) as Doc<"leads">[];
+		const cutoff = Date.now() - STALE_LEAD_DAYS * 86_400_000;
+		const staleAll = leads.filter(
+			(l) =>
+				!l.deletedAt &&
+				l.status !== "Won" &&
+				l.status !== "Lost" &&
+				(l.updatedAt ?? 0) < cutoff,
+		);
+		const stale = staleAll.slice(0, 2);
+		if (stale.length > 0) {
+			out.push({
+				id: `stale_leads:${stale[0]._id}`,
+				kind: "stale_leads",
+				headline: `${staleAll.length} lead${staleAll.length === 1 ? "" : "s"} haven't been touched in ${STALE_LEAD_DAYS}+ days`,
+				body: `e.g. ${stale.map((l) => `${l.personCode} (${l.displayName})`).join(", ")}.`,
+				intent: `Show me my stale leads from the last ${STALE_LEAD_DAYS} days and help me follow up`,
+				severity: "warning",
+			});
+		}
 	}
 
-	// 3. Deals stuck in stage > STUCK_DEAL_DAYS.
-	const deals = (await ctx.db
-		.query("deals")
-		.withIndex("by_org", (q) => q.eq("orgId", orgId))
-		.take(200)) as Doc<"deals">[];
-	const stuckCutoff = Date.now() - STUCK_DEAL_DAYS * 86_400_000;
-	const stuck = deals
-		.filter((d) => !d.deletedAt && (d.stageEnteredAt ?? 0) < stuckCutoff)
-		.slice(0, 2);
-	for (const d of stuck) {
-		const days = daysAgo(d.stageEnteredAt ?? 0);
-		out.push({
-			id: `stuck_deal:${d._id}`,
-			kind: "stuck_deal",
-			headline: `Deal ${d.dealCode} has been in the same stage ${days} days`,
-			body: `${d.title} — typical cycle is shorter. Consider moving the stage forward.`,
-			intent: `Show me deal ${d.dealCode} and help me decide the next step`,
-			severity: days >= 60 ? "critical" : "info",
-			anchor: { entityType: "deal", code: d.dealCode },
-		});
+	// 3. Deals stuck in stage > STUCK_DEAL_DAYS. Gated on `deals.view`.
+	if (canDeals) {
+		const deals = (await ctx.db
+			.query("deals")
+			.withIndex("by_org", (q) => q.eq("orgId", orgId))
+			.take(200)) as Doc<"deals">[];
+		const stuckCutoff = Date.now() - STUCK_DEAL_DAYS * 86_400_000;
+		const stuck = deals
+			.filter((d) => !d.deletedAt && (d.stageEnteredAt ?? 0) < stuckCutoff)
+			.slice(0, 2);
+		for (const d of stuck) {
+			const days = daysAgo(d.stageEnteredAt ?? 0);
+			out.push({
+				id: `stuck_deal:${d._id}`,
+				kind: "stuck_deal",
+				headline: `Deal ${d.dealCode} has been in the same stage ${days} days`,
+				body: `${d.title} — typical cycle is shorter. Consider moving the stage forward.`,
+				intent: `Show me deal ${d.dealCode} and help me decide the next step`,
+				severity: days >= 60 ? "critical" : "info",
+				anchor: { entityType: "deal", code: d.dealCode },
+			});
+		}
 	}
 
 	out.sort(rank);
@@ -172,10 +199,16 @@ async function suggestForEntity(
 	orgId: Id<"orgs">,
 	entityType: string,
 	entityCode: string,
+	permissions: readonly string[],
 ): Promise<Suggestion[]> {
 	const out: Suggestion[] = [];
 
 	if (entityType === "lead" || entityType === "contact") {
+		// Gate on the entity's own view permission — a role that can't view
+		// this category gets nothing, even on its detail page.
+		if (!hasPermission(permissions, entityType === "lead" ? "leads.view" : "contacts.view")) {
+			return [];
+		}
 		const table = entityType === "lead" ? "leads" : "contacts";
 		const row = (await ctx.db
 			.query(table)
@@ -219,6 +252,7 @@ async function suggestForEntity(
 	}
 
 	if (entityType === "deal") {
+		if (!hasPermission(permissions, "deals.view")) return [];
 		const row = (await ctx.db
 			.query("deals")
 			.withIndex("by_org_and_dealCode", (q) =>
@@ -239,6 +273,7 @@ async function suggestForEntity(
 	}
 
 	if (entityType === "company") {
+		if (!hasPermission(permissions, "companies.view")) return [];
 		const row = (await ctx.db
 			.query("companies")
 			.withIndex("by_org_and_companyCode", (q) =>

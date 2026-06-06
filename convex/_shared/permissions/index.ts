@@ -37,3 +37,14 @@ export {
 	requirePlanFeature,
 	requireRole,
 } from "./helpers";
+
+// Record-scope (assignment-based row-level visibility) helpers
+export {
+	canViewAllRecords,
+	type RecordScope,
+	resolveAssigneeFilter,
+	resolveRecordScope,
+	rowInScope,
+	scopeAssignee,
+	VIEW_ALL_RECORDS_PERMISSION,
+} from "./recordScope";

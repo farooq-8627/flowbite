@@ -149,10 +149,15 @@ export const users = defineTable({
 			 *     renamed `<ProactiveWorkspaceSection>`; the storage key
 			 *     stayed `proactive` so existing per-user collapse state
 			 *     carries over).
+			 *   - `aiPulse` → the merged AI Pulse surface inside the cockpit
+			 *     (ranked next-actions + permission-scoped org signals). Its
+			 *     header bar toggles this key so the pulse can be collapsed
+			 *     independently of the whole cockpit.
 			 */
 			dashboardSectionsCollapsed: v.optional(
 				v.object({
 					proactive: v.optional(v.boolean()),
+					aiPulse: v.optional(v.boolean()),
 				}),
 			),
 			/**

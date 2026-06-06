@@ -192,8 +192,9 @@ export function DailyBriefingCard({ orgId }: Props) {
 
 			{highlights.length > 0 && (
 				<ul className="flex flex-col gap-1 text-xs text-foreground/90">
-					{highlights.slice(0, 5).map((h) => (
-						<li key={h} className="flex gap-2 leading-relaxed">
+					{highlights.slice(0, 5).map((h, i) => (
+						// biome-ignore lint/suspicious/noArrayIndexKey: highlights are plain strings the model can legitimately repeat (e.g. "Follow-up call"), so a bare key={h} collides; the <li> is stateless presentational markup, render-only and capped at 5, so the index disambiguates safely
+						<li key={`${i}-${h}`} className="flex gap-2 leading-relaxed">
 							<span className="text-primary">•</span>
 							<span>{h}</span>
 						</li>

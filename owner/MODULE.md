@@ -16,14 +16,14 @@ A super-admin-only control surface mounted at a hidden, env-configured URL prefi
 
 - Public URL: `/${OWNER_PANEL_SLUG}/<section>` — operator chooses the slug; never randomised by code.
 - Internal route: `app/xowner/<section>/page.tsx` (literal `xowner` segment — never linked to in any UI).
-- `middleware.ts` rewrites the public URL to the internal path. Direct hits on `/xowner` always 404.
+- `proxy.ts` rewrites the public URL to the internal path. Direct hits on `/xowner` always 404.
 - If `OWNER_PANEL_SLUG` is unset, the panel is fully disabled.
 
 ## Layered gate
 
 Five independent layers (one bug in any layer is not enough):
 
-1. **Slug match** — `middleware.ts::classifyOwnerRequest`.
+1. **Slug match** — `proxy.ts::classifyOwnerRequest`.
 2. **Authenticated** — outer `app/xowner/layout.tsx` calls `convexAuthNextjsToken()`. No token → 404.
 3. **Email allow-list + super-admin role** — outer layout calls `api._platform.auth.queries.getOwnerProfile`. Throws if `users.platformRole !== "super_admin"` OR email not in `PLATFORM_OWNER_EMAILS`.
 4. **OTP step** — `app/xowner/(gated)/layout.tsx` reads `owner_otp_verified` cookie; HMAC-verifies it against `OWNER_OTP_COOKIE_SECRET`; cross-checks userId + `expiresAt`; redirects to `app/xowner/auth/page.tsx` (which lives OUTSIDE the gated group) on any failure.
@@ -97,4 +97,4 @@ If anything is wrong (missing env, wrong email, missing role, missing OTP cookie
 
 - `convex/_platform/MODULE.md` — Convex side of the panel (auth helper, future tier table, audit log).
 - `AGENTS.md` — locked decisions + non-negotiable rules.
-- `middleware.ts` — slug rewrite, direct-`xowner` block, cookie write.
+- `proxy.ts` — slug rewrite, direct-`xowner` block, cookie write.

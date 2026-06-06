@@ -67,6 +67,51 @@ export const getEncryptedPlatformKey = internalQuery({
 });
 
 /**
+ * All active platform keys (encrypted payloads). Internal-only — the
+ * encrypted material never leaves the server; the Node caller decrypts.
+ *
+ * Used by the chat model resolver (`ai/orchestrator/modelResolver`) so a
+ * user with NO BYOK key can chat on the owner-managed platform key by
+ * default. The table holds at most one active row per provider (≤ 10
+ * rows), so a `.collect()` + `isActive` filter is bounded — same pattern
+ * as `list` above.
+ */
+export const listActivePlatformKeys = internalQuery({
+	args: {},
+	handler: async (ctx) => {
+		const rows = await ctx.db
+			.query("platformAiKeys")
+			.filter((q) => q.eq(q.field("isActive"), true))
+			.collect();
+		return rows.map((r) => ({
+			provider: r.provider,
+			encryptedKey: r.encryptedKey,
+			baseUrl: r.baseUrl ?? null,
+		}));
+	},
+});
+
+/**
+ * Provider ids that have an active platform key. Internal-only; returns
+ * NO key material. Lets `availableModels:listPlatformProviders` surface
+ * owner-managed (DB) providers in the chat model picker alongside the
+ * env-var providers — so the picker shows the platform's models without
+ * the user adding a BYOK key.
+ */
+export const listActivePlatformProviderIds = internalQuery({
+	args: {},
+	handler: async (ctx) => {
+		const rows = await ctx.db
+			.query("platformAiKeys")
+			.filter((q) => q.eq(q.field("isActive"), true))
+			.collect();
+		const set = new Set<string>();
+		for (const r of rows) set.add(r.provider);
+		return Array.from(set);
+	},
+});
+
+/**
  * Internal helper used by the Node action to gate on the platform-owner
  * check before encrypting + writing. Returns the caller's userId + email
  * (for the audit row). Throws SUPER_ADMIN_REQUIRED otherwise.

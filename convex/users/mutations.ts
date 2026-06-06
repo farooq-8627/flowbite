@@ -357,15 +357,16 @@ export const updateAiAutonomyForAI = internalMutation({
 
 /**
  * Stage 3-A.5 — set the per-user collapse state for a named dashboard
- * section. Currently only `proactive` is recognised (the AI cluster on
- * the dashboard). Adding a new section key requires extending the
- * schema's `dashboardSectionsCollapsed` object literal AND the
- * SECTION_KEYS array below — both in the same change.
+ * section. Recognised keys: `proactive` (the whole AI cluster /
+ * AICockpitSection) and `aiPulse` (the merged AI Pulse surface inside it).
+ * Adding a new section key requires extending the schema's
+ * `dashboardSectionsCollapsed` object literal AND the SECTION_KEYS array
+ * below — both in the same change.
  *
  * Pattern follows `updateAiAutonomy` exactly: extracted `*Impl` helper
  * so the public + ForAI bodies cannot diverge.
  */
-const DASHBOARD_SECTION_KEYS = ["proactive"] as const;
+const DASHBOARD_SECTION_KEYS = ["proactive", "aiPulse"] as const;
 type DashboardSectionKey = (typeof DASHBOARD_SECTION_KEYS)[number];
 
 async function setDashboardSectionCollapsedImpl(

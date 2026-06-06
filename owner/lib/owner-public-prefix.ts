@@ -1,6 +1,6 @@
 /**
  * Server-only helpers that read the public slug-prefix from the
- * `x-owner-public-prefix` request header set by `middleware.ts` on every
+ * `x-owner-public-prefix` request header set by `proxy.ts` on every
  * owner-panel rewrite.
  *
  * Why a header (and not env)?

@@ -1,20 +1,26 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 
 // ─── Project root resolution ─────────────────────────────────────────────────
 //
-// `next.config.ts` is loaded as an ESM module (we use top-level `import`
-// statements), so `__dirname` is unavailable. Reconstruct it via
-// `import.meta.url` so Turbopack's workspace-root inference can pin to
-// THIS package — independent of any other lockfile higher up the directory
-// tree (e.g. a stray `~/pnpm-lock.yaml` from another repo).
+// Turbopack infers the workspace root from the highest `pnpm-lock.yaml` on the
+// path; a stray lockfile in `~/` makes that inference ambiguous (the warning
+// users were seeing). We pin the root explicitly to silence it.
+//
+// We use `process.cwd()` rather than `__dirname` / `import.meta.url`:
+//   - `tsconfig` sets `"module": "esnext"`, so tsc type-checks this file as
+//     ESM where `__dirname` is undefined.
+//   - But the project has no `"type": "module"`, so Next compiles the config
+//     to CJS — and any `import.meta` usage flips Next's loader to ESM output,
+//     which then throws `ReferenceError: exports is not defined` at load time.
+//   - `process.cwd()` is valid + typed in BOTH module systems (the file
+//     already reads `process.env` throughout) and never triggers that switch.
+//     `next build` / `next dev` always run from the project root, so it
+//     resolves to exactly this package.
 //
 // Source: https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const projectRoot = process.cwd();
 
 // ─── Security Headers (Phase 3A) ─────────────────────────────────────────────
 //
@@ -137,7 +143,7 @@ const nextConfig: NextConfig = {
 	// in `~/` and complains about ambiguity. Pinning here silences the
 	// warning AND guarantees deterministic resolution.
 	turbopack: {
-		root: __dirname,
+		root: projectRoot,
 	},
 	async rewrites() {
 		return [

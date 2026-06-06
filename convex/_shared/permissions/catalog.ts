@@ -73,6 +73,11 @@ export const PERMISSION_MODULE_LABELS: Record<string, { label: string; descripti
 		label: "Members",
 		description: "Who can join, leave, or change roles.",
 	},
+	records: {
+		label: "Record Visibility",
+		description:
+			"Whether a role sees every record in the workspace or only the ones assigned to them.",
+	},
 	leads: { label: "{Leads}" },
 	contacts: { label: "{Contacts}" },
 	companies: { label: "{Companies}" },
@@ -95,6 +100,7 @@ export const PERMISSION_MODULE_LABELS: Record<string, { label: string; descripti
 export const PERMISSION_MODULE_ORDER: readonly string[] = [
 	"org",
 	"members",
+	"records",
 	"leads",
 	"contacts",
 	"companies",
@@ -215,6 +221,41 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		description:
 			"Per-member close rate, deals won, pipeline value, and activity counts. Owner / Admin only by default.",
 		defaultRoles: ["Owner", "Admin"],
+	},
+
+	// ── Record visibility (row-level scope) ─────────────────────────────────
+	{
+		// Assignment-based (row-level) visibility switch. This is the ONLY
+		// cross-cutting visibility permission — it gates leads / contacts /
+		// companies / deals together rather than per-entity, because the
+		// product concept is one toggle: "does this role see the whole
+		// workspace, or only the records assigned to them?".
+		//
+		// Semantics (capability model — presence GRANTS, absence RESTRICTS):
+		//   - HAS `records.viewAll`  → sees every record in the org (the
+		//     historical default for every role).
+		//   - LACKS `records.viewAll` → row-level scope: only rows where
+		//     `assignedTo === their own userId` are visible across list,
+		//     board, detail, search, and AI search. Unassigned rows are
+		//     hidden. The proactive AI Pulse is already per-user assigned-
+		//     scoped, so it stays consistent automatically.
+		//
+		// Seeded to ALL 4 system roles so adding this permission changes
+		// NOTHING by default — an org opts a role into row-level scope by
+		// REMOVING this key from it (custom role, or by editing Member /
+		// Viewer in the role editor). The backfill migration
+		// `_migrations/2026_06_06_backfillRecordsViewAll` grants it to every
+		// pre-existing role (system + custom) for the same reason.
+		//
+		// Enforced by the central helper in
+		// `convex/_shared/permissions/recordScope.ts`
+		// (`resolveRecordScope` / `rowInScope` / `resolveAssigneeFilter`).
+		key: "records.viewAll",
+		module: "records",
+		label: "View all records (not just assigned)",
+		description:
+			"See every {lead}, {contact}, {company}, and {deal} in the workspace. Without this, the member only sees records assigned to them.",
+		defaultRoles: ["Owner", "Admin", "Member", "Viewer"],
 	},
 
 	// ── Leads ────────────────────────────────────────────────────────────────

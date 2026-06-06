@@ -18,13 +18,14 @@
  *   - JSON-serialisable values only.
  *   - Invalid / corrupt entries are silently dropped (we fall back to the
  *     initial value rather than throwing).
- *   - Keys are namespaced under `flowbite:state:` so we never collide with
+ *   - Keys are namespaced under `orbitly:state:` so we never collide with
  *     other libraries.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { APP_CONFIG } from "@/config/app-config";
 
-const KEY_PREFIX = "flowbite:state:";
+const KEY_PREFIX = `${APP_CONFIG.storagePrefix}:state:`;
 
 function readStored<T>(key: string, fallback: T): T {
 	if (typeof window === "undefined") return fallback;
@@ -50,7 +51,7 @@ function writeStored<T>(key: string, value: T): void {
  * Persistent useState. Reads from localStorage on mount; writes on every
  * change. Returns the same `[value, setValue]` shape as React.useState.
  *
- * @param key  Stable storage key (namespaced under `flowbite:state:`).
+ * @param key  Stable storage key (namespaced under `orbitly:state:`).
  * @param initialValue Fallback for the first render and for missing /
  *                     corrupt entries.
  */

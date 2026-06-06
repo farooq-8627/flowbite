@@ -52,4 +52,14 @@ export const APP_CONFIG = {
 	 * Override via NEXT_PUBLIC_PLATFORM_PREFIX for white-label deployments.
 	 */
 	platformPrefix: process.env.NEXT_PUBLIC_PLATFORM_PREFIX ?? "ORB",
+	/**
+	 * Namespace prefix for all localStorage / sessionStorage keys.
+	 * Override via NEXT_PUBLIC_STORAGE_PREFIX for white-label deployments.
+	 */
+	storagePrefix: process.env.NEXT_PUBLIC_STORAGE_PREFIX ?? "orbitly",
+	/**
+	 * Cookie name for the remember-me preference on the sign-in page.
+	 * Override via NEXT_PUBLIC_REMEMBER_ME_COOKIE for white-label deployments.
+	 */
+	rememberMeCookie: process.env.NEXT_PUBLIC_REMEMBER_ME_COOKIE ?? "orbitly_remember",
 } as const;

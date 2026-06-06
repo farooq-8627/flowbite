@@ -107,29 +107,21 @@ export const users = defineTable({
 				}),
 			),
 			/**
-			 * Post-sprint addition (2026-05-26). Per-user "auto-approve"
-			 * map for AI tool calls. Each key corresponds to one
-			 * `approvalCategory` declared by tools in `convex/ai/toolRegistry.ts`
-			 * (see `convex/_shared/aiApprovals.ts` for the canonical list +
-			 * defaults).
+			 * TOMBSTONE — kept only so existing rows pass schema validation
+			 * until the data-cleanup migration has run on prod.
 			 *
-			 * Semantics:
-			 *   - `true`  → SKIP the propose/commit confirmation card; run
-			 *               the tool atomically.
-			 *   - `false` → ALWAYS show the confirmation card (overrides
-			 *               the default).
-			 *   - missing → use the default from `AUTO_APPROVE_DEFAULTS`.
+			 * Replaced by `org.settings.aiAutonomy` (S8 of the AI tooling
+			 * rebuild). Autonomy is org-policy now; per-user category
+			 * toggles no longer exist. The gate that decides whether a
+			 * capability needs human confirmation is `convex/ai/registry/
+			 * gate.ts` (risk tier + 2FA step-up + channel allow-list).
 			 *
-			 * Defaults (chosen 2026-05-26 with the user):
-			 *   ON  — update_record, convert_record, send_message,
-			 *         manage_participants, schedule, files
-			 *   OFF — create_record, delete_record (so single-record creates
-			 *         + deletions still surface a preview card)
+			 * Migration: `convex/_migrations/2026_06_04_approvalsToAutonomy.ts`
+			 * strips this slot from every user. Once that migration has run
+			 * on prod, this validator can be removed in a follow-up
+			 * (Future-Enhancements §H).
 			 *
-			 * Hard-locked categories (`bulk`, `settings`, `members`,
-			 * `ask_user`) are NOT in this map — they ALWAYS require approval
-			 * regardless of preferences. The settings UI surfaces them as
-			 * read-only "Always asks — workspace policy" rows.
+			 * No code reads or writes this slot. Do not add any.
 			 */
 			aiApprovals: v.optional(
 				v.object({
@@ -233,6 +225,17 @@ export const users = defineTable({
 			 * Set via Settings → Appearance → Dashboard density.
 			 */
 			dashboardActivityRowLimit: v.optional(v.number()),
+			/**
+			 * B.42 follow-up (2026-06-05) — per-user "last seen the AI
+			 * audit feed" timestamp. Drives the unread-count badge on
+			 * the sidebar's `AI → Audit feed` entry: we count every
+			 * `entityType:"ai_capability"` row in `activityLogs` with
+			 * `createdAt > lastSeenAuditAt` and surface it as a small
+			 * primary-coloured pill (capped at 99). Mark-as-seen runs
+			 * automatically when the user opens `/ai/audit`. Undefined
+			 * = "never opened" → ALL audit rows count as unseen.
+			 */
+			lastSeenAuditAt: v.optional(v.number()),
 		}),
 	),
 	...timestamps,
@@ -480,6 +483,78 @@ export const orgs = defineTable({
 			 * cancelled and the action no-ops.
 			 */
 			deletionScheduledAt: v.optional(v.number()),
+			/**
+			 * S8 of the AI tooling rebuild. Org-level autonomy policy that
+			 * replaces the deleted per-user `aiApprovals` toggles.
+			 *
+			 * Fields:
+			 *   - `autoActFromConversations` (default `true`) — whether the
+			 *     autonomous engine (S11) may act on inbound conversations
+			 *     without an agent prompt. Off → AI only acts when an agent
+			 *     issues a command.
+			 *   - `destructiveRequires2FA` — read-only `true`. Pinned in
+			 *     the validator + UI to advertise the policy: every
+			 *     irreversible capability requires 2FA step-up regardless
+			 *     of any other toggle. The gate (`convex/ai/registry/
+			 *     gate.ts:needsStepUp`) is the actual enforcer; this slot
+			 *     is documentation of the locked decision.
+			 *   - `whatsappAgentEnabled` (default `false`) — Mode C of the
+			 *     WhatsApp Agent Profile (S15). Off until the org has
+			 *     completed the WhatsApp Business + Twilio sender setup
+			 *     AND `ai.whatsappAgent` permission has been granted.
+			 *   - `perRoleAutonomyCap` (optional) — per-role ceiling on the
+			 *     risk tier the AI may auto-execute as that role. Keys are
+			 *     role names (`Owner`, `Admin`, `Member`, `Viewer`, or any
+			 *     custom role). Values: `"read"` (no writes), `"reversible"`
+			 *     (creates/updates ok), `"all"` (no cap — irreversible
+			 *     still 2FA-fenced via the gate). Missing role → no cap.
+			 *
+			 * Read by: `convex/ai/registry/gate.ts` (channel + risk gate),
+			 * `convex/ai/runtime/autonomous.ts` (S11 — autonomous-engine
+			 * trigger). Written by: `core/platform/settings/components/
+			 * groups/ai/AIAutonomySection.tsx` via `orgs.mutations:update`.
+			 */
+			aiAutonomy: v.optional(
+				v.object({
+					autoActFromConversations: v.optional(v.boolean()),
+					destructiveRequires2FA: v.optional(v.boolean()),
+					whatsappAgentEnabled: v.optional(v.boolean()),
+					perRoleAutonomyCap: v.optional(
+						v.record(
+							v.string(),
+							v.union(v.literal("read"), v.literal("reversible"), v.literal("all")),
+						),
+					),
+				}),
+			),
+			/**
+			 * B.42 follow-up (2026-06-05). Per-org visibility flags for AI
+			 * surfaces that ship in the sidebar. Mirrors the
+			 * `org.settings.modules[].hidden` pattern for entity modules
+			 * but lives outside that array because these aren't entity
+			 * slots — they're top-level surfaces (`/{orgSlug}/ai/audit`,
+			 * `/{orgSlug}/ai/next-actions`).
+			 *
+			 * Defaults — when the slot or a key is undefined, the surface
+			 * is **visible**. Setting a key to `false` hides the entry
+			 * from the sidebar AND the sub-tab pill. Permission gates
+			 * (`ai.audit.view`, `ai.trace.view`) still apply on top.
+			 *
+			 * Read by:
+			 *   - `core/shell/shell/components/sidebar/app-sidebar.tsx`
+			 *   - `core/shell/shell/config/navigation.ts::buildNavigation`
+			 * Written by:
+			 *   - `core/platform/settings/components/groups/ai/AIFeaturesSection.tsx`
+			 *
+			 * Additive optional → no migration. Surfaces still permission-
+			 * gated server-side at `ai/queries/auditFeed.ts` etc.
+			 */
+			aiFeatures: v.optional(
+				v.object({
+					auditFeed: v.optional(v.boolean()),
+					nextActions: v.optional(v.boolean()),
+				}),
+			),
 		}),
 	),
 	/**

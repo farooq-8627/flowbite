@@ -95,10 +95,51 @@ function extractToolSummary(output: unknown): ToolSummary | undefined {
  * block, we surface THAT instead of the raw `error` string — same UX as
  * the assistant-body friendly error rendering. Falls through to raw
  * error or zod-formatter hint.
+ *
+ * Reads BOTH envelope shapes:
+ *
+ * 1. V2 capability envelope (`convex/ai/registry/result.ts:failed()`):
+ *    `{ status, headline, errors?: [{ item, reason }], repair?: ... }`.
+ *    Every non-`ok` / non-`partial` outcome (failed, needs_repair,
+ *    needs_step_up, denied, channel_blocked, business_error,
+ *    not_found, ambiguous, infra_retry) lands here. Without this
+ *    branch the row is unclickable — the user can't see *why* it
+ *    failed (the bug `docs/ai-implementation-audit.md §1` calls out).
+ *
+ * 2. V1 legacy shape (`{ friendlyMarkdown }` / `{ error }` /
+ *    `{ hint, code:"TOOL_INPUT_VALIDATION" }`) — kept for any
+ *    persisted tool messages from before the V2 cutover.
  */
 function extractError(output: unknown): string | null {
 	if (!output || typeof output !== "object") return null;
 	const o = output as Record<string, unknown>;
+
+	// V2 envelope — the common path. `failed()` always sets `status`
+	// + `headline`; `errors[]` is per-row reasons (e.g. bulk caps).
+	const status = typeof o.status === "string" ? o.status : null;
+	const headline = typeof o.headline === "string" ? o.headline : null;
+	if (status && status !== "ok" && status !== "partial" && headline) {
+		const reasons = Array.isArray(o.errors)
+			? (o.errors as Array<{ item?: unknown; reason?: unknown }>)
+					.map((e) => {
+						const item = typeof e?.item === "string" ? e.item : "";
+						const reason = typeof e?.reason === "string" ? e.reason : "";
+						if (!item && !reason) return "";
+						if (!item) return `• ${reason}`;
+						if (!reason) return `• ${item}`;
+						return `• ${item}: ${reason}`;
+					})
+					.filter((line) => line.length > 0)
+					.join("\n")
+			: "";
+		// `repair` envelopes carry a self-correction hint; surface it
+		// so the user can see what the model would retry with.
+		const repair = o.repair as Record<string, unknown> | undefined;
+		const repairLine = repair && typeof repair.fix === "string" ? `\n\nFix: ${repair.fix}` : "";
+		return reasons ? `${headline}\n\n${reasons}${repairLine}` : `${headline}${repairLine}`;
+	}
+
+	// V1 legacy shapes.
 	if (typeof o.friendlyMarkdown === "string") return o.friendlyMarkdown;
 	if (typeof o.error === "string") return o.error;
 	// Zod-formatter shape.
@@ -136,12 +177,28 @@ function extractRawError(output: unknown): string | undefined {
 }
 
 export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
-	// Default COLLAPSED — clicking the row title reveals the rich block
-	// or raw JSON. Keeps the timeline compact by default; the user opens
-	// only the rows they care about.
+	// Default OPEN for rows that carry a real card (entity / entityList /
+	// note / task / diff / etc.); collapsed for text-only or JSON-fallback
+	// rows so the rail doesn't drown in noise. Locked 2026-06-06 (per the
+	// user) — earlier versions defaulted to collapsed across the board,
+	// which forced an extra click to see the entity card and made the
+	// "JSON instead of cards" screenshot a recurring confusion.
+	//
 	// NOTE: Hook MUST be called before any conditional return below to
-	// honour the Rules of Hooks (`useHookAtTopLevel`).
-	const [expanded, setExpanded] = useState(false);
+	// honour the Rules of Hooks (`useHookAtTopLevel`). Lazy initialiser
+	// reads `toolMessage.toolCalls[0].output` to decide.
+	const [expanded, setExpanded] = useState<boolean>(() => {
+		const tc0 = (
+			toolMessage.toolCalls as Array<{
+				output?: unknown;
+				status?: string;
+			}> | null
+		)?.[0];
+		if (!tc0 || tc0.status !== "completed") return false;
+		const display = extractToolDisplay(tc0.output);
+		if (!display || typeof display !== "object") return false;
+		return (display as ToolDisplay).kind !== "text";
+	});
 
 	const toolCalls = toolMessage.toolCalls as Array<{
 		name: string;

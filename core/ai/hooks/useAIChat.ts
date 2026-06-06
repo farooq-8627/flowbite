@@ -66,11 +66,6 @@ export function useAIChat(args: {
 	const conversations = useQuery(anyApi.ai.conversations.list, orgId ? { orgId } : "skip");
 
 	const sendMessage = useMutation(anyApi.ai.messages.sendMessage);
-	const confirmConfirmation = useMutation(anyApi.ai.messages.confirmConfirmation);
-	// Week 3.4 — alias matching AI SDK v6 cookbook surface. Frontend code
-	// should prefer this over `confirmConfirmation` going forward; the
-	// legacy mutation stays for the existing ChatConfirmation component.
-	const addToolApprovalResponse = useMutation(anyApi.ai.messages.addToolApprovalResponse);
 	const createConversation = useMutation(anyApi.ai.conversations.create);
 	const renameConversation = useMutation(anyApi.ai.conversations.rename);
 	const archiveConversation = useMutation(anyApi.ai.conversations.archive);
@@ -147,20 +142,7 @@ export function useAIChat(args: {
 		[messages],
 	);
 
-	const pendingConfirmation = useMemo(
-		() =>
-			(messages as Array<{ confirmationState?: string }> | undefined)?.find(
-				(m) => m.confirmationState === "pending",
-			) ?? null,
-		[messages],
-	);
-
-	async function send(
-		body: string,
-		model?: string,
-		provider?: string,
-		expandedLayers?: string[],
-	) {
+	async function send(body: string, model?: string, provider?: string) {
 		if (!orgId) return;
 		const routeCtx = args.autoContextLoad && args.routeContext ? args.routeContext : undefined;
 		return sendMessage({
@@ -181,7 +163,6 @@ export function useAIChat(args: {
 					}
 				: undefined,
 			pageContext: args.pageContext ?? undefined,
-			expandedLayers: expandedLayers ?? [],
 		});
 	}
 
@@ -194,10 +175,7 @@ export function useAIChat(args: {
 		>,
 		isStreaming,
 		isAwaitingApprovalOrStreaming,
-		pendingConfirmation,
 		send,
-		confirmConfirmation,
-		addToolApprovalResponse,
 		createConversation,
 		renameConversation,
 		archiveConversation,

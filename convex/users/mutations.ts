@@ -176,6 +176,12 @@ export const updatePreferences = authenticatedMutation({
 		// DASHBOARD_ACTIVITY_ROW_LIMIT_MAX] in the handler so a misbehaving
 		// caller can't write a 0 or a 1000.
 		dashboardActivityRowLimit: v.optional(v.number()),
+		// B.42 follow-up (2026-06-05) — per-user "last seen AI audit
+		// feed" timestamp. Drives the sidebar's unread-count badge on
+		// `AI → Audit feed`. Callers normally pass `Date.now()` to mean
+		// "I just opened the feed; clear the badge". The handler floors
+		// to ≥0 so a negative value can't trick the count comparison.
+		lastSeenAuditAt: v.optional(v.number()),
 	},
 	handler: async (ctx, args) => {
 		const existing = ctx.user.preferences ?? {};
@@ -203,6 +209,11 @@ export const updatePreferences = authenticatedMutation({
 				),
 			);
 			next.dashboardActivityRowLimit = clamped;
+		}
+		if (args.lastSeenAuditAt !== undefined) {
+			// Floor at 0 — negative or NaN inputs would defeat the
+			// `createdAt > lastSeenAuditAt` count comparison.
+			next.lastSeenAuditAt = Math.max(0, Math.floor(args.lastSeenAuditAt));
 		}
 
 		await ctx.db.patch(ctx.userId, {
@@ -341,113 +352,6 @@ export const updateAiAutonomyForAI = internalMutation({
 	},
 	handler: async (ctx, args) => {
 		return updateAiAutonomyImpl(ctx, args);
-	},
-});
-
-/**
- * Post-sprint addition (2026-05-26). Per-user "auto-approve" map for AI
- * tool calls. Each key corresponds to one `approvalCategory` declared by
- * tools in `convex/ai/toolRegistry.ts`. See `convex/_shared/aiApprovals.ts`
- * for the canonical category list, defaults, and hard-locked set.
- *
- * Permission gate: `ai.use` (every member can manage their OWN approval
- * preferences — they're personal, not workspace-wide).
- */
-async function updateAiApprovalsImpl(
-	ctx: import("../_generated/server").MutationCtx,
-	args: {
-		userId: import("../_generated/dataModel").Id<"users">;
-		create_record?: boolean;
-		update_record?: boolean;
-		delete_record?: boolean;
-		convert_record?: boolean;
-		send_message?: boolean;
-		manage_participants?: boolean;
-		schedule?: boolean;
-		files?: boolean;
-	},
-) {
-	const user = await ctx.db.get(args.userId);
-	if (!user || user.deletedAt !== undefined) {
-		throw new ConvexError("User not found.");
-	}
-	const existingPrefs = user.preferences ?? {};
-	const existingApprovals = existingPrefs.aiApprovals ?? {};
-	const patched: Record<string, boolean> = { ...existingApprovals };
-	const flags: Record<string, boolean | undefined> = {
-		create_record: args.create_record,
-		update_record: args.update_record,
-		delete_record: args.delete_record,
-		convert_record: args.convert_record,
-		send_message: args.send_message,
-		manage_participants: args.manage_participants,
-		schedule: args.schedule,
-		files: args.files,
-	};
-	for (const key of Object.keys(flags)) {
-		const value = flags[key];
-		if (value !== undefined) patched[key] = value;
-	}
-	await ctx.db.patch(args.userId, {
-		preferences: { ...existingPrefs, aiApprovals: patched },
-		updatedAt: Date.now(),
-	});
-	return { aiApprovals: patched };
-}
-
-export const updateAiApprovals = authenticatedMutation({
-	args: {
-		create_record: v.optional(v.boolean()),
-		update_record: v.optional(v.boolean()),
-		delete_record: v.optional(v.boolean()),
-		convert_record: v.optional(v.boolean()),
-		send_message: v.optional(v.boolean()),
-		manage_participants: v.optional(v.boolean()),
-		schedule: v.optional(v.boolean()),
-		files: v.optional(v.boolean()),
-	},
-	handler: async (ctx, args) => {
-		return updateAiApprovalsImpl(ctx, { ...args, userId: ctx.userId });
-	},
-});
-
-/** AI-callable internal twin (per AGENTS.md non-negotiable rule). */
-export const updateAiApprovalsForAI = internalMutation({
-	args: {
-		userId: v.id("users"),
-		create_record: v.optional(v.boolean()),
-		update_record: v.optional(v.boolean()),
-		delete_record: v.optional(v.boolean()),
-		convert_record: v.optional(v.boolean()),
-		send_message: v.optional(v.boolean()),
-		manage_participants: v.optional(v.boolean()),
-		schedule: v.optional(v.boolean()),
-		files: v.optional(v.boolean()),
-	},
-	handler: async (ctx, args) => {
-		return updateAiApprovalsImpl(ctx, args);
-	},
-});
-
-/**
- * Reset the user's auto-approve preferences to the defaults (i.e. clear
- * the explicit overrides — does NOT write the defaults into the row).
- * Surfaced via the "Reset to defaults" button in the settings UI.
- */
-export const resetAiApprovals = authenticatedMutation({
-	args: {},
-	handler: async (ctx) => {
-		const user = await ctx.db.get(ctx.userId);
-		if (!user || user.deletedAt !== undefined) {
-			throw new ConvexError("User not found.");
-		}
-		const existingPrefs = user.preferences ?? {};
-		const { aiApprovals: _drop, ...rest } = existingPrefs;
-		await ctx.db.patch(ctx.userId, {
-			preferences: rest,
-			updatedAt: Date.now(),
-		});
-		return { aiApprovals: {} };
 	},
 });
 

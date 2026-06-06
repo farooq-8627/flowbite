@@ -160,3 +160,146 @@ export const purgeOldTrash = internalMutation({
 		return { purged };
 	},
 });
+
+/**
+ * Physically remove a single soft-deleted row from trash. The AI
+ * `hard_delete_entity` capability (S10, irreversible + 2FA fenced)
+ * routes here. Refuses to operate on rows that haven't been soft-
+ * deleted yet — the user must trash via `softDelete*` first, then
+ * confirm the irreversible flush. That two-step contract keeps the
+ * blast radius small and matches the trash UI's "Restore vs Delete
+ * forever" affordance.
+ *
+ * Cascade:
+ *   - the entity row itself.
+ *   - every `fieldValues` row for that entity.
+ *   - every `entityTags` row for that entity.
+ *   - org-stats `*.total` decrement (open/active was already
+ *     decremented at soft-delete; total survives until hard-delete).
+ *
+ * Permission: `data.hardDelete` (Owner-only by default).
+ */
+async function hardDeleteImpl(
+	ctx: MutationCtx,
+	args: {
+		orgId: Id<"orgs">;
+		userId: Id<"users">;
+		entityType: "lead" | "contact" | "company" | "deal";
+		entityId: string;
+	},
+) {
+	const tableName =
+		args.entityType === "lead"
+			? "leads"
+			: args.entityType === "contact"
+				? "contacts"
+				: args.entityType === "company"
+					? "companies"
+					: "deals";
+
+	const row = await ctx.db.get(args.entityId as never);
+	if (!row || (row as { orgId?: string }).orgId !== args.orgId) {
+		throw new ConvexError(ERRORS.NOT_FOUND);
+	}
+	if ((row as { deletedAt?: number }).deletedAt === undefined) {
+		throw new ConvexError({
+			code: "NOT_IN_TRASH",
+			message: "Soft-delete the record first; hard-delete is only allowed from trash.",
+		});
+	}
+
+	// Field values + tag links for this entity.
+	const fieldRows = await ctx.db
+		.query("fieldValues")
+		.withIndex("by_entity", (q) =>
+			q
+				.eq("orgId", args.orgId)
+				.eq("entityType", args.entityType)
+				.eq("entityId", args.entityId),
+		)
+		.collect();
+	for (const fv of fieldRows) await ctx.db.delete(fv._id);
+
+	const tagRows = await ctx.db
+		.query("entityTags")
+		.withIndex("by_entity", (q) =>
+			q
+				.eq("orgId", args.orgId)
+				.eq("entityType", args.entityType)
+				.eq("entityId", args.entityId),
+		)
+		.collect();
+	for (const t of tagRows) await ctx.db.delete(t._id);
+
+	await ctx.db.delete(args.entityId as never);
+
+	switch (args.entityType) {
+		case "lead":
+			await applyOrgStat(ctx, args.orgId, "leads.total", -1);
+			break;
+		case "contact":
+			break;
+		case "company":
+			break;
+		case "deal":
+			await applyOrgStat(ctx, args.orgId, "deals.total", -1);
+			break;
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "deleted",
+		entityType: tableName,
+		entityId: args.entityId,
+		description: `Hard-deleted ${args.entityType} from trash`,
+	});
+
+	return { ok: true as const };
+}
+
+/**
+ * Public hard-delete — Owner-only via `data.hardDelete`. Surfaced from
+ * the trash UI's "Delete forever" button. Same shape as `restore` so
+ * callers can swap the verb without re-thinking args.
+ */
+export const hardDelete = orgMutation({
+	args: {
+		orgId: v.id("orgs"),
+		entityType: v.union(
+			v.literal("lead"),
+			v.literal("contact"),
+			v.literal("company"),
+			v.literal("deal"),
+		),
+		entityId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const member = await getOrgMember(ctx, args.orgId, ctx.userId);
+		if (!member || member.deletedAt !== undefined) {
+			throw new ConvexError(ERRORS.ORG_MEMBER_NOT_FOUND);
+		}
+		requireRole(member.permissions, "data.hardDelete");
+		return hardDeleteImpl(ctx, { ...args, userId: ctx.userId });
+	},
+});
+
+/** AI-callable internal twin. */
+export const hardDeleteForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		entityType: v.union(
+			v.literal("lead"),
+			v.literal("contact"),
+			v.literal("company"),
+			v.literal("deal"),
+		),
+		entityId: v.string(),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "data.hardDelete");
+		return hardDeleteImpl(ctx, args);
+	},
+});

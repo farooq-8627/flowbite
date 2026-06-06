@@ -11,14 +11,15 @@
  *   - We need SSR safety (Next.js App Router pre-renders on the server).
  *
  * Conventions:
- *   - All keys live under the `flowbite:ai:` prefix to avoid collisions.
+ *   - All keys live under the `orbitly:ai:` prefix to avoid collisions.
  *   - Reads are synchronous (after mount); writes are fire-and-forget.
  *   - Falls back to the supplied default whenever localStorage is unavailable
  *     (SSR, locked-down browsers, private mode quotas).
  */
 import { useCallback, useEffect, useState } from "react";
+import { APP_CONFIG } from "@/config/app-config";
 
-const PREFIX = "flowbite:ai:";
+const PREFIX = `${APP_CONFIG.storagePrefix}:ai:`;
 
 /** All persisted keys live here so Find Usages can locate them. */
 export const UI_PREF_KEYS = {

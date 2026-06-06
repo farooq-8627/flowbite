@@ -10,6 +10,12 @@
 
 ---
 
+# ✅ AI-TOOLING-BUILD-STAGES.md — ALL 18 STAGES SHIPPED 2026-06-03 → 2026-06-05
+
+S0–S17 complete — see `SHIPPED.md` for one-line per-stage rows. Source of truth is now historical: `AI-TOOLING-BUILD-STAGES.md` carries collapsed ✅ summaries; `AI-TOOLING-LAYER-PLAN.md` carries the locked architecture/"why" doc. New AI work tracks under `Future-Enhancements.md §B` (e.g. B.40 WhatsApp Templates Admin UI; B.41 Mode C external prerequisites; new MCP/REST card slots when an external integration surfaces a need).
+
+---
+
 # 🔴 P0 — DASHBOARD-V2-PLAN.md (active sprint, opened 2026-05-28)
 
 > **Source of truth.** `DASHBOARD-V2-PLAN.md` carries the full multi-stage scope (production references, verified findings, locked decisions, per-stage acceptance criteria). The rows below are pointers — they exist so anyone scanning `PENDING.md` sees the active dashboard work without flipping files. **Stage 0 (file-attach silent-drop hotfix), Stage 0.5 (auto-approve commit shim), Stage 1 (surface polish — AI Cockpit rename, Sparkles unification, weekly Generate-now, drop duplicated AI briefing KPI, currency-agnostic icon), Stage 2 (Sales Pipeline Panel rewrite — full-width tabbed Summary/Velocity/Forecast surface with HubSpot weighted forecast + 12-week sparkline + coverage-ratio dial; legacy `PipelineCard` + `PipelineVelocityCard` retired), Stage 3 (LiveTasksWidget + RecentActivityWidget — `<TasksDataTable>` extracted with a compact prop; legacy `<TasksCard>` 8-row capped list and `<TimelineActivityWidget>` retired from the dashboard renderer), Stage 4 (per-industry `dashboardLayout` slot — additive optional + new `<DashboardLayoutRenderer>` + 3 new analytical widgets `<InvoiceAgingWidget>` / `<PropertyFunnelWidget>` / `<ARRCohortWidget>` + 4 templates flipped: b2b-saas, freelancer, real-estate-global, productivity), Stage 6 (user-requested batch — bulk ops made free, generic `bulk_create_entities` + `bulk_create_tasks` with one approval card, approval cards render the real `<EntityCard>` via `EntityPreviewCard`, Today's-focus folded into the metric strip + `TodaySummaryCard` retired, motivating `DashboardEmptyState` on the pipeline panel, and a system-prompt explicitness block for limitations + completion summaries)**, and **Stage 7 (revenue hero + always-on pipeline + AI empty states + configurable activity/messages limits — `<RevenueEstimateHero>` consolidates the 4 deal KPI tiles into one bold weighted-revenue headline; `<SalesPipelinePanel>` renders unconditionally for every workspace via the panel's own empty state — gate dropped; `<AIPulseRibbon>` stuck-on-spinner bug fixed + strong "Your AI co-pilot is ready" empty card; `<DailyBriefingCard>` + `<WeeklyInsightCard>` empty states upgraded to value-prop + 3 bullets; `getDashboardStats` accepts `recentActivityLimit` (clamped [1,50], default 10) + `<RecentActivityWidget>` honours a `limit` prop)** all shipped — see `SHIPPED.md`.
@@ -114,22 +120,6 @@ All 21 gaps closed across A+B+C: critical runtime gaps G1–G3 + G15 shipped 202
 4. Per-org cost cap (workflow actions count against the org's AI budget).
 
 **Acceptance:** end-to-end test — insert an `activityLogs` row of type `deal.stage.moved` → workflow fires → an `aiInsights` row appears with the AI's analysis.
-
-### B.22 — Org-wide approval-policy override (Owner force-locks a category)
-
-**What it does:** today every member tunes their own per-user approval gate (`users.preferences.aiApprovals`). This card adds an Owner-level override (`orgs.settings.aiApprovalsOverride`) that force-locks specific categories org-wide regardless of user preference.
-
-**Why deferred:** per-user controls already ship; per-org override is a Phase 5 governance lever for teams of 10+.
-
-**Files:**
-- `convex/schema/identity.ts::orgs` — add `settings.aiApprovalsOverride` (8 booleans, optional).
-- `convex/_shared/aiApprovals.ts` — add `resolveEffectiveAutoApprove(userPref, orgOverride)`; if any override key is `true`, the user pref for that key is forced to `false` ("always ask wins").
-- `convex/ai/toolRegistry.ts::resolveNeedsApproval` — accept `orgOverride`.
-- `convex/ai/orchestrator/run.ts` — load `org.settings.aiApprovalsOverride` and pass through.
-- `core/platform/settings/components/groups/ai/AIApprovalsSection.tsx` — show "🔒 Org policy: always asks" badge on locked rows; suppress user toggle.
-- New `convex/orgs/mutations.ts:updateAiApprovalsOverride` (Owner+Admin gated on `org.manage`).
-
-**Acceptance:** 4 contract tests in `convex/ai/approvalGate.test.ts` — org-override `true` forces ask even when user opted in; `undefined` falls back to user pref; `false` is no-op (force-lock direction only); UI renders the locked badge.
 
 ---
 

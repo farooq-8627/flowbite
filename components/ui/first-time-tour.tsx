@@ -15,7 +15,7 @@
  * Persistence
  * ───────────
  * Completed/dismissed tours are stored in `localStorage` under
- * `flowbite:tours:seen` as a JSON array of tour IDs. The hook checks the array
+ * `orbitly:tours:seen` as a JSON array of tour IDs. The hook checks the array
  * on mount; if the tour is already in there, we render nothing. Dismissing
  * (Got it / Skip / × close) appends the ID and the tour disappears for good.
  *
@@ -65,6 +65,7 @@ import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
+import { APP_CONFIG } from "@/config/app-config";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ interface FirstTimeTourProps {
 
 // ─── Persistence helpers ─────────────────────────────────────────────────────
 
-const STORAGE_KEY = "flowbite:tours:seen";
+const STORAGE_KEY = `${APP_CONFIG.storagePrefix}:tours:seen`;
 
 export interface TourStorage {
 	hasSeen: (id: string) => boolean;

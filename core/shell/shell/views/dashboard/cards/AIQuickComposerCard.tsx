@@ -189,7 +189,6 @@ export function AIQuickComposerCard({ className }: AIQuickComposerCardProps) {
 							}
 						: undefined,
 					pageContext: pageContext ?? undefined,
-					expandedLayers: [],
 				});
 
 				// Reset draft + attachments + textarea.

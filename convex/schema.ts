@@ -1,5 +1,5 @@
 /**
- * Convex Schema — FlowBite B2B SaaS.
+ * Convex Schema — Orbitly B2B SaaS.
  *
  * Tables are split per domain under `convex/schema/` for maintainability.
  * To add or modify a table:
@@ -80,6 +80,10 @@ export default defineSchema({
 	files: system.files,
 	orgStats: system.orgStats,
 	contactSubmissions: system.contactSubmissions,
+	// S13 — per-agent integration channels (Twilio inbound/outbound, WhatsApp persona)
+	agentChannels: system.agentChannels,
+	// B.40 — WhatsApp message templates (built-in + per-org overrides)
+	whatsappTemplates: system.whatsappTemplates,
 
 	// AI (Phase 3)
 	aiConversations: ai.aiConversations,
@@ -99,4 +103,8 @@ export default defineSchema({
 	ephemeralDashboardCells: ai.ephemeralDashboardCells,
 	dashboardAnnotations: ai.dashboardAnnotations,
 	dealScores: ai.dealScores,
+	// S10 — short-lived 2FA step-up tokens for irreversible AI capabilities.
+	aiStepUpTokens: ai.aiStepUpTokens,
+	// S16 — long-lived API tokens for the MCP + REST projectors.
+	aiApiTokens: ai.aiApiTokens,
 });

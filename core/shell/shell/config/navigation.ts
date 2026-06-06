@@ -18,9 +18,11 @@ import {
 	Building2,
 	Handshake,
 	LayoutDashboard,
+	ListChecks,
 	ListTodo,
 	MessageSquare,
 	Palette,
+	ScrollText,
 	Settings,
 	StickyNote,
 	UserCircle,
@@ -117,6 +119,13 @@ export interface NavItem {
 	url: string;
 	icon: LucideIcon;
 	type?: EntityType;
+	/**
+	 * Stable identifier for cross-cutting decoration (e.g. an unread-
+	 * count badge attached by the sidebar). Optional — most items
+	 * never need it. Today only `"ai.audit"` is referenced
+	 * (B.42 follow-up — drives the audit-feed unread badge).
+	 */
+	id?: string;
 }
 
 export interface NavGroup {
@@ -130,11 +139,27 @@ export interface NavGroup {
  * @param orgSlug - Organization slug for URL prefix
  * @param modules - Org's module config (from DB or defaults)
  * @param locale - Current locale for label selection
+ * @param permissions - Current member's permission keys. Used to gate nav
+ *   entries that are tied to a specific permission (e.g. the AI Audit feed
+ *   only renders when the member holds `ai.audit.view`). An empty array
+ *   means "no permission-gated entries are surfaced", which is the safe
+ *   default while membership is still loading.
+ * @param aiFeatures - Per-org sidebar-visibility flags for AI surfaces.
+ *   When `auditFeed === false` the audit-feed entry is hidden even from
+ *   members who hold `ai.audit.view`; when `nextActions === false` the
+ *   next-actions entry is hidden even from members who hold
+ *   `ai.trace.view`. Undefined / missing = visible (preserves the
+ *   pre-flag behaviour). The server-side gate at
+ *   `convex/ai/queries/auditFeed.ts:listAuditFeed` (and the analogous
+ *   next-actions reader) STILL enforces the permission, so hiding a
+ *   sidebar entry never grants access — this is a UI-only switch.
  */
 export function buildNavigation(
 	orgSlug: string,
 	modules: ModuleConfig[] = DEFAULT_MODULES,
 	locale: string = "en",
+	permissions: ReadonlyArray<string> = [],
+	aiFeatures: { auditFeed?: boolean; nextActions?: boolean } | undefined = undefined,
 ): NavGroup[] {
 	// Dashboard is at /[orgSlug]/ — no /dashboard segment
 	const base = `/${orgSlug}`;
@@ -185,7 +210,49 @@ export function buildNavigation(
 		},
 	];
 
-	return [
+	// ── AI group — manager-facing observability surfaces.
+	//
+	// Today this group only contains the org-wide audit feed (B.39). Each
+	// entry declares the permission key it requires; the entry is only
+	// surfaced when the current member holds that key. The group itself is
+	// hidden when no entry is visible (e.g. plain Members on default roles).
+	//
+	// Cross-link: `convex/_shared/permissions/catalog.ts` is the SSOT for
+	// every key referenced here. The audit-feed query at
+	// `convex/ai/queries/auditFeed.ts:listAuditFeed` and the route
+	// `app/[locale]/(private)/[orgSlug]/ai/audit/page.tsx` enforce the same
+	// `ai.audit.view` key server-side, so removing the nav entry alone
+	// never grants access — the server is the source of truth.
+	const permissionSet = new Set(permissions);
+	// Per-org sidebar visibility for AI surfaces (B.42 follow-up).
+	// `=== false` is the explicit OFF check — `undefined` keeps the
+	// historical default of "visible" so existing workspaces don't
+	// silently lose surfaces when the slot is added.
+	const auditFeedVisible = aiFeatures?.auditFeed !== false;
+	const nextActionsVisible = aiFeatures?.nextActions !== false;
+	const aiItems: NavItem[] = [];
+	if (auditFeedVisible && permissionSet.has("ai.audit.view")) {
+		aiItems.push({
+			id: "ai.audit",
+			title: locale === "ar" ? "سجل الذكاء الاصطناعي" : "Audit feed",
+			url: `${base}/ai/audit`,
+			icon: ScrollText,
+		});
+	}
+	if (nextActionsVisible && permissionSet.has("ai.trace.view")) {
+		// Surface the proactive next-actions list alongside the audit feed.
+		// `ai.trace.view` is the broadest AI-observability key we already
+		// grant Members by default; using it here keeps "AI" visible to
+		// anyone who can already see at least one AI surface, instead of
+		// hiding the entire group from default Members.
+		aiItems.push({
+			title: locale === "ar" ? "الإجراءات التالية" : "Next actions",
+			url: `${base}/ai/next-actions`,
+			icon: ListChecks,
+		});
+	}
+
+	const groups: NavGroup[] = [
 		{
 			id: "overview",
 			items: [
@@ -207,6 +274,16 @@ export function buildNavigation(
 			items: crmItems,
 		},
 	];
+
+	if (aiItems.length > 0) {
+		groups.push({
+			id: "ai",
+			label: locale === "ar" ? "الذكاء الاصطناعي" : "AI",
+			items: aiItems,
+		});
+	}
+
+	return groups;
 }
 
 // --- Slug Resolution ---

@@ -10,7 +10,7 @@
  *
  *   • Identity     — Business Context blob + Memory (org + user)
  *   • Preferences  — default model, briefing toggle, auto-context
- *   • Approvals    — per-user auto-approve toggles for AI tool calls
+ *   • Autonomy     — org-policy autonomy toggles + per-role caps
  *   • Automation   — autonomy toggles + standing orders editor
  *   • API Keys     — BYOK key manager
  *   • Usage        — usage/quota stats + per-tool reliability card
@@ -18,8 +18,8 @@
  * Section IDs preserve their historical values (`ai.context`,
  * `ai.memory`, `ai.preferences`, `ai.automation`, `ai.byok`, `ai.usage`)
  * so existing topnav pill highlights, the search index, and any deep-
- * links keep working. The new tab "Approvals" introduces section ID
- * `ai.approvals` for completeness.
+ * links keep working. The new tab "Autonomy" introduces section ID
+ * `ai.autonomy` (replaces the deleted `ai.approvals`).
  *
  * The active tab is persisted in the URL as `?tab=<slug>` (via `nuqs`).
  * An unknown slug falls back to "identity".
@@ -38,8 +38,10 @@ import { cn } from "@/lib/utils";
 import { useSettingsForm } from "../../hooks/useSettingsForm";
 import { SettingsSaveButton } from "../shared/SettingsSaveButton";
 import { SettingsSection } from "../shared/SettingsSection";
-import { AIApprovalsSection } from "./ai/AIApprovalsSection";
+import { AIApiTokensSection } from "./ai/AIApiTokensSection";
 import { AIAutomationSection } from "./ai/AIAutomationSection";
+import { AIAutonomySection } from "./ai/AIAutonomySection";
+import { AIFeaturesSection } from "./ai/AIFeaturesSection";
 import { AIMemorySection } from "./ai/AIMemorySection";
 import { AIPreferencesSection } from "./ai/AIPreferencesSection";
 import { AIReliabilityCard } from "./ai/AIReliabilityCard";
@@ -48,15 +50,24 @@ import { ApiKeySection } from "./ai/ApiKeySection";
 
 // ─── Tabs ────────────────────────────────────────────────────────────────
 
-const AI_TABS = ["identity", "preferences", "approvals", "automation", "keys", "usage"] as const;
+const AI_TABS = [
+	"identity",
+	"preferences",
+	"autonomy",
+	"automation",
+	"keys",
+	"tokens",
+	"usage",
+] as const;
 type AITab = (typeof AI_TABS)[number];
 
 const TAB_LABELS: Record<AITab, string> = {
 	identity: "Identity",
 	preferences: "Preferences",
-	approvals: "Approvals",
+	autonomy: "Autonomy",
 	automation: "Automation",
 	keys: "API Keys",
+	tokens: "API Tokens",
 	usage: "Usage",
 };
 
@@ -64,14 +75,19 @@ const TAB_LABELS: Record<AITab, string> = {
  * Map every sub-tab to the canonical settings-section id. Preserves the
  * historical section ids so deep-links + topnav pill highlight + search
  * keywords keep working. The Identity tab maps to the Business Context
- * id (`ai.context`) since that's the headline editor on that tab.
+ * id (`ai.context`) since that's the headline editor on that tab. The
+ * Tokens tab (B.42 follow-up, 2026-06-05) introduces section id
+ * `ai.apiTokens` for the MCP/REST personal access token admin UI —
+ * separate from `ai.byok` (provider keys for chat models) so the two
+ * key-management surfaces stay legible.
  */
 const SECTION_ID_BY_TAB: Record<AITab, string> = {
 	identity: "ai.context",
 	preferences: "ai.preferences",
-	approvals: "ai.approvals",
+	autonomy: "ai.autonomy",
 	automation: "ai.automation",
 	keys: "ai.byok",
+	tokens: "ai.apiTokens",
 	usage: "ai.usage",
 };
 
@@ -234,10 +250,16 @@ export function AIGroup({ orgId }: { orgId: Id<"orgs"> }) {
 						<AIMemorySection orgId={orgId} />
 					</>
 				)}
-				{activeTab === "preferences" && <AIPreferencesSection />}
-				{activeTab === "approvals" && <AIApprovalsSection />}
+				{activeTab === "preferences" && (
+					<>
+						<AIPreferencesSection />
+						<AIFeaturesSection orgId={orgId} />
+					</>
+				)}
+				{activeTab === "autonomy" && <AIAutonomySection orgId={orgId} />}
 				{activeTab === "automation" && <AIAutomationSection orgId={orgId} />}
 				{activeTab === "keys" && <ApiKeySection orgId={orgId} />}
+				{activeTab === "tokens" && <AIApiTokensSection orgId={orgId} />}
 				{activeTab === "usage" && (
 					<>
 						<AIUsageSection orgId={orgId} />

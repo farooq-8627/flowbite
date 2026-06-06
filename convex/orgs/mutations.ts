@@ -767,6 +767,28 @@ const orgUpdateArgs = {
 			mockDataSeededAt: v.optional(v.number()),
 			mockDataDismissedAt: v.optional(v.number()),
 			deletionScheduledAt: v.optional(v.number()),
+			aiAutonomy: v.optional(
+				v.object({
+					autoActFromConversations: v.optional(v.boolean()),
+					destructiveRequires2FA: v.optional(v.boolean()),
+					whatsappAgentEnabled: v.optional(v.boolean()),
+					perRoleAutonomyCap: v.optional(
+						v.record(
+							v.string(),
+							v.union(v.literal("read"), v.literal("reversible"), v.literal("all")),
+						),
+					),
+				}),
+			),
+			// B.42 follow-up — per-org sidebar-visibility flags for AI
+			// surfaces. See `convex/schema/identity.ts` for the full
+			// rationale; this validator is the public-mutation mirror.
+			aiFeatures: v.optional(
+				v.object({
+					auditFeed: v.optional(v.boolean()),
+					nextActions: v.optional(v.boolean()),
+				}),
+			),
 		}),
 	),
 };
@@ -829,6 +851,18 @@ async function updateImpl(
 				fileUpload: {
 					...existing.fileUpload,
 					...newSettings.fileUpload,
+				},
+			}),
+			...(newSettings.aiAutonomy && {
+				aiAutonomy: {
+					...((existing as { aiAutonomy?: Record<string, unknown> }).aiAutonomy ?? {}),
+					...newSettings.aiAutonomy,
+				},
+			}),
+			...(newSettings.aiFeatures && {
+				aiFeatures: {
+					...((existing as { aiFeatures?: Record<string, unknown> }).aiFeatures ?? {}),
+					...newSettings.aiFeatures,
 				},
 			}),
 		};

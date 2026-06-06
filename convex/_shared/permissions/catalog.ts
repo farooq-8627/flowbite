@@ -676,6 +676,20 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		defaultRoles: ["Owner", "Admin", "Member"],
 	},
 	{
+		// B.39 — gates the audit-feed UI at `/{orgSlug}/ai/audit` and the
+		// underlying `listAuditFeed` query. The feed is org-wide ("what
+		// did the AI do today?") so we keep this manager-only by default;
+		// individual contributors get conversation-scoped trace via
+		// `ai.trace.view` instead. Members can be granted `ai.audit.view`
+		// on a custom role when an org wants broader transparency.
+		key: "ai.audit.view",
+		module: "ai",
+		label: "View AI audit feed",
+		description:
+			"Org-wide chronological feed of every AI capability call (filterable by source, status, risk, principal).",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
 		// Stage 8 — autonomous layer (`/SPRINT-PLAN.md` Stage 8). Gate
 		// for the standing-orders editor + per-user autonomy toggles +
 		// the standing-orders runner that fires LLM workflows on a
@@ -690,6 +704,39 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		label: "Manage AI automation",
 		description:
 			"Create, edit, and toggle AI standing orders + per-user autonomous-action allow-lists.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		// S15 — gates the master toggle for the WhatsApp Agent Profile
+		// (Mode C). Holding the key lets a member flip
+		// `org.settings.aiAutonomy.whatsappAgentEnabled` ON, which lets the
+		// `wa_profile` persona reply to customers from a `mode:"profile"`
+		// Twilio number. The persona itself runs under a per-org service
+		// member; this key is the human-side authorisation, NOT the
+		// persona's RBAC. Owner+Admin only by default — turning autonomous
+		// customer replies on is a high-blast-radius decision (compliance,
+		// brand, escalation routing) so we keep it manager-only.
+		key: "ai.whatsappAgent",
+		module: "ai",
+		label: "Manage WhatsApp AI persona",
+		description:
+			"Toggle the WhatsApp Agent Profile (Mode C) on/off; the persona stays OFF by default and only acts inside the per-conversation rate limit.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+
+	{
+		// S16 — gates issuing/listing/revoking the personal access tokens
+		// that power the MCP + REST projectors. A token executes under the
+		// ISSUING member's RBAC, so this permission is the meta-control:
+		// who in an org may turn one of THEIR seats into an external
+		// programmatic surface. Owner+Admin by default — a Member who
+		// holds it can mint a token but never escalates beyond what their
+		// own role can do (the registry's runCapability gate is the truth).
+		key: "ai.apiTokens.manage",
+		module: "ai",
+		label: "Manage AI API tokens",
+		description:
+			"Issue / list / revoke personal access tokens that authenticate this member's seat against the MCP + REST projectors. Tokens execute under the issuing member's RBAC.",
 		defaultRoles: ["Owner", "Admin"],
 	},
 
@@ -769,6 +816,32 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		module: "data",
 		label: "Export data",
 		description: "Generate a GDPR data bundle.",
+		defaultRoles: ["Owner"],
+	},
+	{
+		// S10 — destructive AI capabilities. The bulk/import/hard-delete
+		// AI capabilities all gate on this key + 2FA step-up + the channel
+		// allow-list (never WhatsApp). See `convex/ai/registry/gate.ts`.
+		key: "data.bulkActions",
+		module: "data",
+		label: "Run bulk data actions",
+		description:
+			"Bulk update / delete / close many records at once via the AI assistant. Owner / Admin only.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "data.import",
+		module: "data",
+		label: "Import data from CSV",
+		description: "Bulk-create records from a CSV upload via the AI assistant.",
+		defaultRoles: ["Owner", "Admin"],
+	},
+	{
+		key: "data.hardDelete",
+		module: "data",
+		label: "Permanently delete records",
+		description:
+			"Bypass trash and physically remove a record. Irreversible — Owner only by default.",
 		defaultRoles: ["Owner"],
 	},
 ] as const;

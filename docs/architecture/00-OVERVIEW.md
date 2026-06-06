@@ -97,7 +97,7 @@
 > Full structure in `.gemini/agents/base/folder-structure.md`
 
 ```
-flowbite/
+orbitly/
 ├── core/                         # Necessities (never plan-gated)
 │   ├── shell/                    # DashboardLayout, Sidebar, TopNav
 │   ├── entities/                 # 6 entity types + 4 scaffolds

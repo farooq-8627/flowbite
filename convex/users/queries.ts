@@ -123,8 +123,10 @@ export const getByEmail = internalQuery({
 
 /**
  * Internal query: get AI preferences for a user.
- * Used by processChat to resolve model defaults + the per-user AI tool
- * approval-gate map (see `convex/_shared/aiApprovals.ts`).
+ * Used by processChat to resolve model defaults. The legacy per-user
+ * approval-gate map (`aiApprovals`) was removed in S8 — autonomy is
+ * now org-policy via `org.settings.aiAutonomy` + the risk gate at
+ * `convex/ai/registry/gate.ts`.
  */
 export const getPreferences = internalQuery({
 	args: { userId: v.id("users") },
@@ -136,7 +138,6 @@ export const getPreferences = internalQuery({
 			aiDefaultProvider: user.preferences?.aiDefaultProvider ?? null,
 			aiAutoContextLoad: user.preferences?.aiAutoContextLoad ?? true,
 			aiBriefingEnabled: user.preferences?.aiBriefingEnabled ?? true,
-			aiApprovals: user.preferences?.aiApprovals ?? {},
 		};
 	},
 });

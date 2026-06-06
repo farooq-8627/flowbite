@@ -11,7 +11,7 @@ import { type Browser, type BrowserContext, chromium, type Page } from "@playwri
 const BASE_URL = "http://localhost:3000";
 const AUTH_FILE = path.join(__dirname, "../playwright/.auth/owner.json");
 
-const TEST_EMAIL = "e2e-owner@flowbite-test.local";
+const TEST_EMAIL = "e2e-owner@orbitly-test.local";
 const TEST_PASSWORD = "Test1234!E2E";
 const TEST_ORG_NAME = "E2E Test Org";
 

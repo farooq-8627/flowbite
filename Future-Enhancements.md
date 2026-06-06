@@ -39,15 +39,7 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 
 # A. Currently-disabled restrictions (re-enable before public launch)
 
-## A.6 — Auto-approve `files` (✅ implemented Stage 0.5 of `DASHBOARD-V2-PLAN.md`, 2026-05-28)
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | ✅ Implemented (Stage 0.5)                                                          |
-| Phase shipped   | Stage 0.5 of `DASHBOARD-V2-PLAN.md`                                                |
-| See             | `SHIPPED.md` "Stages 0.5 + 1 of `DASHBOARD-V2-PLAN.md`"                            |
-
-**Outcome.** `convex/ai/orchestrator/streamLoop.ts:wrapToolsForApprovalSanitisation` now closes the silent-drop class of bug at its source: when `resolveNeedsApproval(...) === false` for a propose-shape result AND a paired `commit_<tool>` is registered AND its zod schema accepts the propose payload's `confirmationPayload.args`, the wrapper looks up the commit via `getRegisteredTool` (same path `resume.ts` uses post-user-approval), parses the args, runs `commit.execute()`, and returns the commit's real summary to the SDK. `convex/_shared/aiApprovals.ts:AUTO_APPROVE_DEFAULTS.files` flipped back to `true`. Architectural deviation from the original plan: kept the auto-commit path as a registry lookup instead of adding a `commitFn?` field to every ToolDef — zero churn for tool authors, single code path with `resume.ts`. Verified by `convex/ai/approvalGate.test.ts` guards 14a / 14b / 14c.
+> A.1 / A.2 / A.3 / A.4 / A.5 / A.6 — all reinstated. See `SHIPPED.md`.
 
 ---
 
@@ -249,31 +241,6 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 
 ---
 
-## B.22 — Org-wide approval-policy override (Owner force-locks a category)
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | Backlog                                                                            |
-| Category        | RBAC / Governance                                                                  |
-| Phase to ship   | Phase 5                                                                            |
-| Owners          | `convex/_shared/aiApprovals.ts`, `convex/ai/toolRegistry.ts`, `core/platform/settings/components/groups/ai/AIApprovalsSection.tsx`, new `orgs.settings.aiApprovalsOverride` schema field |
-| Risk if skipped | Low. Per-user approval preferences ship today; each member tunes their own gate. The risk this card mitigates is "one risky member opts in to auto-approve `delete_record` and trashes records they shouldn't have." |
-| Files involved  | `convex/schema/identity.ts::orgs`, `convex/_shared/aiApprovals.ts`, `convex/ai/toolRegistry.ts`, `convex/ai/orchestrator/run.ts`, `core/platform/settings/components/groups/ai/AIApprovalsSection.tsx`, new `convex/orgs/mutations.ts:updateAiApprovalsOverride` |
-
-**Why we deferred.** Per-user controls ship the user value today. Per-org overrides need: a clear UX for "owner force-locks delete_record" (different visual state than "user-default ON"), a backfill story (existing user prefs that conflict with a newly-locked category), and an audit-log trail.
-
-**Implementation sketch.**
-1. Schema: extend `orgs.settings` with the optional override map. No migration — additive optional field.
-2. `resolveEffectiveAutoApprove` becomes `(userPref, orgOverride)` — for each category, if `orgOverride[k] === true`, return `false`; else fall back to user pref / default.
-3. `run.ts` calls `ctx.runQuery("orgs/queries:get", {orgId})` and passes `org.settings.aiApprovalsOverride` through.
-4. UI: each row in `AIApprovalsSection` checks the override; if locked, render disabled Switch with a "🔒 Locked by org policy" subtitle.
-5. Owner-only editor card under Settings → AI → Approvals → "Workspace overrides" (collapsed by default).
-6. Activity log entry on every override change.
-
-**Verification.** Add 4 contract tests to `convex/ai/approvalGate.test.ts`: org-override `true` forces ask even when user opted in; `undefined` falls back to user pref; `false` is a no-op (we only support force-lock direction); UI renders the locked badge correctly.
-
----
-
 ## B.24 — Dashboard industry-awareness pass (templates' default widget set)
 
 | Field           | Value                                                                              |
@@ -323,12 +290,6 @@ Each entry is a self-contained card. The reader should be able to re-enable / im
 **Implementation sketch.** Reuse `sendChatPrefill` for AI-delegating shortcuts; reuse the existing per-row mutation hooks for direct-action shortcuts. RTL-safe + `rounded-[var(--radius)]` everywhere. Per-widget `aria-label` on every shortcut button.
 
 **Verification.** 8 vitest cases (one per widget) — render the widget in both states and assert the shortcut buttons are present + clickable.
-
----
-
-## B.26 — `AIQuickComposerCard` file attach (lazy-create-on-attach UX) — ✅ Implemented 2026-05-27
-
-Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now embeds `<ChatAttachButton>` directly, with `ensureConversation` callback for lazy-create and `[file:<id> "name"]` manifest-line prepending on send. Attachment chips render above the textarea with per-file remove. Closed without extracting a separate `uploadAttachments.ts` helper — the existing `ChatAttachButton` was reusable as-is. See `core/shell/shell/views/dashboard/cards/AIQuickComposerCard.tsx`.
 
 ---
 
@@ -655,6 +616,93 @@ Shipped in the Dashboard AI fixes pass on 2026-05-27. `AIQuickComposerCard` now 
 
 ---
 
+## B.41 — WhatsApp Agent Profile (Mode C) external prerequisites
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Operator setup task (NOT a code deferral)                                          |
+| Category        | External integration prerequisite                                                  |
+| Phase to ship   | Whenever an org wants to enable Mode C autonomous customer replies                |
+| Owners          | Org operator (out of scope for our codebase)                                       |
+| Risk if skipped | None — Mode C ships OFF by default. Until the operator completes (1)+(2)+(3), the persona is structurally inert: the master switch is off, no `agentChannels` row maps to a profile-mode number, and `runWaProfileReply` returns `wa_profile_disabled`/`wa_profile_not_seeded` envelopes that the webhook 200s without acting. |
+| Files involved  | (none in this repo) — this card just records the runbook so an enabling operator doesn't get caught by external prerequisites at flip time |
+
+**Why this card exists.** S15 (shipped 2026-06-05) lands every code-side guardrail for Mode C — the `wa_profile` principal, the constrained allow-list, the per-conversation rate limit, the `ai.whatsappAgent` permission, the `whatsappAgentEnabled` master switch in `org.settings.aiAutonomy`, the Twilio inbound dispatch, and the `escalate_to_agent` capability. None of that is enough on its own — turning the persona on requires three external steps that live outside our codebase.
+
+**The three external prerequisites:**
+
+1. **WhatsApp Business approval for the sender number.** Twilio's WhatsApp Business policy requires the sending number to be verified + provisioned for sending business messages. The org operator submits this via Meta's Business Manager + Twilio Console. Without approval, even a perfect Mode C config will surface Twilio errors at send time.
+
+2. **Twilio sender configured with `mode:"profile"` agentChannels row.** The operator seeds an `agentChannels` row from the Convex dashboard (no in-app surface yet; manual data entry):
+   ```jsonc
+   { "orgId":"<id>", "userId":"<service member id>", "provider":"twilio",
+     "phoneNumber":"+E.164",  // bare phone, no `whatsapp:` prefix
+     "mode":"profile", "enabled":true, "createdAt":<now>, "updatedAt":<now> }
+   ```
+   The `userId` MUST point at a per-org service member with permissions: `messages.send`, `ai.use`, plus whatever capture/escalation perms the persona's allow-list needs (`leads.create`, `tasks.create`, `notes.create`). Without `userId` the inbound webhook returns `unauthorized:channel_not_found` (fail closed).
+
+3. **Master switch on.** From the dashboard's Settings → AI → Autonomy, an Owner/Admin (the `ai.whatsappAgent` permission gates this) flips `whatsappAgentEnabled` to `true`. The kill-switch is at-run inside `runWaProfileReplyEngine`, so flipping it back to `false` stops new replies on the next inbound — no in-flight cleanup needed.
+
+**Acceptance for "Mode C live".** A simulated customer message to a profile-mode Twilio number gets an AI reply within 30s; an inbound saying "I want to speak to a person" triggers `escalate_to_agent` + a notification to the lead's `assignedTo` (or shared-queue fallback); flipping the master switch off mid-session stops all subsequent replies; the persona never lists or invokes a destructive tool (verified by `convex/ai/channels/persona.test.ts` — every destructive cap is structurally absent from the registry passed to `runAgent`).
+
+**Verification (already done by code).** `pnpm test convex/ai/channels/persona.test.ts` — 10 tests pass. `pnpm build` — `/whatsapp/twilio` route + the persona action are bundled. The `agentChannels` schema row + `aiAutonomy.whatsappAgentEnabled` field are both deployed via the existing `pnpm exec convex dev --once` flow.
+
+---
+
+## B.42 — Remove `users.preferences.aiApprovals` tombstone slot from schema once the migration has run on prod
+
+| Field           | Value                                                                              |
+|-----------------|------------------------------------------------------------------------------------|
+| Status          | Backlog                                                                            |
+| Category        | Schema cleanup                                                                     |
+| Phase to ship   | After `npx convex run _migrations/2026_06_04_approvalsToAutonomy:run '{}'` has run on prod (≥ 1 prod release after 2026-06-04) |
+| Owners          | `convex/schema/identity.ts`                                                        |
+| Risk if skipped | Low — slot is a tombstone, no production code reads or writes it. Keeping it costs a few bytes per user row + a validator branch per `users` write; removing it shrinks the schema validator + the `Doc<"users">` TS type. |
+| Files involved  | `convex/schema/identity.ts:148-162` (the `aiApprovals: v.optional(v.object({...}))` block + its surrounding TOMBSTONE doc-comment) |
+
+**Why this card exists (history captured 2026-06-05).** S8 of the AI tooling rebuild (shipped 2026-06-03) replaced the legacy per-user `users.preferences.aiApprovals` map with `org.settings.aiAutonomy` (org-policy autonomy + the V2 risk gate at `convex/ai/registry/gate.ts`). The `2026_06_04_approvalsToAutonomy` migration (idempotent, dryRun-supported) strips the slot from every existing user row + seeds the new org-level defaults (`autoActFromConversations:true`, `destructiveRequires2FA:true`, `whatsappAgentEnabled:false`). The schema author kept the slot validator in place as a TOMBSTONE so existing rows that haven't been touched by the migration yet still pass schema validation (Convex rejects writes that introduce unrecognised fields, but `optional` slots in the validator just mean "not required at write time" — they don't block reads of pre-existing rows). The `docs/ai-implementation-audit.md` finding #5 (2026-06-05) re-flagged this as "stale V1 ref" — it is NOT stale; it's a deliberate tombstone, and the audit was outdated. No production code reads it (`grep "preferences\.aiApprovals" convex/**` returns only the migration file, the migration test, and a doc-comment in `users/queries.ts`).
+
+**Verification that today's state is correct.**
+- `grep "preferences\.aiApprovals" convex/**` returns only:
+  - `convex/aiAutonomy.test.ts` (8 hits — testing the migration that strips it)
+  - `convex/_migrations/2026_06_04_approvalsToAutonomy.ts` (4 hits — the migration itself)
+  - `convex/users/queries.ts` (1 hit — doc-comment only, no code read)
+- `convex/users/queries.ts::getPreferences` returns only `{aiDefaultModel, aiDefaultProvider, aiAutoContextLoad, aiBriefingEnabled}` — no `aiApprovals` read path remains.
+
+**Benefits when reinstated (= the field is removed).**
+- Smaller schema validator — one fewer optional `v.object({...})` to walk on every `users` write.
+- Cleaner `Doc<"users">` type — `preferences.aiApprovals` stops surfacing in IDE autocomplete + type errors when adding new preference slots.
+- Removes any chance of a future session accidentally reviving the field (the "oh, the schema already supports this — let me wire it back up" footgun).
+
+**Implementation sketch when re-enabling.**
+1. Confirm the migration has run on prod: `npx convex run _migrations/2026_06_04_approvalsToAutonomy:run '{"dryRun": true}'` should report `users.patched: 0` and `orgs.patched: 0`. If anything > 0, run the real one (`'{}'`) first and wait one prod release before continuing.
+2. Drop the `aiApprovals: v.optional(v.object({...}))` block from `convex/schema/identity.ts` (lines ~148–162 + the TOMBSTONE doc-comment above it).
+3. Drop the corresponding test seeding in `convex/aiAutonomy.test.ts` (the `aiApprovals: { create_record: true, files: false }` patches in guards 4 + 5) — the migration's job is done, those tests can stop simulating the legacy slot. (Keep guards 1–3 — they cover the `aiAutonomy` slot which IS live.)
+4. Drop the migration file `convex/_migrations/2026_06_04_approvalsToAutonomy.ts` — it's served its purpose.
+5. Optionally delete the tombstone reference in `convex/users/queries.ts::getPreferences` doc-comment (purely cosmetic).
+6. Run `pnpm typecheck` + `pnpm exec biome check .` + `pnpm test` + `pnpm build`.
+
+**Verification.**
+- Convex schema validator passes (every existing user's `preferences` blob still satisfies the validator without the `aiApprovals` slot — they don't have it any more thanks to the migration).
+- `grep -rn "aiApprovals" convex/` returns 0 results outside `convex/_migrations/` history (after the migration file delete).
+- AI tool autonomy keeps working — gate is at `convex/ai/registry/gate.ts` reading `org.settings.aiAutonomy`, not `users.preferences.aiApprovals`.
+
+---
+
+## ✅ B.43 — `bulk_create_entities` + `bulk_create_tasks` ported to V2 — SHIPPED 2026-06-06
+
+V2 capabilities live at `convex/crm/shared/bulk/capabilities.ts` (added to `BULK_CAPABILITIES`, `irreversible` risk so they inherit the 2FA + WhatsApp-block fence). `bulk_create_entities` accepts `{ entityType, rows[] }` (max 50), per-row `buildCreateArgs()` builds the right `createForAI` payload (lead/contact `displayName`, company `name`, deal `title`), `customFields` passed through for leads (already widened by audit Finding #3). `bulk_create_tasks` loops `crm/shared/tasks/mutations:createForAI` (max 50). Both emit `kind:"entityList"` display so the chat timeline renders chips. Group playbook updated to mention create. Audit Finding #3 routing target now exists; system-prompt seed/sample routing is a small-change follow-up tracked separately if needed. See `SHIPPED.md` 2026-06-06 row.
+
+---
+
+## ✅ B.44 — Surface native web-search citations + grounding metadata in the chat timeline — SHIPPED 2026-06-06
+
+Sources rail under settled assistant turns (numbered chips → external link, hostname fallback when title missing, snippet line-clamp-2). Backend captures Firecrawl `web_search` envelopes during the stream + Google `providerMetadata.google.groundingMetadata` post-stream, dedupes by URL, persists to `aiMessages.metadata.citations`. Schema add was additive (`v.optional(v.any())`) so no migration. Files: `convex/schema/ai.ts`, `convex/ai/runtime/host.ts` (Citation type + extractors + dedupe), `convex/ai/messages.ts::patchAssistantBody`, `convex/ai/orchestrator/run.ts` (settle forwards metadata), `core/ai/components/SourcesRail.tsx` (NEW), `core/ai/components/AssistantTurn.tsx` (extractCitations + render). See `SHIPPED.md` 2026-06-06 entry "AI agent loop headroom + B.44 web-search citations rail + entity-label-aware tool calls".
+
+---
+
+---
+
 # C. Audit-flagged but not yet roadmapped
 
 ## C.1 — Tree-shaped conversations (Attio Problem 1)
@@ -668,20 +716,6 @@ Week 1 baseline scorer (5 tests) is the kernel. Full version: per-variant sweeps
 ## C.3 — Multi-tenancy: cross-org platform-admin AI
 
 Reserved for super-admin operations (e.g. "show me churn risk across all paying orgs", "list orgs with > 80% plan usage"). Schema is multi-tenant from day 1; the AI layer hasn't yet been pointed at the multi-org view. **Track separately under `PLATFORM-OWNER-PANEL.md` — that doc is the canonical spec for this whole surface.**
-
-## C.4 — Audit every twoStep tool's propose-vs-commit schema diff
-
-| Field           | Value                                                                              |
-|-----------------|------------------------------------------------------------------------------------|
-| Status          | Backlog                                                                            |
-| Category        | AI / reliability                                                                   |
-| Phase to ship   | Phase 4 — alongside the LemonSqueezy billing wall pass                             |
-| Owners          | `convex/ai/tools/*`, especially the `commit_*` halves                              |
-| Risk if skipped | Currently mitigated by `resume.ts` zod-strip (every commit safely drops unknown fields). But silent data loss is still possible — e.g. a propose carries `notes` and the commit ignores it. |
-
-**Why this card exists.** The 2026-05-24 incident in `convex/ai/tools/crud/createLead.ts` was the first symptom — the propose carried `notes`, the commit dropped it, and the underlying mutation rejected it as an unknown arg. Same shape risk exists for any future twoStep that adds preview-only fields to its propose schema.
-
-**Implementation sketch.** Add a startup check that diffs each `propose_X.schema` against `commit_X.schema` and warns (not fails) when propose has fields commit doesn't. The strip-on-resume already guarantees correctness at runtime; this would catch the silent-loss case at the agent-author moment.
 
 ---
 
@@ -775,15 +809,10 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 
 # Additions log — for tracking deferral cadence
 
-> When you defer / disable / weaken something, add the card to the right section above (A / B / C / D / E / F / G), then add a one-line entry below with date + category. Older log rows have been moved to `SHIPPED.md` Additions log when the underlying card shipped — keeping only currently-pending entries here.
+> When you defer / disable / weaken something, add the card to the right section above (A / B / C / D / E / F / G / H), then add a one-line entry below with date + category. Rows for cards that have shipped get removed when the card is deleted from this file (they live in `SHIPPED.md` then).
 
 | Date       | Category | Title                                                                | Section |
 |------------|----------|----------------------------------------------------------------------|---------|
-| 2026-05-23 | Model gating  | A.1 — Plan-tier gating in `getModel()`                          | A       |
-| 2026-05-23 | Tool surface  | A.2 — Per-tool `requiredCapability: "premium"` gate             | A       |
-| 2026-05-23 | Cost          | A.3 — `stepCountIs` cap (raised to 30 for all models)           | A       |
-| 2026-05-23 | Prompt        | A.4 — Small-model "Capability Notice" no longer enforced        | A       |
-| 2026-05-23 | Billing       | A.5 — `enforcePlanLimit` defaults loose during testing          | A       |
 | 2026-05-29 | Tool surface  | A.7 — Bulk tools exempted from premium model-tier gate (product decision) | A       |
 | 2026-05-23 | Engagement    | B.1 — Streak widget (deferred from Phase 3A → Phase 4)          | B       |
 | 2026-05-23 | UX            | B.2 — Cmd+K global command palette                              | B       |
@@ -794,34 +823,24 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | 2026-05-24 | UX            | B.13 — CSV mapping editor in the preview card                   | B       |
 | 2026-05-24 | AI            | B.20 — Cross-conversation AI learning (embedding-based memory)  | B       |
 | 2026-05-24 | AI            | B.21 — AI workflow integration (Inngest + activityLogs bus)     | B       |
-| 2026-05-24 | AI (audit)    | C.4 — Audit propose-vs-commit schema diff for every twoStep     | C       |
-| 2026-05-26 | RBAC          | B.22 — Org-wide approval-policy override                        | B       |
 | 2026-05-26 | UX            | B.24 — Dashboard industry-awareness pass                        | B       |
 | 2026-05-26 | UX            | B.25 — Per-widget action shortcuts                              | B       |
-| 2026-05-26 | UX            | B.26 — `AIQuickComposerCard` file attach (✅ shipped 2026-05-27) | B       |
 | 2026-05-26 | AI (gap)      | G-1 .. G-7 — 7 P3 AI tool gaps from coverage audit              | E       |
-| 2026-05-27 | Doc cleanup   | This file rewritten — every shipped row migrated to SHIPPED.md  | —       |
-| 2026-05-27 | Module polish | H.1 .. H.12 — per-module deferred polish migrated from 17 STATE.md files (then STATE.md files deleted) | H |
-| 2026-05-27 | Dashboard AI  | Dashboard AI fixes + Platform AI Keys owner panel (chatPrefill, AIQuickComposer rewrite + file uploader, ProactiveWorkspaceSection refresh button, useTaskMutations aiNextActions patch, briefing BYOK fallback + error rows, `platformAiKeys` table + `/xowner/ai-keys` UI) | — |
-| 2026-05-27 | AI Pulse      | Reactive AI Pulse — event-driven rebuild on every relevant lead/deal/task mutation (replaces cron-only model). New `nextActionsTrigger.ts` helper + `aiNextActionsCache.ts` shared optimistic-patch utility | — |
 | 2026-05-27 | Templates     | B.27 — Per-org "Re-apply latest template" action                | B       |
 | 2026-05-27 | Templates / AI| B.28 — AI-generated custom industry templates from chat        | B       |
 | 2026-05-27 | Owner UX      | B.29 — Mock-data editor v2 (cross-reference dropdown editor)    | B       |
 | 2026-05-27 | Data safety   | B.30 — Template versioning + restore-prior-version              | B       |
 | 2026-05-27 | Owner panel   | B.31 — Platform Owner Panel Tier B/C deferrals (10 items)       | B       |
-| 2026-05-27 | API surface   | F.1 — `aiNextActions.reasonCode` literals still `reminder_*` (G10 of P1.6.A — deferred for ABI continuity) | F       |
-| 2026-05-27 | Billing       | A.1 / A.2 / A.3 / A.4 / A.5 — all 5 testing-phase restrictions reinstated + LemonSqueezy upgrade flow shipped (P0.1 + P0.2 wave). See `SHIPPED.md`. | A → ✅ |
-| 2026-05-28 | AI / approval | A.6 — Auto-approve `files` flipped to default-OFF (Stage 0 of `DASHBOARD-V2-PLAN.md`); restore via Stage 0.5 commit-shim. | A       |
-| 2026-05-28 | AI / approval | A.6 — ✅ Implemented Stage 0.5 of `DASHBOARD-V2-PLAN.md` — `wrapToolsForApprovalSanitisation` auto-commit shim restored `AUTO_APPROVE_DEFAULTS.files = true`. See `SHIPPED.md`. | A → ✅ |
-| 2026-05-28 | Dashboard UX  | Stage 1 of `DASHBOARD-V2-PLAN.md` — surface polish (AI Cockpit rename, Sparkles/AIMark unification, weekly Generate-now, drop duplicated AI briefing KPI, currency-agnostic icon). See `SHIPPED.md`. | — |
-| 2026-05-29 | Dashboard UX  | Stage 2 of `DASHBOARD-V2-PLAN.md` — Sales Pipeline Panel rewrite (Summary / Velocity / Forecast tabs replace `PipelineCard` + `PipelineVelocityCard`; HubSpot-weighted forecast + 12-week sparkline + coverage-ratio dial; idempotent migration renames `pipeline.velocity` → `pipeline.salesPanel` across orgs + 9 templates). See `SHIPPED.md`. | — |
-| 2026-05-29 | Process       | AGENTS.md RULE 5 added — Convex MCP tools + `npx convex run` hang in this agent runtime; agent emits commands for the user to run locally. | — |
-| 2026-05-29 | Dashboard UX  | Stage 5 of `DASHBOARD-V2-PLAN.md` — AI writes into the UI (5 AI tools + per-user dashboard layout override + 3 new tables + 3 crons + AIPinnedRow + annotation chips). See `SHIPPED.md`. | — |
-| 2026-05-29 | Dashboard UX  | B.32 — Drag-to-reorder for dashboard panels (Stage 5 deferral; `Pin to my dashboard` button covers the AI-write case for v1). | B |
-| 2026-05-29 | Dashboard UX  | B.33 — Per-deal score-dot UX in the Deals widget (Stage 5 deferral; score still accessible via `score_deal` + `explain_deal_score` AI tools). | B |
-| 2026-05-29 | AI tool       | B.34 — `revise_forecast` AI tool deferred (covered by `analyze_metric` in the analytics layer until users explicitly ask for the diff-preview pattern). | B |
-| 2026-05-31 | Abuse prevention | B.36 — Contact-form endpoint hardening (per-IP rate-limit + CAPTCHA) deferred; honeypot + zod validation cover casual spam at launch. | B |
-| 2026-05-31 | Marketing / SEO | B.37 — Landing multi-page expansion (`/pricing`, `/for-*`, `/vs/*`, blog, changelog) + `app.{domain}` split deferred; single root page ships first. | B |
+| 2026-05-27 | Module polish | H.1 .. H.12 — per-module deferred polish migrated from 17 STATE.md files | H |
+| 2026-05-27 | API surface   | F.1 — `aiNextActions.reasonCode` literals still `reminder_*` (deferred for ABI continuity) | F       |
+| 2026-05-29 | Dashboard UX  | B.32 — Drag-to-reorder for dashboard panels (Stage 5 deferral; `Pin to my dashboard` covers v1) | B |
+| 2026-05-29 | Dashboard UX  | B.33 — Per-deal score-dot UX in the Deals widget (Stage 5 deferral) | B |
+| 2026-05-29 | AI tool       | B.34 — `revise_forecast` AI tool deferred (covered by `analyze_metric`) | B |
+| 2026-05-30 | Schema cleanup| B.35 — Remove `mockDataDismissedAt` schema field after 2026-05-30 migration runs on prod | B |
+| 2026-05-31 | Abuse prevention | B.36 — Contact-form endpoint hardening (per-IP rate-limit + CAPTCHA) | B |
+| 2026-05-31 | Marketing / SEO | B.37 — Landing multi-page expansion (`/pricing`, `/for-*`, `/vs/*`, blog, changelog) + `app.{domain}` split | B |
+| 2026-06-05 | Operator setup | B.41 — WhatsApp Agent Profile (Mode C) external prerequisites: WhatsApp Business approval + `agentChannels` row seed + master-switch flip | B |
+| 2026-06-05 | Schema cleanup | B.42 — Remove `users.preferences.aiApprovals` tombstone slot from `convex/schema/identity.ts` once `2026_06_04_approvalsToAutonomy` migration has run on prod | B |
 
 ---
 
@@ -836,7 +855,6 @@ Reserved for super-admin operations (e.g. "show me churn risk across all paying 
 | Status | Backlog |
 | Files involved | `core/auth/components/SignUpPage.tsx`, `core/auth/components/VerifyEmailPage.tsx` |
 
-- ✅ **Wire email verification into SignUp flow** — shipped 2026-05-30. `convex/ResendOTP.ts` + `verify: ResendOTP` on the `Password({...})` config; `SignUpPage`/`SignInPage` branch on `signIn(...).then(r => r.signingIn === false)` to route through `/verify-email?email=...`. See SHIPPED.md "Auth hardening — signup OTP verification + …".
 - **OAuth-specific error handling** (LOW) — currently the OAuth path shows a generic toast (`OAuthAccountNotLinked`); could be more specific (account-already-linked, provider-revoked, etc.).
 
 ## H.2 — Shell topnav (Phase 2)

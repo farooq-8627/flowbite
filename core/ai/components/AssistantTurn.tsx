@@ -17,19 +17,21 @@
  *
  *   [📋][🔄]                                  3 min ago
  *
- * Pending two-step confirmations (a tool message with
- * `confirmationState === "pending"`) render INSIDE the timeline as a
- * row that includes the ChatConfirmation card body — so the approve /
- * reject buttons appear directly under the row title where the user is
- * already looking.
+ * S10: when an irreversible AI capability returns `status: "needs_step_up"`
+ * the wrapper's envelope arrives as a tool message; we surface a
+ * `<StepUpCard>` directly above the assistant prose so the user can
+ * confirm twice and re-run the action with a 2FA token. The legacy V1
+ * propose/commit `<ChatConfirmation>` was deleted in S10 — this file
+ * is the only confirmation surface for V2 chat.
  */
-import type { Id } from "@/convex/_generated/dataModel";
+import type { Doc } from "@/convex/_generated/dataModel";
 import type { AIMessage } from "../types";
 import { AIMark } from "./AIMark";
-import { ChatConfirmation } from "./ChatConfirmation";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { Markdown } from "./markdown/Markdown";
 import { type ThinkingState, ThinkingTimeline } from "./reasoning/ThinkingTimeline";
+import { type Citation, SourcesRail } from "./SourcesRail";
+import { StepUpCard } from "./StepUpCard";
 
 interface Props {
 	assistant: AIMessage;
@@ -53,6 +55,75 @@ function TimestampLabel({ ts }: { ts: number }) {
 	);
 }
 
+/**
+ * Walk an assistant row's `toolCalls` field and pull out the FIRST
+ * step-up envelope, if any. The envelope is the one the V2 wrapper
+ * returned when an irreversible capability fired without a token. We
+ * trust the per-call `output.status` shape produced by `runCapability`
+ * — anything else is ignored.
+ */
+function findStepUpRequest(assistant: Doc<"aiMessages">): {
+	capability: string;
+	args: Record<string, unknown>;
+	headline: string;
+} | null {
+	const toolCalls = (assistant as { toolCalls?: unknown }).toolCalls;
+	if (!Array.isArray(toolCalls)) return null;
+	for (const call of toolCalls) {
+		if (!call || typeof call !== "object") continue;
+		const c = call as { name?: unknown; input?: unknown; output?: unknown };
+		const out = c.output;
+		if (!out || typeof out !== "object") continue;
+		const status = (out as { status?: unknown }).status;
+		if (status !== "needs_step_up") continue;
+		const headline =
+			typeof (out as { headline?: unknown }).headline === "string"
+				? (out as { headline: string }).headline
+				: "Confirm to proceed.";
+		const name = typeof c.name === "string" ? c.name : "";
+		const argsObj =
+			c.input && typeof c.input === "object" ? (c.input as Record<string, unknown>) : {};
+		if (!name) continue;
+		return { capability: name, args: argsObj, headline };
+	}
+	return null;
+}
+
+/**
+ * B.44 — extract grounding citations the host wrote into
+ * `aiMessages.metadata.citations`. Older messages (pre-B.44) lack the
+ * field entirely, in which case we return an empty array and the
+ * `<SourcesRail>` renders nothing. Defensive shape-checks because the
+ * field is `v.optional(v.any())` and we never want a malformed value
+ * to crash the chat UI.
+ */
+function extractCitations(assistant: Doc<"aiMessages">): Citation[] {
+	const meta = (assistant as { metadata?: unknown }).metadata;
+	if (!meta || typeof meta !== "object") return [];
+	const raw = (meta as { citations?: unknown }).citations;
+	if (!Array.isArray(raw)) return [];
+	const out: Citation[] = [];
+	for (const c of raw) {
+		if (!c || typeof c !== "object") continue;
+		const url = (c as { url?: unknown }).url;
+		if (typeof url !== "string" || url.length === 0) continue;
+		const title = (c as { title?: unknown }).title;
+		const snippet = (c as { snippet?: unknown }).snippet;
+		const source = (c as { source?: unknown }).source;
+		const sourceTag: Citation["source"] =
+			source === "anthropic" || source === "openai" || source === "google"
+				? source
+				: "firecrawl";
+		out.push({
+			url,
+			...(typeof title === "string" && title.length > 0 ? { title } : {}),
+			...(typeof snippet === "string" && snippet.length > 0 ? { snippet } : {}),
+			source: sourceTag,
+		});
+	}
+	return out;
+}
+
 export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 	const thinkingState = (assistant.thinkingState ?? "done") as ThinkingState;
 	const isLive =
@@ -62,17 +133,30 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 	const hasContent = typeof assistant.content === "string" && assistant.content.trim().length > 0;
 	const wasCancelled = !!assistant.aborted;
 
-	// Pending two-step confirmations are rendered as a separate full card
-	// (not inside the timeline) because the approve/reject UI deserves
-	// prominence — losing it inside a collapsible would be a footgun.
-	const pendingConfirmation = tools.find(
-		(t) => (t as { confirmationState?: string }).confirmationState === "pending",
-	);
+	const stepUpRequest = !isLive ? findStepUpRequest(assistant) : null;
+	// B.44 — citations live on `assistant.metadata.citations`. Compute once
+	// per render; cheap (small array, defensive shape checks). When the
+	// list is empty, `<SourcesRail>` renders nothing.
+	const citations = !isLive ? extractCitations(assistant) : [];
 
-	// Tool messages without a pending confirmation populate the timeline.
-	const timelineTools = tools.filter(
-		(t) => (t as { confirmationState?: string }).confirmationState !== "pending",
-	);
+	// B.42 follow-up — the model occasionally settles a turn with tool
+	// calls but emits no prose. Before this fix the user saw a flat
+	// "Empty message" with no hint that work happened; now we surface a
+	// concise "AI ran N action(s) — see steps above" recap and the
+	// timeline auto-expands to show the rail. The turn is treated as
+	// "complete via tools" rather than "broken".
+	const settledNoContent = !isLive && !hasContent;
+	const ranToolCount = tools.length;
+	const showToolOnlyRecap = settledNoContent && ranToolCount > 0 && !stepUpRequest;
+	// True empty (no tool calls + no content + not a step-up + not an
+	// error) — keep the legacy "Empty message" placeholder so we still
+	// flag genuinely-broken turns (e.g. provider returned no output).
+	// When `thinkingState === "error"` AND the content carries the
+	// error string (per the schema comment in `convex/schema/ai.ts`),
+	// `hasContent` is true and the markdown branch handles it; this
+	// branch only fires for the rare null-output edge case.
+	const showTrueEmpty =
+		settledNoContent && ranToolCount === 0 && !stepUpRequest && thinkingState !== "error";
 
 	return (
 		<div className="group flex flex-col gap-1.5 px-3 py-2 items-end min-w-0">
@@ -107,19 +191,9 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 					state={thinkingState}
 					activeTool={assistant.activeTool ?? null}
 					reasoning={assistant.reasoning ?? null}
-					toolMessages={timelineTools}
+					toolMessages={tools}
 					orgId={orgId}
 				/>
-
-				{/* Pending confirmation — full card outside the timeline. */}
-				{pendingConfirmation && (
-					<div className="mb-2">
-						<ChatConfirmation
-							message={pendingConfirmation}
-							orgId={orgId as unknown as Id<"orgs">}
-						/>
-					</div>
-				)}
 
 				{/* The assistant's prose body — the actual answer. */}
 				{hasContent ? (
@@ -128,11 +202,41 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 					<span className="text-muted-foreground italic text-xs">
 						Preparing response…
 					</span>
-				) : pendingConfirmation ? // While a confirmation is pending the assistant body is
-				// expected to be empty — render nothing rather than the
-				// "Empty message" placeholder.
-				null : (
-					<span className="text-muted-foreground italic text-xs">Empty message</span>
+				) : stepUpRequest ? null : showToolOnlyRecap ? (
+					<p className="text-muted-foreground text-xs leading-relaxed">
+						AI completed {ranToolCount} action{ranToolCount === 1 ? "" : "s"} — see the
+						steps above for what ran.
+					</p>
+				) : thinkingState === "error" ? (
+					<p className="text-rose-600 dark:text-rose-400 text-xs leading-relaxed">
+						The assistant ran into an error and didn't return a response. Try sending
+						the message again.
+					</p>
+				) : showTrueEmpty ? (
+					<p className="text-muted-foreground italic text-xs">
+						No response from the model. Try sending the message again.
+					</p>
+				) : null}
+
+				{/* B.44 — Sources rail. Renders only on settled assistant turns
+				    that actually have citations; everything else (CRM-only
+				    turns, live streaming, step-up cards) sees nothing. */}
+				{!isLive && hasContent && citations.length > 0 && (
+					<SourcesRail citations={citations} />
+				)}
+
+				{/* S10 step-up card — irreversible capability awaiting confirm. */}
+				{stepUpRequest && assistant.conversationId && (
+					<div className="mt-2">
+						<StepUpCard
+							orgId={orgId}
+							conversationId={assistant.conversationId as unknown as string}
+							assistantMessageId={assistant._id as unknown as string}
+							capability={stepUpRequest.capability}
+							args={stepUpRequest.args}
+							headline={stepUpRequest.headline}
+						/>
+					</div>
 				)}
 
 				{/* Footer: actions on the LEFT (hover), timestamp on the RIGHT (always) */}

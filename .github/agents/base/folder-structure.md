@@ -21,7 +21,7 @@
 ## Root
 
 ```
-flowbite/
+orbitly/
 ├── app/                              # Next.js App Router (thin route files)
 ├── components/                       # Global shared UI primitives (shadcn)
 ├── core/                             # Core CRM infrastructure (necessities)

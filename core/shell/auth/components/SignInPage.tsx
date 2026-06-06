@@ -38,7 +38,7 @@ import { toast } from "@/lib/toast";
  * an auth credential, so it should outlive a single 30-day session and
  * remember the user's pick across re-logins.
  */
-const REMEMBER_ME_COOKIE = "flowbite_remember";
+const REMEMBER_ME_COOKIE = APP_CONFIG.rememberMeCookie;
 const REMEMBER_ME_PREF_LIFETIME_DAYS = 365;
 function persistRememberMePreference(remember: boolean): void {
 	setClientCookie(REMEMBER_ME_COOKIE, remember ? "1" : "0", REMEMBER_ME_PREF_LIFETIME_DAYS);

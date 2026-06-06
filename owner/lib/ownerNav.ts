@@ -16,6 +16,7 @@ import {
 	Flag,
 	KeyRound,
 	LayoutDashboard,
+	MessageSquareText,
 	Settings,
 	Shield,
 	Tags,
@@ -98,6 +99,12 @@ export const OWNER_NAV: readonly OwnerNavItem[] = [
 		label: "AI keys",
 		icon: KeyRound,
 		description: "Platform AI provider keys — used when no BYOK key is set.",
+	},
+	{
+		href: "/whatsapp-templates",
+		label: "WhatsApp templates",
+		icon: MessageSquareText,
+		description: "Cross-org WhatsApp template SSOT (built-ins + per-org overrides).",
 	},
 	{
 		href: "/audit",

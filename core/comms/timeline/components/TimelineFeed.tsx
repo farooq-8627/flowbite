@@ -64,7 +64,7 @@ interface TimelineFeedProps {
 		body?: string;
 		/**
 		 * Optional CTA — when set, the empty state renders a button that
-		 * dispatches a chat prefill (`flowbite:ai-chat-prefill`) so the
+		 * dispatches a chat prefill (`orbitly:ai-chat-prefill`) so the
 		 * user can start the suggested action via the AI sheet without
 		 * leaving the dashboard. Mirrors the pattern used by
 		 * `<NextReminderFallback />`.

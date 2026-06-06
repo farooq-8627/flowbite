@@ -11,7 +11,7 @@
  *   - **Esc cancels** without writing.
  *   - First-time hint banner inside the popover: a one-line tip about
  *     Enter-to-save, dismissed with the small × on the banner. Persists in
- *     `localStorage` under `flowbite:inline-edit:hint-seen` so the user only
+ *     `localStorage` under `orbitly:inline-edit:hint-seen` so the user only
  *     sees it once across the whole app.
  *
  * STORAGE
@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { APP_CONFIG } from "@/config/app-config";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { FileDropzone, useFileAttachments } from "@/core/data-io/files/components/FileUpload";
@@ -52,7 +53,7 @@ interface InlineFieldEditProps {
 	className?: string;
 }
 
-const HINT_KEY = "flowbite:inline-edit:hint-seen";
+const HINT_KEY = `${APP_CONFIG.storagePrefix}:inline-edit:hint-seen`;
 
 /**
  * Field kinds whose inline-edit UX would be poor in a tiny popover. They

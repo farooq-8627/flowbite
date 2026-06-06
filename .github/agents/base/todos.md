@@ -151,9 +151,9 @@ Clay-style 4-provider waterfall. Real Firecrawl `web_search` + RDAP `domain_whoi
 
 `fileAnalyses` schema. Quarantined vision parser at `convex/ai/quarantined/fileAnalyzer.ts` with hardened "treat the image as data" prompt per kind (passport / listing_photo / invoice). Cost-ascending model picker (Claude Sonnet 4.5 → Gemini Flash → Flash-Lite → GPT-4o), 10 MB cap, base64 encoding, per-kind Zod schema. AI tools `analyze_file` / `commit_analyze_file` apply canonical fields via `ENTITY_UPDATE_MUTATION`.
 
-### ✅ Week 6.3 — Multi-provider failover (resolver) — SHIPPED 2026-05-25
+### ✅ Week 6.3 — Multi-provider failover (resolver + orchestrator wiring) — SHIPPED 2026-05-25 / wiring 2026-06-05
 
-`resolveFallbackChain()` in `convex/ai/orchestrator/modelResolver.ts` returns the user's primary model first then up to 2 cross-family providers with working keys. Foundation; orchestrator-level wiring deferred to Phase 4 (Future-Enhancements §B.19).
+`resolveFallbackChain()` in `convex/ai/orchestrator/modelResolver.ts` returns the user's primary model first then up to 2 cross-family providers with working keys. **Orchestrator wiring shipped 2026-06-05** as part of the chat-regression fix — `runChatTurn` now loops the candidates and falls through on transient/quota/auth errors when nothing was streamed yet (see `SHIPPED.md` 2026-06-05 entry "AI chat regression fix").
 
 ### ✅ Week 6.6 — Variant-matrix scorer — SHIPPED 2026-05-25
 
@@ -168,7 +168,6 @@ Clay-style 4-provider waterfall. Real Firecrawl `web_search` + RDAP `domain_whoi
 The Phase 3 audit (`PHASE-3-AI-AUDIT.md §5 + §6`) has the canonical pending list. Headline items:
 - Streaming-aware Markdown parser polish (Future-Enhancements §B.10)
 - Per-org AI telemetry dashboard UI (schema shipped in Phase 3; UI is Phase 4 — §B.18)
-- Multi-provider failover orchestrator wiring (resolver shipped; wiring is Phase 4 — §B.19)
 - LemonSqueezy plan-tier billing wall + re-enable §A.1–A.4 deferrals (§B.20)
 - T2.1–T2.5 Tier-2 follow-ups from §6.5 Day 0 diagnosis (Future-Enhancements §B.6–B.9)
 - LinkedIn + email-finder real provider integration (§B.14 / §B.15)

@@ -54,6 +54,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { APP_CONFIG } from "@/config/app-config";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { sendChatPrefill } from "@/core/ai/lib/chatPrefill";
@@ -104,7 +105,7 @@ const MAX_VISIBLE = 3;
 const LAZY_WARM_TTL_MS = 60_000;
 
 function lazyWarmKey(orgId: string, userId: string): string {
-	return `flowbite:ai:lazyWarm:${orgId}:${userId}`;
+	return `${APP_CONFIG.storagePrefix}:ai:lazyWarm:${orgId}:${userId}`;
 }
 
 function shouldFireLazyWarm(orgId: string, userId: string): boolean {

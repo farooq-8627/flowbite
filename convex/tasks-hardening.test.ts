@@ -30,8 +30,9 @@
  * Out-of-scope (covered elsewhere):
  *   - Rate limits — `convex/_shared/rateLimit.ts` is exercised by other
  *     suites; firing 60 mutations per test is too expensive.
- *   - update_task tool — registered in `convex/ai/tools/scheduling/`;
- *     covered by `convex/ai/tools/tasks.test.ts` (G12).
+ *   - update_task tool — registered in `convex/crm/shared/tasks/capabilities.ts`
+ *     (the AI capability layer); contract-tested via the registry generator
+ *     in `convex/crm/shared/tasks/capabilities.test.ts`.
  */
 
 import { convexTest } from "convex-test";

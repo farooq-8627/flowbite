@@ -13,16 +13,11 @@
  *      `convex/ai/quarantined/csvParser.ts` to handle UTF-8 BOM,
  *      UTF-16-LE/BE BOM, and Latin-1 / Windows-1252 CSVs that
  *      pre-Stage-10 silently corrupted into `?` chars.
- *   3. `createBulkStats` / `recordBulkSuccess` / `recordBulkFailure`
- *      / `summariseBulkResults` — bulk-progress reporter used by
- *      `commit_bulk_update_entities` + `commit_bulk_close_deals` to
- *      surface a row-level diff + retry chips instead of a silent
- *      `{ succeeded, failed }` counter.
- *   4. `mapEnrichmentError` — enrichment-provider error → friendly
+ *   3. `mapEnrichmentError` — enrichment-provider error → friendly
  *      envelope mapper used by `enrichmentProviders.ts` on every
  *      provider trace push so the trace UI surfaces a code +
  *      retry hint instead of `String(e).slice(0, 300)`.
- *   5. RemindersCard gate contract — DASHBOARD-AUDIT.md §6 last
+ *   4. RemindersCard gate contract — DASHBOARD-AUDIT.md §6 last
  *      pending checkbox. Asserts that an org seeded with the
  *      pre-Stage-1 `dashboardMetrics: ['reminders.list']` flows
  *      cleanly through `validateDashboardLayout` AND that the
@@ -36,13 +31,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-	BULK_FAILURE_SAMPLE_CAP,
-	createBulkStats,
-	recordBulkFailure,
-	recordBulkSuccess,
-	summariseBulkResults,
-} from "./_shared/bulkProgress";
 import {
 	decodeCsvBytes,
 	describeEncodingWarning,
@@ -111,7 +99,7 @@ describe("sanitiseExtractedText (Stage 10)", () => {
 	});
 
 	it("leaves benign markdown links untouched", () => {
-		const benign = "[FlowBite](https://example.com/abc)";
+		const benign = "[Orbitly](https://example.com/abc)";
 		const r = sanitiseExtractedText(benign);
 		expect(r.text).toBe(benign);
 		expect(r.report.strippedProtocols).toBe(0);
@@ -262,93 +250,7 @@ describe("detectEncoding + decodeCsvBytes (Stage 10)", () => {
 	});
 });
 
-// ─── 3. Bulk progress ─────────────────────────────────────────────────────
-
-describe("bulkProgress helper (Stage 10)", () => {
-	it("reports an all-success run with no failures", () => {
-		const stats = createBulkStats();
-		recordBulkSuccess(stats);
-		recordBulkSuccess(stats);
-		recordBulkSuccess(stats);
-		const { display, summary } = summariseBulkResults({
-			verb: "update",
-			entityNounPlural: "leads",
-			stats,
-		});
-		expect(display).toContain("Updated 3 leads");
-		expect(summary.headline).toContain("Updated 3 leads");
-		expect(summary.suggestedNext?.some((s) => s.label === "Add follow-up")).toBe(true);
-		expect(summary.suggestedNext?.some((s) => s.label === "Retry failed rows")).toBe(false);
-	});
-
-	it("reports a partial failure with row-level table + retry chips", () => {
-		const stats = createBulkStats();
-		recordBulkSuccess(stats);
-		recordBulkSuccess(stats);
-		recordBulkFailure(stats, "L-007", {
-			data: { code: "RBAC", message: "Missing leads.update permission" },
-		});
-		recordBulkFailure(stats, "L-008", new Error("Document not found"));
-		const { display, summary } = summariseBulkResults({
-			verb: "update",
-			entityNounPlural: "leads",
-			stats,
-		});
-		expect(display).toMatch(/Updated 2 of 4/);
-		expect(summary.headline).toContain("2 of 4");
-		expect(summary.headline).toContain("2 failed");
-		// Per-row failure entries should be in the table.
-		const labels = (summary.table ?? []).map((row) => row.label);
-		expect(labels).toContain("L-007");
-		expect(labels).toContain("L-008");
-		// Retry + explain chips for the failed rows.
-		const chipLabels = (summary.suggestedNext ?? []).map((s) => s.label);
-		expect(chipLabels).toContain("Retry failed rows");
-		expect(chipLabels).toContain("Show why they failed");
-	});
-
-	it("reports a total-failure run", () => {
-		const stats = createBulkStats();
-		recordBulkFailure(stats, "L-001", new Error("boom"));
-		recordBulkFailure(stats, "L-002", new Error("boom"));
-		const { display } = summariseBulkResults({
-			verb: "update",
-			entityNounPlural: "leads",
-			stats,
-		});
-		expect(display).toMatch(/All 2 leads failed/);
-	});
-
-	it("caps detailed failure rows at BULK_FAILURE_SAMPLE_CAP and surfaces an overflow row", () => {
-		const stats = createBulkStats();
-		for (let i = 0; i < BULK_FAILURE_SAMPLE_CAP + 5; i++) {
-			recordBulkFailure(stats, `L-${i}`, new Error("err"));
-		}
-		const { summary } = summariseBulkResults({
-			verb: "update",
-			entityNounPlural: "leads",
-			stats,
-		});
-		expect(stats.failures.length).toBe(BULK_FAILURE_SAMPLE_CAP);
-		expect(stats.failed).toBe(BULK_FAILURE_SAMPLE_CAP + 5);
-		const overflow = (summary.table ?? []).find((row) => row.label === "More failures");
-		expect(overflow).toBeDefined();
-		expect(overflow?.value).toContain("+5 not shown");
-	});
-
-	it("close-deal verb past-tenses correctly", () => {
-		const stats = createBulkStats();
-		recordBulkSuccess(stats);
-		const { display } = summariseBulkResults({
-			verb: "close as won",
-			entityNounPlural: "deals",
-			stats,
-		});
-		expect(display).toContain("Closed as won 1 deals");
-	});
-});
-
-// ─── 4. Enrichment friendly errors ────────────────────────────────────────
+// ─── 3. Enrichment friendly errors ────────────────────────────────────────
 
 describe("mapEnrichmentError (Stage 10)", () => {
 	it("maps a 401 to AUTH_FAILED with a key-rotate hint, not retryable, fall-through", () => {
@@ -423,7 +325,7 @@ describe("mapEnrichmentError (Stage 10)", () => {
 	});
 });
 
-// ─── 5. TasksCard dashboard gate contract (Stage 4D rename) ────────────────
+// ─── 4. TasksCard dashboard gate contract (Stage 4D rename) ──────────────
 
 describe("TasksCard dashboard gate (Stage 4D)", () => {
 	/**

@@ -15,6 +15,7 @@
 
 import { v } from "convex/values";
 import { orgQuery, requireOrgMember } from "../_functions/authenticated";
+import { internalMutation, internalQuery } from "../_generated/server";
 
 /**
  * Get a single CSV import row. Returns null when missing, mismatched
@@ -69,5 +70,61 @@ export const listRecent = orgQuery({
 			result: r.result,
 			createdAt: r.createdAt,
 		}));
+	},
+});
+
+// ─── Internal helpers used by the V2 `import_csv` capability ────────────────
+//
+// Replaces the deleted `tools/layers/csvImportInternal.ts`. The capability
+// (`convex/crm/shared/bulk/capabilities.ts:import_csv`) is `irreversible` +
+// 2FA-fenced; these helpers only do DB reads/writes, no permission checks
+// (the wrapper validated the principal before this point).
+
+/** Insert a fresh `csvImports` row in `parsing` state. */
+export const createImportRowForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		fileId: v.id("files"),
+		targetEntity: v.union(
+			v.literal("lead"),
+			v.literal("contact"),
+			v.literal("company"),
+			v.literal("deal"),
+		),
+	},
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		return ctx.db.insert("csvImports", {
+			orgId: args.orgId,
+			userId: args.userId,
+			fileId: args.fileId,
+			targetEntity: args.targetEntity,
+			status: "parsing",
+			rowCount: 0,
+			mapping: {},
+			previewRows: [],
+			createdAt: now,
+			updatedAt: now,
+		});
+	},
+});
+
+/** Read a CSV import row's preview state, scoped by org. */
+export const readImportRowForAI = internalQuery({
+	args: {
+		csvImportId: v.id("csvImports"),
+		orgId: v.id("orgs"),
+	},
+	handler: async (ctx, args) => {
+		const row = await ctx.db.get(args.csvImportId);
+		if (!row || row.orgId !== args.orgId) return null;
+		return {
+			status: row.status,
+			rowCount: row.rowCount,
+			previewRows: row.previewRows,
+			errors: row.errors,
+			targetEntity: row.targetEntity,
+		};
 	},
 });

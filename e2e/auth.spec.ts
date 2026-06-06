@@ -64,7 +64,7 @@ test.describe("Auth — sign-up page", () => {
 	});
 
 	test("shows validation for duplicate email", async ({ page }) => {
-		const email = `e2e-owner@flowbite-test.local`; // known test account from global-setup
+		const email = `e2e-owner@orbitly-test.local`; // known test account from global-setup
 		await page.goto("/en/signup");
 
 		const nameInput = page.getByLabel(/name/i).first();

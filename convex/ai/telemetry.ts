@@ -62,6 +62,8 @@ export const recordToolEvent = internalMutation({
 		errorMessage: v.optional(v.string()),
 		inputTokens: v.optional(v.number()),
 		outputTokens: v.optional(v.number()),
+		/** S12 — provider-reported cache-read tokens for the turn. */
+		cachedInputTokens: v.optional(v.number()),
 		/**
 		 * Stage 8 — provenance. See `convex/schema/ai.ts:aiToolEvents`
 		 * for conventions ("user:<id>", "standingOrder:<id>",
@@ -92,6 +94,7 @@ export const recordToolEvent = internalMutation({
 				errorMessage: args.errorMessage?.slice(0, 500),
 				inputTokens: args.inputTokens,
 				outputTokens: args.outputTokens,
+				cachedInputTokens: args.cachedInputTokens,
 				costUsd: costUsd > 0 ? costUsd : undefined,
 				triggeredBy: args.triggeredBy,
 				expiresAt: now + RETENTION_MS,

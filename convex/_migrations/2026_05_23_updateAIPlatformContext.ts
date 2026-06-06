@@ -17,14 +17,14 @@ import { internalMutation } from "../_generated/server";
 const TARGET_VERSION = "v1.1.0";
 
 const UPDATED_CONTENT = `
-# FlowBite — AI Assistant Context
+# Orbitly — AI Assistant Context
 
-You are the AI assistant for FlowBite, an AI-native CRM platform designed for
+You are the AI assistant for Orbitly, an AI-native CRM platform designed for
 small businesses, freelancers, agencies, and real-estate professionals.
 
-## What FlowBite Is
+## What Orbitly Is
 
-FlowBite is a full-featured CRM that adapts to each user's industry. It manages
+Orbitly is a full-featured CRM that adapts to each user's industry. It manages
 leads, contacts, deals, companies, pipelines, notes, reminders, and follow-ups.
 The workspace is configured per-org through industry templates.
 

@@ -14,6 +14,7 @@ import {
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
 import { internalMutation, type MutationCtx } from "../../../_generated/server";
+import { applyCustomFieldsForRecordImpl } from "../../../_shared/aiEntityPatch";
 import { ERRORS } from "../../../_shared/errors";
 import { logFieldUpdates } from "../../../_shared/fieldUpdateLog";
 import { applyOrgStat } from "../../../_shared/orgStats";
@@ -46,6 +47,17 @@ async function createImpl(
 			lastUpdatedAt?: number;
 			rawNotes?: string;
 		};
+		/**
+		 * Optional org-defined custom-field map (name → value), validated
+		 * against the live `fieldDefinitions` rows for `entityType:"lead"`.
+		 * Inlined into create (audit §3.3 fix, 2026-06-05) so the AI tool
+		 * can land a new lead + its custom fields in ONE round-trip
+		 * instead of `createForAI` + `applyCustomFieldsForRecord` back-
+		 * to-back. The public `create` mutation does NOT accept this
+		 * arg — only the AI twin forwards it. Empty/undefined ↔ no
+		 * custom-field work.
+		 */
+		customFields?: Record<string, unknown>;
 	},
 ) {
 	await enforceRateLimit(ctx, {
@@ -113,6 +125,27 @@ async function createImpl(
 		});
 	}
 
+	// Apply org-defined custom fields in the SAME mutation transaction
+	// (audit §3.3 fix). Pre-inlining the AI tool issued a second
+	// `applyCustomFieldsForRecord` round-trip per create — combined with
+	// per-row timeline mutations on a 5-lead batch that was 10 round-
+	// trips. The shared `applyCustomFieldsForRecordImpl` is reused here
+	// to keep validation + activity-log behaviour identical to the
+	// stand-alone path; nothing else changes about the contract.
+	let appliedCustomFields: string[] = [];
+	let unknownFields: string[] = [];
+	if (args.customFields && Object.keys(args.customFields).length > 0) {
+		const cfResult = await applyCustomFieldsForRecordImpl(ctx, {
+			orgId: args.orgId,
+			userId: args.userId,
+			entityType: "lead",
+			entityId: leadId as unknown as string,
+			customFields: args.customFields,
+		});
+		appliedCustomFields = cfResult.applied.map((f) => f.name);
+		unknownFields = cfResult.unknown;
+	}
+
 	await ctx.scheduler.runAfter(0, internal.ai.internal.rebuildEntityContext, {
 		orgId: args.orgId,
 		entityType: "lead",
@@ -124,7 +157,7 @@ async function createImpl(
 	// `lead_stale_*` heuristic that ranks by assignee).
 	await scheduleNextActionsRebuildForUsers(ctx, args.orgId, [args.userId, args.assignedTo]);
 
-	return { leadId, personCode };
+	return { leadId, personCode, appliedCustomFields, unknownFields };
 }
 
 async function updateImpl(
@@ -230,6 +263,11 @@ export const createForAI = internalMutation({
 		source: v.string(),
 		assignedTo: v.optional(v.id("users")),
 		aiContext: v.optional(v.any()),
+		// Audit §3.3 — accept the org-defined custom-field map directly
+		// so the create_lead capability can land row + custom fields in
+		// ONE round-trip. Validated against live `fieldDefinitions` by
+		// the shared `applyCustomFieldsForRecordImpl` inside createImpl.
+		customFields: v.optional(v.record(v.string(), v.any())),
 	},
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);

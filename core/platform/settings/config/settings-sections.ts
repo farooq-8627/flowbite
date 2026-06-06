@@ -385,6 +385,28 @@ export function getSettingsSections(
 				"context",
 			],
 		},
+		{
+			id: "ai.apiTokens",
+			groupId: "ai",
+			label: "API Tokens",
+			description:
+				"Personal access tokens for external MCP and REST agents. Tokens execute under the issuing member's RBAC.",
+			keywords: [
+				"token",
+				"tokens",
+				"api token",
+				"mcp",
+				"rest",
+				"bearer",
+				"agent",
+				"integration",
+				"webhook",
+				"automation",
+				"pat",
+				"personal access token",
+			],
+			permission: "ai.apiTokens.manage",
+		},
 
 		// ── Appearance ────────────────────────────────────────────────────────
 		{

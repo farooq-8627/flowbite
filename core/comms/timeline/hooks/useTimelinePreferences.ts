@@ -27,7 +27,7 @@
  *
  * Storage shape
  * ─────────────
- * `flowbite:state:timeline:hiddenEventGroups` — string[] of group keys.
+ * `orbitly:state:timeline:hiddenEventGroups` — string[] of group keys.
  *
  * Group keys are coarse-grained "categories" rather than raw action
  * strings, so the user toggles "Reminder created/edited" once instead of

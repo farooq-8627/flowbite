@@ -508,6 +508,68 @@ export const snoozeNextAction = orgMutation({
 	},
 });
 
+// ─── ForAI twins — H.13 V2 port ─────────────────────────────────────────
+//
+// Per AGENTS.md: every public mutation an AI capability calls has a
+// matching `*ForAI` internal twin that takes a trusted `userId` arg.
+// Mirror the public mutations exactly — same RBAC + dismiss-fingerprint
+// logic — so the V2 capability can drive them from the runtime host.
+
+export const dismissNextActionForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		actionId: v.id("aiNextActions"),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.view");
+		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, args.userId);
+
+		const fingerprint = `${row.recordKind}:${row.recordCode}:${row.reasonCode}`;
+		const userDoc = await ctx.db.get(args.userId);
+		const existingPrefs = userDoc?.preferences ?? {};
+		const dismissed = { ...(existingPrefs.aiPulseDismissed ?? {}) };
+		dismissed[fingerprint] = Date.now();
+		const entries = Object.entries(dismissed);
+		if (entries.length > 50) {
+			entries.sort((a, b) => b[1] - a[1]);
+			const trimmed = Object.fromEntries(entries.slice(0, 50));
+			await ctx.db.patch(args.userId, {
+				preferences: { ...existingPrefs, aiPulseDismissed: trimmed },
+				updatedAt: Date.now(),
+			});
+		} else {
+			await ctx.db.patch(args.userId, {
+				preferences: { ...existingPrefs, aiPulseDismissed: dismissed },
+				updatedAt: Date.now(),
+			});
+		}
+
+		await ctx.db.delete(args.actionId);
+		return { dismissed: fingerprint };
+	},
+});
+
+export const snoozeNextActionForAI = internalMutation({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		actionId: v.id("aiNextActions"),
+		days: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "leads.view");
+		const row = await loadOwnedAction(ctx, args.actionId, args.orgId, args.userId);
+
+		const days = Math.max(1, Math.min(args.days ?? 7, 30));
+		const until = Date.now() + days * ONE_DAY_MS;
+		await ctx.db.patch(args.actionId, { snoozedUntil: until });
+		return { snoozedUntil: until, recordCode: row.recordCode };
+	},
+});
+
 // ─── Stage 3-A.4 — Lazy warm wrapper for AIPulseRibbon ───────────────────
 //
 // `rebuildForUser` is an `internalMutation` so it can be called from the

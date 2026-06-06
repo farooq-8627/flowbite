@@ -133,6 +133,31 @@ export const aiMessages = defineTable({
 	 * fallback subagent.
 	 */
 	subagent: v.optional(v.string()),
+	/**
+	 * B.44 — provider grounding metadata captured post-stream.
+	 *
+	 * Currently carries `{ citations: Citation[] }` for messages whose
+	 * model used native (Anthropic / OpenAI Responses / Google grounding)
+	 * OR Firecrawl-backed `web_search`. Renderers (`AssistantTurn.tsx`)
+	 * surface a "Sources" rail when this field is populated. We use
+	 * `v.optional(v.any())` because the per-provider payload differs
+	 * (Anthropic returns `tool_result.citation`, OpenAI `web_search_call.results`,
+	 * Google `groundingMetadata.groundingChunks`) and the host normalises
+	 * them to a common `{ url, title?, snippet? }` shape before persisting.
+	 *
+	 * Sources used (when implementing B.44):
+	 *   - https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool
+	 *   - https://platform.openai.com/docs/guides/tools-web-search
+	 *   - https://ai.google.dev/gemini-api/docs/grounding
+	 *   - https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai#search-grounding
+	 *
+	 * Older messages (pre-B.44) lack this field; readers MUST treat
+	 * `undefined` as "no citations" and skip the Sources rail entirely.
+	 * Adding the field is non-breaking — the Convex schema validator
+	 * accepts every existing `aiMessages` row unchanged because the slot
+	 * is optional.
+	 */
+	metadata: v.optional(v.any()),
 	createdAt: v.number(),
 })
 	.index("by_conversation", ["conversationId", "createdAt"])
@@ -493,6 +518,14 @@ export const aiToolEvents = defineTable({
 	errorMessage: v.optional(v.string()),
 	inputTokens: v.optional(v.number()),
 	outputTokens: v.optional(v.number()),
+	/**
+	 * S12 — cache-read tokens (Anthropic ephemeral / OpenAI auto-cache).
+	 * Optional + additive: pre-S12 rows + non-host writers (standing
+	 * orders, autonomous-turn markers) leave it undefined. Tracked
+	 * separately from `inputTokens` so the token report can compute
+	 * cache-hit ratio (cached / (input + cached)).
+	 */
+	cachedInputTokens: v.optional(v.number()),
 	costUsd: v.optional(v.number()),
 	/**
 	 * Stage 8 (`/SPRINT-PLAN.md`) — Autonomous layer audit trail.
@@ -1125,3 +1158,99 @@ export const dealScores = defineTable({
 	.index("by_org_and_deal", ["orgId", "dealId"])
 	.index("by_org_and_score", ["orgId", "score"])
 	.index("by_expires", ["expiresAt"]);
+
+/**
+ * S10 — short-lived 2FA step-up tokens for irreversible AI capabilities.
+ *
+ * Issued by `convex/aiStepUp.ts:confirmStepUp` after the user clicks
+ * "Confirm" twice in the chat UI. Verified + consumed inside
+ * `convex/ai/registry/wrapper.ts` (via the injected `stepUpVerifier`)
+ * before an irreversible capability runs.
+ *
+ * Single-use, 5-minute TTL, scoped to (orgId, userId, capability,
+ * argsHash) so a forged token cannot be replayed against a different
+ * tool call. The whole point of the table is to make the gate
+ * verifiable + auditable — the wrapper alone can't trust a string.
+ *
+ * Index `by_token` is a point lookup the wrapper calls per call;
+ * `by_org_and_user_and_expires` powers a future cleanup cron.
+ */
+export const aiStepUpTokens = defineTable({
+	...orgScoped,
+	userId: v.id("users"),
+	conversationId: v.optional(v.id("aiConversations")),
+	/** Capability name the token authorises (e.g. `bulk_delete_entities`). */
+	capability: v.string(),
+	/** SHA-256 hex of canonicalised args JSON. Pins the token to one call. */
+	argsHash: v.string(),
+	/** Random 32-byte hex string. The chat client passes this back to verify. */
+	token: v.string(),
+	issuedAt: v.number(),
+	expiresAt: v.number(),
+	/** Set when the token has been consumed by the wrapper (single-use). */
+	consumedAt: v.optional(v.number()),
+})
+	.index("by_token", ["token"])
+	.index("by_org_and_user_and_expires", ["orgId", "userId", "expiresAt"]);
+
+/**
+ * S16 — API tokens for the MCP + REST projectors.
+ *
+ * One row per externally-issued personal access token. Each token executes
+ * under the issuing member's RBAC: the auth flow is "Bearer <plaintext> →
+ * SHA-256 → look up by `hash` → return the row → resolve `(orgId,userId)`
+ * to a `Principal` via `requireOrgMemberByIds` (read at call time so
+ * permission changes propagate immediately)".
+ *
+ * The plaintext is shown ONCE at creation and never persisted. We store:
+ *   - `hash`   — SHA-256 hex of the plaintext. The lookup key.
+ *   - `prefix` — first 12 chars of the plaintext (e.g. `ot_acme_AbCd`).
+ *                Shown in the management UI so a user can identify which
+ *                row corresponds to a token they pasted somewhere.
+ *
+ * Token format: `ot_<orgSlug6>_<random32hex>` (so an admin can spot which
+ * org a leaked token belongs to without decrypting). The `_` separator and
+ * lowercase characters keep it copy-paste safe in shells + URLs.
+ *
+ * `scopes` is a capability-name allow-list. `["*"]` opts in to every
+ * capability the issuing member already has permission for. Narrower
+ * scopes (e.g. `["search_crm","read_conversation"]`) lock the token down
+ * to a read-only surface even if the member's role is broader.
+ *
+ * Indexes:
+ *   - `by_hash`  — point lookup on every authenticated request.
+ *   - `by_org`   — list every token in an org for the management UI.
+ *   - `by_user`  — list a member's own tokens.
+ */
+export const aiApiTokens = defineTable({
+	...orgScoped,
+	/** The member whose RBAC every call under this token executes against. */
+	userId: v.id("users"),
+	/** Human-readable label shown in the management UI. Required, ≤ 60 chars. */
+	name: v.string(),
+	/**
+	 * First 12 chars of the plaintext (e.g. `ot_acme_AbCd`). Used for
+	 * UI display only — never sufficient to authenticate. The full
+	 * plaintext is shown ONCE at creation and never re-issued.
+	 */
+	prefix: v.string(),
+	/** SHA-256 hex of the plaintext. The lookup key on every request. */
+	hash: v.string(),
+	/**
+	 * Capability-name allow-list. `["*"]` = every cap the member has
+	 * permission for; otherwise the token is restricted to the names
+	 * listed (still subject to the member's RBAC + the registry's
+	 * channel/risk gates).
+	 */
+	scopes: v.array(v.string()),
+	/** Optional expiry in epoch ms. `undefined` = never expires. */
+	expiresAt: v.optional(v.number()),
+	/** Set when the token is revoked (revocation overrides everything). */
+	revokedAt: v.optional(v.number()),
+	/** Last successful call (best-effort; updated outside the tx hot path). */
+	lastUsedAt: v.optional(v.number()),
+	...timestamps,
+})
+	.index("by_hash", ["hash"])
+	.index("by_org", ["orgId"])
+	.index("by_user", ["orgId", "userId"]);

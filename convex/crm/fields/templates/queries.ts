@@ -44,7 +44,7 @@ async function summariseFromDB(
 ): Promise<IndustryTemplateSummary[]> {
 	const rows: Doc<"platformTemplates">[] = await ctx.db.query("platformTemplates").collect();
 	return rows
-		.filter((r) => !r.isArchived)
+		.filter((r) => !r.isArchived && r.visible !== false)
 		.map((t) => {
 			const def = t.definition as Record<string, unknown>;
 			const single = def.pipeline as { name?: string; stages?: unknown[] } | undefined;

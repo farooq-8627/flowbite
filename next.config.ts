@@ -1,6 +1,20 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
+
+// ─── Project root resolution ─────────────────────────────────────────────────
+//
+// `next.config.ts` is loaded as an ESM module (we use top-level `import`
+// statements), so `__dirname` is unavailable. Reconstruct it via
+// `import.meta.url` so Turbopack's workspace-root inference can pin to
+// THIS package — independent of any other lockfile higher up the directory
+// tree (e.g. a stray `~/pnpm-lock.yaml` from another repo).
+//
+// Source: https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ─── Security Headers (Phase 3A) ─────────────────────────────────────────────
 //
@@ -117,6 +131,14 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+	// Pin Turbopack's workspace root to THIS project. Without this, Next
+	// infers the root from the highest pnpm-lock.yaml on the path — which
+	// (per the warning users were seeing) sometimes finds a stray lockfile
+	// in `~/` and complains about ambiguity. Pinning here silences the
+	// warning AND guarantees deterministic resolution.
+	turbopack: {
+		root: __dirname,
+	},
 	async rewrites() {
 		return [
 			{
@@ -165,7 +187,9 @@ export default withNextIntl(
 		widenClientFileUpload: true,
 
 		// Skip source-map upload entirely if Sentry isn't configured for this build.
-		disableLogger: true,
+		// `disableLogger` was removed in 2026-06-06 — replaced by
+		// `webpack.treeshake.removeDebugLogging` below, which is the
+		// non-deprecated equivalent (and the only form Turbopack honours).
 		sourcemaps: {
 			disable: !process.env.SENTRY_AUTH_TOKEN,
 		},

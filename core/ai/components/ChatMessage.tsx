@@ -31,7 +31,6 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "../types";
 import { AIMark } from "./AIMark";
-import { ChatConfirmation } from "./ChatConfirmation";
 import { ChatMessageActions } from "./ChatMessageActions";
 import { Markdown } from "./markdown/Markdown";
 import { ReasoningPanel, type ThinkingState } from "./reasoning/ReasoningPanel";
@@ -47,9 +46,9 @@ export function ChatMessage({ message, orgId, isLast }: ChatMessageProps) {
 	const isAssistant = message.role === "assistant";
 	const isTool = message.role === "tool";
 
-	if (isTool && message.confirmationState === "pending") {
-		return <ChatConfirmation message={message} orgId={orgId} />;
-	}
+	// V1 propose/commit `confirmationState: "pending"` rows are gone after
+	// S10 — V2 step-up confirmation lives on the assistant turn (see
+	// `<StepUpCard>` mounted inside `<AssistantTurn>`).
 
 	if (isTool) {
 		const toolCalls = message.toolCalls as Array<{
@@ -166,8 +165,15 @@ function AssistantMessage({
 					<span className="text-muted-foreground italic text-xs">
 						Preparing response…
 					</span>
+				) : thinkingState === "error" ? (
+					<p className="text-rose-600 dark:text-rose-400 text-xs leading-relaxed">
+						The assistant ran into an error and didn't return a response. Try sending
+						the message again.
+					</p>
 				) : (
-					<span className="text-muted-foreground italic text-xs">Empty message</span>
+					<p className="text-muted-foreground italic text-xs">
+						No response from the model. Try sending the message again.
+					</p>
 				)}
 
 				{/* Footer: actions on the LEFT (hover), timestamp on the RIGHT (always) */}

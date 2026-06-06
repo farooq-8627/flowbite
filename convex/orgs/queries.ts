@@ -234,6 +234,153 @@ export const getOrgModulesForAI = internalQuery({
 });
 
 /**
+ * AI-callable read of `org.entityLabels` + the enabled-modules slice the AI
+ * needs to introspect the workspace shape. Used by `describe_workspace`.
+ * Returns the same fallback-defaulted shape as the public `getEntityLabels`
+ * query plus a flat list of enabled module slots.
+ */
+export const getWorkspaceShapeForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return null;
+		const l = org.entityLabels;
+		const labels = {
+			lead: {
+				singular: l?.lead?.singular ?? "Lead",
+				plural: l?.lead?.plural ?? "Leads",
+				slug: l?.lead?.slug ?? "leads",
+			},
+			contact: {
+				singular: l?.contact?.singular ?? "Contact",
+				plural: l?.contact?.plural ?? "Contacts",
+				slug: l?.contact?.slug ?? "contacts",
+			},
+			deal: {
+				singular: l?.deal?.singular ?? "Deal",
+				plural: l?.deal?.plural ?? "Deals",
+				slug: l?.deal?.slug ?? "deals",
+			},
+			company: {
+				singular: l?.company?.singular ?? "Company",
+				plural: l?.company?.plural ?? "Companies",
+				slug: l?.company?.slug ?? "companies",
+			},
+		};
+		const modules = (
+			(org.settings?.modules ?? []) as Array<{
+				slot: string;
+				label?: string;
+				hidden?: boolean;
+			}>
+		)
+			.filter((m) => m.hidden !== true)
+			.map((m) => ({ slot: m.slot, label: m.label }));
+		return { labels, modules };
+	},
+});
+
+/**
+ * AI-callable read of the org's IANA timezone string.
+ *
+ * Used by scheduling capabilities (tasks, reminders, calendar events) to
+ * coerce natural-language dates ("next Tuesday", "tomorrow 9am") into an
+ * absolute epoch in the org's local time. The capability layer's
+ * `field.timestampLazy()` deliberately defers timezone resolution to the
+ * server because it is per-tenant — fixing it at schema-build time would
+ * require a per-org schema, which is incompatible with prompt caching.
+ *
+ * Returns `"UTC"` when the org doc is missing or has no `settings.timezone`
+ * — never throws / never returns null. Callers can rely on this contract.
+ *
+ * Sensitive? No — the timezone is workspace-public; every member sees it
+ * already on dashboards and timeline rendering.
+ */
+export const getTimezoneForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		const tz = (org?.settings as { timezone?: unknown } | undefined)?.timezone;
+		return typeof tz === "string" && tz.length > 0 ? tz : "UTC";
+	},
+});
+
+/**
+ * AI-callable read returning the small `OrgSnapshot` slice the registry's
+ * module + vertical gates need (`convex/ai/registry/modules.ts:OrgSnapshot`).
+ * Loaded once per turn from `runtime/host.ts`. Keep the shape narrow so the
+ * cached prefix never depends on per-tenant data — only the per-turn TAIL.
+ *
+ * `hiddenSlots` is derived from `org.settings.modules[]` where `hidden ===
+ * true`. Other module keys (pipelines, fields, …) inherit "default-on" and
+ * appear in `hiddenSlots` only when a future settings UI explicitly hides
+ * them — the registry treats unregistered module keys as enabled regardless.
+ */
+export const getOrgSnapshotForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		if (!org) {
+			return {
+				hiddenSlots: [] as string[],
+				industryKey: undefined as string | undefined,
+				entityLabels: undefined as
+					| {
+							lead?: { singular: string; plural: string };
+							contact?: { singular: string; plural: string };
+							deal?: { singular: string; plural: string };
+							company?: { singular: string; plural: string };
+					  }
+					| undefined,
+				currency: undefined as string | undefined,
+			};
+		}
+		const moduleSlots = (org.settings?.modules ?? []) as Array<{
+			slot: string;
+			hidden?: boolean;
+		}>;
+		const hiddenSlots = moduleSlots
+			.filter((m) => m.hidden === true)
+			.map((m) => m.slot)
+			.filter((s): s is string => typeof s === "string" && s.length > 0);
+		const labels = org.entityLabels;
+		const entityLabels = labels
+			? {
+					lead: labels.lead
+						? { singular: labels.lead.singular, plural: labels.lead.plural }
+						: undefined,
+					contact: labels.contact
+						? { singular: labels.contact.singular, plural: labels.contact.plural }
+						: undefined,
+					deal: labels.deal
+						? { singular: labels.deal.singular, plural: labels.deal.plural }
+						: undefined,
+					company: labels.company
+						? { singular: labels.company.singular, plural: labels.company.plural }
+						: undefined,
+				}
+			: undefined;
+		const settings = org.settings as { defaultCurrency?: unknown } | undefined;
+		const currency =
+			typeof settings?.defaultCurrency === "string" && settings.defaultCurrency.length > 0
+				? settings.defaultCurrency
+				: undefined;
+		return {
+			hiddenSlots,
+			industryKey:
+				typeof org.industry === "string" && org.industry.length > 0
+					? org.industry
+					: undefined,
+			entityLabels,
+			currency,
+		};
+	},
+});
+
+/**
  * Get the current user's membership in a specific org.
  *
  * HOW IT WORKS:

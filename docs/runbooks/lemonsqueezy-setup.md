@@ -1,4 +1,4 @@
-# LemonSqueezy — Full setup & test guide (FlowBite-specific)
+# LemonSqueezy — Full setup & test guide (Orbitly-specific)
 
 > **Purpose.** End-to-end, copy-paste-ready instructions to enable LemonSqueezy billing for this project from a fresh state, then verify a real plan upgrade flows through to your Convex backend.
 >
@@ -36,7 +36,7 @@
 **Why.** Every product, customer, and webhook lives under a store. You can't skip this; the dashboard funnels you through it on first sign-in.
 
 1. After login, the wizard asks for a **store name** and **subdomain**.
-2. Pick a subdomain — e.g. `flowbite`. Your store URL becomes `https://flowbite.lemonsqueezy.com` (cosmetic, but visible in test-mode receipts).
+2. Pick a subdomain — e.g. `orbitly`. Your store URL becomes `https://orbitly.lemonsqueezy.com` (cosmetic, but visible in test-mode receipts).
 3. Click **Create store**.
 
 > 🔒 Your store starts in **Test mode** automatically. The toggle is at the top-right of the dashboard sidebar — leave it on **Test** for now.
@@ -52,14 +52,14 @@
 
 ## Part 2 — Create your subscription product
 
-This is one product (e.g. "FlowBite") with multiple **variants** — one per plan tier × billing cadence.
+This is one product (e.g. "Orbitly") with multiple **variants** — one per plan tier × billing cadence.
 
 ### 2.1 — Add the product
 
 1. Sidebar → **Store → Products**.
 2. Top right → **+ New product**.
 3. Fill in:
-   - **Name:** `FlowBite` (whatever your app name is)
+   - **Name:** `Orbitly` (whatever your app name is)
    - **Description:** one short marketing line — e.g. "AI-native CRM with Bring-Your-Own-Key support."
    - **Pricing model:** select **Subscription**
 4. Click **Save** (or **Save & continue**).
@@ -121,7 +121,7 @@ Keep this open — you'll paste these into the Owner panel in Part 5.
 
 1. Sidebar → **Settings → API**.
 2. Click **+ Create API key**.
-3. Name it something like `flowbite-dev`.
+3. Name it something like `orbitly-dev`.
 4. **Copy the token immediately** (LemonSqueezy shows it once — if you lose it, you have to revoke + recreate).
 5. Write it down: `LEMONSQUEEZY_API_KEY = ______`.
 
@@ -221,7 +221,7 @@ In `.env.local` (Next.js side, NOT Convex env):
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
-For prod, set it to your real domain (e.g. `https://flowbite.app`).
+For prod, set it to your real domain (e.g. `https://orbitly.app`).
 
 ### 5.3 — Plug variant ids + marketing copy into the Owner panel
 
@@ -304,7 +304,7 @@ Both should stay running. Convex picks up function changes; Next.js picks up fro
 1. Find the **Pro** PricingCard.
 2. Click the **Upgrade to Pro** button.
 3. The button shows a spinner ("Starting checkout…").
-4. Within 1-2 seconds, you should be redirected to `https://flowbite.lemonsqueezy.com/...checkout url...`.
+4. Within 1-2 seconds, you should be redirected to `https://orbitly.lemonsqueezy.com/...checkout url...`.
 
 ### 6.4 — Pay with a test card
 

@@ -123,17 +123,19 @@ export const listOnboardingTemplatesByGroup = authenticatedQuery({
  * during Stage 1 (which gets a deprecated re-export shim). Returns the
  * SAME `IndustryTemplateSummary` shape so frontends don't need to change.
  *
- * Includes ARCHIVED templates so the settings page can surface
- * "Currently on archived template — switch?" UX. The onboarding flow
- * uses `listOnboardingGroups` / `listOnboardingTemplatesByGroup` which
- * exclude archived rows.
+ * Honours BOTH the `visible` flag (set from the platform-owner panel —
+ * "Show in onboarding/settings picker") and the `isArchived` flag.
+ * An owner toggling a template OFF in the platform admin panel
+ * removes it from this list reactively, which is what Settings →
+ * Workspace → Workspace Template renders. Permission gates upstream
+ * still control who can hit this query at all.
  */
 export const listAllForSettings = authenticatedQuery({
 	args: {},
 	handler: async (ctx) => {
 		const tpls = await ctx.db.query("platformTemplates").collect();
 		return tpls
-			.filter((t) => !t.isArchived)
+			.filter((t) => !t.isArchived && t.visible !== false)
 			.map((t) => summariseTemplate(t))
 			.sort((a, b) => a.id.localeCompare(b.id));
 	},

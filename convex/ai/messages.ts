@@ -2,7 +2,11 @@
  * convex/ai/messages.ts
  *
  * Message reads (public queries) + internal write helpers for processChat.
- * Public write entries: sendMessage (schedules processChat) + confirmConfirmation (two-step gate).
+ * Public write entry: `sendMessage` (schedules `ai/processChat:run`).
+ *
+ * Two-step propose/commit was retired in S10 — irreversible capabilities
+ * now flow through 2FA step-up (`convex/aiStepUp.ts`) instead. The V1
+ * `confirmConfirmation` mutation + `processChat.resume` action are gone.
  */
 
 import { makeFunctionReference } from "convex/server";
@@ -18,9 +22,17 @@ import { enforceRateLimit, RATE_LIMITS } from "../_shared/rateLimit";
 const processChatRun = makeFunctionReference<"action", Record<string, unknown>, null>(
 	"ai/processChat:run",
 );
-const processChatResume = makeFunctionReference<"action", Record<string, unknown>, null>(
-	"ai/processChat:resume",
-);
+
+// Auto-title runs as a separate internalAction; scheduling it here from
+// `sendMessage` (rather than from `processChat.run` step 9) lets the title
+// model fire ~1.5s after send instead of after the assistant turn settles.
+// `autoTitle` short-circuits if the conversation already has a non-default
+// title, so a (theoretical) double-fire is harmless.
+const titleGenerationAutoTitle = makeFunctionReference<
+	"action",
+	{ orgId: string; conversationId: string; firstUserMessage: string },
+	unknown
+>("ai/titleGeneration:autoTitle");
 
 // ─── Public queries ───────────────────────────────────────────────────────────
 
@@ -90,7 +102,6 @@ export const sendMessage = orgMutation({
 				label: v.optional(v.string()),
 			}),
 		),
-		expandedLayers: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -108,6 +119,7 @@ export const sendMessage = orgMutation({
 
 		// Resolve or create conversation
 		let conversationId = args.conversationId;
+		const isFirstMessage = !args.conversationId;
 		if (!conversationId) {
 			conversationId = await ctx.db.insert("aiConversations", {
 				orgId: args.orgId,
@@ -150,120 +162,35 @@ export const sendMessage = orgMutation({
 			provider: args.provider,
 			routeContext: args.routeContext,
 			pageContext: args.pageContext,
-			expandedLayers: args.expandedLayers ?? [],
 		});
+
+		// Auto-title at SEND time (audit §4 fix). The title model only
+		// needs the user's first message — scheduling here lets the
+		// title appear ~1.5s after send, parallel with the main turn,
+		// instead of waiting for the assistant reply to settle. The
+		// `autoTitle` action short-circuits when a non-default title
+		// already exists, so re-runs are no-ops. Only fire on a brand-
+		// new conversation AND when the message is long enough for the
+		// title model to do something useful (matches the legacy
+		// length gate in `run.ts`).
+		if (isFirstMessage && body.length > 10) {
+			await ctx.scheduler.runAfter(0, titleGenerationAutoTitle, {
+				orgId: args.orgId,
+				conversationId,
+				firstUserMessage: body.slice(0, 400),
+			});
+		}
 
 		return { conversationId, userMessageId: userMsgId };
 	},
 });
 
 // ─── Public mutation: approve or reject a two-step confirmation ───────────────
-
-export const confirmConfirmation = orgMutation({
-	args: {
-		orgId: v.id("orgs"),
-		messageId: v.id("aiMessages"),
-		decision: v.union(v.literal("approved"), v.literal("rejected")),
-		editedPayload: v.optional(v.any()), // user edited args before approving
-	},
-	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "ai.use");
-
-		const msg = await ctx.db.get(args.messageId);
-		if (!msg || msg.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (msg.confirmationState !== "pending") {
-			throw new ConvexError("Confirmation is no longer pending.");
-		}
-
-		// Ownership: confirm the conversation belongs to this user
-		const conv = await ctx.db.get(msg.conversationId);
-		if (!conv || conv.userId !== userId) throw new ConvexError(ERRORS.FORBIDDEN);
-
-		await ctx.db.patch(args.messageId, {
-			confirmationState: args.decision,
-			...(args.editedPayload
-				? {
-						confirmationPayload: {
-							...msg.confirmationPayload,
-							editedArgs: args.editedPayload,
-						},
-					}
-				: {}),
-		});
-
-		// If approved, resume the agent loop
-		if (args.decision === "approved") {
-			await ctx.scheduler.runAfter(0, processChatResume, {
-				orgId: args.orgId,
-				userId,
-				conversationId: msg.conversationId,
-				confirmedMessageId: args.messageId,
-				editedPayload: args.editedPayload,
-			});
-		}
-	},
-});
-
-/**
- * Week 3.4 — `PHASE-3-AI-AUDIT.md §6 Week 3` & §2.2 (AI SDK v6 native HITL).
- *
- * Alias of `confirmConfirmation` that matches the AI SDK v6 cookbook's
- * `addToolApprovalResponse({approved, toolApprovalId, ...})` signature.
- *
- * The full AI SDK v6 native flow keeps `streamText` alive until the user
- * responds — incompatible with our DB-streamed resume model. We adopt the
- * SDK's NAME + ARG SHAPE so frontend code reads the same as in the SDK
- * cookbook, but server-side we still flip a row from `pending → approved`
- * and schedule `processChat.resume`. See `Future-Enhancements.md §B.8`.
- *
- * If the underlying tool's `needsApproval` was a function form (e.g.
- * "auto-approve under 50 rows"), the frontend should NOT call this for
- * the auto-approved case — those calls run inline server-side.
- */
-export const addToolApprovalResponse = orgMutation({
-	args: {
-		orgId: v.id("orgs"),
-		toolApprovalId: v.id("aiMessages"),
-		approved: v.boolean(),
-		editedArgs: v.optional(v.any()),
-	},
-	handler: async (ctx, args) => {
-		const { member, userId } = await requireOrgMember(ctx, args.orgId);
-		requireRole(member.permissions, "ai.use");
-
-		const msg = await ctx.db.get(args.toolApprovalId);
-		if (!msg || msg.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-		if (msg.confirmationState !== "pending") {
-			throw new ConvexError("Confirmation is no longer pending.");
-		}
-
-		const conv = await ctx.db.get(msg.conversationId);
-		if (!conv || conv.userId !== userId) throw new ConvexError(ERRORS.FORBIDDEN);
-
-		await ctx.db.patch(args.toolApprovalId, {
-			confirmationState: args.approved ? "approved" : "rejected",
-			...(args.editedArgs
-				? {
-						confirmationPayload: {
-							...msg.confirmationPayload,
-							editedArgs: args.editedArgs,
-						},
-					}
-				: {}),
-		});
-
-		if (args.approved) {
-			await ctx.scheduler.runAfter(0, processChatResume, {
-				orgId: args.orgId,
-				userId,
-				conversationId: msg.conversationId,
-				confirmedMessageId: args.toolApprovalId,
-				editedPayload: args.editedArgs,
-			});
-		}
-	},
-});
+//
+// S10 retired the V1 propose/commit flow. Two-step confirmation in V2 is the
+// 2FA step-up handled by `convex/aiStepUp.ts:confirmStepUp` — this surface
+// is intentionally gone so the frontend can't accidentally trip a stale
+// approval on V1-shaped messages that no longer exist.
 
 /**
  * Week 3.4 — mirrors AI SDK v6's
@@ -360,7 +287,6 @@ export const regenerate = orgMutation({
 		conversationId: v.id("aiConversations"),
 		model: v.optional(v.string()),
 		provider: v.optional(v.string()),
-		expandedLayers: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -410,7 +336,6 @@ export const regenerate = orgMutation({
 			model: args.model ?? conv.defaultModel,
 			provider: args.provider ?? conv.defaultProvider,
 			routeContext: undefined,
-			expandedLayers: args.expandedLayers ?? [],
 		});
 
 		return { ok: true, userMessageId: lastUser._id };
@@ -432,7 +357,6 @@ export const editAndResend = orgMutation({
 		body: v.string(),
 		model: v.optional(v.string()),
 		provider: v.optional(v.string()),
-		expandedLayers: v.optional(v.array(v.string())),
 	},
 	handler: async (ctx, args) => {
 		const { member, userId } = await requireOrgMember(ctx, args.orgId);
@@ -482,7 +406,6 @@ export const editAndResend = orgMutation({
 			model: args.model ?? conv.defaultModel,
 			provider: args.provider ?? conv.defaultProvider,
 			routeContext: undefined,
-			expandedLayers: args.expandedLayers ?? [],
 		});
 
 		return { ok: true };
@@ -553,33 +476,6 @@ export const appendAssistantPlaceholder = internalMutation({
 	},
 });
 
-/**
- * Insert a synthesised user message and return its id.
- *
- * Used by the `ask_user_choice` resume flow in `processChat.resume`: when
- * the user picks one option, we synthesise a user-role message
- * (`User picked: <label>. Continue with the original task.`) so the model
- * can pick the conversation back up cleanly. No auth wrapper because the
- * calling action already authenticated via getOrgMemberAndPermissions.
- */
-export const appendUserMessage = internalMutation({
-	args: {
-		orgId: v.id("orgs"),
-		conversationId: v.id("aiConversations"),
-		body: v.string(),
-	},
-	handler: async (ctx, args) => {
-		const now = Date.now();
-		return await ctx.db.insert("aiMessages", {
-			orgId: args.orgId,
-			conversationId: args.conversationId,
-			role: "user",
-			content: args.body,
-			createdAt: now,
-		});
-	},
-});
-
 export const patchAssistantBody = internalMutation({
 	args: {
 		messageId: v.id("aiMessages"),
@@ -600,6 +496,12 @@ export const patchAssistantBody = internalMutation({
 		),
 		activeTool: v.optional(v.string()),
 		reasoning: v.optional(v.string()),
+		// B.44 — provider grounding metadata captured by `runtime/host.ts`
+		// post-stream. Currently `{ citations: Citation[] }`; the shape is
+		// open-ended so future overflow can land here without a schema rev.
+		// Caller passes `undefined` when there's nothing to persist —
+		// existing rows that already have metadata are kept untouched.
+		metadata: v.optional(v.any()),
 	},
 	handler: async (ctx, args) => {
 		// Defensive: the message may have been deleted between scheduling
@@ -625,6 +527,7 @@ export const patchAssistantBody = internalMutation({
 			...(args.thinkingState ? { thinkingState: args.thinkingState } : {}),
 			...(args.activeTool ? { activeTool: args.activeTool } : {}),
 			...(args.reasoning !== undefined ? { reasoning: args.reasoning } : {}),
+			...(args.metadata !== undefined ? { metadata: args.metadata } : {}),
 		});
 	},
 });

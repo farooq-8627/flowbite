@@ -37,7 +37,7 @@ describe("usePersistedConversationId", () => {
 	});
 
 	it("restores a stored id on mount", () => {
-		window.localStorage.setItem(`flowbite:chat:${ORG_A}:activeConv`, CONV_A);
+		window.localStorage.setItem(`orbitly:chat:${ORG_A}:activeConv`, CONV_A);
 		const { result } = renderHook(() => usePersistedConversationId(ORG_A));
 		// useEffect runs synchronously in renderHook after first paint.
 		expect(result.current[0]).toBe(CONV_A);
@@ -49,22 +49,22 @@ describe("usePersistedConversationId", () => {
 			result.current[1](CONV_A);
 		});
 		expect(result.current[0]).toBe(CONV_A);
-		expect(window.localStorage.getItem(`flowbite:chat:${ORG_A}:activeConv`)).toBe(CONV_A);
+		expect(window.localStorage.getItem(`orbitly:chat:${ORG_A}:activeConv`)).toBe(CONV_A);
 	});
 
 	it("setter null clears storage", () => {
-		window.localStorage.setItem(`flowbite:chat:${ORG_A}:activeConv`, CONV_A);
+		window.localStorage.setItem(`orbitly:chat:${ORG_A}:activeConv`, CONV_A);
 		const { result } = renderHook(() => usePersistedConversationId(ORG_A));
 		act(() => {
 			result.current[1](null);
 		});
 		expect(result.current[0]).toBeNull();
-		expect(window.localStorage.getItem(`flowbite:chat:${ORG_A}:activeConv`)).toBeNull();
+		expect(window.localStorage.getItem(`orbitly:chat:${ORG_A}:activeConv`)).toBeNull();
 	});
 
 	it("switching orgId resets state and reads new org's key", () => {
-		window.localStorage.setItem(`flowbite:chat:${ORG_A}:activeConv`, CONV_A);
-		window.localStorage.setItem(`flowbite:chat:${ORG_B}:activeConv`, CONV_B);
+		window.localStorage.setItem(`orbitly:chat:${ORG_A}:activeConv`, CONV_A);
+		window.localStorage.setItem(`orbitly:chat:${ORG_B}:activeConv`, CONV_B);
 		const { result, rerender } = renderHook(({ orgId }) => usePersistedConversationId(orgId), {
 			initialProps: { orgId: ORG_A as Id<"orgs"> | undefined },
 		});
@@ -84,16 +84,16 @@ describe("usePersistedConversationId", () => {
 	});
 
 	it("stale id (not in validIds) is silently cleared on mount", () => {
-		window.localStorage.setItem(`flowbite:chat:${ORG_A}:activeConv`, CONV_STALE);
+		window.localStorage.setItem(`orbitly:chat:${ORG_A}:activeConv`, CONV_STALE);
 		const validIds = new Set<string>([CONV_A, CONV_B]);
 		const { result } = renderHook(() => usePersistedConversationId(ORG_A, { validIds }));
 		expect(result.current[0]).toBeNull();
 		// Storage was cleared.
-		expect(window.localStorage.getItem(`flowbite:chat:${ORG_A}:activeConv`)).toBeNull();
+		expect(window.localStorage.getItem(`orbitly:chat:${ORG_A}:activeConv`)).toBeNull();
 	});
 
 	it("valid id (in validIds) is preserved on mount", () => {
-		window.localStorage.setItem(`flowbite:chat:${ORG_A}:activeConv`, CONV_A);
+		window.localStorage.setItem(`orbitly:chat:${ORG_A}:activeConv`, CONV_A);
 		const validIds = new Set<string>([CONV_A, CONV_B]);
 		const { result } = renderHook(() => usePersistedConversationId(ORG_A, { validIds }));
 		expect(result.current[0]).toBe(CONV_A);

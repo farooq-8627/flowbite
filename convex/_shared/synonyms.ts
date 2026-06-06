@@ -69,15 +69,103 @@ const ENTITY_TYPE_MAP: Record<string, string> = {
 	firms: "company",
 };
 
+// ─── Per-turn org-label overrides (locked 2026-06-06) ──────────────────────
+//
+// Orgs can rename `lead → "Inquiry"`, `contact → "Client"`, etc. via
+// `org.settings.entityLabels`. The describe_workspace tool already exposes
+// those labels to the model, but smaller models (Gemini Flash, NVIDIA
+// Llama, Mistrals) routinely emit `entityType: "inquiry"` when they should
+// emit `"lead"` — the static map above doesn't know about per-org labels,
+// so the Zod enum rejects the call and the agent burns a step retrying.
+//
+// Fix: `runtime/host.ts:runAgent` builds per-org aliases at turn start
+// from `args.org.entityLabels` (lowercased singular + plural + slug → the
+// canonical slot) and calls `setPerTurnEntityAliases(...)` BEFORE
+// `streamText`. The Zod preprocessor below checks per-turn overrides
+// first, then the static map. The host clears the overrides in a
+// `finally` block so a previous turn's aliases never leak into the next.
+//
+// Race-safety: Convex actions run in their own V8 isolate per call. The
+// streaming tool-call loop is sequential within a turn (no concurrent
+// validation), so a simple module-level let is correct here. If we ever
+// move to multi-turn concurrency in the same isolate, swap to
+// `node:async_hooks::AsyncLocalStorage` (not done now to keep this file
+// importable from non-Node convex modules — the synonym preprocessor is
+// consumed by both action and mutation contexts).
+
+let perTurnEntityAliases: Record<string, string> = {};
+
+/**
+ * Install per-turn entity-type aliases. Call once at turn start, BEFORE
+ * any tool invocation runs. The map MUST use lowercased keys; the
+ * preprocess pipeline lowercases the model's input before lookup.
+ *
+ * Idempotent — calling twice replaces the previous map.
+ */
+export function setPerTurnEntityAliases(aliases: Record<string, string>): void {
+	perTurnEntityAliases = aliases;
+}
+
+/**
+ * Drop the per-turn override map. Caller MUST run this in a `finally`
+ * block around `streamText` so a leaked alias from a previous turn never
+ * coerces an unrelated org's input.
+ */
+export function clearPerTurnEntityAliases(): void {
+	perTurnEntityAliases = {};
+}
+
+/**
+ * Build the per-turn alias map from an org's `entityLabels`. Walks every
+ * slot's `singular` + `plural` + `slug` and maps each lowercased form to
+ * the canonical slot. Already-canonical labels (`"Lead" → "lead"`) collapse
+ * to identity entries which is harmless. Returns an empty map when the
+ * caller passes `undefined` (e.g. tests, back-compat callers).
+ *
+ * Example: org renamed lead → "Inquiry" (plural "Inquiries", slug
+ * "inquiries"). Returns `{ inquiry: "lead", inquiries: "lead", lead: "lead", leads: "lead" }`.
+ */
+export function buildOrgEntityAliases(
+	labels:
+		| {
+				lead?: { singular?: string; plural?: string; slug?: string };
+				contact?: { singular?: string; plural?: string; slug?: string };
+				deal?: { singular?: string; plural?: string; slug?: string };
+				company?: { singular?: string; plural?: string; slug?: string };
+		  }
+		| undefined,
+): Record<string, string> {
+	if (!labels) return {};
+	const out: Record<string, string> = {};
+	const slots: Array<["lead" | "contact" | "deal" | "company"]> = [
+		["lead"],
+		["contact"],
+		["deal"],
+		["company"],
+	];
+	for (const [slot] of slots) {
+		const variants = labels[slot];
+		if (!variants) continue;
+		for (const form of [variants.singular, variants.plural, variants.slug]) {
+			if (typeof form === "string" && form.length > 0) {
+				out[form.toLowerCase()] = slot;
+			}
+		}
+	}
+	return out;
+}
+
 /**
  * Map a user/model-supplied entity type string to its canonical singular
- * form. Returns the input lowercased if no mapping is known — the caller's
- * Zod enum then validates against the canonical set.
+ * form. Per-turn org-label overrides take precedence over the static
+ * synonym map; the static map is the fallback for orgs that haven't
+ * customised labels. Returns the input lowercased if no mapping is known
+ * — the caller's Zod enum then validates against the canonical set.
  */
 export function canonicalEntityType(raw: unknown): unknown {
 	if (typeof raw !== "string") return raw;
 	const key = raw.trim().toLowerCase();
-	return ENTITY_TYPE_MAP[key] ?? key;
+	return perTurnEntityAliases[key] ?? ENTITY_TYPE_MAP[key] ?? key;
 }
 
 /**

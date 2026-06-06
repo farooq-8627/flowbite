@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "convex/react";
 import { Check, Languages, Maximize, Minimize, Moon, Sun } from "lucide-react";
 import Link from "next/link";
 import { useLocale } from "next-intl";
@@ -26,7 +27,8 @@ import {
 	useSidebar,
 } from "@/components/ui/sidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useCurrentOrg } from "@/core/shell/shared/hooks/useCurrentOrg";
+import { api } from "@/convex/_generated/api";
+import { useCurrentOrg, useOrgPermissions } from "@/core/shell/shared/hooks/useCurrentOrg";
 import { useEntityLabels } from "@/core/shell/shared/hooks/useEntityLabels";
 import {
 	buildNavigation,
@@ -57,6 +59,17 @@ export function AppSidebar({
 	// Rename "Lead" → "Inquiry" in Settings and the sidebar updates instantly.
 	// Defaults are returned while the query is in-flight so the UI never flashes blank.
 	const labels = useEntityLabels();
+
+	// Active locale drives the per-language nav strings in `buildNavigation`.
+	// Reading here keeps the sidebar in sync with the in-flight locale switch.
+	const locale = useLocale();
+
+	// Permissions surface the AI nav group only for members who hold
+	// `ai.audit.view` (Owner+Admin default; can be added to a custom role).
+	// While membership is loading the helper returns an empty frozen array,
+	// which means the AI group stays hidden — failing closed is the right
+	// default for an observability surface.
+	const permissions = useOrgPermissions();
 
 	// Per-module visibility flags + order overrides come from the same shared
 	// `OrgProvider` context as the rest of the dashboard — no separate
@@ -100,7 +113,40 @@ export function AppSidebar({
 		});
 	}, [labels, moduleOverrides]);
 
-	const navGroups = buildNavigation(orgSlug ?? "", modules);
+	const navGroups = buildNavigation(
+		orgSlug ?? "",
+		modules,
+		locale,
+		permissions,
+		fullOrgEntry?.org.settings?.aiFeatures,
+	);
+
+	// B.42 follow-up — surface an unread-count badge on the sidebar's
+	// `AI → Audit feed` entry. The query is gated on `ai.audit.view`
+	// server-side AND we skip the subscription entirely when the
+	// caller lacks the permission, so the sidebar never opens an
+	// unused query channel for plain Members. Convex re-runs this
+	// reactively whenever a new `entityType:"ai_capability"` row
+	// lands or the user's `lastSeenAuditAt` changes — so the badge
+	// drops the moment the user opens `/ai/audit`.
+	const orgIdForAudit = fullOrgEntry?.org._id;
+	const canViewAudit = permissions.includes("ai.audit.view");
+	const auditUnseen = useQuery(
+		api.ai.queries.auditFeed.getUnseenAuditCount,
+		canViewAudit && orgIdForAudit ? { orgId: orgIdForAudit } : "skip",
+	);
+
+	// Map nav-item id → numeric badge value (or undefined to suppress).
+	// Today only `"ai.audit"` is decorated; the shape leaves room for
+	// future cards (e.g. unread-message count on `/messages`) without
+	// touching the renderer.
+	const itemBadges = useMemo<Record<string, number | undefined>>(() => {
+		const map: Record<string, number | undefined> = {};
+		if (auditUnseen && auditUnseen.count > 0) {
+			map["ai.audit"] = auditUnseen.count;
+		}
+		return map;
+	}, [auditUnseen]);
 
 	return (
 		<Sidebar {...props} variant={sidebar_variant} collapsible={sidebar_collapsible}>
@@ -110,7 +156,13 @@ export function AppSidebar({
 
 			<SidebarContent className="gap-1 group-data-[collapsible=icon]:gap-3">
 				{navGroups.map((group) => (
-					<NavGroupSection key={group.id} group={group} pathname={pathname} />
+					<NavGroupSection
+						key={group.id}
+						group={group}
+						pathname={pathname}
+						itemBadges={itemBadges}
+						auditCapped={auditUnseen?.capped === true}
+					/>
 				))}
 			</SidebarContent>
 
@@ -317,7 +369,17 @@ function LanguageDropdownButton() {
 
 // ─── Nav Group Section ────────────────────────────────────────────────────────
 
-function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: string }) {
+function NavGroupSection({
+	group,
+	pathname,
+	itemBadges,
+	auditCapped,
+}: {
+	group: NavGroup;
+	pathname: string;
+	itemBadges: Record<string, number | undefined>;
+	auditCapped: boolean;
+}) {
 	/**
 	 * A nav item matches when it is the current page, OR the current path is
 	 * a descendant of it. The descendant rule only applies to items that
@@ -358,24 +420,63 @@ function NavGroupSection({ group, pathname }: { group: NavGroup; pathname: strin
 			)}
 			<SidebarGroupContent>
 				<SidebarMenu>
-					{group.items.map((item) => (
-						<SidebarMenuItem key={item.url}>
-							<SidebarMenuButton
-								asChild
-								isActive={isItemActive(item.url)}
-								tooltip={item.title}
-								className="h-8"
-							>
-								<Link href={item.url}>
-									<item.icon />
-									<span>{item.title}</span>
-								</Link>
-							</SidebarMenuButton>
-						</SidebarMenuItem>
-					))}
+					{group.items.map((item) => {
+						const badge = item.id !== undefined ? itemBadges[item.id] : undefined;
+						const showBadge = typeof badge === "number" && badge > 0;
+						const badgeLabel = showBadge
+							? badge >= 99 && item.id === "ai.audit" && auditCapped
+								? "99+"
+								: String(badge)
+							: "";
+						return (
+							<SidebarMenuItem key={item.url}>
+								<SidebarMenuButton
+									asChild
+									isActive={isItemActive(item.url)}
+									tooltip={item.title}
+									className="h-8"
+								>
+									<Link href={item.url}>
+										<item.icon />
+										<span className="flex-1 truncate">{item.title}</span>
+										{showBadge && (
+											<NavItemBadge
+												label={badgeLabel}
+												ariaLabel={
+													item.id === "ai.audit"
+														? `${badgeLabel} unseen audit ${
+																badge === 1 ? "row" : "rows"
+															}`
+														: badgeLabel
+												}
+											/>
+										)}
+									</Link>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
+						);
+					})}
 				</SidebarMenu>
 			</SidebarGroupContent>
 		</SidebarGroup>
+	);
+}
+
+/**
+ * Tiny rounded pill rendered on the trailing edge of a nav row. RTL-safe
+ * via the parent's `gap` + the badge being a flex sibling — no
+ * directional positioning. Hidden in icon-collapsed sidebar mode (the
+ * row shows only the icon there, so a numeric pill would be nonsense).
+ */
+function NavItemBadge({ label, ariaLabel }: { label: string; ariaLabel: string }) {
+	return (
+		<span
+			role="status"
+			aria-label={ariaLabel}
+			className="ms-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold leading-none text-primary-foreground tabular-nums group-data-[collapsible=icon]:hidden"
+		>
+			{label}
+		</span>
 	);
 }
 

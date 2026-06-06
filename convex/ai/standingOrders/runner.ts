@@ -2,39 +2,19 @@
 /**
  * convex/ai/standingOrders/runner.ts
  *
- * Stage 8 of /SPRINT-PLAN.md (Autonomous layer). The Node-runtime side
- * of standing orders — runs the prompt with a restricted tool set,
- * persists the textual summary on the row, and emits `aiToolEvents`
- * with `triggeredBy: "standingOrder:<id>"` for every tool call.
+ * Stage 8 of /SPRINT-PLAN.md (Autonomous layer). One invocation per
+ * fired schedule tick. Reloads the row, resolves the owner's RBAC,
+ * picks a platform-billed model, then runs the V2 capability host
+ * (`runtime/host.ts`) with a registry filtered to the standing order's
+ * `allowedTools[]` whitelist.
  *
- * Architecture:
- *   crons.ts (every minute)
- *     → evaluator.tick (V8) checks shouldFireNow per row
- *         → schedules this action per matching row
- *             → reads row + owner permissions
- *             → builds tool dict (intersection of caller permissions ×
- *               allowedTools[] whitelist)
- *             → opens a synthetic aiConversations row tagged
- *               "standingOrder:<id>" so the trace UI works for free
- *             → streamText with stepCountIs cap
- *             → on every tool-call: recordToolEvent with triggeredBy
- *             → on completion: recordRunResult with summary + status
- *
- * Cost gates:
- *   - Standing orders are PLATFORM-BILLED only (BYOK not supported here).
- *     Future iteration: per-org daily LLM budget gate.
- *   - stepCountIs(8) hard-caps the loop — the model can call at most 8
- *     tools before being forced to summarise. Prevents runaway loops.
- *   - Tool whitelist is ENFORCED — the model never sees tools outside
- *     `allowedTools[]` AND the user's permission set.
- *
- * Telemetry:
- *   `aiToolEvents.triggeredBy = "standingOrder:<id>"` on every tool call,
- *   plus a top-level `synthesis` entry recording the model's final
- *   reply (so the AI changelog surfaces "this is what the AI did").
+ * S10 port — replaced the V1 `getToolsForRequest` + `bindAllToolContexts`
+ * pair with `runAgent({...registry: filtered})`. The whitelist is
+ * applied as a name-filter over `listCapabilities()` — capabilities
+ * not in the user's permissions are still hidden by the host's own
+ * gate, so the whitelist is purely a domain-narrow.
  */
 
-import { generateText, stepCountIs, type ToolSet } from "ai";
 import { v } from "convex/values";
 import type { Id } from "../../_generated/dataModel";
 import { internalAction } from "../../_generated/server";
@@ -45,31 +25,10 @@ import {
 	MODEL_REGISTRY,
 	PLATFORM_BRIEFING_MODEL,
 } from "../models";
-import { bindAllToolContexts } from "../orchestrator/toolContextBinder";
-import { clearActiveRequestContext, getToolsForRequest, type LayerId } from "../toolRegistry";
-import type { ToolContext } from "../tools/_shared";
+import { listCapabilities } from "../registry/define";
+import { runAgent } from "../runtime/host";
 
-const MAX_STEPS = 8;
-const MAX_OUTPUT_TOKENS = 700;
 const SUMMARY_CAP = 1800;
-
-const ALL_LAYERS: LayerId[] = [
-	"pipelines",
-	"fields",
-	"tags",
-	"views",
-	"categories",
-	"members",
-	"settings",
-	"bulk",
-	"templates",
-	"data",
-	"messaging",
-	"files",
-	"timeline",
-	"notifications",
-	"analytics",
-];
 
 // biome-ignore lint/suspicious/noExplicitAny: Convex pre-codegen forward ref pattern
 const _ref = (path: string) => path as any;
@@ -162,88 +121,55 @@ export const run = internalAction({
 			}),
 		)) as Id<"aiConversations">;
 
-		// 5. Bind tool contexts so each tool's _ctx variable resolves.
-		const toolCtx: ToolContext = {
-			ctx: ctx as never,
-			orgId: row.orgId,
-			userId: row.userId,
-			permissions: ownerInfo.permissions,
-			conversationId,
-		};
-		bindAllToolContexts(toolCtx);
-
-		// 6. Build the tool dict. Start with everything the user can do
-		// across every layer, then narrow to the allowedTools whitelist.
-		const allTools = getToolsForRequest({
-			permissions: ownerInfo.permissions,
-			modelTier: "standard",
-			expandedLayers: ALL_LAYERS,
-		});
+		// 5. Filter the V2 registry to the whitelist. Capabilities the
+		// owner can't run are still removed by the host's gate, so this
+		// is purely a domain-narrow.
 		const whitelist = new Set(row.allowedTools);
-		const tools: ToolSet = {};
-		for (const [name, def] of Object.entries(allTools)) {
-			if (whitelist.has(name)) tools[name] = def as ToolSet[string];
-		}
+		const filteredRegistry = listCapabilities().filter((c) => whitelist.has(c.name));
 
-		// 7. The prompt — short, autonomous-mode-aware. We tell the model
-		// it is running unattended so it shouldn't ask clarifying
-		// questions; on ambiguity it should describe what it would have
-		// done and stop.
-		const system = [
+		// 6. Standing-order PROJECT drive variant. We tell the model it
+		// runs unattended so it shouldn't ask clarifying questions; on
+		// ambiguity it summarises what it would have done.
+		const standingOrderPrompt = [
 			"You are running a STANDING ORDER on behalf of an organisation user — autonomously, without a person watching.",
+			"",
 			"Rules:",
 			"- Do NOT ask clarifying questions. If the request is ambiguous, summarise what you would have done and stop.",
-			"- Use ONLY the tools registered in this turn. Other tools are explicitly forbidden.",
+			"- Use ONLY the tools available in this turn. Irreversible tools require a 2FA step-up that no human will provide here — they will return `needs_step_up` and you must stop.",
 			"- Reply with a 1-3 sentence summary of what you did (or what you decided not to do, and why).",
-			`- You are user ${row.userId} in workspace ${row.orgId}. The orchestrator already authenticated you.`,
+			"",
+			`The standing order's instructions: ${row.prompt}`,
 		].join("\n");
 
 		const startedAt = Date.now();
 		try {
-			const result = await generateText({
-				model: model as Parameters<typeof generateText>[0]["model"],
-				system,
-				prompt: row.prompt,
-				tools: Object.keys(tools).length > 0 ? tools : undefined,
-				stopWhen: stepCountIs(MAX_STEPS),
-				temperature: 0.3,
-				maxOutputTokens: MAX_OUTPUT_TOKENS,
+			const result = await runAgent({
+				model: model as Parameters<typeof runAgent>[0]["model"],
+				channel: "chat",
+				trigger: "autonomous",
+				principal: {
+					kind: "member",
+					userId: row.userId,
+					orgId: row.orgId,
+					permissions: ownerInfo.permissions,
+					channel: "chat",
+				},
+				conversation: {
+					conversationId: conversationId as unknown as string,
+				},
+				message: standingOrderPrompt,
+				ctx: ctx as unknown as Parameters<typeof runAgent>[0]["ctx"],
+				registry: filteredRegistry,
 			});
-
-			// Telemetry — one row per tool call seen, with the triggeredBy
-			// set so trace UIs can attribute the action to this standing
-			// order. We DON'T duplicate the per-call telemetry that the
-			// streamText tool wrappers already emit during chat — those
-			// don't fire for `generateText`. Standing orders use
-			// `generateText` (single-shot, non-streaming) so we record
-			// here.
-			const toolCalls = (result as unknown as { toolCalls?: Array<{ toolName: string }> })
-				.toolCalls;
-			if (Array.isArray(toolCalls)) {
-				for (const call of toolCalls) {
-					await ctx.runMutation(_ref("ai/telemetry:recordToolEvent"), {
-						orgId: row.orgId,
-						userId: row.userId,
-						conversationId,
-						toolName: call.toolName,
-						model: briefingModelKey,
-						provider: info.provider,
-						startedAt,
-						durationMs: Date.now() - startedAt,
-						ok: true,
-						triggeredBy: `standingOrder:${row.id}`,
-					});
-				}
-			}
 
 			const summary =
 				(result.text ?? "").trim().length > 0
 					? (result.text ?? "").trim().slice(0, SUMMARY_CAP)
-					: `(no text reply — ${toolCalls?.length ?? 0} tool call${
-							(toolCalls?.length ?? 0) === 1 ? "" : "s"
+					: `(no text reply — ${result.toolCallCount} tool call${
+							result.toolCallCount === 1 ? "" : "s"
 						} fired)`;
 			const status: "ok" | "skipped" =
-				summary.length > 0 || (toolCalls?.length ?? 0) > 0 ? "ok" : "skipped";
+				summary.length > 0 || result.toolCallCount > 0 ? "ok" : "skipped";
 
 			await ctx.runMutation(
 				_ref("ai/standingOrders/mutations:recordRunResult"),
@@ -253,8 +179,6 @@ export const run = internalAction({
 					status,
 				}),
 			);
-
-			clearActiveRequestContext();
 			return { ok: true };
 		} catch (err) {
 			console.error("[standingOrders.runner] failed:", err);
@@ -281,7 +205,6 @@ export const run = internalAction({
 				errorMessage: message,
 				triggeredBy: `standingOrder:${row.id}`,
 			});
-			clearActiveRequestContext();
 			return { ok: false, reason: "exception" };
 		}
 	},

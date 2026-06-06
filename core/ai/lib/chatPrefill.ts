@@ -30,9 +30,10 @@
  */
 
 import { useEffect } from "react";
+import { APP_CONFIG } from "@/config/app-config";
 
-const EVENT_NAME = "flowbite:ai-chat-prefill";
-const OPEN_EVENT_NAME = "flowbite:ai-chat-open";
+const EVENT_NAME = `${APP_CONFIG.storagePrefix}:ai-chat-prefill`;
+const OPEN_EVENT_NAME = `${APP_CONFIG.storagePrefix}:ai-chat-open`;
 
 /**
  * Dispatch a chat-prefill intent. Safe to call during render — the

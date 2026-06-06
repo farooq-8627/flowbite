@@ -25,9 +25,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { APP_CONFIG } from "@/config/app-config";
 import type { Id } from "@/convex/_generated/dataModel";
 
-const STORAGE_PREFIX = "flowbite:chat:";
+const STORAGE_PREFIX = `${APP_CONFIG.storagePrefix}:chat:`;
 const STORAGE_SUFFIX = ":activeConv";
 
 function buildKey(orgId: Id<"orgs"> | undefined): string | null {

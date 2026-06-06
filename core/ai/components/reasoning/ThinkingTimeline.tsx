@@ -64,6 +64,15 @@ export function ThinkingTimeline({ state, activeTool, reasoning, toolMessages, o
 	const isWorking = effectiveState === "thinking" || effectiveState === "calling_tool";
 
 	// Sticky-open semantics — see 1.5a in audit doc.
+	//
+	// **B.42 follow-up (2026-06-05).** The streaming-transition auto-close
+	// + the done-state auto-close were both causing the "empty message"
+	// regression: tools ran, the model produced no final text, and the
+	// dropdown stayed collapsed so the user couldn't see what had
+	// happened. New rule: auto-close on streaming/done is gated on
+	// `_hasContentOnSettle` — when the assistant settles WITH no
+	// streaming content but WITH at least one tool row, the timeline
+	// stays expanded so the tool rail IS the answer the user sees.
 	const userOverrideRef = useRef(false);
 	const prevStateRef = useRef<ThinkingState>(effectiveState);
 	const [expanded, setExpanded] = useState(false);
@@ -72,31 +81,6 @@ export function ThinkingTimeline({ state, activeTool, reasoning, toolMessages, o
 		userOverrideRef.current = true;
 		setExpanded((v) => !v);
 	};
-
-	useEffect(() => {
-		const prev = prevStateRef.current;
-		const curr = effectiveState;
-
-		// New turn — reset the override flag so the next turn auto-opens.
-		if (
-			(prev === "done" || prev === "error") &&
-			(curr === "thinking" || curr === "calling_tool")
-		) {
-			userOverrideRef.current = false;
-		}
-
-		if (curr === "thinking" || curr === "calling_tool") {
-			if (!userOverrideRef.current) setExpanded(true);
-		}
-		if (prev !== "streaming" && curr === "streaming") {
-			if (!userOverrideRef.current) setExpanded(false);
-		}
-		if (curr === "done" || curr === "error") {
-			if (!userOverrideRef.current) setExpanded(false);
-		}
-
-		prevStateRef.current = curr;
-	}, [effectiveState]);
 
 	// Build the row list. Tool messages always come first (chronologically
 	// the agent calls tools and THEN writes prose), with any free-form
@@ -125,6 +109,44 @@ export function ThinkingTimeline({ state, activeTool, reasoning, toolMessages, o
 
 	const rowCount = toolMessages.length + thinkingSteps.length + (showPendingPlaceholder ? 1 : 0);
 	const hasContent = rowCount > 0;
+
+	useEffect(() => {
+		const prev = prevStateRef.current;
+		const curr = effectiveState;
+
+		// New turn — reset the override flag so the next turn auto-opens.
+		if (
+			(prev === "done" || prev === "error") &&
+			(curr === "thinking" || curr === "calling_tool")
+		) {
+			userOverrideRef.current = false;
+		}
+
+		if (curr === "thinking" || curr === "calling_tool") {
+			if (!userOverrideRef.current) setExpanded(true);
+		}
+		// B.42 follow-up — keep the dropdown OPEN when the model is
+		// streaming text BUT there are tool rows the user hasn't seen
+		// yet. Once the prose body has substantive content (handled at
+		// the parent level by hiding the empty-state placeholder) the
+		// user can manually collapse via the header click. Also: when
+		// the turn settles with tool rows but no content the dropdown
+		// re-opens automatically since the rail IS the answer.
+		if (prev !== "streaming" && curr === "streaming") {
+			if (!userOverrideRef.current && rowCount === 0) setExpanded(false);
+		}
+		if (curr === "done" || curr === "error") {
+			if (!userOverrideRef.current) {
+				// If the turn produced any tool rows, leave them visible
+				// so the user can see what ran without an extra click.
+				// Pure prose answers (rowCount === 0) still collapse.
+				if (rowCount > 0) setExpanded(true);
+				else setExpanded(false);
+			}
+		}
+
+		prevStateRef.current = curr;
+	}, [effectiveState, rowCount]);
 
 	// Once done with no content (a pure prose answer with no tool calls
 	// and no chain-of-thought), render nothing.

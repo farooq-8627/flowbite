@@ -20,8 +20,13 @@
  * pinned cards to the top by dragging them.
  */
 import { v } from "convex/values";
-import { orgQuery, requireOrgMember } from "../../../_functions/authenticated";
-import type { Doc } from "../../../_generated/dataModel";
+import {
+	orgQuery,
+	requireOrgMember,
+	requireOrgMemberByIds,
+} from "../../../_functions/authenticated";
+import type { Doc, Id } from "../../../_generated/dataModel";
+import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 
 /**
@@ -127,6 +132,62 @@ export const listForPerson = orgQuery({
  * Other filters are applied in-memory after the index pull. We cap the
  * scan at 1,000 rows.
  */
+async function listForOrgImpl(
+	ctx: QueryCtx,
+	args: {
+		orgId: Id<"orgs">;
+		permissions: string[];
+		categoryId?: Id<"noteCategories">;
+		authorId?: Id<"users">;
+		entityType?: string;
+		isPinned?: boolean;
+		limit?: number;
+	},
+): Promise<Doc<"notes">[]> {
+	const isAdmin = hasPermission(args.permissions, "notes.viewInternal");
+	const limit = Math.min(args.limit ?? 500, 1000);
+
+	// Pick the most selective index available.
+	let candidates: Doc<"notes">[];
+	if (args.categoryId !== undefined) {
+		candidates = await ctx.db
+			.query("notes")
+			.withIndex("by_org_and_category", (q) =>
+				q.eq("orgId", args.orgId).eq("categoryId", args.categoryId),
+			)
+			.order("desc")
+			.take(limit);
+	} else if (args.authorId !== undefined) {
+		const authorId = args.authorId;
+		candidates = await ctx.db
+			.query("notes")
+			.withIndex("by_org_and_author", (q) =>
+				q.eq("orgId", args.orgId).eq("authorId", authorId),
+			)
+			.order("desc")
+			.take(limit);
+	} else {
+		candidates = await ctx.db
+			.query("notes")
+			.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
+			.order("desc")
+			.take(limit);
+	}
+
+	// Post-filter remaining predicates + privacy filter.
+	const filtered = candidates.filter((n) => {
+		if (!isAdmin && n.isInternal) return false;
+		if (args.entityType !== undefined && n.entityType !== args.entityType) return false;
+		if (args.isPinned !== undefined && n.isPinned !== args.isPinned) return false;
+		if (args.authorId !== undefined && n.authorId !== args.authorId) return false;
+		if (args.categoryId !== undefined && n.categoryId !== args.categoryId) return false;
+		return true;
+	});
+
+	// Pinned first, then newest.
+	return filtered.sort(sortNotesByOrder);
+}
+
 export const listForOrg = orgQuery({
 	args: {
 		orgId: v.id("orgs"),
@@ -139,47 +200,26 @@ export const listForOrg = orgQuery({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "notes.view");
-		const isAdmin = hasPermission(member.permissions, "notes.viewInternal");
-		const limit = Math.min(args.limit ?? 500, 1000);
+		return listForOrgImpl(ctx, { ...args, permissions: member.permissions });
+	},
+});
 
-		// Pick the most selective index available.
-		let candidates: Doc<"notes">[];
-		if (args.categoryId !== undefined) {
-			candidates = await ctx.db
-				.query("notes")
-				.withIndex("by_org_and_category", (q) =>
-					q.eq("orgId", args.orgId).eq("categoryId", args.categoryId),
-				)
-				.order("desc")
-				.take(limit);
-		} else if (args.authorId !== undefined) {
-			candidates = await ctx.db
-				.query("notes")
-				.withIndex("by_org_and_author", (q) =>
-					q.eq("orgId", args.orgId).eq("authorId", args.authorId!),
-				)
-				.order("desc")
-				.take(limit);
-		} else {
-			candidates = await ctx.db
-				.query("notes")
-				.withIndex("by_org_and_created", (q) => q.eq("orgId", args.orgId))
-				.order("desc")
-				.take(limit);
-		}
-
-		// Post-filter remaining predicates + privacy filter.
-		const filtered = candidates.filter((n) => {
-			if (!isAdmin && n.isInternal) return false;
-			if (args.entityType !== undefined && n.entityType !== args.entityType) return false;
-			if (args.isPinned !== undefined && n.isPinned !== args.isPinned) return false;
-			if (args.authorId !== undefined && n.authorId !== args.authorId) return false;
-			if (args.categoryId !== undefined && n.categoryId !== args.categoryId) return false;
-			return true;
-		});
-
-		// Pinned first, then newest.
-		return filtered.sort(sortNotesByOrder);
+/** AI-callable internal twin — see AGENTS.md "AI tools call *ForAI" rule. */
+export const listForOrgForAI = internalQuery({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		categoryId: v.optional(v.id("noteCategories")),
+		authorId: v.optional(v.id("users")),
+		entityType: v.optional(v.string()),
+		isPinned: v.optional(v.boolean()),
+		limit: v.optional(v.number()),
+	},
+	handler: async (ctx, args) => {
+		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		requireRole(member.permissions, "notes.view");
+		const { userId: _u, ...rest } = args;
+		return listForOrgImpl(ctx, { ...rest, permissions: member.permissions });
 	},
 });
 

@@ -84,8 +84,8 @@ const intlMiddleware = createIntlMiddleware(routing);
 //
 // The fix is per-request dynamic config:
 //
-//   1. The signin page sets `flowbite_remember=1` (checkbox checked) or
-//      `flowbite_remember=0` (unchecked) BEFORE calling `signIn(...)`.
+//   1. The signin page sets `orbitly_remember=1` (checkbox checked) or
+//      `orbitly_remember=0` (unchecked) BEFORE calling `signIn(...)`.
 //   2. This middleware reads the cookie on every request that flows
 //      through Convex Auth's proxy at `/api/auth/*` (the path that mints
 //      the auth cookies after sign-in / OAuth callback).
@@ -99,7 +99,7 @@ const intlMiddleware = createIntlMiddleware(routing);
 //   - convex-auth nextjs/server/index.d.ts — `cookieConfig.maxAge`.
 //   - convex-auth nextjs/server/utils.js — `setAuthCookies` reads
 //     cookieConfig at every cookie write.
-const REMEMBER_ME_COOKIE = "flowbite_remember";
+const REMEMBER_ME_COOKIE = "orbitly_remember";
 const REMEMBER_ME_MAX_AGE_S = 30 * 24 * 60 * 60; // 30 days
 
 function resolveCookieMaxAge(request: NextRequest): number | null {

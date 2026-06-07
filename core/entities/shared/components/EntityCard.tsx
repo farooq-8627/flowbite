@@ -462,6 +462,11 @@ export function EntityCard({
 					showName={showName}
 					title={title}
 					subtitle={subtitle}
+					// readOnly path wraps the whole card in `<Link href={detailHref}>`
+					// (see the `if (readOnly && detailHref)` branch below). Skip the
+					// inner Link in that case to avoid nested <a> (banned HTML; React
+					// fires a hydration warning pointing at the chat panel mount).
+					insideLink={readOnly}
 				/>
 
 				{/* Top-right cluster — status dot first, then tags (or
@@ -802,6 +807,7 @@ function IdentityCluster({
 	showName,
 	title,
 	subtitle,
+	insideLink = false,
 }: {
 	href: string | null;
 	avatarUrl?: string;
@@ -810,6 +816,15 @@ function IdentityCluster({
 	showName: boolean;
 	title: string;
 	subtitle?: string;
+	/**
+	 * True when the IdentityCluster is rendered INSIDE another <a> (the
+	 * read-only chat-bubble path wraps the whole `cardBody` in a
+	 * `<Link href={detailHref}>`). In that case we MUST NOT render our
+	 * own inner `<Link>` — nested anchors are invalid HTML and React
+	 * fires a hydration error pointing at the chat panel mount point.
+	 * Outer Link still navigates the user to the same detail page.
+	 */
+	insideLink?: boolean;
 }) {
 	const content = (
 		<span className="flex min-w-0 flex-1 items-center gap-2">
@@ -832,7 +847,7 @@ function IdentityCluster({
 		</span>
 	);
 
-	if (!href) return content;
+	if (!href || insideLink) return content;
 
 	return (
 		// biome-ignore lint/a11y/noStaticElementInteractions: event-stop wrapper isolates the profile link from drag listeners

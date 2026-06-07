@@ -64,6 +64,28 @@ export async function buildCustomFieldKeyResolver(
 	cap: CapabilityCtx,
 	entityType: CustomFieldEntityType,
 ): Promise<CustomFieldKeyResolver> {
+	const lookup = await loadFieldDefLookup(cap, entityType);
+	return makeResolverFromLookup(lookup);
+}
+
+/**
+ * Load the org's live `fieldDefinitions` for an entity type and return
+ * a case-insensitive `Map<lowercase string, canonical name>` keyed by
+ * BOTH the canonical name and the user-facing label. Used by:
+ *
+ *   • {@link buildCustomFieldKeyResolver} — wraps the lookup in a
+ *     per-row coercer for the `customFields:{}` map.
+ *   • {@link import("./bulkRowPartition").partitionRowKeys} — partitions
+ *     a row's top-level keys into columns / customFields / dropped.
+ *
+ * One DB read. Failure-tolerant: an RBAC denial / schema drift returns
+ * an empty lookup so the caller falls back to "everything that isn't a
+ * column is dropped" (still better than silent loss).
+ */
+export async function loadFieldDefLookup(
+	cap: CapabilityCtx,
+	entityType: CustomFieldEntityType,
+): Promise<Map<string, string>> {
 	const defs = (await cap.ctx
 		.runQuery(internal.crm.fields.fieldDefinitions.queries.listByEntityForAI, {
 			orgId: cap.principal.orgId,
@@ -80,7 +102,7 @@ export async function buildCustomFieldKeyResolver(
 			lookup.set(d.label.toLowerCase(), d.name);
 		}
 	}
-	return makeResolverFromLookup(lookup);
+	return lookup;
 }
 
 /**

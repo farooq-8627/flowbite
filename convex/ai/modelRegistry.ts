@@ -197,16 +197,83 @@ export const MODEL_REGISTRY: Readonly<Record<string, ModelInfo>> = {
 		pickerNote:
 			"Free via NVIDIA NIM. Best for one-shot Q&A; weaker at multi-step CRM actions — prefer Claude or Gemini 2.5 Flash for create/update flows.",
 	},
-	// OpenRouter free model — `:free` suffix is mandatory for free tier.
-	// Free tier: 20 requests/min, ~200/day per account.
+	// ── OpenRouter free models — `:free` suffix is mandatory for free tier ──
+	// Free tier: 20 requests/min, ~200/day per account (per
+	// https://openrouter.ai/docs/use-cases/free-models, last verified
+	// 2026-06-06). All four below were verified live against
+	// `https://openrouter.ai/api/v1/models` on 2026-06-06 — every entry
+	// is currently listed AND advertises `tools` + `tool_choice` in
+	// `supported_parameters` (`supportsTools: true` is therefore safe;
+	// gating in `convex/ai/registry/wrapper.ts` will silently fall back
+	// if a particular model regresses).
+	//
+	// Tier choice: every free model is mapped to `tier: "small"`. Plan
+	// gating in `getModel` only allows "small" on the Free plan; pinning
+	// these to "small" means a Free-plan user can pick them via BYOK
+	// without a tier downgrade. Real model quality varies (Qwen3 Coder
+	// 480B vs GLM 4.5 Air ≈ Sonnet vs Haiku in code), but `tier` is a
+	// PLAN-allowance knob, not a quality knob; the `pickerNote` field is
+	// where we surface quality hints.
 	"openrouter-llama-3.3-70b-free": {
 		provider: "openrouter",
 		modelId: "meta-llama/llama-3.3-70b-instruct:free",
 		tier: "small",
 		supportsTools: true,
-		contextWindow: 128_000,
+		contextWindow: 131_072,
 		inputCostPerMTok: 0,
 		outputCostPerMTok: 0,
+	},
+	// Qwen3 Coder 480B Active-A35B — Alibaba Cloud's flagship coding
+	// model. 1,048,576 ctx (1M-token window) is the largest free model
+	// on OpenRouter; ideal for repo-scale CRM-context tasks. Strong on
+	// tool-call accuracy in our Llama-3.3 / GLM A/B compared to
+	// Llama-3.3-70B-free. Slug: `qwen/qwen3-coder:free`.
+	"openrouter-qwen3-coder-free": {
+		provider: "openrouter",
+		modelId: "qwen/qwen3-coder:free",
+		tier: "small",
+		supportsTools: true,
+		contextWindow: 1_048_576,
+		inputCostPerMTok: 0,
+		outputCostPerMTok: 0,
+		pickerNote: "Free via OpenRouter. 1M context, strong at code + multi-step tool calls.",
+	},
+	// Qwen3 Next 80B-A3B Instruct — newer-generation Qwen3, 262K ctx.
+	// Slug: `qwen/qwen3-next-80b-a3b-instruct:free`.
+	"openrouter-qwen3-next-80b-free": {
+		provider: "openrouter",
+		modelId: "qwen/qwen3-next-80b-a3b-instruct:free",
+		tier: "small",
+		supportsTools: true,
+		contextWindow: 262_144,
+		inputCostPerMTok: 0,
+		outputCostPerMTok: 0,
+		pickerNote: "Free via OpenRouter. Newer Qwen3 generation, balanced tool calls.",
+	},
+	// GLM 4.5 Air — Zhipu AI's mid-size open model, 131K ctx, supports
+	// `tools` + `tool_choice`. Slug: `z-ai/glm-4.5-air:free`.
+	"openrouter-glm-4.5-air-free": {
+		provider: "openrouter",
+		modelId: "z-ai/glm-4.5-air:free",
+		tier: "small",
+		supportsTools: true,
+		contextWindow: 131_072,
+		inputCostPerMTok: 0,
+		outputCostPerMTok: 0,
+		pickerNote: "Free via OpenRouter. Reliable for one-shot Q&A; usable for tool flows.",
+	},
+	// OpenAI GPT-OSS 120B — Apache-2.0 reasoning-tuned model published
+	// by OpenAI on Hugging Face / OpenRouter. 131K ctx. Tools supported.
+	// Slug: `openai/gpt-oss-120b:free`.
+	"openrouter-gpt-oss-120b-free": {
+		provider: "openrouter",
+		modelId: "openai/gpt-oss-120b:free",
+		tier: "small",
+		supportsTools: true,
+		contextWindow: 131_072,
+		inputCostPerMTok: 0,
+		outputCostPerMTok: 0,
+		pickerNote: "Free via OpenRouter. Reasoning-tuned; good on chain-of-thought tasks.",
 	},
 	// ── Moonshot AI / Kimi ───────────────────────────────────────────────────
 	// Moonshot exposes an OpenAI-compatible API at https://api.moonshot.ai/v1

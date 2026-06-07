@@ -262,7 +262,15 @@ function summariseTemplate(t: Doc<"platformTemplates">) {
 	const stageCount =
 		singlePipeline?.stages?.length ??
 		(pipelinesArr.length > 0 ? (pipelinesArr[0]?.stages?.length ?? 0) : 0);
-	const pipelineName = singlePipeline?.name ?? pipelinesArr[0]?.name ?? "Default Pipeline";
+	// Derive a sensible pipeline-name fallback from the template's
+	// own metadata when no `pipeline` / `pipelines[]` row supplies a
+	// name. Prefer the human label, then the templateKey, then a
+	// neutral "Pipeline" string. NEVER hardcode a per-template
+	// "Default Pipeline" literal — workspaces with custom industry
+	// templates would otherwise display a stale name from a different
+	// template's seed.
+	const fallbackName = t.label?.length > 0 ? `${t.label} pipeline` : "Pipeline";
+	const pipelineName = singlePipeline?.name ?? pipelinesArr[0]?.name ?? fallbackName;
 
 	return {
 		id: t.templateKey,

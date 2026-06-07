@@ -182,7 +182,7 @@ export function InviteMemberDialog({
 					<DialogTitle>Invite a new member</DialogTitle>
 					<DialogDescription>
 						{lastAcceptUrl
-							? "Invitation created. Email is on its way — copy the link below if you'd rather share it directly."
+							? "Invitation created. Email is on its way. Copy the link below if you'd rather share it directly."
 							: "They'll get an email with a link to join this workspace."}
 					</DialogDescription>
 				</DialogHeader>

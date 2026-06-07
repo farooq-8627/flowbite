@@ -213,3 +213,73 @@ describe("import_csv — gate matrix", () => {
 		expect(r.status).toBe("needs_step_up");
 	});
 });
+
+// ─── Bug A / Bug B regression pins (locked 2026-06-07) ───────────────────────
+//
+// Two production bugs reported on 2026-06-07:
+//
+//   • Bug A — `bulk_create_entities` rejected the WHOLE batch when the
+//     AI emitted a column-backed-but-not-create-accepted key like
+//     `status:"new"`, OR a placeholder `assignedTo:"member-1"`. Fix:
+//     per-entity create-args allowlist + Convex-ID shape check inside
+//     `bulkCreateEntities.run`, drops bad keys to warnings instead of
+//     failing the row.
+//
+//   • Bug B — model looped after a successful create because the OK
+//     headline contained "(N rows had unrecognised keys — see warnings)".
+//     Fix: clean OK headline + explicit "STOP after ok" line in the
+//     bulk group playbook.
+//
+// Direct unit testing of the run() path needs a fully seeded
+// convex-test world (org/user/member/permissions/fieldDefinitions);
+// these light-weight pins protect the surface-level contracts so a
+// future refactor can't silently revive the regressions.
+
+const bulkCreate = BULK_CAPABILITIES.find((c) => c.name === "bulk_create_entities");
+
+describe("bulk_create_entities — Bug A/B regression pins", () => {
+	if (!bulkCreate) throw new Error("expected bulk_create_entities");
+
+	it("(Bug A) input schema accepts a row with placeholder `status` + `assignedTo`", () => {
+		// The schema must NOT reject these keys at the zod layer — the
+		// run() loop is what filters them with a friendly warning. If
+		// zod were tightened to reject them up front, the user would
+		// get a `needs_repair` envelope on the very first call which
+		// is worse UX than "row created without those fields".
+		const parsed = bulkCreate.input.safeParse({
+			entityType: "lead",
+			rows: [
+				{
+					displayName: "Alice",
+					email: "alice@example.com",
+					source: "web",
+					status: "new", // Bug A: column-backed, NOT create-accepted
+					assignedTo: "member-1", // Bug A: placeholder, not a Convex _id
+				},
+			],
+		});
+		expect(parsed.success).toBe(true);
+	});
+
+	it("(Bug B) capability spec exposes the bulk group with the STOP playbook line", async () => {
+		// Import the registry the same way the host does so we read
+		// the playbook the model actually receives. The string MUST
+		// contain "STOP rule" + a directive about not retrying after
+		// an `ok`. A copy edit that drops these keywords will trip
+		// this assertion — by design.
+		const { getGroup } = await import("../../../ai/registry/groups");
+		const bulkGroup = getGroup("bulk");
+		expect(bulkGroup).toBeDefined();
+		expect(bulkGroup?.playbook).toContain("STOP rule");
+		expect(bulkGroup?.playbook).toMatch(/do not retry|never call/i);
+		expect(bulkGroup?.playbook).toContain("`ok`");
+	});
+
+	it("(Bug B) drive.onSuccess hint does not nudge the model toward retry", () => {
+		// The capability-level drive hint must reinforce stop-after-ok
+		// (no "try again" / "retry" wording). Belt-and-braces with the
+		// group playbook above.
+		const onSuccess = bulkCreate.drive?.onSuccess ?? "";
+		expect(onSuccess).not.toMatch(/retry|try again/i);
+	});
+});

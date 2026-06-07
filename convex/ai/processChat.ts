@@ -16,4 +16,4 @@
  * S10 retired the V1 `resume` export — the propose/commit two-step path
  * was replaced by the 2FA step-up flow in `convex/aiStepUp.ts`.
  */
-export { run } from "./orchestrator/run";
+export { run, runResume } from "./orchestrator/run";

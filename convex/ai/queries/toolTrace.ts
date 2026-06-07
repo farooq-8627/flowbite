@@ -96,6 +96,12 @@ async function readTraceForConversation(
 		.collect();
 	const filtered = rows
 		.filter((r) => r.conversationId === args.conversationId)
+		// Hide host-emitted turn-summary markers — those are useful
+		// for the token report's per-turn aggregation but make the
+		// trace UI a wall of repeating "(turn)" rows. The per-capability
+		// rows that the wrapper writes (`create_lead`, `convert_lead`,
+		// etc.) already cover everything the user wants to inspect.
+		.filter((r) => r.toolName !== "(turn)")
 		.sort((a, b) => a.startedAt - b.startedAt);
 
 	const events: TraceEvent[] = filtered.map((r) => ({

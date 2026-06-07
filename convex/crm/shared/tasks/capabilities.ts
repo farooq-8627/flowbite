@@ -88,12 +88,98 @@ import type { CapabilityCtx, CapabilityResult } from "../../../ai/registry/types
 
 // ─── Closed unions (mirror the schema validators) ───────────────────────────
 
-const TASK_TYPE = z.enum(["todo", "call", "email", "meeting", "followup"]);
-type TaskType = z.infer<typeof TASK_TYPE>;
+/**
+ * System default task types — used as the runtime fallback when an org
+ * has not customised `org.settings.taskTypes`. The schema field for
+ * `tasks.type` is `v.string()` so the DB tier accepts any value; the
+ * AI capability layer validates against the effective list at runtime
+ * to surface friendly repair envelopes when the model picks a wrong id.
+ */
+const SYSTEM_TASK_TYPE_IDS = ["todo", "call", "email", "meeting", "followup"] as const;
+type TaskType = string;
 const TASK_STATUS = z.enum(["pending", "completed"]);
 type TaskStatus = z.infer<typeof TASK_STATUS>;
 const TASK_PRIORITY = z.enum(["low", "normal", "high", "urgent"]);
 type TaskPriority = z.infer<typeof TASK_PRIORITY>;
+
+/**
+ * Loose schema helper — accepts any string. The runtime check against
+ * `org.settings.taskTypes` (with system fallback) is in `validateTaskType`.
+ */
+function taskTypeSchema() {
+	return z.string().min(1);
+}
+
+/**
+ * Validate a user-supplied task-type string against the org's
+ * effective catalog (`org.settings.taskTypes` when set, system defaults
+ * otherwise). Returns `{ ok: true, type }` on match (lowercased ID) OR
+ * a `repair` envelope for the caller to return directly.
+ *
+ * The matching is forgiving:
+ *   - case-insensitive on `id`
+ *   - case-insensitive on `label` (so the model can say "Follow-up"
+ *     and it lands as `followup`)
+ */
+async function validateTaskType(
+	ctx: CapabilityCtx,
+	rawType: unknown,
+): Promise<{ ok: true; type: string } | CapabilityResult> {
+	if (typeof rawType !== "string" || rawType.trim().length === 0) {
+		const list = await loadEffectiveTaskTypes(ctx);
+		return repair(
+			"type",
+			`one of [${list.map((t) => `"${t.id}"`).join(", ")}]`,
+			"missing",
+			'Pass `type` as the canonical id (e.g. "todo", "followup"). The label is also accepted case-insensitively.',
+			{ type: list[0]?.id ?? "todo" },
+		) as CapabilityResult;
+	}
+	const normalized = rawType.trim().toLowerCase();
+	const list = await loadEffectiveTaskTypes(ctx);
+	const byId = list.find((t) => t.id.toLowerCase() === normalized);
+	if (byId) return { ok: true, type: byId.id };
+	const byLabel = list.find((t) => t.label.toLowerCase() === normalized);
+	if (byLabel) return { ok: true, type: byLabel.id };
+	return repair(
+		"type",
+		`one of [${list.map((t) => `"${t.id}"`).join(", ")}]`,
+		JSON.stringify(rawType),
+		`"${rawType}" isn't a valid task type for this workspace. Effective types: ${list.map((t) => `"${t.id}"`).join(", ")}.`,
+		{ type: list[0]?.id ?? "todo" },
+	) as CapabilityResult;
+}
+
+/**
+ * Read the org's effective task types via the AI-twin internal query.
+ * Falls back to the system defaults when the query is unavailable
+ * (test harness without scheduler wiring) or returns empty.
+ */
+async function loadEffectiveTaskTypes(
+	ctx: CapabilityCtx,
+): Promise<Array<{ id: string; label: string; labelAr?: string }>> {
+	// biome-ignore lint/suspicious/noExplicitAny: ActionCtx-shaped lookup.
+	const actionCtx = ctx.ctx as any;
+	if (!actionCtx || typeof actionCtx.runQuery !== "function") {
+		return SYSTEM_TASK_TYPE_IDS.map((id) => ({
+			id,
+			label: id.charAt(0).toUpperCase() + id.slice(1),
+		}));
+	}
+	try {
+		const list = (await actionCtx.runQuery(internal.orgs.queries.getEffectiveTaskTypesForAI, {
+			orgId: ctx.principal.orgId,
+			userId: ctx.principal.userId,
+		})) as Array<{ id: string; label: string; labelAr?: string }> | null;
+		if (Array.isArray(list) && list.length > 0) return list;
+	} catch (err) {
+		console.warn("[tasks/capabilities] loadEffectiveTaskTypes fallback:", err);
+	}
+	return SYSTEM_TASK_TYPE_IDS.map((id) => ({
+		id,
+		label: id.charAt(0).toUpperCase() + id.slice(1),
+	}));
+}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -291,8 +377,8 @@ const createTask = defineCapability<{
 		suggestNext: "Offer to add a note or log an activity for the same person.",
 	},
 	input: z.object({
-		type: TASK_TYPE.describe(
-			"Task type. todo = generic; call = phone call; email = outbound email; meeting = scheduled meeting; followup = CRM cadence touch (requires personCode).",
+		type: taskTypeSchema().describe(
+			"Task type. The org's effective list controls valid ids — system defaults are todo/call/email/meeting/followup; admins may add custom ids in Settings → Workspace → Task types. The 'followup' type REQUIRES personCode.",
 		),
 		title: z.string().min(1).describe("Short task title."),
 		personCode: z
@@ -324,6 +410,13 @@ const createTask = defineCapability<{
 		// person identity (see this file's invariant #4).
 		const { rest: args, resolvedDisplayName } = unpickResolverInjection(rawArgs);
 
+		// Validate `type` against the org's effective task-type catalog
+		// (system defaults + custom). Surfaces a friendly repair envelope
+		// when the model picks an unknown id.
+		const validatedType = await validateTaskType(cap, args.type);
+		if (!(validatedType as { ok?: boolean }).ok) return validatedType as CapabilityResult;
+		const taskType = (validatedType as { ok: true; type: string }).type;
+
 		// Re-coerce dueAt with the live org timezone (invariant #2).
 		const orgTz = await readOrgTimezone(cap);
 		const dueAtMs = resolveDueAt(args.dueAt, orgTz);
@@ -334,7 +427,7 @@ const createTask = defineCapability<{
 				JSON.stringify(args.dueAt),
 				"Pass an absolute time (e.g. '2026-06-09T09:00:00Z') or a natural phrase the server can resolve in the org timezone.",
 				{
-					type: args.type,
+					type: taskType,
 					title: args.title,
 					personCode: args.personCode ?? "P-001",
 					dueAt: "next Tuesday 9am",
@@ -347,7 +440,7 @@ const createTask = defineCapability<{
 			{
 				orgId: cap.principal.orgId,
 				userId: cap.principal.userId,
-				type: args.type,
+				type: taskType,
 				title: args.title,
 				personCode: args.personCode,
 				dealCode: args.dealCode,
@@ -366,7 +459,7 @@ const createTask = defineCapability<{
 		const env = buildCreateEnvelope({
 			taskCode: created.taskCode,
 			title: args.title,
-			type: args.type,
+			type: taskType,
 			dueAt: created.dueAt,
 			priority: created.priority,
 			personCode: args.personCode,
@@ -599,7 +692,11 @@ const updateTask = defineCapability<{
 					"New due time. Same input shape as create_task.dueAt — epoch / ISO / natural language, server resolves the timezone.",
 				),
 			assignedTo: z.string().optional().describe("Convex user _id of the new assignee."),
-			type: TASK_TYPE.optional(),
+			type: taskTypeSchema()
+				.optional()
+				.describe(
+					"New task type. Validated against the org's effective list (system defaults + custom).",
+				),
 			priority: TASK_PRIORITY.optional(),
 		})
 		.refine(
@@ -616,6 +713,13 @@ const updateTask = defineCapability<{
 			},
 		),
 	run: async (cap, args) => {
+		// Validate `type` only when supplied — partial patch.
+		let resolvedType: string | undefined;
+		if (args.type !== undefined) {
+			const validatedType = await validateTaskType(cap, args.type);
+			if (!(validatedType as { ok?: boolean }).ok) return validatedType as CapabilityResult;
+			resolvedType = (validatedType as { ok: true; type: string }).type;
+		}
 		const orgTz = await readOrgTimezone(cap);
 		const dueAtMs = resolveDueAt(args.dueAt, orgTz);
 		if (args.dueAt !== undefined && dueAtMs === undefined) {
@@ -651,7 +755,7 @@ const updateTask = defineCapability<{
 			...(args.assignedTo !== undefined
 				? { assignedTo: args.assignedTo as Id<"users"> }
 				: {}),
-			...(args.type !== undefined ? { type: args.type } : {}),
+			...(resolvedType !== undefined ? { type: resolvedType } : {}),
 			...(args.priority !== undefined ? { priority: args.priority } : {}),
 		})) as { taskCode: string; taskId: Id<"tasks"> };
 
@@ -672,8 +776,8 @@ const updateTask = defineCapability<{
 				value: args.assignedTo,
 				emphasis: "changed",
 			});
-		if (args.type !== undefined)
-			changes.push({ label: "Type", value: args.type, emphasis: "changed" });
+		if (resolvedType !== undefined)
+			changes.push({ label: "Type", value: resolvedType, emphasis: "changed" });
 		if (args.priority !== undefined)
 			changes.push({ label: "Priority", value: args.priority, emphasis: "changed" });
 
@@ -718,7 +822,11 @@ const listTasks = defineCapability<{ type?: TaskType; status?: TaskStatus }>({
 			"No matching tasks. Offer to relax the filter (drop type or status) before broadening to all entities.",
 	},
 	input: z.object({
-		type: TASK_TYPE.optional().describe("Optional filter by task type."),
+		type: taskTypeSchema()
+			.optional()
+			.describe(
+				"Optional filter by task type. Validated against the org's effective list (system defaults + custom).",
+			),
 		status: TASK_STATUS.optional().describe("Optional filter by status (pending|completed)."),
 	}),
 	run: async (cap, args) => {
@@ -786,7 +894,9 @@ const listTasksForPerson = defineCapability<{ personCode: string; type?: TaskTyp
 	},
 	input: z.object({
 		personCode: z.string().min(1).describe("Person code (P-NNN)."),
-		type: TASK_TYPE.optional().describe("Optional filter by task type."),
+		type: taskTypeSchema()
+			.optional()
+			.describe("Optional filter by task type. Validated against the org's effective list."),
 	}),
 	run: async (cap, rawArgs) => {
 		// Discard resolver-injected fields — the query takes personCode (string),

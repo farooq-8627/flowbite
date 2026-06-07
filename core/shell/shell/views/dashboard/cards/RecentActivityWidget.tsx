@@ -182,7 +182,7 @@ function RecentActivityEmpty({ orgSlug }: { orgSlug: string }) {
 					variant="outline"
 					className="h-7 text-xs"
 					onClick={() =>
-						sendChatPrefill("Create a new lead — pick a name and seed the basics.")
+						sendChatPrefill("Create a new lead, pick a name and seed the basics.")
 					}
 				>
 					Ask AI to create a lead

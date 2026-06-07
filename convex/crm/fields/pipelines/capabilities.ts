@@ -38,11 +38,16 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { ok } from "../../../ai/registry/result";
 
-const ENTITY_TYPE = z.enum(["lead", "contact", "deal", "company"]);
 const FINAL_TYPE = z.enum(["positive", "negative", "neutral"]);
 const TRANSITION_POLICY = z.enum(["block", "warn", "off"]);
 
@@ -135,7 +140,7 @@ const listPipelines = defineCapability<Record<string, never>>({
 
 const createPipeline = defineCapability<{
 	name: string;
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	stages?: Array<{
 		name: string;
 		code?: string;
@@ -200,7 +205,9 @@ const createPipeline = defineCapability<{
 	},
 	input: z.object({
 		name: z.string().min(1).describe("Pipeline display name."),
-		entityType: ENTITY_TYPE.describe("Which entity owns this pipeline. Usually `deal`."),
+		entityType: entityTypeSchema().describe(
+			"Which entity owns this pipeline. Usually `deal`. Accepts canonical type or org-relabelled alias.",
+		),
 		stages: z
 			.array(
 				z.object({
@@ -225,6 +232,11 @@ const createPipeline = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType;
 		const stageInputs = (args.stages ?? []).map((s, i) => ({
 			id: `stage_pending_${i}`,
 			name: s.name,
@@ -242,7 +254,7 @@ const createPipeline = defineCapability<{
 				orgId: principal.orgId,
 				userId: principal.userId,
 				name: args.name,
-				entityType: args.entityType,
+				entityType,
 				stages: stageInputs.length > 0 ? stageInputs : undefined,
 				isDefault: args.isDefault,
 			},
@@ -252,7 +264,7 @@ const createPipeline = defineCapability<{
 			headline: `Created pipeline "${args.name}" with ${stageCount} stage${stageCount === 1 ? "" : "s"}.`,
 			changes: [
 				{ label: "Pipeline", value: args.name, emphasis: "added" },
-				{ label: "Entity", value: args.entityType, emphasis: "added" },
+				{ label: "Entity", value: entityType, emphasis: "added" },
 				{
 					label: "Stages",
 					value: `${stageCount} (Default + ${stageInputs.length} custom)`,

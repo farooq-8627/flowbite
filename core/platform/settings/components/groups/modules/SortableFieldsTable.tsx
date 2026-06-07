@@ -156,7 +156,7 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 					{isProtected && (
 						<Lock
 							className="size-3 text-muted-foreground"
-							aria-label="Protected — cannot be deleted or hidden"
+							aria-label="Protected, cannot be deleted or hidden"
 						/>
 					)}
 				</span>
@@ -240,7 +240,7 @@ function SortableFieldRow({ orgId, field: f, setEditing, update, remove }: Sorta
 							isProtected
 								? "Protected fields cannot be deleted"
 								: isAssignee
-									? "Assignee can be hidden but not deleted — that way it stays available in the field selector to bring back later."
+									? "Assignee can be hidden but not deleted. That way it stays available in the field selector to bring back later."
 									: "Delete field"
 						}
 					>

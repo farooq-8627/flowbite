@@ -65,7 +65,7 @@ export const addOrgKey = action({
 		const encryptedKey = encryptApiKey(args.apiKey);
 		const hint = keyHint(args.apiKey);
 
-		return (await ctx.runMutation(
+		const id = (await ctx.runMutation(
 			_ref("ai/keys:insertEncryptedKey"),
 			_anyArgs({
 				orgId: args.orgId,
@@ -78,6 +78,29 @@ export const addOrgKey = action({
 				name: args.name,
 			}),
 		)) as Id<"orgAiKeys">;
+
+		// Best-effort: kick a catalog refresh so the model picker
+		// surfaces every model this key actually unlocks (Qwen3 Coder,
+		// DeepSeek, etc. on OpenRouter; full NIM/Moonshot rosters too).
+		// Fire-and-forget — failure leaves MODEL_REGISTRY's static
+		// entries in place; the cron will retry on the next tick.
+		try {
+			await ctx.scheduler.runAfter(
+				0,
+				// biome-ignore lint/suspicious/noExplicitAny: pre-codegen cross-module ref
+				_ref("ai/providerCatalogActions:refreshCatalog") as any,
+				_anyArgs({
+					provider,
+					baseUrl: args.baseUrl,
+					apiKey: args.apiKey,
+					source: "key-save:org",
+				}),
+			);
+		} catch {
+			// Scheduler unavailable — refresh on next cron tick.
+		}
+
+		return id;
 	},
 });
 
@@ -101,7 +124,7 @@ export const addUserKey = action({
 		const encryptedKey = encryptApiKey(args.apiKey);
 		const hint = keyHint(args.apiKey);
 
-		return (await ctx.runMutation(
+		const id = (await ctx.runMutation(
 			_ref("ai/keys:insertEncryptedKey"),
 			_anyArgs({
 				orgId: args.orgId,
@@ -114,5 +137,24 @@ export const addUserKey = action({
 				name: args.name,
 			}),
 		)) as Id<"orgAiKeys">;
+
+		// Same catalog refresh as addOrgKey — see comment there.
+		try {
+			await ctx.scheduler.runAfter(
+				0,
+				// biome-ignore lint/suspicious/noExplicitAny: pre-codegen cross-module ref
+				_ref("ai/providerCatalogActions:refreshCatalog") as any,
+				_anyArgs({
+					provider,
+					baseUrl: args.baseUrl,
+					apiKey: args.apiKey,
+					source: "key-save:user",
+				}),
+			);
+		} catch {
+			// Scheduler unavailable — cron picks it up.
+		}
+
+		return id;
 	},
 });

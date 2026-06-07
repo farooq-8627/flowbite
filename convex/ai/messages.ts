@@ -13,6 +13,7 @@ import { makeFunctionReference } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
 import { internalMutation, internalQuery } from "../_generated/server";
+import { isDefaultConversationTitle } from "../_shared/aiTitleDefaults";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions/helpers";
 import { enforceRateLimit, RATE_LIMITS } from "../_shared/rateLimit";
@@ -120,6 +121,12 @@ export const sendMessage = orgMutation({
 		// Resolve or create conversation
 		let conversationId = args.conversationId;
 		const isFirstMessage = !args.conversationId;
+		// Existing title (if any) — used below to decide whether to
+		// re-schedule autoTitle on a follow-up message. Only populated
+		// in the "existing conversation" branch; brand-new convos have
+		// `title: undefined` so `isDefaultConversationTitle(undefined)`
+		// is true and re-scheduling is unconditional via `isFirstMessage`.
+		let existingTitle: string | undefined;
 		if (!conversationId) {
 			conversationId = await ctx.db.insert("aiConversations", {
 				orgId: args.orgId,
@@ -137,6 +144,7 @@ export const sendMessage = orgMutation({
 			if (!conv || conv.orgId !== args.orgId || conv.userId !== userId) {
 				throw new ConvexError(ERRORS.NOT_FOUND);
 			}
+			existingTitle = conv.title;
 			await ctx.db.patch(conversationId, {
 				lastMessageAt: now,
 				updatedAt: now,
@@ -169,11 +177,18 @@ export const sendMessage = orgMutation({
 		// title appear ~1.5s after send, parallel with the main turn,
 		// instead of waiting for the assistant reply to settle. The
 		// `autoTitle` action short-circuits when a non-default title
-		// already exists, so re-runs are no-ops. Only fire on a brand-
-		// new conversation AND when the message is long enough for the
-		// title model to do something useful (matches the legacy
-		// length gate in `run.ts`).
-		if (isFirstMessage && body.length > 10) {
+		// already exists, so re-runs are no-ops. Fires when:
+		//   1. brand-new conversation (`isFirstMessage`), OR
+		//   2. existing convo whose title is still a default placeholder
+		//      ("New chat" / "New Chat" / "Untitled conversation" / empty).
+		// Case 2 covers the failure mode where the user's first message
+		// was vague ("hi") and the title model wrote "New chat", but a
+		// later, descriptive message could have produced a real title.
+		// The Node action's pre-check + `setAutoTitleInternal`'s guard
+		// both honour the same default-title set, so the worst case is
+		// one extra (cheap) title-model call per follow-up turn.
+		const titleNeedsUpdate = isFirstMessage || isDefaultConversationTitle(existingTitle);
+		if (titleNeedsUpdate && body.length > 10) {
 			await ctx.scheduler.runAfter(0, titleGenerationAutoTitle, {
 				orgId: args.orgId,
 				conversationId,
@@ -458,6 +473,44 @@ export const isAborted = internalQuery({
 	},
 });
 
+/**
+ * Read a small projection of an assistant message by id.
+ *
+ * Used by `processChat.runResume` (`convex/ai/orchestrator/run.ts`) to
+ * recover the existing bubble's content + state when resuming a
+ * 2FA-paused turn. Returns `null` when the message has been deleted
+ * between scheduling and execution (user cancelled the chat,
+ * conversation purged) so the caller can bail safely.
+ *
+ * Why a dedicated query instead of `db.get` inline: actions can't
+ * touch the DB directly — every read goes through a query. Why not
+ * `listForConversationInternal` + filter: that scans the whole
+ * conversation for one row.
+ *
+ * Locked 2026-06-07 — restored after a regression: the prior
+ * `runResume` referenced `ai/messages:_readForTest` (which never
+ * existed in this file — only in `convex/aiStepUp.ts` as an
+ * internalMutation taking `tokenId`), so EVERY 2FA approval threw
+ * "function not found" and the assistant message stayed stuck on
+ * `thinkingState: "thinking"` forever. The string-path `_ref()` cast
+ * to `any` hid the bug from typecheck. The fix is this dedicated
+ * query + a test in `convex/ai-runResume.test.ts` that pins the
+ * contract.
+ */
+export const getMessageContent = internalQuery({
+	args: { messageId: v.id("aiMessages") },
+	handler: async (ctx, args) => {
+		const m = await ctx.db.get(args.messageId);
+		if (!m) return null;
+		return {
+			content: m.content,
+			thinkingState: m.thinkingState,
+			conversationId: m.conversationId,
+			orgId: m.orgId,
+		};
+	},
+});
+
 export const appendAssistantPlaceholder = internalMutation({
 	args: {
 		orgId: v.id("orgs"),
@@ -490,6 +543,7 @@ export const patchAssistantBody = internalMutation({
 				v.literal("thinking"),
 				v.literal("calling_tool"),
 				v.literal("streaming"),
+				v.literal("awaiting_approval"),
 				v.literal("done"),
 				v.literal("error"),
 			),
@@ -584,6 +638,7 @@ export const patchThinkingState = internalMutation({
 			v.literal("thinking"),
 			v.literal("calling_tool"),
 			v.literal("streaming"),
+			v.literal("awaiting_approval"),
 			v.literal("done"),
 			v.literal("error"),
 		),
@@ -647,6 +702,7 @@ export const patchAssistantSnapshot = internalMutation({
 				v.literal("thinking"),
 				v.literal("calling_tool"),
 				v.literal("streaming"),
+				v.literal("awaiting_approval"),
 				v.literal("done"),
 				v.literal("error"),
 			),

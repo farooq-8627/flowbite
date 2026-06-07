@@ -7,6 +7,7 @@
 import { ConvexError, v } from "convex/values";
 import { orgMutation, orgQuery, requireOrgMember } from "../_functions/authenticated";
 import { internalMutation, internalQuery } from "../_generated/server";
+import { isDefaultConversationTitle } from "../_shared/aiTitleDefaults";
 import { ERRORS } from "../_shared/errors";
 import { requireRole } from "../_shared/permissions/helpers";
 import { enforceRateLimit } from "../_shared/rateLimit";
@@ -190,9 +191,12 @@ export const setAutoTitleInternal = internalMutation({
 	handler: async (ctx, args) => {
 		const conv = await ctx.db.get(args.conversationId);
 		if (!conv || conv.orgId !== args.orgId) return { ok: false as const };
-		// Don't clobber a user-set title.
-		const current = (conv.title ?? "").trim();
-		if (current && current !== "Untitled conversation") {
+		// Don't clobber a user-set title. "New chat" / "New Chat" /
+		// "Untitled conversation" are placeholders the auto-titler emitted
+		// itself when the model treated the user's first message as
+		// vague — overwriting them on the next clearer turn is the whole
+		// point of the re-trigger. SSOT: `convex/_shared/aiTitleDefaults.ts`.
+		if (!isDefaultConversationTitle(conv.title)) {
 			return { ok: false as const, reason: "already_titled" as const };
 		}
 		const next = args.title.trim().slice(0, 80);

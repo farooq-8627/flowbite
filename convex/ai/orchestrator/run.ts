@@ -151,6 +151,14 @@ async function runChatTurn(args: {
 	};
 	pageContext?: { mode: string; path: string; label?: string };
 	stepUpToken?: string;
+	/**
+	 * A — V1-style inline approval (locked 2026-06-06). When set, the
+	 * per-attempt `accumulated` buffer starts with this prefix so
+	 * `onTextDelta` snapshots APPEND to the existing assistant body
+	 * instead of replacing it. Used by `runResume` to keep whatever
+	 * prose the model emitted before the awaiting-approval pause.
+	 */
+	resumePrefix?: string;
 }): Promise<void> {
 	const { ctx, assistantMsgId } = args;
 
@@ -196,7 +204,14 @@ async function runChatTurn(args: {
 
 		// Per-attempt buffer so a previous candidate's partial output
 		// can never leak into the next attempt.
-		let accumulated = "";
+		//
+		// A — when called via `runResume`, seed with `resumePrefix` on
+		// the FIRST attempt so the snapshot mutation's `content:
+		// accumulated` write APPENDS to the existing body (the prose
+		// emitted before the awaiting pause) instead of stomping it.
+		// Failover resets to "" because each candidate runs against a
+		// fresh stream — the prior body is already on disk.
+		let accumulated = i === 0 ? (args.resumePrefix ?? "") : "";
 		let lastFlushAt = 0;
 		const FLUSH_INTERVAL_MS = 80;
 
@@ -289,6 +304,25 @@ async function runChatTurn(args: {
 						}
 					}
 					try {
+						// A — needs_step_up envelopes are PAUSED, not
+						// FAILED. Persisting them as `failed` made the
+						// timeline rail render a red ❌ (the bulkk.png
+						// regression). Re-classify here so the rail
+						// stays neutral; the frontend's TimelineRow
+						// detects the envelope status separately and
+						// renders an amber "Awaiting confirmation" pill
+						// + the inline `<StepUpCard>` at the right row.
+						const envelopeStatus =
+							event.output && typeof event.output === "object"
+								? ((event.output as { status?: unknown }).status as
+										| string
+										| undefined)
+								: undefined;
+						const persistStatus = event.ok
+							? "completed"
+							: envelopeStatus === "needs_step_up"
+								? "completed"
+								: "failed";
 						await ctx.runMutation(_ref("ai/messages:appendToolCallRecord"), {
 							orgId: args.orgId as string,
 							conversationId: args.conversationId as string,
@@ -296,7 +330,7 @@ async function runChatTurn(args: {
 							toolCallId: event.toolCallId,
 							input: event.input,
 							output: event.output,
-							status: event.ok ? "completed" : "failed",
+							status: persistStatus,
 						});
 					} catch (err) {
 						console.warn("[processChat] persist tool call failed:", err);
@@ -317,11 +351,27 @@ async function runChatTurn(args: {
 			// The prior `<AssistantTurn>` "AI completed N actions" recap
 			// is now a defence-in-depth path; under the new branch it
 			// only fires for the rare zero-headline case.
+			//
+			// A — when the host's awaitingApprovalStop fired, the stream
+			// halted right after the irreversible tool call. We DON'T
+			// emit a fallback summary in that case (the inline
+			// `<StepUpCard>` at the awaiting tool row is the user's
+			// next action, not a recap), and we settle thinkingState as
+			// "awaiting_approval" so the chat UI knows the stream is
+			// paused — not done. The runResume action picks up from
+			// here when the user confirms.
+			const awaiting = result.awaitingApproval;
 			const streamedBody = result.text.length > 0 ? result.text : accumulated;
-			const finalContent =
-				streamedBody.trim().length > 0
+			const finalContent = awaiting
+				? streamedBody // keep whatever the model streamed before pausing — usually empty
+				: streamedBody.trim().length > 0
 					? streamedBody
 					: buildToolOnlyFallbackSummary(collectedHeadlines, result.toolCallCount);
+			const settleThinkingState = awaiting
+				? "awaiting_approval"
+				: finalContent.trim().length > 0 || result.toolCallCount > 0
+					? "done"
+					: "error";
 			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
 				messageId: assistantMsgId as unknown as string,
 				content: finalContent,
@@ -330,8 +380,7 @@ async function runChatTurn(args: {
 				usageMode: candidate.usageMode,
 				inputTokens: result.usage.inputTokens,
 				outputTokens: result.usage.outputTokens,
-				thinkingState:
-					finalContent.trim().length > 0 || result.toolCallCount > 0 ? "done" : "error",
+				thinkingState: settleThinkingState,
 				// B.44 — persist provider grounding citations on the assistant
 				// row when the host's post-stream extractor produced any.
 				// `result.metadata` is `undefined` when there were no citations
@@ -597,5 +646,235 @@ export const run = internalAction({
 		//    (audit §4 fix, 2026-06-05). Title appears ~1.5s after the user
 		//    sends, parallel with the main turn, instead of waiting for the
 		//    assistant reply to settle. Nothing to do here.
+	},
+});
+
+/**
+ * runResume — A: V1-style inline approval (locked 2026-06-06).
+ *
+ * Scheduled by `aiStepUp.confirmStepUp` after the user clicks Confirm
+ * twice on the inline `<StepUpCard>`. Re-enters `runAgent` with the
+ * EXISTING assistantMessageId so the same chat bubble keeps streaming —
+ * no new message, no synthetic user prompt visible in the timeline.
+ *
+ * Differences vs `run`:
+ *   • No new placeholder — patches the existing assistant message.
+ *   • Reads the existing content as a prefix so `onTextDelta` appends
+ *     rather than replaces (the prior pre-pause prose stays).
+ *   • Synthesises a one-line resume cue prepended to the conversation
+ *     history (NOT persisted) telling the model "you may re-call X
+ *     with these args" so it issues the tool call the wrapper now has
+ *     a token for. Without the inlined args the model would
+ *     regenerate fresh values, the argsHash wouldn't match, and the
+ *     wrapper's stepUpVerifier would reject the token.
+ *   • Every other step (auth, quota, model resolution, fallback chain)
+ *     is identical to `run` so a chained second irreversible inside
+ *     the same turn re-uses the awaiting_approval path automatically.
+ */
+export const runResume = internalAction({
+	args: {
+		orgId: v.id("orgs"),
+		userId: v.id("users"),
+		conversationId: v.id("aiConversations"),
+		assistantMessageId: v.id("aiMessages"),
+		capability: v.string(),
+		capabilityArgs: v.any(),
+		stepUpToken: v.string(),
+	},
+	handler: async (ctx, args) => {
+		// 1. Auth + RBAC.
+		let memberInfo: {
+			permissions: string[];
+			plan: OrgPlan;
+			settings: Record<string, unknown>;
+			subscriptionStatus?: string;
+			currentPeriodEnd?: number;
+		};
+		try {
+			memberInfo = await getOrgMemberAndPermissions(ctx as never, args.orgId, args.userId);
+		} catch {
+			return;
+		}
+		if (!memberInfo.permissions.includes("ai.use")) return;
+
+		// 2. User preferences.
+		const prefs = await getUserPreferences(ctx as never, args.userId);
+
+		// 3. Read the existing assistant message — this is the bubble we
+		//    keep streaming into. Bail safely if it was deleted.
+		//
+		//    Locked 2026-06-07. The prior code called
+		//    `ai/messages:_readForTest` here — a path that never
+		//    existed in `convex/ai/messages.ts` (the `_readForTest`
+		//    that does exist is in `convex/aiStepUp.ts`, an
+		//    internalMutation that takes `tokenId`, not `messageId`).
+		//    Because `_ref()` is a `path as any` cast, the typecheck
+		//    pass never caught it, and there was no test exercising
+		//    `runResume`. Every 2FA approval ended up here, the
+		//    `runQuery` threw "function not found", the throw
+		//    bubbled out uncaught (no try/catch around step 3), and
+		//    the assistant message stayed stuck on
+		//    `thinkingState: "thinking"` forever — the user-visible
+		//    "Bulk Create Entities · Awaiting confirmation"
+		//    permanent-spinner regression. Two protections now: the
+		//    typed `internal.ai.messages.getMessageContent`
+		//    reference imported dynamically (matching the
+		//    `host.ts` pattern at line 858), AND a try/catch so a
+		//    future broken read patches a friendly error instead of
+		//    leaving the bubble stuck.
+		let existingContent = "";
+		try {
+			const { internal } = await import("../../_generated/api");
+			const existing = (await ctx.runQuery(internal.ai.messages.getMessageContent, {
+				messageId: args.assistantMessageId,
+			})) as { content?: string } | null;
+			if (existing && typeof existing.content === "string") {
+				existingContent = existing.content;
+			}
+		} catch (err) {
+			console.error("[runResume] failed to read existing assistant message:", err);
+			// Failure-tolerant: an unreachable read shouldn't strand the
+			// bubble — patch a friendly error and bail. The user can
+			// re-issue the request; the step-up token has already been
+			// consumed so they'll get a fresh approval prompt.
+			await ctx
+				.runMutation(_ref("ai/messages:patchAssistantBody"), {
+					messageId: args.assistantMessageId as unknown as string,
+					content:
+						"❌ Could not resume the action after confirmation. Please try the request again.",
+					thinkingState: "error",
+				})
+				.catch(() => {});
+			return;
+		}
+
+		// 4. Resolve model + key (same path as `run`).
+		let modelResult: Awaited<ReturnType<typeof resolveModelAndKey>>;
+		try {
+			modelResult = await resolveModelAndKey({
+				ctx: ctx as never,
+				orgId: args.orgId,
+				userId: args.userId,
+				requestedModel: undefined,
+				requestedProvider: undefined,
+				defaultModel: prefs.aiDefaultModel,
+				defaultProvider: prefs.aiDefaultProvider,
+				plan: memberInfo.plan,
+			});
+		} catch (err) {
+			const raw = err instanceof Error ? err.message : "Could not load AI model.";
+			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+				messageId: args.assistantMessageId as unknown as string,
+				content: existingContent ? `${existingContent}\n\n❌ ${raw}` : `❌ ${raw}`,
+				thinkingState: "error",
+			});
+			return;
+		}
+
+		// 5. AI quota gate (BYOK is unmetered).
+		try {
+			const quotaResult = await checkAiQuota({
+				ctx: ctx as never,
+				orgId: args.orgId,
+				plan: memberInfo.plan,
+				usageMode: modelResult.usageMode,
+				subscriptionStatus: memberInfo.subscriptionStatus,
+				currentPeriodEnd: memberInfo.currentPeriodEnd,
+			});
+			if (!quotaResult.allowed) {
+				await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+					messageId: args.assistantMessageId as unknown as string,
+					content: existingContent
+						? `${existingContent}\n\n${quotaResult.message}`
+						: quotaResult.message,
+					thinkingState: "error",
+				});
+				return;
+			}
+		} catch (err) {
+			console.warn("[runResume] AI quota check failed; allowing turn:", err);
+		}
+
+		// 6. Load prior conversation messages — exactly as `run` does.
+		const priorMessages = (await ctx.runQuery(
+			_ref("ai/messages:listForConversationInternal"),
+			_anyArgs({
+				orgId: args.orgId as string,
+				conversationId: args.conversationId as string,
+			}),
+		)) as Array<{ role: string; content: string }>;
+		const messageHistory = priorMessages
+			.filter(
+				(m) => (m.role === "user" || m.role === "assistant") && m.content.trim().length > 0,
+			)
+			.map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+		// 7. Build the resume cue. The SAME structured args the model
+		//    saw before — embedded so its argsHash matches the token
+		//    bound to (orgId, userId, capability, argsHash). Without
+		//    verbatim args the wrapper rejects the token and bounces
+		//    back to needs_step_up.
+		let argsJson = "";
+		try {
+			argsJson = JSON.stringify(args.capabilityArgs);
+		} catch {
+			argsJson = "";
+		}
+		const MAX_INLINE_ARGS = 6000;
+		const inlineArgs =
+			argsJson.length > 0 && argsJson.length <= MAX_INLINE_ARGS
+				? `\n\nRe-call \`${args.capability}\` with EXACTLY these arguments (verbatim — do not regenerate any value):\n\`\`\`json\n${argsJson}\n\`\`\``
+				: ` Re-call \`${args.capability}\` with the previously-proposed arguments.`;
+		const resumeCue = `[step-up confirmed by the user — you may now proceed]${inlineArgs}\n\nThe action is authorised. Run it, then continue with any remaining work and close with a concrete summary.`;
+
+		// 8. Run the V2 host with the existing assistantMsgId. Resolve
+		//    the fallback chain so a quota-exhausted primary still
+		//    lands on a working provider.
+		try {
+			const fallbackChain = await resolveFallbackChain({
+				ctx: ctx as never,
+				orgId: args.orgId,
+				userId: args.userId,
+				primary: modelResult,
+				plan: memberInfo.plan,
+			});
+			await runChatTurn({
+				ctx,
+				orgId: args.orgId,
+				userId: args.userId,
+				assistantMsgId: args.assistantMessageId as unknown as Id<"aiMessages">,
+				candidates: fallbackChain.map((m) => ({
+					model: m.model,
+					modelKey: m.modelKey,
+					provider: m.provider,
+					usageMode: m.usageMode,
+				})),
+				permissions: memberInfo.permissions,
+				message: resumeCue,
+				history: messageHistory,
+				conversationId: args.conversationId,
+				stepUpToken: args.stepUpToken,
+				resumePrefix: existingContent,
+			});
+		} catch (err) {
+			const raw = err instanceof Error ? err.message : String(err);
+			console.error("[runResume] turn failed:", err);
+			await ctx.runMutation(_ref("ai/messages:patchAssistantBody"), {
+				messageId: args.assistantMessageId as unknown as string,
+				content: existingContent ? `${existingContent}\n\n❌ ${raw}` : `❌ ${raw}`,
+				thinkingState: "error",
+			});
+			return;
+		}
+
+		// 9. Platform quota.
+		if (modelResult.usageMode === "platform") {
+			await ctx
+				.runMutation(
+					_ref("orgs/mutations:incrementAiMessageCount"),
+					_anyArgs({ orgId: args.orgId as string }),
+				)
+				.catch(() => {});
+		}
 	},
 });

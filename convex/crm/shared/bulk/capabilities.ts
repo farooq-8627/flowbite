@@ -24,11 +24,18 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { failed, ok, partial } from "../../../ai/registry/result";
 import type { CapabilityCtx } from "../../../ai/registry/types";
-import { buildCustomFieldKeyResolver } from "../customFieldKeys";
+import { partitionRowKeys } from "../bulkRowPartition";
+import { buildFieldDefLookup, loadFieldDefinitionsForEntity } from "../dynamicFieldDispatch";
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -36,9 +43,20 @@ defineGroup({
 	name: "bulk",
 	playbook: `Bulk + destructive operations are IRREVERSIBLE — they require the user to confirm twice (2FA step-up) and are blocked over WhatsApp. Always summarise the proposed operation in plain text BEFORE the tool returns its envelope ("I'll soft-delete 5 leads (P-001..P-005) — confirm twice to proceed"). Reading first is mandatory: \`search_crm\` to enumerate the matching records, then call the bulk tool with the explicit ids.
 
+**STOP rule (locked 2026-06-07):** When a bulk tool returns \`status: "ok"\`, the operation is COMPLETE — even if the envelope's \`data.warnings[]\` lists rows with unrecognised keys. Warnings mean "the row was created and these extra keys were dropped" — they are NOT a failure signal and do NOT require a retry. Narrate the headline once + suggest the user re-issue the request with corrected keys IF they want the dropped values stored. NEVER call \`bulk_create_entities\` (or any bulk tool) a second time inside the same turn after an \`ok\` — that path duplicates rows and burns 2FA tokens. Re-call ONLY on \`needs_repair\`, \`infra_retry\`, or after the user explicitly asks for another batch.
+
 \`bulk_create_entities\` inserts up to 50 NEW rows of one entity type at once. Use for seeding sample data ("create 5 leads to explore"), porting a list the user pasted, or generating a starter dataset. Each row carries the entity's minimum-viable fields (lead/contact: \`displayName\`; company: \`name\`; deal: \`title\`); \`customFields\` is passed through for leads. \`bulk_create_tasks\` creates up to 50 tasks at once — use for seeding a checklist after a meeting. Both inherit the irreversible 2FA fence + WhatsApp block.
 
 **Custom field key vs label (locked 2026-06-06):** When you fill \`customFields\` from a lead row, use the field's internal **\`key\`** from \`describe_entity\`'s payload — NEVER the user-facing **\`label\`**. Example: \`describe_entity\` returns \`{ key: "property_type", label: "Property Type", ... }\` — pass \`{ property_type: "Apartment" }\`, NOT \`{ "Property Type": "Apartment" }\`. The bulk runner now coerces label-shaped keys to canonical names as a safety net, but the model should still aim for the canonical key on the first try so unknown-field warnings stay meaningful.
+
+**Top-level columns vs customFields (locked 2026-06-06):** Each row in \`bulk_create_entities\` has TWO levels — keys at the row's top level are entity columns; keys nested under \`customFields:{}\` are org-defined custom fields. Putting a custom-field value at the row's top level is silently lifted into \`customFields\` by the runner (so a stray \`"bedrooms":"2BR"\` still lands), but emit the right shape on the first try:
+
+- **lead** top-level columns: \`displayName\`, \`email\`, \`phone\`, \`source\`, \`assignedTo\`, \`aiContext\`. EVERYTHING else (status, bedrooms, budget_aed, industry_vertical, etc.) MUST go inside \`customFields:{ ... }\`.
+- **contact** top-level columns: \`personCode\`, \`displayName\`, \`email\`, \`phone\`, \`leadId\`, \`companyId\`, \`assignedTo\`, \`aiContext\`. Custom fields are NOT propagated to contact rows in bulk yet — surface those values via a follow-up \`update_entity\` call after the bulk insert, or use single-record \`create_contact\`.
+- **company** top-level columns: \`name\`, \`industry\`, \`website\`, \`size\`, \`assignedTo\`, \`assignees\`, \`personCodes\`.
+- **deal** top-level columns: \`title\`, \`pipelineId\`, \`currentStageId\`, \`contactId\`, \`companyId\`, \`personCode\`, \`companyCode\`, \`value\`, \`currency\`, \`assignedTo\`, \`source\`, \`expectedCloseDate\`.
+
+If the runner finds row keys it can't classify (not a column AND not a known custom-field name/label), it surfaces them in \`data.warnings[]\` with a \`(N rows had unrecognised keys)\` headline suffix. That signal is your cue to drop / rename / re-nest those keys on the next batch.
 
 \`bulk_update_entities\` patches column + custom fields across many records of ONE entity type. \`bulk_delete_entities\` soft-deletes records (recoverable from trash). \`bulk_close_deals\` flips a deal's stage to a final-positive / final-negative outcome. \`hard_delete_entity\` PHYSICALLY removes a single soft-deleted row from trash — the row must already be in trash; never call this without the user explicitly asking to "delete forever". \`import_csv\` runs the quarantined CSV parser then commits the inserts.
 
@@ -135,7 +153,7 @@ async function resolveEntityId(
 // ─── bulk_update_entities ───────────────────────────────────────────────────
 
 const bulkUpdateEntities = defineCapability<{
-	entityType: EntityKey;
+	entityType: string;
 	entityIds: string[];
 	patch: Record<string, unknown>;
 }>({
@@ -162,7 +180,7 @@ const bulkUpdateEntities = defineCapability<{
 		onSuccess: "Confirm with `<count> of <total>` updated. List the per-row failures verbatim.",
 	},
 	input: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeSchema(),
 		entityIds: z.array(z.string().min(1)).min(1).max(200),
 		patch: z.record(z.string(), z.unknown()).refine((r) => Object.keys(r).length > 0, {
 			message: "patch must have at least one key.",
@@ -170,27 +188,32 @@ const bulkUpdateEntities = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
-		const perm = ENTITY_UPDATE_PERM[args.entityType] ?? "leads.update";
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as EntityKey;
+		const perm = ENTITY_UPDATE_PERM[entityType] ?? "leads.update";
 		if (!principal.permissions.includes(perm)) {
 			return failed("denied", `Requires ${perm}.`);
 		}
-		const mutation = ENTITY_UPDATE_MUTATION[args.entityType];
+		const mutation = ENTITY_UPDATE_MUTATION[entityType];
 		const errors: { item: string; reason: string }[] = [];
 		const succeededIds: string[] = [];
-		const idArg = `${args.entityType}Id` as "leadId" | "contactId" | "dealId" | "companyId";
+		const idArg = `${entityType}Id` as "leadId" | "contactId" | "dealId" | "companyId";
 		for (const codeOrId of args.entityIds) {
 			try {
 				const resolved = await resolveEntityId(
 					cap,
 					principal.orgId,
 					principal.userId,
-					args.entityType,
+					entityType,
 					codeOrId,
 				);
 				if (!resolved) {
 					errors.push({
 						item: codeOrId,
-						reason: `No ${args.entityType} with code "${codeOrId}".`,
+						reason: `No ${entityType} with code "${codeOrId}".`,
 					});
 					continue;
 				}
@@ -219,12 +242,12 @@ const bulkUpdateEntities = defineCapability<{
 		// for the model's narrative; `display` drives the rich card.
 		const display = {
 			kind: "entityList" as const,
-			entityType: args.entityType,
+			entityType,
 			entityIds: succeededIds,
 		};
 		if (errors.length === 0) {
 			return ok({
-				headline: `Updated ${succeeded} ${args.entityType}${succeeded === 1 ? "" : "s"}.`,
+				headline: `Updated ${succeeded} ${entityType}${succeeded === 1 ? "" : "s"}.`,
 				data: { succeeded, failed: 0, total, entityIds: succeededIds },
 				display,
 			});
@@ -232,12 +255,12 @@ const bulkUpdateEntities = defineCapability<{
 		if (succeeded === 0) {
 			return failed(
 				"business_error",
-				`Updated 0 of ${total} ${args.entityType}s — every row failed.`,
+				`Updated 0 of ${total} ${entityType}s — every row failed.`,
 				errors,
 			);
 		}
 		return partial({
-			headline: `Updated ${succeeded} of ${total} ${args.entityType}s — ${errors.length} failed.`,
+			headline: `Updated ${succeeded} of ${total} ${entityType}s — ${errors.length} failed.`,
 			data: { succeeded, failed: errors.length, total, entityIds: succeededIds },
 			errors,
 			display,
@@ -248,7 +271,7 @@ const bulkUpdateEntities = defineCapability<{
 // ─── bulk_delete_entities ───────────────────────────────────────────────────
 
 const bulkDeleteEntities = defineCapability<{
-	entityType: EntityKey;
+	entityType: string;
 	entityIds: string[];
 }>({
 	name: "bulk_delete_entities",
@@ -270,32 +293,37 @@ const bulkDeleteEntities = defineCapability<{
 		onSuccess: "Confirm 'Trashed N <entity>s. Restorable via the trash UI.'",
 	},
 	input: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeSchema(),
 		entityIds: z.array(z.string().min(1)).min(1).max(200),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
-		const perm = ENTITY_DELETE_PERM[args.entityType] ?? "leads.delete";
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as EntityKey;
+		const perm = ENTITY_DELETE_PERM[entityType] ?? "leads.delete";
 		if (!principal.permissions.includes(perm)) {
 			return failed("denied", `Requires ${perm}.`);
 		}
-		const mutation = ENTITY_DELETE_MUTATION[args.entityType];
+		const mutation = ENTITY_DELETE_MUTATION[entityType];
 		const errors: { item: string; reason: string }[] = [];
 		const succeededIds: string[] = [];
-		const idArg = `${args.entityType}Id` as "leadId" | "contactId" | "dealId" | "companyId";
+		const idArg = `${entityType}Id` as "leadId" | "contactId" | "dealId" | "companyId";
 		for (const codeOrId of args.entityIds) {
 			try {
 				const resolved = await resolveEntityId(
 					cap,
 					principal.orgId,
 					principal.userId,
-					args.entityType,
+					entityType,
 					codeOrId,
 				);
 				if (!resolved) {
 					errors.push({
 						item: codeOrId,
-						reason: `No ${args.entityType} with code "${codeOrId}".`,
+						reason: `No ${entityType} with code "${codeOrId}".`,
 					});
 					continue;
 				}
@@ -323,12 +351,12 @@ const bulkDeleteEntities = defineCapability<{
 		// because the row is gone).
 		const display = {
 			kind: "entityList" as const,
-			entityType: args.entityType,
+			entityType,
 			entityIds: succeededIds,
 		};
 		if (errors.length === 0) {
 			return ok({
-				headline: `Trashed ${succeeded} ${args.entityType}${succeeded === 1 ? "" : "s"}. Restorable via the trash UI.`,
+				headline: `Trashed ${succeeded} ${entityType}${succeeded === 1 ? "" : "s"}. Restorable via the trash UI.`,
 				data: { succeeded, failed: 0, total, entityIds: succeededIds },
 				display,
 			});
@@ -336,12 +364,12 @@ const bulkDeleteEntities = defineCapability<{
 		if (succeeded === 0) {
 			return failed(
 				"business_error",
-				`Trashed 0 of ${total} ${args.entityType}s — every row failed.`,
+				`Trashed 0 of ${total} ${entityType}s — every row failed.`,
 				errors,
 			);
 		}
 		return partial({
-			headline: `Trashed ${succeeded} of ${total} ${args.entityType}s — ${errors.length} failed.`,
+			headline: `Trashed ${succeeded} of ${total} ${entityType}s — ${errors.length} failed.`,
 			data: { succeeded, failed: errors.length, total, entityIds: succeededIds },
 			errors,
 			display,
@@ -471,7 +499,7 @@ const bulkCloseDeals = defineCapability<{
 // ─── hard_delete_entity ─────────────────────────────────────────────────────
 
 const hardDeleteEntity = defineCapability<{
-	entityType: EntityKey;
+	entityType: string;
 	entityId: string;
 }>({
 	name: "hard_delete_entity",
@@ -494,22 +522,27 @@ const hardDeleteEntity = defineCapability<{
 			"Confirm 'Permanently deleted <entity> <code/id>. The record is gone.' Mention this is irreversible.",
 	},
 	input: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeSchema(),
 		entityId: z.string().min(1).describe("Convex _id of the soft-deleted row."),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as EntityKey;
 		if (!principal.permissions.includes("data.hardDelete")) {
 			return failed("denied", "Requires data.hardDelete (Owner only by default).");
 		}
 		await ctx.runMutation(internal.trash.mutations.hardDeleteForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			entityType: args.entityType,
+			entityType,
 			entityId: args.entityId,
 		});
 		return ok({
-			headline: `Permanently deleted ${args.entityType}.`,
+			headline: `Permanently deleted ${entityType}.`,
 			changes: [{ label: "entityId", value: args.entityId, emphasis: "changed" }],
 		});
 	},
@@ -617,6 +650,88 @@ const ENTITY_CREATE_PERM: Record<EntityKey, string> = {
 	company: "companies.create",
 };
 
+/**
+ * Per-entity allowlist of column-arg keys that each `*ForAI` validator
+ * actually accepts as TOP-LEVEL create args. Mirrors the `args:` block
+ * of every `createForAI` mutation in `convex/crm/entities/{entity}/mutations.ts`
+ * (excluding `orgId` + `userId` which the bulk runner injects, and
+ * `customFields` which the runner spreads via `partition.customFields`).
+ *
+ * Why this exists (locked 2026-06-07): the dispatcher in
+ * `dynamicFieldDispatch.ts` routes ANY field whose `fieldDefinitions`
+ * row has `storage:"column"` into `columnArgs` — but a column on the
+ * underlying schema (e.g. `leads.status`) is NOT necessarily a key
+ * the `createForAI` mutation accepts on insert (status is hardcoded
+ * to "new" at insert time). Without this filter the dispatcher would
+ * forward the AI-supplied `status:"new"` straight to the mutation,
+ * Convex's runtime validator would reject the WHOLE arg object with
+ * `ArgumentValidationError` BEFORE the handler runs, and EVERY row
+ * in the batch would fail (the AI emits the same shape per row, so
+ * a bad key kills the batch, not just one row). The filter strips
+ * those keys before the call and surfaces them as warnings instead.
+ *
+ * If the AI wants to set such a value (e.g. status, lifecycleStage),
+ * it should follow up with `update_entity` AFTER the bulk insert.
+ *
+ * Adding a new accepted arg here = updating the `createForAI`
+ * validator in the matching mutations.ts file. KEEP IN SYNC.
+ */
+const ENTITY_CREATE_ARG_ALLOWLIST: Record<EntityKey, ReadonlySet<string>> = {
+	lead: new Set(["displayName", "email", "phone", "source", "assignedTo", "aiContext"]),
+	contact: new Set([
+		"personCode",
+		"displayName",
+		"email",
+		"phone",
+		"leadId",
+		"companyId",
+		"assignedTo",
+		"aiContext",
+	]),
+	deal: new Set([
+		"title",
+		"pipelineId",
+		"currentStageId",
+		"contactId",
+		"companyId",
+		"personCode",
+		"companyCode",
+		"value",
+		"currency",
+		"assignedTo",
+		"source",
+		"expectedCloseDate",
+	]),
+	company: new Set([
+		"name",
+		"industry",
+		"website",
+		"size",
+		"assignedTo",
+		"assignees",
+		"personCodes",
+	]),
+};
+
+/**
+ * Convex `_id` shape — 25–40 lowercase alphanumerics. Real Convex IDs
+ * are deterministic 32-char base32-ish strings (e.g.
+ * `px7d9h0155xv3gjmb6wkwhb1md876sfp`); we widen the bound a little to
+ * be future-proof. Anything failing this check is treated as a
+ * placeholder string the AI hallucinated (e.g. `"member-1"`,
+ * `"user_42"`) and dropped with a per-row warning instead of forwarded
+ * to the mutation (which would reject the WHOLE row with
+ * `ArgumentValidationError: Path: .assignedTo`).
+ *
+ * Why a regex instead of `ctx.db.normalizeId(...)`: the runner is
+ * deliberately one DB-read-light per turn. A normalize call on every
+ * ID-shaped key in every row would burn round-trips. The regex is a
+ * cheap shape gate; the mutation's `v.id("users")` validator still
+ * provides authoritative rejection for any ID that LOOKS valid but
+ * doesn't actually point at a row.
+ */
+const CONVEX_ID_PATTERN = /^[a-z0-9]{25,40}$/;
+
 // Per-entity create mutation. Each `*ForAI` twin handles its own RBAC +
 // dedup + activity log; the bulk runner is a thin loop. Per-row args
 // validators differ wildly between entities — leads need `displayName +
@@ -642,113 +757,93 @@ const ENTITY_CREATE_MUTATION = {
  * label-shaped keys to internal names so a model that emitted
  * `"Property Type": "Apartment"` doesn't kill the whole batch.
  */
+/**
+ * Build the per-row arg payload for the right `createForAI` mutation.
+ *
+ * Consumes the dispatcher's `partition.columnArgs` directly — the
+ * dispatcher has already routed every key by the org's live
+ * `fieldDefinitions` storage flag, so columnArgs contains exactly the
+ * keys the mutation validator accepts as top-level args.
+ *
+ * Per-entity logic here is now MINIMAL:
+ *   • Required-field check (the mutation validator rejects rows
+ *     missing required args — we surface a friendly per-row error
+ *     instead of letting Convex throw `ArgumentValidationError`).
+ *   • Lead `source` default — `lead.createForAI` requires `source`;
+ *     if the model didn't supply one, default to `"ai"` so the row
+ *     still lands.
+ *   • Lead `customFields` slot — the only entity whose `*ForAI`
+ *     validator currently accepts the customFields map directly
+ *     (others land it via a follow-up `update_entity` call; tracked
+ *     as B.47 follow-up).
+ *
+ * The previous version (deleted 2026-06-06 evening) hardcoded a per-
+ * entity list of accepted top-level keys (`email`, `phone`,
+ * `assignedTo`, etc.) — redundant now that the dispatcher produces
+ * the same shape from live `fieldDefinitions`.
+ */
+/**
+ * Build the per-row arg payload for the right `createForAI` mutation —
+ * fully dynamic. Reads required-field flags from the org's live
+ * `fieldDefinitions` rows (passed in pre-loaded by the caller) and
+ * surfaces a per-row error when ANY required column-backed field is
+ * absent. NO hardcoded "displayName is required for leads" knowledge.
+ *
+ * Locked 2026-06-06 evening — previous version had a per-entity
+ * switch hardcoding the required field per type (displayName/name/
+ * title). Now both the field shape AND the required-ness come from
+ * the org's seeded `fieldDefinitions` rows.
+ */
 function buildCreateArgs(
 	entityType: EntityKey,
-	row: Record<string, unknown>,
+	columnArgs: Record<string, unknown>,
+	customFields: Record<string, unknown> | null,
 	orgId: Id<"orgs">,
 	userId: Id<"users">,
-	customFieldsResolver: (customFields: unknown) => Record<string, unknown> | undefined,
+	fieldDefRows: Array<{
+		name: string;
+		columnKey?: string;
+		storage?: string;
+		required?: boolean;
+	}>,
 ): Record<string, unknown> | { error: string } {
-	const base = { orgId, userId };
-	switch (entityType) {
-		case "lead": {
-			const displayName = row.displayName;
-			const source = row.source ?? "ai";
-			if (typeof displayName !== "string" || displayName.trim().length === 0) {
-				return { error: "lead row missing displayName" };
-			}
-			if (typeof source !== "string" || source.trim().length === 0) {
-				return { error: "lead row missing source" };
-			}
-			const resolvedCustomFields = customFieldsResolver(row.customFields);
-			return {
-				...base,
-				displayName,
-				source,
-				...(typeof row.email === "string" ? { email: row.email } : {}),
-				...(typeof row.phone === "string" ? { phone: row.phone } : {}),
-				...(typeof row.assignedTo === "string"
-					? { assignedTo: row.assignedTo as Id<"users"> }
-					: {}),
-				...(row.aiContext !== undefined ? { aiContext: row.aiContext } : {}),
-				...(resolvedCustomFields ? { customFields: resolvedCustomFields } : {}),
-			};
+	// Dynamic required-field check — every fieldDefinitions row with
+	// `required:true` AND column-storage MUST be present in columnArgs
+	// (fieldValues-backed required fields are checked at write time
+	// inside `applyCustomFieldsForRecordImpl`).
+	for (const def of fieldDefRows) {
+		if (def.required !== true) continue;
+		if (def.storage !== "column") continue;
+		const key = def.columnKey ?? def.name;
+		const value = columnArgs[key];
+		if (value === undefined || value === null) {
+			return { error: `${entityType} row missing required field "${def.name}"` };
 		}
-		case "contact": {
-			const displayName = row.displayName;
-			if (typeof displayName !== "string" || displayName.trim().length === 0) {
-				return { error: "contact row missing displayName" };
-			}
-			return {
-				...base,
-				displayName,
-				...(typeof row.email === "string" ? { email: row.email } : {}),
-				...(typeof row.phone === "string" ? { phone: row.phone } : {}),
-				...(typeof row.assignedTo === "string"
-					? { assignedTo: row.assignedTo as Id<"users"> }
-					: {}),
-				...(typeof row.companyId === "string"
-					? { companyId: row.companyId as Id<"companies"> }
-					: {}),
-				...(typeof row.leadId === "string" ? { leadId: row.leadId as Id<"leads"> } : {}),
-				...(typeof row.personCode === "string" ? { personCode: row.personCode } : {}),
-				...(row.aiContext !== undefined ? { aiContext: row.aiContext } : {}),
-			};
-		}
-		case "company": {
-			const name = row.name;
-			if (typeof name !== "string" || name.trim().length === 0) {
-				return { error: "company row missing name" };
-			}
-			return {
-				...base,
-				name,
-				...(typeof row.industry === "string" ? { industry: row.industry } : {}),
-				...(typeof row.website === "string" ? { website: row.website } : {}),
-				...(typeof row.size === "string" ? { size: row.size } : {}),
-				...(typeof row.assignedTo === "string"
-					? { assignedTo: row.assignedTo as Id<"users"> }
-					: {}),
-			};
-		}
-		case "deal": {
-			const title = row.title;
-			if (typeof title !== "string" || title.trim().length === 0) {
-				return { error: "deal row missing title" };
-			}
-			return {
-				...base,
-				title,
-				...(typeof row.pipelineId === "string"
-					? { pipelineId: row.pipelineId as Id<"pipelines"> }
-					: {}),
-				...(typeof row.currentStageId === "string"
-					? { currentStageId: row.currentStageId }
-					: {}),
-				...(typeof row.contactId === "string"
-					? { contactId: row.contactId as Id<"contacts"> }
-					: {}),
-				...(typeof row.companyId === "string"
-					? { companyId: row.companyId as Id<"companies"> }
-					: {}),
-				...(typeof row.personCode === "string" ? { personCode: row.personCode } : {}),
-				...(typeof row.companyCode === "string" ? { companyCode: row.companyCode } : {}),
-				...(typeof row.value === "number" ? { value: row.value } : {}),
-				...(typeof row.currency === "string" ? { currency: row.currency } : {}),
-				...(typeof row.assignedTo === "string"
-					? { assignedTo: row.assignedTo as Id<"users"> }
-					: {}),
-				...(typeof row.source === "string" ? { source: row.source } : {}),
-				...(typeof row.expectedCloseDate === "number"
-					? { expectedCloseDate: row.expectedCloseDate }
-					: {}),
-			};
+		if (typeof value === "string" && value.trim().length === 0) {
+			return { error: `${entityType} row missing required field "${def.name}"` };
 		}
 	}
+
+	// `lead.createForAI` validator marks `source` as required (default
+	// "ai"). The system field def for `source` IS required:true on the
+	// seeded lead template (per `convex/orgs/templates/fields.ts`), so
+	// the loop above catches a missing `source`. But if an org has
+	// removed/edited the def, fall back to defaulting to "ai" for
+	// leads only — avoids a hard rejection while still surfacing the
+	// gap via the audit feed.
+	const finalColumnArgs =
+		entityType === "lead" && !columnArgs.source ? { ...columnArgs, source: "ai" } : columnArgs;
+
+	return {
+		orgId,
+		userId,
+		...finalColumnArgs,
+		...(customFields ? { customFields } : {}),
+	};
 }
 
 const bulkCreateEntities = defineCapability<{
-	entityType: EntityKey;
+	entityType: string;
 	rows: Array<Record<string, unknown>>;
 }>({
 	name: "bulk_create_entities",
@@ -791,31 +886,113 @@ const bulkCreateEntities = defineCapability<{
 			"Confirm with `Created N of M <entity>s`. List per-row failures verbatim (the row's index + reason). Surface the entityList card so the user can click into each new record.",
 	},
 	input: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeSchema(),
 		rows: z.array(z.record(z.string(), z.unknown())).min(1).max(50),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
-		const perm = ENTITY_CREATE_PERM[args.entityType];
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as EntityKey;
+		const perm = ENTITY_CREATE_PERM[entityType];
 		if (!principal.permissions.includes(perm)) {
 			return failed("denied", `Requires ${perm}.`);
 		}
-		const mutation = ENTITY_CREATE_MUTATION[args.entityType];
+		const mutation = ENTITY_CREATE_MUTATION[entityType];
 		// Build the customFields key resolver ONCE per call. Smaller
 		// models (Gemini Flash, NVIDIA Llama) frequently emit field
 		// LABELS where the mutation expects internal names; the resolver
 		// rewrites label-shaped keys to canonical names before each row
 		// is forwarded. Single fieldDefinitions read; cheap.
-		const customFieldsResolver = await buildCustomFieldKeyResolver(cap, args.entityType);
+		//
+		// The same fieldDefinitions read also powers the per-row
+		// dispatcher — it splits a row's TOP-LEVEL keys into column
+		// args vs custom-field entries vs dropped keys based on the
+		// LIVE `fieldDefinitions` rows. ONE DB round-trip per turn.
+		// Dispatcher (`partitionRowKeys`) reads `def.storage` +
+		// `def.columnKey` to route — no hardcoded column lists.
+		const fieldDefRows = await loadFieldDefinitionsForEntity(cap, entityType);
+		const fieldDefLookup = buildFieldDefLookup(fieldDefRows);
 		const errors: { item: string; reason: string }[] = [];
 		const succeededIds: string[] = [];
+		// Per-row warnings collected separately from `errors[]` so a
+		// `dropped` key on a successful row doesn't flip the row's
+		// status to "failed" — they're informational signals the model
+		// + user can use to self-correct on the next batch.
+		const warnings: { item: string; reason: string }[] = [];
 		for (const [index, row] of args.rows.entries()) {
+			// Partition the row's top-level keys: known columns flow into
+			// `columnArgs`, customField names/labels lift into the
+			// `customFields` bucket, anything else lands in `dropped`.
+			// This is the fix for the 2026-06-06 "rich payload silently
+			// loses every column outside the allowlist" bug — the
+			// dispatcher reads the org's live `fieldDefinitions` so an
+			// admin-added column-backed field flows through with NO
+			// code change here.
+			const partition = partitionRowKeys(entityType, row, fieldDefLookup);
+			if (partition.dropped.length > 0) {
+				warnings.push({
+					item: `row[${index}]`,
+					reason: `Skipped ${partition.dropped.length} unknown key${partition.dropped.length === 1 ? "" : "s"}: ${partition.dropped.join(", ")}.`,
+				});
+			}
+
+			// Validator pre-filter (locked 2026-06-07) — strip any
+			// columnArgs keys the entity's `createForAI` mutation does
+			// NOT accept as top-level args. Without this, a column-
+			// backed-but-not-create-accepted field (e.g. `leads.status`,
+			// which the dispatcher correctly routes to columnArgs but
+			// `lead.createForAI` rejects) would kill the whole batch
+			// because Convex validates ALL args before the handler
+			// runs. The dropped keys surface as warnings, not errors —
+			// the row still inserts with the remaining valid columns.
+			const allowlist = ENTITY_CREATE_ARG_ALLOWLIST[entityType];
+			const droppedByAllowlist: string[] = [];
+			for (const key of Object.keys(partition.columnArgs)) {
+				if (!allowlist.has(key)) {
+					droppedByAllowlist.push(key);
+					delete partition.columnArgs[key];
+				}
+			}
+			if (droppedByAllowlist.length > 0) {
+				warnings.push({
+					item: `row[${index}]`,
+					reason: `Dropped ${droppedByAllowlist.length} key${droppedByAllowlist.length === 1 ? "" : "s"} not accepted by ${entityType}.create: ${droppedByAllowlist.join(", ")}. Set these via update_entity after the row is created.`,
+				});
+			}
+
+			// Convex-ID shape gate for `assignedTo` (locked 2026-06-07)
+			// — small models (Llama, Gemini Flash, GPT-OSS) regularly
+			// emit placeholder strings like `"member-1"` / `"user_42"`
+			// when they don't have a real users _id in context. The
+			// mutation validator's `v.id("users")` would reject the
+			// WHOLE row; we drop the field with a warning so the row
+			// still lands unassigned. The user can re-assign later.
+			if (
+				typeof partition.columnArgs.assignedTo === "string" &&
+				!CONVEX_ID_PATTERN.test(partition.columnArgs.assignedTo)
+			) {
+				const bogus = partition.columnArgs.assignedTo;
+				delete partition.columnArgs.assignedTo;
+				warnings.push({
+					item: `row[${index}]`,
+					reason: `Dropped placeholder assignedTo "${bogus}" — not a Convex user _id. Row created unassigned.`,
+				});
+			}
+
+			// Pass the dispatcher output STRAIGHT into buildCreateArgs —
+			// columnArgs is already in the shape `*ForAI` accepts,
+			// customFields is already routed (lead-only consumer today,
+			// see B.47 for contact/company/deal widening).
 			const payload = buildCreateArgs(
-				args.entityType,
-				row,
+				entityType,
+				partition.columnArgs,
+				partition.customFields,
 				principal.orgId,
 				principal.userId,
-				customFieldsResolver,
+				fieldDefRows,
 			);
 			if ("error" in payload && typeof payload.error === "string") {
 				errors.push({ item: `row[${index}]`, reason: payload.error });
@@ -855,7 +1032,7 @@ const bulkCreateEntities = defineCapability<{
 					) {
 						errors.push({
 							item: `row[${index}]`,
-							reason: `Skipped — possible duplicate of an existing ${args.entityType}.`,
+							reason: `Skipped — possible duplicate of an existing ${entityType}.`,
 						});
 						continue;
 					}
@@ -881,26 +1058,49 @@ const bulkCreateEntities = defineCapability<{
 		// chip card so the user can click through.
 		const display = {
 			kind: "entityList" as const,
-			entityType: args.entityType,
+			entityType,
 			entityIds: succeededIds,
 		};
+		// Build the "with N warnings" headline suffix when partitioner
+		// surfaced any dropped keys. Surfaced ONLY on partial/failed
+		// branches — on the `ok` branch the headline stays clean
+		// (locked 2026-06-07) so the model can treat the contract
+		// `status:"ok"` as an unambiguous stop signal. Warnings still
+		// land in `data.warnings[]` so the model + user see them in
+		// the envelope payload.
+		const warningsSuffix =
+			warnings.length > 0
+				? ` (${warnings.length} row${warnings.length === 1 ? "" : "s"} had unrecognised keys — see warnings)`
+				: "";
 		if (errors.length === 0) {
 			return ok({
-				headline: `Created ${succeeded} ${args.entityType}${succeeded === 1 ? "" : "s"}.`,
-				data: { succeeded, failed: 0, total, entityIds: succeededIds },
+				headline: `Created ${succeeded} ${entityType}${succeeded === 1 ? "" : "s"}.`,
+				data: {
+					succeeded,
+					failed: 0,
+					total,
+					entityIds: succeededIds,
+					...(warnings.length > 0 ? { warnings } : {}),
+				},
 				display,
 			});
 		}
 		if (succeeded === 0) {
 			return failed(
 				"business_error",
-				`Created 0 of ${total} ${args.entityType}s — every row failed.`,
+				`Created 0 of ${total} ${entityType}s — every row failed.${warningsSuffix}`,
 				errors,
 			);
 		}
 		return partial({
-			headline: `Created ${succeeded} of ${total} ${args.entityType}s — ${errors.length} failed.`,
-			data: { succeeded, failed: errors.length, total, entityIds: succeededIds },
+			headline: `Created ${succeeded} of ${total} ${entityType}s — ${errors.length} failed.${warningsSuffix}`,
+			data: {
+				succeeded,
+				failed: errors.length,
+				total,
+				entityIds: succeededIds,
+				...(warnings.length > 0 ? { warnings } : {}),
+			},
 			errors,
 			display,
 		});
@@ -909,13 +1109,12 @@ const bulkCreateEntities = defineCapability<{
 
 // ─── bulk_create_tasks ──────────────────────────────────────────────────────
 
-const TASK_TYPE_VALUES = ["todo", "call", "email", "meeting", "followup"] as const;
 const TASK_PRIORITY_VALUES = ["low", "normal", "high", "urgent"] as const;
 
 const bulkCreateTasks = defineCapability<{
 	rows: Array<{
 		title: string;
-		type?: (typeof TASK_TYPE_VALUES)[number];
+		type?: string;
 		note?: string;
 		dueAt?: number;
 		assignedTo?: string;
@@ -934,7 +1133,7 @@ const bulkCreateTasks = defineCapability<{
 	channels: ["chat", "mcp", "rest"],
 	spec: {
 		whenToCall:
-			"Create MANY tasks in one batch (max 50). Pass `rows[]` where each row carries `title` (required) + optional `type` (default `todo`), `note`, `dueAt` (epoch ms), `assignedTo`, `priority`, `personCode` / `dealCode` to bind the task to a CRM record. Useful when seeding a follow-up checklist after a meeting or generating a project's task list at once.",
+			"Create MANY tasks in one batch (max 50). Pass `rows[]` where each row carries `title` (required) + optional `type` (default `todo` — system defaults are todo/call/email/meeting/followup; admin may extend via `org.settings.taskTypes`), `note`, `dueAt` (epoch ms), `assignedTo`, `priority`, `personCode` / `dealCode` to bind the task to a CRM record. Useful when seeding a follow-up checklist after a meeting or generating a project's task list at once.",
 		whenNotToCall:
 			"a single task (call `create_task` — it carries richer dedup + the human preview card). A standing follow-up cadence (call `create_followup_chain` once it ships in B.46).",
 		requiredClarifications: ["rows"],
@@ -955,7 +1154,7 @@ const bulkCreateTasks = defineCapability<{
 			.array(
 				z.object({
 					title: z.string().min(1).max(300),
-					type: z.enum(TASK_TYPE_VALUES).optional(),
+					type: z.string().min(1).optional(),
 					note: z.string().max(2000).optional(),
 					dueAt: z.number().int().positive().optional(),
 					assignedTo: z.string().optional(),
@@ -974,16 +1173,47 @@ const bulkCreateTasks = defineCapability<{
 		if (!principal.permissions.includes("tasks.create")) {
 			return failed("denied", "Requires tasks.create.");
 		}
+		// Read the org's effective task types ONCE for the whole batch.
+		// Per-row `type` is validated against it; rows with an unknown id
+		// surface a per-row error instead of failing the batch.
+		const effectiveTypes = (await ctx.runQuery(
+			internal.orgs.queries.getEffectiveTaskTypesForAI,
+			{ orgId: principal.orgId, userId: principal.userId },
+		)) as Array<{ id: string; label: string; labelAr?: string }>;
+		const validTypeIds = new Set(effectiveTypes.map((t) => t.id.toLowerCase()));
+		const validTypeLabelToId = new Map(
+			effectiveTypes.map((t) => [t.label.toLowerCase(), t.id]),
+		);
 		const errors: { item: string; reason: string }[] = [];
 		const succeededIds: string[] = [];
 		for (const [index, row] of args.rows.entries()) {
+			// Resolve row.type — accept `id`, `label`, or default to "todo".
+			let resolvedType = row.type;
+			if (typeof resolvedType === "string" && resolvedType.length > 0) {
+				const norm = resolvedType.trim().toLowerCase();
+				if (validTypeIds.has(norm)) {
+					// canonicalise casing
+					resolvedType =
+						effectiveTypes.find((t) => t.id.toLowerCase() === norm)?.id ?? norm;
+				} else if (validTypeLabelToId.has(norm)) {
+					resolvedType = validTypeLabelToId.get(norm) ?? norm;
+				} else {
+					errors.push({
+						item: `row[${index}]`,
+						reason: `Unknown task type "${row.type}" — effective types: ${effectiveTypes.map((t) => `"${t.id}"`).join(", ")}.`,
+					});
+					continue;
+				}
+			} else {
+				resolvedType = "todo";
+			}
 			try {
 				const taskId = (await ctx.runMutation(
 					internal.crm.shared.tasks.mutations.createForAI,
 					{
 						orgId: principal.orgId,
 						userId: principal.userId,
-						type: row.type ?? "todo",
+						type: resolvedType,
 						title: row.title,
 						...(row.note !== undefined ? { note: row.note } : {}),
 						...(row.dueAt !== undefined ? { dueAt: row.dueAt } : {}),

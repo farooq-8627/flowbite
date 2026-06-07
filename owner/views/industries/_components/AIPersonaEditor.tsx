@@ -44,7 +44,7 @@ export function AIPersonaEditor({ template }: { template: Doc<"platformTemplates
 	return (
 		<OwnerSettingsCard
 			title="AI persona"
-			description="Markdown overlay added to the AI assistant's system prompt (Layer 3 — industry context). Future orgs onboarding onto this template inherit it as their default persona; existing customers are untouched."
+			description="Markdown overlay added to the AI assistant's system prompt (Layer 3: industry context). Future orgs onboarding onto this template inherit it as their default persona; existing customers are untouched."
 		>
 			<form
 				onSubmit={async (e) => {

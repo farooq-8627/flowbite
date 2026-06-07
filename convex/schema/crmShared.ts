@@ -325,13 +325,14 @@ export const messages = defineTable({
 export const tasks = defineTable({
 	...orgScoped,
 	taskCode: v.string(),
-	type: v.union(
-		v.literal("todo"),
-		v.literal("call"),
-		v.literal("email"),
-		v.literal("meeting"),
-		v.literal("followup"),
-	),
+	// Per-org task type catalog (B.46) — `org.settings.taskTypes` may
+	// extend the system defaults (`todo`/`call`/`email`/`meeting`/
+	// `followup`). The schema accepts ANY string so a custom type
+	// (`"site_visit"`, `"demo"`) lands cleanly. Validation against
+	// the org's effective catalog happens at the AI capability layer
+	// (`tasks/capabilities.ts:validateTaskType`) and at the public
+	// mutation surface (the form UI surfaces only enabled types).
+	type: v.string(),
 	personCode: v.optional(v.string()),
 	dealCode: v.optional(v.string()),
 	entityType: v.string(),

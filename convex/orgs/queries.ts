@@ -27,6 +27,7 @@ import {
 import type { Id } from "../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../_generated/server";
 import { readAllOrgStats } from "../_shared/orgStats";
+import { resolveRecordScope } from "../_shared/permissions/recordScope";
 import { getOrgById, getUserOrgs } from "./helpers";
 
 /**
@@ -230,6 +231,101 @@ export const getOrgModulesForAI = internalQuery({
 			meta?: unknown;
 		}>;
 		return modules;
+	},
+});
+
+/**
+ * AI-callable read returning the list of entity-type slot keys the org
+ * has enabled. Drives `_shared/entityTypes.ts:loadEnabledEntityTypes`,
+ * which in turn powers every dynamic entityType validation in the AI
+ * capability layer.
+ *
+ *   - Reads `org.settings.modules[]` — slots with `hidden:true` are
+ *     dropped so a workspace that hides a slot also hides it from the
+ *     AI's input surface.
+ *   - Falls back to the four CORE types (lead/contact/deal/company)
+ *     when the org has not customised `modules` yet OR when every
+ *     module is hidden — matches the entity-scaffolds behaviour for
+ *     unconfigured workspaces.
+ *   - Industry slots `entity5` / `entity6` show up here ONLY when the
+ *     industry template's seed inserted a module entry for them or an
+ *     admin enabled them via the modules editor.
+ *
+ * Why a dedicated query (vs reusing `getOrgModulesForAI`): the
+ * entity-type validator only needs the slot KEYS, and reading them
+ * here (vs deriving on the JS side) keeps the validator pure and
+ * lets `loadEnabledEntityTypes` cache the read transparently across
+ * capabilities in one turn.
+ */
+export const getEnabledEntityTypesForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		if (!org) return ["lead", "contact", "deal", "company"];
+		const moduleSlots = (org.settings?.modules ?? []) as Array<{
+			slot: string;
+			hidden?: boolean;
+		}>;
+		const enabled = moduleSlots
+			.filter((m) => m.hidden !== true && typeof m.slot === "string" && m.slot.length > 0)
+			.map((m) => m.slot);
+		// Fall back to the four CORE types when no modules are configured.
+		if (enabled.length === 0) {
+			return ["lead", "contact", "deal", "company"];
+		}
+		return enabled;
+	},
+});
+
+/**
+ * AI-callable read returning the org's effective task-type catalog.
+ *
+ * Resolution order:
+ *   1. `org.settings.taskTypes[]` — when admin configured a custom set.
+ *   2. The 5 SYSTEM defaults (`todo`, `call`, `email`, `meeting`,
+ *      `followup`) — every workspace inherits these unless overridden.
+ *
+ * Each row carries `id` (storage key — what the mutation persists),
+ * `label` (the user-facing name), and optional `labelAr` (Arabic
+ * translation for RTL UIs). Returning the full row shape (vs just
+ * the ids) lets the AI capability surface a richer repair envelope
+ * when the model picks a wrong id.
+ *
+ * Workspaces that want to add a custom type (e.g. "demo", "site_visit")
+ * append an entry to `settings.taskTypes`; existing tasks aren't
+ * migrated. The capability writer rebuilds the array from scratch each
+ * time so removed types simply disappear from the AI surface but old
+ * task rows keep their original `type` value verbatim.
+ */
+export const getEffectiveTaskTypesForAI = internalQuery({
+	args: { orgId: v.id("orgs"), userId: v.id("users") },
+	handler: async (ctx, args) => {
+		await requireOrgMemberByIds(ctx, args.orgId, args.userId);
+		const org = await ctx.db.get(args.orgId);
+		const SYSTEM_DEFAULTS: Array<{ id: string; label: string; labelAr?: string }> = [
+			{ id: "todo", label: "To-do" },
+			{ id: "call", label: "Call" },
+			{ id: "email", label: "Email" },
+			{ id: "meeting", label: "Meeting" },
+			{ id: "followup", label: "Follow-up" },
+		];
+		if (!org) return SYSTEM_DEFAULTS;
+		const settings = org.settings as
+			| {
+					taskTypes?: Array<{ id?: unknown; label?: unknown; labelAr?: unknown }>;
+			  }
+			| undefined;
+		const custom = settings?.taskTypes;
+		if (!Array.isArray(custom) || custom.length === 0) return SYSTEM_DEFAULTS;
+		const cleaned = custom
+			.map((row) => ({
+				id: typeof row.id === "string" ? row.id : "",
+				label: typeof row.label === "string" ? row.label : "",
+				labelAr: typeof row.labelAr === "string" ? row.labelAr : undefined,
+			}))
+			.filter((row) => row.id.length > 0 && row.label.length > 0);
+		return cleaned.length > 0 ? cleaned : SYSTEM_DEFAULTS;
 	},
 });
 
@@ -554,6 +650,13 @@ export const getDashboardStats = orgQuery({
 		const org = await ctx.db.get(args.orgId);
 		if (!org) return null;
 
+		// Resolve permissions for record-scope (B.45). Members without
+		// `records.viewAll` see only stats for rows they're assigned to;
+		// members with the capability use the fast `orgStats` aggregates.
+		const role = await ctx.db.get(member.roleId);
+		const permissions = (member.permissions ?? role?.permissions ?? []) as string[];
+		const scope = resolveRecordScope(permissions, ctx.userId);
+
 		const now = Date.now();
 		const oneDayMs = 86_400_000;
 		const sevenDaysAgo = now - 7 * oneDayMs;
@@ -567,9 +670,113 @@ export const getDashboardStats = orgQuery({
 		const requestedLimit = args.recentActivityLimit ?? 10;
 		const activityLimit = Math.max(1, Math.min(50, Math.floor(requestedLimit)));
 
-		const [stats, remindersDueToday, remindersOverdue, remindersDoneThisWeek, recentActivity] =
+		// Branch: full-access members get the O(1) aggregate path;
+		// scoped members get the assigned-only path that walks
+		// `by_org_and_assignee` per entity. The scoped path is bounded
+		// (`take(500)` per entity) so a user with 500+ assigned rows
+		// reads at most 500 entries each — well within Convex's read
+		// budget. For workspaces small enough that the org-wide aggregates
+		// are appropriate, the fast path is unchanged.
+		let leadCount: number;
+		let contactCount: number;
+		let dealCount: number;
+		let companiesCount: number;
+		let pipelineValue: number;
+		let dealsWon: number;
+		let dealsLost: number;
+		let memberCount: number;
+		let stats: Record<string, number> = {};
+
+		if (scope.all) {
+			// Fast path — read aggregate counters. UNCHANGED (production-
+			// grade O(1) per key, no scan).
+			stats = await readAllOrgStats(ctx, args.orgId);
+			memberCount = stats["members.active"] ?? 0;
+			leadCount = stats["leads.open"] ?? 0;
+			contactCount = stats["contacts.active"] ?? 0;
+			dealCount = stats["deals.open"] ?? 0;
+			pipelineValue = stats["deals.pipelineValue"] ?? 0;
+			dealsWon = stats["deals.won"] ?? 0;
+			dealsLost = stats["deals.lost"] ?? 0;
+			companiesCount = stats["companies.active"] ?? 0;
+		} else {
+			// Per-user path — count rows assigned to the caller via the
+			// indexed `by_org_and_assignee` index on each entity. We
+			// filter `deletedAt === undefined` in JS (Convex indexes
+			// don't natively express undefined) and aggregate the deal
+			// `value` for the pipelineValue tile while we're walking.
+			//
+			// Bounded reads — 500 rows per entity is enough headroom
+			// for any individual's book of work; if a user holds more,
+			// the count is capped which is acceptable for a dashboard
+			// tile (the full list page paginates separately).
+			const SCOPED_TAKE = 500;
+			const userId = scope.userId;
+			const [scopedLeads, scopedContacts, scopedCompanies, scopedDeals] = await Promise.all([
+				ctx.db
+					.query("leads")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", userId),
+					)
+					.take(SCOPED_TAKE),
+				ctx.db
+					.query("contacts")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", userId),
+					)
+					.take(SCOPED_TAKE),
+				ctx.db
+					.query("companies")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", userId),
+					)
+					.take(SCOPED_TAKE),
+				ctx.db
+					.query("deals")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", userId),
+					)
+					.take(SCOPED_TAKE),
+			]);
+
+			leadCount = scopedLeads.filter((r) => r.deletedAt === undefined).length;
+			contactCount = scopedContacts.filter((r) => r.deletedAt === undefined).length;
+			companiesCount = scopedCompanies.filter((r) => r.deletedAt === undefined).length;
+
+			// Deals — count open / won / lost separately while summing
+			// pipelineValue for the OPEN ones (matches the `orgStats`
+			// "deals.pipelineValue" semantics — only open deals contribute).
+			let openDeals = 0;
+			let wonDeals = 0;
+			let lostDeals = 0;
+			let openPipelineValue = 0;
+			for (const deal of scopedDeals) {
+				if (deal.deletedAt !== undefined) continue;
+				if (deal.wonAt !== undefined) {
+					wonDeals += 1;
+				} else if (deal.lostAt !== undefined) {
+					lostDeals += 1;
+				} else {
+					openDeals += 1;
+					if (typeof deal.value === "number" && deal.value > 0) {
+						openPipelineValue += deal.value;
+					}
+				}
+			}
+			dealCount = openDeals;
+			dealsWon = wonDeals;
+			dealsLost = lostDeals;
+			pipelineValue = openPipelineValue;
+
+			// `memberCount` is org-wide (it counts the team, not anything
+			// the caller "owns"), so even scoped members see the real
+			// team headcount. Read it from the aggregate counter.
+			stats = await readAllOrgStats(ctx, args.orgId);
+			memberCount = stats["members.active"] ?? 0;
+		}
+
+		const [remindersDueToday, remindersOverdue, remindersDoneThisWeek, recentActivityRaw] =
 			await Promise.all([
-				readAllOrgStats(ctx, args.orgId),
 				ctx.db
 					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
@@ -578,15 +785,23 @@ export const getDashboardStats = orgQuery({
 							.eq("status", "pending")
 							.lte("dueAt", now + oneDayMs),
 					)
-					.take(100)
-					.then((rows) => rows.length),
+					.take(scope.all ? 100 : 500)
+					.then((rows) =>
+						scope.all
+							? rows.length
+							: rows.filter((r) => r.assignedTo === scope.userId).length,
+					),
 				ctx.db
 					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
 						q.eq("orgId", args.orgId).eq("status", "pending").lt("dueAt", startOfDayMs),
 					)
-					.take(200)
-					.then((rows) => rows.length),
+					.take(scope.all ? 200 : 500)
+					.then((rows) =>
+						scope.all
+							? rows.length
+							: rows.filter((r) => r.assignedTo === scope.userId).length,
+					),
 				ctx.db
 					.query("tasks")
 					.withIndex("by_org_and_status_and_due", (q) =>
@@ -595,27 +810,80 @@ export const getDashboardStats = orgQuery({
 							.eq("status", "completed")
 							.gte("dueAt", sevenDaysAgo),
 					)
-					.take(200)
-					.then((rows) => rows.length),
+					.take(scope.all ? 200 : 500)
+					.then((rows) =>
+						scope.all
+							? rows.length
+							: rows.filter((r) => r.assignedTo === scope.userId).length,
+					),
 				ctx.db
 					.query("activityLogs")
 					.withIndex("by_orgId_and_createdAt", (q) => q.eq("orgId", args.orgId))
 					.order("desc")
-					.take(activityLimit),
+					.take(scope.all ? activityLimit : Math.max(activityLimit * 5, 50)),
 			]);
+
+		// For scoped members, filter the org-wide activity feed to rows
+		// touching one of THEIR entities. The activity log carries the
+		// actor (`userId`) + the affected entity (`entityType`/`entityId`).
+		// We surface a row when EITHER:
+		//   • the actor IS the caller (their own actions), OR
+		//   • the row's `personCode` matches one of the caller's leads/
+		//     contacts (best-effort — we already loaded those above).
+		// Anything else is filtered out so the user's "Recent activity"
+		// widget shows only their book of work.
+		let recentActivity = recentActivityRaw;
+		if (!scope.all) {
+			const ownPersonCodes = new Set<string>();
+			// Re-read assigned leads/contacts personCodes for the filter.
+			// The earlier reads already returned them — but the variable
+			// is only in scope inside the `else` branch above. Cheaper to
+			// re-walk the limited set than to refactor for hoisting.
+			const [scopedLeadsForFilter, scopedContactsForFilter] = await Promise.all([
+				ctx.db
+					.query("leads")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", scope.userId),
+					)
+					.take(500),
+				ctx.db
+					.query("contacts")
+					.withIndex("by_org_and_assignee", (q) =>
+						q.eq("orgId", args.orgId).eq("assignedTo", scope.userId),
+					)
+					.take(500),
+			]);
+			for (const r of scopedLeadsForFilter) {
+				if (r.personCode) ownPersonCodes.add(r.personCode);
+			}
+			for (const r of scopedContactsForFilter) {
+				if (r.personCode) ownPersonCodes.add(r.personCode);
+			}
+			recentActivity = recentActivityRaw
+				.filter((row) => {
+					// biome-ignore lint/suspicious/noExplicitAny: activityLogs row shape varies; we only need the optional fields.
+					const r = row as any;
+					if (r.userId === scope.userId) return true;
+					if (typeof r.personCode === "string" && ownPersonCodes.has(r.personCode)) {
+						return true;
+					}
+					return false;
+				})
+				.slice(0, activityLimit);
+		}
 
 		return {
 			orgName: org.name,
 			industry: org.industry ?? "default",
 			plan: org.plan,
-			memberCount: stats["members.active"] ?? 0,
-			leadCount: stats["leads.open"] ?? 0,
-			contactCount: stats["contacts.active"] ?? 0,
-			dealCount: stats["deals.open"] ?? 0,
-			pipelineValue: stats["deals.pipelineValue"] ?? 0,
-			dealsWon: stats["deals.won"] ?? 0,
-			dealsLost: stats["deals.lost"] ?? 0,
-			companiesCount: stats["companies.active"] ?? 0,
+			memberCount,
+			leadCount,
+			contactCount,
+			dealCount,
+			pipelineValue,
+			dealsWon,
+			dealsLost,
+			companiesCount,
 			currency: org.settings?.defaultCurrency ?? "USD",
 			remindersDueToday,
 			// Productivity-shape metrics — read off reminders since the
@@ -625,6 +893,10 @@ export const getDashboardStats = orgQuery({
 			tasksOverdue: remindersOverdue,
 			tasksDoneThisWeek: remindersDoneThisWeek,
 			recentActivity,
+			// B.45 — surfacing scope so consumers (UI tooltip, AI tools)
+			// can render "scoped to your assigned records" copy when the
+			// caller's role lacks `records.viewAll`.
+			scoped: !scope.all,
 		};
 	},
 });

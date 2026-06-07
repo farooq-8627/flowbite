@@ -37,17 +37,17 @@ const TIMEZONES = [
 ];
 
 const CURRENCIES = [
-	{ value: "AED", label: "AED — UAE Dirham" },
-	{ value: "SAR", label: "SAR — Saudi Riyal" },
-	{ value: "KWD", label: "KWD — Kuwaiti Dinar" },
-	{ value: "QAR", label: "QAR — Qatari Riyal" },
-	{ value: "BHD", label: "BHD — Bahraini Dinar" },
-	{ value: "OMR", label: "OMR — Omani Rial" },
-	{ value: "USD", label: "USD — US Dollar" },
-	{ value: "EUR", label: "EUR — Euro" },
-	{ value: "GBP", label: "GBP — British Pound" },
-	{ value: "INR", label: "INR — Indian Rupee" },
-	{ value: "PKR", label: "PKR — Pakistani Rupee" },
+	{ value: "AED", label: "AED: UAE Dirham" },
+	{ value: "SAR", label: "SAR: Saudi Riyal" },
+	{ value: "KWD", label: "KWD: Kuwaiti Dinar" },
+	{ value: "QAR", label: "QAR: Qatari Riyal" },
+	{ value: "BHD", label: "BHD: Bahraini Dinar" },
+	{ value: "OMR", label: "OMR: Omani Rial" },
+	{ value: "USD", label: "USD: US Dollar" },
+	{ value: "EUR", label: "EUR: Euro" },
+	{ value: "GBP", label: "GBP: British Pound" },
+	{ value: "INR", label: "INR: Indian Rupee" },
+	{ value: "PKR", label: "PKR: Pakistani Rupee" },
 ];
 
 const generalSchema = z.object({

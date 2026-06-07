@@ -56,37 +56,52 @@ function TimestampLabel({ ts }: { ts: number }) {
 }
 
 /**
- * Walk an assistant row's `toolCalls` field and pull out the FIRST
+ * Walk the turn's grouped `role:"tool"` rows and pull out the FIRST
  * step-up envelope, if any. The envelope is the one the V2 wrapper
- * returned when an irreversible capability fired without a token. We
- * trust the per-call `output.status` shape produced by `runCapability`
- * — anything else is ignored.
+ * returned when an irreversible capability fired without a token.
+ *
+ * IMPORTANT: tool calls are persisted as SEPARATE `role:"tool"`
+ * `aiMessages` rows (see `convex/ai/messages.ts:appendToolCallRecord`),
+ * each carrying `toolCalls: [{ id, name, input, output, status }]`.
+ * The assistant row itself NEVER carries `toolCalls`, so we must scan
+ * the grouped `tools` array — not `assistant.toolCalls` (the historical
+ * bug that meant the `<StepUpCard>` never rendered and the envelope
+ * leaked into the timeline as a red "needs step-up" error instead).
+ *
+ * We trust the per-call `output.status` shape produced by
+ * `runCapability` — anything else is ignored. The last matching tool
+ * row wins so a turn that ran several tools surfaces the step-up that
+ * actually blocked it.
  */
-function findStepUpRequest(assistant: Doc<"aiMessages">): {
+function findStepUpRequest(tools: AIMessage[]): {
 	capability: string;
 	args: Record<string, unknown>;
 	headline: string;
 } | null {
-	const toolCalls = (assistant as { toolCalls?: unknown }).toolCalls;
-	if (!Array.isArray(toolCalls)) return null;
-	for (const call of toolCalls) {
-		if (!call || typeof call !== "object") continue;
-		const c = call as { name?: unknown; input?: unknown; output?: unknown };
-		const out = c.output;
-		if (!out || typeof out !== "object") continue;
-		const status = (out as { status?: unknown }).status;
-		if (status !== "needs_step_up") continue;
-		const headline =
-			typeof (out as { headline?: unknown }).headline === "string"
-				? (out as { headline: string }).headline
-				: "Confirm to proceed.";
-		const name = typeof c.name === "string" ? c.name : "";
-		const argsObj =
-			c.input && typeof c.input === "object" ? (c.input as Record<string, unknown>) : {};
-		if (!name) continue;
-		return { capability: name, args: argsObj, headline };
+	let match: { capability: string; args: Record<string, unknown>; headline: string } | null =
+		null;
+	for (const toolMsg of tools) {
+		const toolCalls = (toolMsg as { toolCalls?: unknown }).toolCalls;
+		if (!Array.isArray(toolCalls)) continue;
+		for (const call of toolCalls) {
+			if (!call || typeof call !== "object") continue;
+			const c = call as { name?: unknown; input?: unknown; output?: unknown };
+			const out = c.output;
+			if (!out || typeof out !== "object") continue;
+			const status = (out as { status?: unknown }).status;
+			if (status !== "needs_step_up") continue;
+			const headline =
+				typeof (out as { headline?: unknown }).headline === "string"
+					? (out as { headline: string }).headline
+					: "Confirm to proceed.";
+			const name = typeof c.name === "string" ? c.name : "";
+			const argsObj =
+				c.input && typeof c.input === "object" ? (c.input as Record<string, unknown>) : {};
+			if (!name) continue;
+			match = { capability: name, args: argsObj, headline };
+		}
 	}
-	return null;
+	return match;
 }
 
 /**
@@ -133,7 +148,13 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 	const hasContent = typeof assistant.content === "string" && assistant.content.trim().length > 0;
 	const wasCancelled = !!assistant.aborted;
 
-	const stepUpRequest = !isLive ? findStepUpRequest(assistant) : null;
+	// S10 — surface the 2FA confirm card when the LATEST turn carried a
+	// `needs_step_up` envelope on one of its grouped `role:"tool"` rows.
+	// Guarded to `isLast` so a historical (already-superseded) step-up
+	// turn never shows a stale duplicate "Confirm" card — once the user
+	// confirms (or sends any new message) this turn stops being last and
+	// the card disappears on its own.
+	const stepUpRequest = !isLive && isLast ? findStepUpRequest(tools) : null;
 	// B.44 — citations live on `assistant.metadata.citations`. Compute once
 	// per render; cheap (small array, defensive shape checks). When the
 	// list is empty, `<SourcesRail>` renders nothing.
@@ -195,6 +216,28 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 					orgId={orgId}
 				/>
 
+				{/* A — V1-style inline approval (locked 2026-06-06). The
+				    step-up card mounts INLINE between the timeline rail
+				    and any markdown prose so the user sees the awaiting
+				    tool row → approval card → (no further prose because
+				    the awaitingApprovalStop killed the model's "Shall I
+				    proceed?" generation) in one continuous bubble. After
+				    Confirm twice, processChat.runResume continues the
+				    stream into the SAME assistant message, appending
+				    further tool rows + the final summary. */}
+				{stepUpRequest && assistant.conversationId && (
+					<div className="mt-2">
+						<StepUpCard
+							orgId={orgId}
+							conversationId={assistant.conversationId as unknown as string}
+							assistantMessageId={assistant._id as unknown as string}
+							capability={stepUpRequest.capability}
+							args={stepUpRequest.args}
+							headline={stepUpRequest.headline}
+						/>
+					</div>
+				)}
+
 				{/* The assistant's prose body — the actual answer. */}
 				{hasContent ? (
 					<Markdown source={assistant.content} isStreaming={isLive} />
@@ -223,20 +266,6 @@ export function AssistantTurn({ assistant, tools, orgId, isLast }: Props) {
 				    turns, live streaming, step-up cards) sees nothing. */}
 				{!isLive && hasContent && citations.length > 0 && (
 					<SourcesRail citations={citations} />
-				)}
-
-				{/* S10 step-up card — irreversible capability awaiting confirm. */}
-				{stepUpRequest && assistant.conversationId && (
-					<div className="mt-2">
-						<StepUpCard
-							orgId={orgId}
-							conversationId={assistant.conversationId as unknown as string}
-							assistantMessageId={assistant._id as unknown as string}
-							capability={stepUpRequest.capability}
-							args={stepUpRequest.args}
-							headline={stepUpRequest.headline}
-						/>
-					</div>
 				)}
 
 				{/* Footer: actions on the LEFT (hover), timestamp on the RIGHT (always) */}

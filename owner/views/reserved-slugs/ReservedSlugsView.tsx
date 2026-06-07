@@ -85,7 +85,7 @@ export function ReservedSlugsView() {
 		<div className="flex flex-col gap-4">
 			<OwnerSettingsCard
 				title="Reserved slugs"
-				description="The platform-wide reservation list. Built-in entries (🔒) are seeded from `convex/_shared/reservedSlugs.ts` — those can have their reason edited but cannot be removed. Custom entries can be added/removed freely."
+				description="The platform-wide reservation list. Built-in entries (🔒) are seeded from `convex/_shared/reservedSlugs.ts`. Those can have their reason edited but cannot be removed. Custom entries can be added/removed freely."
 				footer={
 					<div className="flex flex-wrap items-center justify-between gap-2 text-xs">
 						<div className="flex items-center gap-2">

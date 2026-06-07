@@ -20,10 +20,16 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { failed, ok } from "../../../ai/registry/result";
-import { buildCustomFieldKeyResolver } from "../../shared/customFieldKeys";
+import { dispatchSingleRecordFields } from "../../shared/dynamicFieldDispatch";
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -43,12 +49,7 @@ Detail → \`get_entity_detail\` returns full column data + custom-field values 
 // ─── create_lead ────────────────────────────────────────────────────────────
 
 const createLead = defineCapability<{
-	displayName: string;
-	email?: string;
-	phone?: string;
-	source?: string;
-	assignedTo?: string;
-	customFields?: Record<string, unknown>;
+	fields: Record<string, unknown>;
 }>({
 	name: "create_lead",
 	module: "leads",
@@ -61,68 +62,76 @@ const createLead = defineCapability<{
 			"Create a new lead (prospective customer). ALWAYS run search_crm first to dedupe; the underlying mutation rejects exact-email duplicates with a DUPLICATE error.",
 		whenNotToCall:
 			"the person already exists — call update_entity to edit them, or convert_lead to turn a P-NNN lead into a contact.",
-		requiredClarifications: ["displayName", "email or phone (recommended)"],
+		requiredClarifications: ["fields"],
 		synonyms: ["add a lead", "new prospect", "capture this person"],
 		goodExample: {
-			displayName: "Sarah Khan",
-			email: "sarah@example.com",
-			phone: "+971 50 123 4567",
-			source: "referral",
-			customFields: { industry_vertical: "SaaS", company_size: "51-200" },
+			fields: {
+				displayName: "Sarah Khan",
+				email: "sarah@example.com",
+				phone: "+971 50 123 4567",
+				source: "referral",
+				industry_vertical: "SaaS",
+				company_size: "51-200",
+			},
 		},
 		badExample: {
-			args: { displayName: "" },
-			why: "displayName is required. Ask the user for the name first via ask_user.",
+			args: { fields: {} },
+			why: "fields must include at least the required field(s) for a lead — call describe_entity first to see the live required-field list.",
 		},
 	},
 	drive: {
 		onSuccess:
-			"Reply with one short sentence naming the personCode + displayName. Surface unknownCustomFields if any — they're slug typos the user can fix.",
+			"Reply with one short sentence naming the personCode + displayName. Surface unknownFields if any — they're slug typos the user can fix.",
 		onValidationError:
-			"Read repair.field + repair.example, then re-call once with corrected args.",
+			"Read repair.field + repair.example, then re-call once with corrected args. The required-field list comes from describe_entity.",
 		suggestNext: "Schedule a follow-up via create_task next.",
 	},
 	input: z.object({
-		displayName: z.string().min(1).describe("Full name. Required."),
-		email: z.string().email().optional(),
-		phone: z.string().optional(),
-		source: z.string().optional().default("manual"),
-		assignedTo: z.string().optional().describe("userId to assign this lead to."),
-		customFields: z
+		fields: z
 			.record(z.string(), z.unknown())
-			.optional()
+			.refine((r) => Object.keys(r).length > 0, {
+				message: "fields must contain at least one key/value pair.",
+			})
 			.describe(
-				"Org-defined custom fields keyed by name. Values are validated against live fieldDefinitions; unknown keys are returned as unknownFields.",
+				"FLAT field map — pass EVERY field at the top level keyed by canonical name OR user-facing label. The runner reads live `fieldDefinitions` for `lead` and dispatches each entry: column-backed → row args, fieldValues-backed → custom-field slot. No separate `customFields` wrapper needed. Call `describe_entity` first to see what fields the org accepts.",
 			),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
-		const { runMutation } = ctx;
 
-		// B (locked 2026-06-06) — coerce label-shaped customField keys
-		// to canonical names BEFORE forwarding. Smaller models routinely
-		// emit `"Property Type": "Apartment"` instead of
-		// `property_type: "Apartment"`; the resolver rewrites those keys
-		// in-place so the mutation's validator doesn't reject the row.
-		// Unknown keys pass through and surface via `unknownFields` as
-		// before. Cheap — one fieldDefinitions read per call.
-		const resolveCustomFieldKeys = await buildCustomFieldKeyResolver(cap, "lead");
-		const resolvedCustomFields = resolveCustomFieldKeys(args.customFields);
+		// Locked 2026-06-06 evening — fully `fieldDefinitions`-driven.
+		// The dispatcher reads the org's live field defs and routes
+		// the flat `fields:` map: storage:"column" → columnArgs (row
+		// args), storage:"fieldValues" → customFields, storage:"join"
+		// → dropped (handled via dedicated tools). NO hardcoded field
+		// knowledge in this capability — admin adds a new field via
+		// the field manager and the AI can write to it on the next
+		// turn with zero code change here.
+		const dispatched = await dispatchSingleRecordFields(cap, "lead", {
+			fields: args.fields,
+		});
 
-		// Audit §3.3 — single round-trip create + custom-field apply.
-		// `createForAI` now accepts `customFields` directly and runs the
-		// validation inside the SAME mutation transaction; no second
-		// `applyCustomFieldsForRecord` mutation needed.
-		const created = (await runMutation(internal.crm.entities.leads.mutations.createForAI, {
+		// `lead.createForAI` requires `displayName` + `source` per its
+		// validator. Surface a clear repair envelope when missing —
+		// preferred over Convex's `ArgumentValidationError`.
+		const displayName = dispatched.columnArgs.displayName;
+		if (typeof displayName !== "string" || displayName.trim().length === 0) {
+			return failed(
+				"needs_repair",
+				"`displayName` is required to create a lead. Call describe_entity to confirm the field name.",
+			);
+		}
+		// Default source → "manual" if not supplied.
+		if (!dispatched.columnArgs.source) {
+			dispatched.columnArgs.source = "manual";
+		}
+
+		const created = (await ctx.runMutation(internal.crm.entities.leads.mutations.createForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			displayName: args.displayName,
-			email: args.email,
-			phone: args.phone,
-			source: args.source ?? "manual",
-			assignedTo: args.assignedTo as Id<"users"> | undefined,
-			...(resolvedCustomFields ? { customFields: resolvedCustomFields } : {}),
-		})) as {
+			...dispatched.columnArgs,
+			...(dispatched.customFields ? { customFields: dispatched.customFields } : {}),
+		} as never)) as {
 			leadId: Id<"leads">;
 			personCode: string;
 			appliedCustomFields: string[];
@@ -130,24 +139,22 @@ const createLead = defineCapability<{
 		};
 
 		const appliedCustomFields = created.appliedCustomFields;
-		const unknownFields = created.unknownFields;
+		const unknownFields = [...created.unknownFields, ...dispatched.dropped];
 
-		// Build the envelope.
+		// Render every applied column + customField as a "changed" row.
+		// No hardcoded field labels — the dispatcher's column keys are
+		// the canonical names from fieldDefinitions, and the model
+		// receives them verbatim.
 		const changes = [
 			{ label: "Code", value: created.personCode, emphasis: "added" as const },
-			{ label: "Name", value: args.displayName, emphasis: "added" as const },
-			...(args.email
-				? [{ label: "Email", value: args.email, emphasis: "added" as const }]
-				: []),
-			...(args.phone
-				? [{ label: "Phone", value: args.phone, emphasis: "added" as const }]
-				: []),
-			...(args.source && args.source !== "manual"
-				? [{ label: "Source", value: args.source, emphasis: "added" as const }]
-				: []),
+			...Object.entries(dispatched.columnArgs).map(([key, value]) => ({
+				label: key,
+				value: String(value ?? ""),
+				emphasis: "added" as const,
+			})),
 			...appliedCustomFields.map((name) => ({
 				label: name,
-				value: String(resolvedCustomFields?.[name] ?? args.customFields?.[name] ?? ""),
+				value: String(dispatched.customFields?.[name] ?? ""),
 				emphasis: "added" as const,
 			})),
 		];
@@ -158,7 +165,7 @@ const createLead = defineCapability<{
 			);
 		}
 		return ok({
-			headline: `Created lead ${created.personCode}: ${args.displayName}`,
+			headline: `Created lead ${created.personCode}: ${displayName}`,
 			changes,
 			facts: facts.length > 0 ? facts : undefined,
 			data: {
@@ -167,8 +174,6 @@ const createLead = defineCapability<{
 				appliedCustomFields,
 				unknownFields,
 			},
-			// Audit §2 fix — surface the live <EntityCard> for the new
-			// row so the timeline doesn't fall back to a JSON code-block.
 			display: {
 				kind: "entity",
 				entityType: "lead",
@@ -191,7 +196,7 @@ const createLead = defineCapability<{
 // ─── update_entity ──────────────────────────────────────────────────────────
 
 const updateEntity = defineCapability<{
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	code: string;
 	fields: Record<string, unknown>;
 }>({
@@ -206,7 +211,7 @@ const updateEntity = defineCapability<{
 			"Patch a record by its code. Mixes column fields (displayName/email/phone/status/source/assignedTo for leads & contacts; per-entity columns for deals/companies) and org-defined custom fields in one call. Validates against live fieldDefinitions — unknown keys are returned, never silently dropped.",
 		whenNotToCall:
 			"the user wants to convert a lead — call convert_lead instead. Never patch status to 'converted' here.",
-		requiredClarifications: ["entityType", "code"],
+		requiredClarifications: ["entityType", "code", "fields"],
 		synonyms: ["edit", "set", "change", "update"],
 		goodExample: {
 			entityType: "lead",
@@ -225,7 +230,9 @@ const updateEntity = defineCapability<{
 			"Read repair.field — typically a missing entityType or empty fields. Re-call with the example shape.",
 	},
 	input: z.object({
-		entityType: z.enum(["lead", "contact", "deal", "company"]),
+		entityType: entityTypeSchema().describe(
+			"Which entity to patch. Accepts canonical type or org-relabelled alias.",
+		),
 		code: z.string().min(1).describe("Entity code (P-NNN / D-NNN / C-NNN). Resolves to row."),
 		fields: z
 			.record(z.string(), z.unknown())
@@ -236,20 +243,28 @@ const updateEntity = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
-		// B (locked 2026-06-06) — coerce label-shaped custom-field keys
-		// to canonical names BEFORE forwarding. The `fields` slot mixes
-		// COLUMN keys (displayName/email/phone/status/...) and custom-
-		// field keys; the resolver lookup only contains custom-field
-		// names + labels, so column keys pass through unchanged. Cheap
-		// — one fieldDefinitions read per call.
-		const resolveCustomFieldKeys = await buildCustomFieldKeyResolver(cap, args.entityType);
-		const resolvedFields = resolveCustomFieldKeys(args.fields) ?? args.fields;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType;
+		// Locked 2026-06-06 — `applyEntityPatchByCode` routes through
+		// `splitPatchForEntity` → `dispatchRowKeys`, which is fully
+		// `fieldDefinitions`-driven. The dispatcher's lookup is keyed
+		// case-insensitively by BOTH `name` and `label`, so a model
+		// emitting `{"Property Type": "Apartment"}` lands at
+		// `property_type` automatically — no pre-resolution needed
+		// here. The `fields` slot mixes column + custom-field keys;
+		// each is routed by `def.storage` + `def.columnKey`.
+		// `applyEntityPatchByCode`'s validator is closed to the 4 cores;
+		// we already validated against `CORE_ENTITY_TYPES` above so the
+		// cast is type-only.
 		const result = (await ctx.runMutation(internal.ai.aiEntityPatch.applyEntityPatchByCode, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			entityType: args.entityType,
+			entityType: entityType as "lead" | "contact" | "deal" | "company",
 			code: args.code,
-			patch: resolvedFields,
+			patch: args.fields,
 		})) as {
 			entityType: string;
 			entityId: string;
@@ -283,7 +298,7 @@ const updateEntity = defineCapability<{
 			return failed("business_error", `No changes applied to ${result.canonicalCode}.`);
 		}
 		return ok({
-			headline: `Updated ${args.entityType} ${result.canonicalCode}.`,
+			headline: `Updated ${entityType} ${result.canonicalCode}.`,
 			changes,
 			facts: facts.length > 0 ? facts : undefined,
 			data: result,
@@ -293,7 +308,7 @@ const updateEntity = defineCapability<{
 			// resolver's output (the canonical row id).
 			display: {
 				kind: "entity",
-				entityType: args.entityType,
+				entityType: entityType as "lead" | "contact" | "deal" | "company",
 				entityId: result.entityId,
 			},
 		});

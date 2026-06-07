@@ -44,6 +44,87 @@ export function inferFieldKinds(cap: Capability): Record<string, FieldKind | "un
 	return out;
 }
 
+// ─── Brittleness inspection (locked 2026-06-06) ─────────────────────────────
+//
+// "Brittle" = a top-level required field whose name is not surfaced in
+// `spec.requiredClarifications`. Weak models (Gemini Flash family, Llama
+// 3.x, Mistral small tier) routinely omit such fields; the wrapper then
+// returns `needs_repair`, the host's retry budget exhausts, and the user
+// sees a red ERROR card. Fix is one of:
+//
+//   1. Make the field optional in the schema and handle the absent case
+//      in `run()` with a graceful `ok({ headline: "...tell me X..." })`
+//      envelope. Mirrors the `discover_capabilities` no-arg fix.
+//   2. Add the field name to `spec.requiredClarifications` so the
+//      doctrine layer surfaces it to the model BEFORE the call.
+//
+// Both fixes are equivalent from a regression-prevention POV: the model
+// either knows to provide it, or the schema accepts its absence.
+
+/**
+ * True when a top-level field's schema accepts `undefined` (i.e. is wrapped
+ * in `.optional()` / `.default()` / `.nullable()`). Reads the same `def
+ * .innerType` slot {@link inferFieldKinds} uses.
+ */
+function isOptionalField(schema: z.ZodType): boolean {
+	// biome-ignore lint/suspicious/noExplicitAny: zod internal shape — readable via def.
+	const def: any = (schema as any).def ?? (schema as any)._def;
+	if (def?.innerType instanceof z.ZodType) return true;
+	// Direct `safeParse(undefined)` probe as a last resort — covers refined
+	// schemas that bury the optional wrapper deeper than `def.innerType`.
+	try {
+		return schema.safeParse(undefined).success;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * List the top-level required field names on a capability's input schema.
+ * Returns `[]` for non-object schemas (a no-arg capability).
+ */
+export function listRequiredTopLevelFields(cap: Capability): string[] {
+	const schema = cap.input;
+	if (!(schema instanceof z.ZodObject)) return [];
+	const shape = schema.shape as Record<string, z.ZodType>;
+	const out: string[] = [];
+	for (const [name, sub] of Object.entries(shape)) {
+		if (isOptionalField(sub)) continue;
+		out.push(name);
+	}
+	return out;
+}
+
+/**
+ * Parse `spec.requiredClarifications` into a lowercase Set of bare field
+ * names. Each entry may be a single field (`"query"`) OR a multi-token
+ * disjunction (`"personCode or conversationId"`); we split on `or` / `,`
+ * / `/` / `&` / `and` so either spelling is recognised.
+ */
+export function parseDocumentedClarifications(cap: Capability): Set<string> {
+	const out = new Set<string>();
+	for (const entry of cap.spec.requiredClarifications ?? []) {
+		for (const piece of entry.split(/\s+(?:or|and|,|\/|&)\s+|\s*[,/]\s*/i)) {
+			const trimmed = piece.trim().toLowerCase();
+			if (trimmed.length > 0) out.add(trimmed);
+		}
+	}
+	return out;
+}
+
+/**
+ * Required top-level fields whose names are NOT listed in
+ * `spec.requiredClarifications`. Empty array means the capability is
+ * weak-model-safe at the schema layer; non-empty means a Gemini-Flash-class
+ * model will silently omit one of these and burn the retry budget.
+ */
+export function listUndocumentedRequiredFields(cap: Capability): string[] {
+	const required = listRequiredTopLevelFields(cap);
+	if (required.length === 0) return [];
+	const documented = parseDocumentedClarifications(cap);
+	return required.filter((f) => !documented.has(f.toLowerCase()));
+}
+
 // ─── Contract assertions ────────────────────────────────────────────────────
 
 export type ContractCase = {
@@ -173,6 +254,38 @@ export function buildContractCases(cap: Capability): ContractCase[] {
 		});
 	}
 
+	// ── Weak-model brittleness fuzz (locked 2026-06-06) ─────────────────────
+	// For every top-level REQUIRED field, assert one of:
+	//   (a) the field name appears in `spec.requiredClarifications` so the
+	//       doctrine layer warns the model BEFORE the call, OR
+	//   (b) the schema accepts `undefined` (the field is optional / has a
+	//       default / is nullable) so weak-model omission is non-fatal.
+	//
+	// Without (a) or (b) a Gemini-Flash-class model omits the field, the
+	// wrapper returns needs_repair, the host's retry budget exhausts, and
+	// the user sees a red ERROR card. This is the bug class the
+	// 2026-06-06 search_crm patch fixed; the fuzz keeps regressions out.
+	const documented = parseDocumentedClarifications(cap);
+	for (const field of listRequiredTopLevelFields(cap)) {
+		cases.push({
+			name: `${cap.name}.${field}: required field is weak-model-safe (documented OR optional)`,
+			run: () => {
+				if (documented.has(field.toLowerCase())) return;
+				// Field is required AND undocumented. Verify the schema
+				// rejects its absence — if the schema actually accepts
+				// `undefined`, our `listRequiredTopLevelFields` reading
+				// disagrees and the audit is moot.
+				const base = { ...(cap.spec.goodExample as Record<string, unknown>) };
+				delete base[field];
+				const parsed = cap.input.safeParse(base);
+				if (parsed.success) return; // schema is graceful — fine.
+				throw new Error(
+					`${cap.name} has a required top-level field "${field}" that is NOT documented in spec.requiredClarifications. Weak models (Gemini Flash, Llama small) will silently omit it; the wrapper returns needs_repair; retry budget exhausts; the user sees an error card. Fix one of: (a) add "${field}" to spec.requiredClarifications, OR (b) make the field optional with a graceful no-arg branch in run() (mirror search_crm / discover_capabilities).`,
+				);
+			},
+		});
+	}
+
 	return cases;
 }
 
@@ -220,6 +333,12 @@ export type CoverageReportSummary = {
 	withWhenNotToCall: number;
 	missingExamples: number;
 	missingPlaybooks: string[];
+	/**
+	 * Count of capabilities flagged as weak-model-brittle: at least one
+	 * required top-level field that is NOT in `spec.requiredClarifications`.
+	 * The full per-capability list lives in `CoverageReport.brittleCapabilities`.
+	 */
+	brittleCount: number;
 };
 
 /** Full coverage report — what `getCoverageReport` returns to the operator. */
@@ -229,6 +348,20 @@ export type CoverageReport = {
 	perGroup: GroupCoverage[];
 	risksByTier: Record<"safe" | "reversible" | "irreversible", number>;
 	channelCoverage: { chat: number; whatsapp: number; mcp: number; rest: number };
+	/**
+	 * Per-capability brittleness audit (locked 2026-06-06). Lists every
+	 * capability with at least one required top-level field whose name is
+	 * not in `spec.requiredClarifications`. Operators read this to find
+	 * tools that will silently fail under Gemini-Flash / Llama-small /
+	 * Mistral-small. Empty array = registry is weak-model-safe at the
+	 * schema layer.
+	 */
+	brittleCapabilities: Array<{
+		capability: string;
+		module: string;
+		group: string;
+		undocumentedRequiredFields: string[];
+	}>;
 };
 
 /**
@@ -321,6 +454,25 @@ export function buildCoverageReport(
 	}
 	missingPlaybooks.sort();
 
+	// Brittleness audit (locked 2026-06-06). Walks the same `caps` list a
+	// second time so the inspection is co-located with the rest of the
+	// report; cost is O(N × required-fields) and runs once per call.
+	const brittleCapabilities: CoverageReport["brittleCapabilities"] = [];
+	for (const cap of caps) {
+		const undocumented = listUndocumentedRequiredFields(cap);
+		if (undocumented.length === 0) continue;
+		brittleCapabilities.push({
+			capability: cap.name,
+			module: cap.module,
+			group: cap.group,
+			undocumentedRequiredFields: undocumented,
+		});
+	}
+	// Stable ordering for review-friendly diffs in the operator UI + tests.
+	brittleCapabilities.sort((a, b) =>
+		`${a.module}:${a.capability}`.localeCompare(`${b.module}:${b.capability}`),
+	);
+
 	const summary: CoverageReportSummary = {
 		totalCaps: caps.length,
 		totalModules: perModule.length,
@@ -330,6 +482,7 @@ export function buildCoverageReport(
 		withWhenNotToCall: perModule.reduce((acc, m) => acc + m.withWhenNotToCall, 0),
 		missingExamples: perModule.reduce((acc, m) => acc + m.missingExamples.length, 0),
 		missingPlaybooks,
+		brittleCount: brittleCapabilities.length,
 	};
 
 	return {
@@ -338,6 +491,7 @@ export function buildCoverageReport(
 		perGroup,
 		risksByTier: overallRisks,
 		channelCoverage: overallChannels,
+		brittleCapabilities,
 	};
 }
 

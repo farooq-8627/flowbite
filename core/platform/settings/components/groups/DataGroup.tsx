@@ -53,7 +53,7 @@ function ExportSection({ orgId, canExport }: { orgId: Id<"orgs">; canExport: boo
 		<SettingsSection
 			id="data.export"
 			title="Export data"
-			description="Download a curated bundle (CSV per table + metadata.json, zipped) of every record in this workspace. Personal data only — system tables are excluded."
+			description="Download a curated bundle (CSV per table + metadata.json, zipped) of every record in this workspace. Personal data only, system tables are excluded."
 		>
 			<div className="flex items-center justify-between gap-4">
 				<p className="text-sm text-muted-foreground">

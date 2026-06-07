@@ -359,6 +359,41 @@ export const orgs = defineTable({
 				}),
 			),
 			/**
+			 * Per-org task-type catalog.
+			 *
+			 * When unset, the org inherits the 5 SYSTEM defaults (`todo`,
+			 * `call`, `email`, `meeting`, `followup`) — read at runtime by
+			 * `internal.orgs.queries.getEffectiveTaskTypesForAI`. When set,
+			 * the catalog REPLACES the defaults entirely (admin-controlled
+			 * slate). Existing task rows keep their original `type` value
+			 * verbatim even after the catalog is edited; only NEW writes
+			 * are constrained.
+			 *
+			 * Each row carries:
+			 *   - `id`      : stable storage key (slug-style, e.g. `site_visit`)
+			 *   - `label`   : English display name (e.g. "Site visit")
+			 *   - `labelAr` : optional Arabic translation
+			 *
+			 * Validated by both:
+			 *   - `convex/_shared/entityTypes.ts` style runtime check:
+			 *     the AI capability layer's `validateTaskType` reads the
+			 *     effective list from this slot + falls back to defaults.
+			 *   - the public `update_org` mutation accepts the new shape;
+			 *     existing orgs without the slot continue working
+			 *     unchanged (additive optional → no migration).
+			 *
+			 * Set via Settings → Workspace → Task types (UI is per-org).
+			 */
+			taskTypes: v.optional(
+				v.array(
+					v.object({
+						id: v.string(),
+						label: v.string(),
+						labelAr: v.optional(v.string()),
+					}),
+				),
+			),
+			/**
 			 * Morning-briefing defaults. Workspace-level toggle + hour for
 			 * the AI daily briefing. Stage 4D split this out of the
 			 * dropped `reminderDefaults` block so it has a clean home that

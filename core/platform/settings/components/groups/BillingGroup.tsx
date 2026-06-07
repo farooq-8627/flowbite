@@ -65,7 +65,7 @@ export function BillingGroup({ org: _org, orgId }: { org: OrgSettings; orgId: Id
 			<SettingsSection
 				id="billing.plan"
 				title="Plan & billing"
-				description="Your workspace's current plan and billing status. Compare every plan and switch any time on our pricing page — your data comes with you."
+				description="Your workspace's current plan and billing status. Compare every plan and switch any time on our pricing page. Your data comes with you."
 				action={
 					<div className="flex items-center gap-2">
 						<Badge className="capitalize">{plan.planLabel}</Badge>

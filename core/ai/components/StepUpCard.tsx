@@ -41,10 +41,12 @@ export function StepUpCard({
 	headline,
 }: Props) {
 	const confirmStepUp = useMutation(anyApi.aiStepUp.confirmStepUp);
-	const [phase, setPhase] = useState<"idle" | "armed" | "submitting" | "done">("idle");
+	const [phase, setPhase] = useState<"idle" | "armed" | "submitting" | "done" | "cancelled">(
+		"idle",
+	);
 
 	async function handle() {
-		if (phase === "submitting" || phase === "done") return;
+		if (phase === "submitting" || phase === "done" || phase === "cancelled") return;
 		if (phase === "idle") {
 			setPhase("armed");
 			return;
@@ -60,9 +62,19 @@ export function StepUpCard({
 			});
 			setPhase("done");
 		} catch (err) {
-			toast.mutationError(err, "Could not confirm — please try again.");
+			toast.mutationError(err, "Could not confirm. Please try again.");
 			setPhase("idle");
 		}
+	}
+
+	function handleCancel() {
+		if (phase === "submitting" || phase === "done") return;
+		// Local dismiss only — nothing irreversible ran, so there is no
+		// server state to roll back. The card collapses to a muted note;
+		// the model is NOT re-invoked. The `useState` survives reactive
+		// re-renders (the turn is keyed by a stable message id), so the
+		// cancellation sticks for the session.
+		setPhase("cancelled");
 	}
 
 	const description =
@@ -71,8 +83,10 @@ export function StepUpCard({
 			: phase === "submitting"
 				? "Issuing step-up token…"
 				: phase === "done"
-					? "Token issued — the AI is re-running the action."
-					: "This is irreversible. Confirm twice to proceed.";
+					? "Token issued. The AI is re-running the action."
+					: phase === "cancelled"
+						? "Cancelled. The irreversible action was not run."
+						: "This is irreversible. Confirm twice to proceed, or cancel.";
 
 	return (
 		<div
@@ -80,13 +94,26 @@ export function StepUpCard({
 				"mx-4 my-2 rounded-[var(--radius)] border p-3",
 				phase === "done"
 					? "border-emerald-300/60 bg-emerald-50/40 dark:border-emerald-700/40 dark:bg-emerald-950/10"
-					: "border-amber-300/60 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/20",
+					: phase === "cancelled"
+						? "border-border bg-muted/40"
+						: "border-amber-300/60 bg-amber-50/60 dark:border-amber-700/40 dark:bg-amber-950/20",
 			)}
 		>
 			<div className="mb-2 flex items-center gap-2">
-				<ShieldAlert className="size-3.5 text-amber-600 dark:text-amber-400" />
+				<ShieldAlert
+					className={cn(
+						"size-3.5",
+						phase === "cancelled"
+							? "text-muted-foreground"
+							: "text-amber-600 dark:text-amber-400",
+					)}
+				/>
 				<p className="text-[11px] font-semibold uppercase tracking-wide">
-					{phase === "done" ? "Confirmed" : "2FA confirmation required"}
+					{phase === "done"
+						? "Confirmed"
+						: phase === "cancelled"
+							? "Cancelled"
+							: "2FA confirmation required"}
 				</p>
 				<span className="ms-auto truncate text-[10px] text-muted-foreground">
 					{capability}
@@ -96,7 +123,7 @@ export function StepUpCard({
 			<p className="mb-3 text-sm font-medium">{headline}</p>
 			<p className="mb-3 text-xs text-muted-foreground">{description}</p>
 
-			{phase !== "done" && (
+			{phase !== "done" && phase !== "cancelled" && (
 				<div className="flex gap-2">
 					<Button
 						size="sm"
@@ -109,6 +136,14 @@ export function StepUpCard({
 							: phase === "submitting"
 								? "Working…"
 								: "Confirm"}
+					</Button>
+					<Button
+						size="sm"
+						variant="ghost"
+						onClick={handleCancel}
+						disabled={phase === "submitting"}
+					>
+						Cancel
 					</Button>
 				</div>
 			)}

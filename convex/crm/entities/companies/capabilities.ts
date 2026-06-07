@@ -31,7 +31,7 @@ import type { Id } from "../../../_generated/dataModel";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { failed, ok } from "../../../ai/registry/result";
-import { buildCustomFieldKeyResolver } from "../../shared/customFieldKeys";
+import { dispatchSingleRecordFields } from "../../shared/dynamicFieldDispatch";
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -51,14 +51,7 @@ Delete → \`soft_delete_company\` is reversible (trash). Hard-delete is not in 
 // ─── create_company ─────────────────────────────────────────────────────────
 
 const createCompany = defineCapability<{
-	name: string;
-	industry?: string;
-	website?: string;
-	size?: string;
-	assignedTo?: string;
-	assignees?: string[];
-	personCodes?: string[];
-	customFields?: Record<string, unknown>;
+	fields: Record<string, unknown>;
 }>({
 	name: "create_company",
 	module: "companies",
@@ -68,77 +61,72 @@ const createCompany = defineCapability<{
 	channels: ["chat", "whatsapp", "mcp", "rest"],
 	spec: {
 		whenToCall:
-			"Create a new company / account / organisation. Only `name` is required. ALWAYS run search_crm first by name AND website domain — companies frequently get duplicated under slight name variations ('Acme Corp' vs 'Acme Corporation').",
+			"Create a new company / account / organisation. ALWAYS run search_crm first by name AND website domain — companies frequently get duplicated under slight name variations ('Acme Corp' vs 'Acme Corporation'). Call describe_entity to see the live required-field list.",
 		whenNotToCall:
 			"the company already exists — call update_entity to edit it. To attach a person to an existing company, call add_person_to_company.",
-		requiredClarifications: ["name"],
+		requiredClarifications: ["fields"],
 		synonyms: ["account", "organisation", "business", "vendor", "customer org"],
 		goodExample: {
-			name: "Acme Corporation",
-			industry: "Healthcare",
-			website: "https://acme.io",
-			size: "51-200",
-			personCodes: ["P-001", "P-002"],
+			fields: {
+				name: "Acme Corporation",
+				industry: "Healthcare",
+				website: "https://acme.io",
+				size: "51-200",
+				personCodes: ["P-001", "P-002"],
+			},
 		},
 		badExample: {
-			args: { name: "" },
-			why: "name is required. Ask the user for it via ask_user.",
+			args: { fields: {} },
+			why: "fields must include at least the required field(s) for a company — call describe_entity first.",
 		},
 	},
 	drive: {
 		onSuccess:
 			"Reply with one short sentence naming the companyCode (C-NNN) + name. Surface unknownFields if any.",
 		onValidationError:
-			"Re-collect missing fields via ask_user. Don't retry with the same args.",
+			"Read repair.field + repair.example, then re-call once with corrected args.",
 		suggestNext: "Add the primary contact + open a deal.",
 	},
 	input: z.object({
-		name: z.string().min(1).describe("Company name."),
-		industry: z.string().optional(),
-		website: z.string().optional().describe("Full URL with protocol."),
-		size: z.string().optional().describe("Company size band (e.g. '11-50', '51-200')."),
-		assignedTo: z.string().optional().describe("Convex user _id of the primary owner."),
-		assignees: z
-			.array(z.string())
-			.optional()
-			.describe("Convex user _ids of additional owners."),
-		personCodes: z
-			.array(z.string())
-			.optional()
-			.describe("P-NNN codes of initial members. Resolve via search_crm first."),
-		customFields: z
+		fields: z
 			.record(z.string(), z.unknown())
-			.optional()
+			.refine((r) => Object.keys(r).length > 0, {
+				message: "fields must contain at least one key/value pair.",
+			})
 			.describe(
-				"Org-defined custom fields keyed by name. Validated against live fieldDefinitions; unknown keys returned as unknownFields.",
+				"FLAT field map — pass EVERY field at the top level keyed by canonical name OR user-facing label. The runner reads live `fieldDefinitions` for `company` and dispatches each entry: column-backed → row args, fieldValues-backed → custom-field slot. Call `describe_entity` first to see what fields the org accepts.",
 			),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+
+		// Locked 2026-06-06 evening — fully `fieldDefinitions`-driven.
+		// NO hardcoded field knowledge in this capability.
+		const dispatched = await dispatchSingleRecordFields(cap, "company", {
+			fields: args.fields,
+		});
+
+		const name = dispatched.columnArgs.name;
+		if (typeof name !== "string" || name.trim().length === 0) {
+			return failed(
+				"needs_repair",
+				"`name` is required to create a company. Call describe_entity to confirm the field name.",
+			);
+		}
+
 		const created = (await ctx.runMutation(
 			internal.crm.entities.companies.mutations.createForAI,
 			{
 				orgId: principal.orgId,
 				userId: principal.userId,
-				name: args.name,
-				industry: args.industry,
-				website: args.website,
-				size: args.size,
-				assignedTo: args.assignedTo as Id<"users"> | undefined,
-				assignees: args.assignees as Id<"users">[] | undefined,
-				personCodes: args.personCodes,
-			},
+				...dispatched.columnArgs,
+			} as never,
 		)) as { companyId: Id<"companies">; companyCode: string };
 
-		// Apply custom fields against the live field definitions.
+		// Apply custom fields.
 		let appliedCustomFields: string[] = [];
-		let unknownFields: string[] = [];
-		// B (locked 2026-06-06) — coerce label-shaped customField keys
-		// to canonical names BEFORE forwarding. Same rationale as the
-		// per-row resolver in `bulk_create_entities` + `create_lead`.
-		const resolveCustomFieldKeys = await buildCustomFieldKeyResolver(cap, "company");
-		const resolvedCustomFields = resolveCustomFieldKeys(args.customFields);
-		if (resolvedCustomFields) {
+		let unknownFields: string[] = [...dispatched.dropped];
+		if (dispatched.customFields) {
 			const result = (await ctx.runMutation(
 				internal.ai.aiEntityPatch.applyCustomFieldsForRecord,
 				{
@@ -146,20 +134,20 @@ const createCompany = defineCapability<{
 					userId: principal.userId,
 					entityType: "company",
 					entityId: created.companyId as unknown as string,
-					customFields: resolvedCustomFields,
+					customFields: dispatched.customFields,
 				},
 			)) as { applied: Array<{ name: string; value: unknown }>; unknown: string[] };
 			appliedCustomFields = result.applied.map((f) => f.name);
-			unknownFields = result.unknown;
+			unknownFields = [...unknownFields, ...result.unknown];
 		}
 
-		// NOTE: createForAI accepts `personCodes` directly — but it sets the
-		// column array only; it does NOT populate the `companyMembers` join
-		// table. (The dedicated `addPersonForAI` is the path that keeps both
-		// in sync.) Re-attach each personCode via the indexed mutation so
-		// O(1) lookups work immediately after creation.
-		if (args.personCodes && args.personCodes.length > 0) {
-			for (const personCode of args.personCodes) {
+		// `personCodes` on the column is set by createForAI (the array
+		// column), but the indexed `companyMembers` join needs separate
+		// inserts. Pull from dispatched columnArgs (not hardcoded).
+		const personCodes = dispatched.columnArgs.personCodes;
+		if (Array.isArray(personCodes) && personCodes.length > 0) {
+			for (const personCode of personCodes) {
+				if (typeof personCode !== "string") continue;
 				await ctx.runMutation(internal.crm.entities.companies.mutations.addPersonForAI, {
 					orgId: principal.orgId,
 					userId: principal.userId,
@@ -171,26 +159,14 @@ const createCompany = defineCapability<{
 
 		const changes = [
 			{ label: "Code", value: created.companyCode, emphasis: "added" as const },
-			{ label: "Name", value: args.name, emphasis: "added" as const },
-			...(args.industry
-				? [{ label: "Industry", value: args.industry, emphasis: "added" as const }]
-				: []),
-			...(args.website
-				? [{ label: "Website", value: args.website, emphasis: "added" as const }]
-				: []),
-			...(args.size ? [{ label: "Size", value: args.size, emphasis: "added" as const }] : []),
-			...(args.personCodes && args.personCodes.length > 0
-				? [
-						{
-							label: "Members",
-							value: args.personCodes.join(", "),
-							emphasis: "added" as const,
-						},
-					]
-				: []),
-			...appliedCustomFields.map((name) => ({
-				label: name,
-				value: String(resolvedCustomFields?.[name] ?? args.customFields?.[name] ?? ""),
+			...Object.entries(dispatched.columnArgs).map(([key, value]) => ({
+				label: key,
+				value: Array.isArray(value) ? value.join(", ") : String(value ?? ""),
+				emphasis: "added" as const,
+			})),
+			...appliedCustomFields.map((cfName) => ({
+				label: cfName,
+				value: String(dispatched.customFields?.[cfName] ?? ""),
 				emphasis: "added" as const,
 			})),
 		];
@@ -201,7 +177,7 @@ const createCompany = defineCapability<{
 			);
 		}
 		return ok({
-			headline: `Created company ${created.companyCode}: ${args.name}`,
+			headline: `Created company ${created.companyCode}: ${name}`,
 			changes,
 			facts: facts.length > 0 ? facts : undefined,
 			data: {

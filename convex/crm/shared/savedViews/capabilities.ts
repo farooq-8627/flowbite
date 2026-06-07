@@ -34,11 +34,16 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { ok, repair } from "../../../ai/registry/result";
 
-const ENTITY_TYPE = z.enum(["lead", "contact", "deal", "company"]);
 const SCOPE = z.enum(["user", "org"]);
 const SORT_ORDER = z.enum(["asc", "desc"]);
 
@@ -61,7 +66,7 @@ Permission split: \`savedViews.createPersonal\` opens the group; \`savedViews.cr
 // ─── list_saved_views ───────────────────────────────────────────────────────
 
 const listSavedViews = defineCapability<{
-	entityType?: "lead" | "contact" | "deal" | "company";
+	entityType?: string;
 }>({
 	name: "list_saved_views",
 	module: "savedViews",
@@ -82,16 +87,31 @@ const listSavedViews = defineCapability<{
 		onEmpty: "If 0 views, suggest `create_saved_view` to seed.",
 	},
 	input: z.object({
-		entityType: ENTITY_TYPE.optional().describe(
-			"Optional filter — only views for this entity.",
-		),
+		entityType: entityTypeSchema()
+			.optional()
+			.describe(
+				"Optional filter — only views for this entity. Accepts the canonical entity type string (e.g. 'lead', 'deal') or an org-relabelled alias from describe_workspace.",
+			),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		// Runtime validation against the org's enabled entity types
+		// (replaces the static z.enum). The 4-core constraint is
+		// applied via `restrictTo` because the underlying mutations
+		// only support those 4 today; when entity5/entity6 backend
+		// lands, drop the `restrictTo` here.
+		let validatedEntityType: string | undefined;
+		if (args.entityType !== undefined) {
+			const validated = await validateEntityType(cap, args.entityType, {
+				restrictTo: CORE_ENTITY_TYPES,
+			});
+			if (isEntityTypeError(validated)) return validated;
+			validatedEntityType = validated.entityType;
+		}
 		const rows = (await ctx.runQuery(internal.crm.shared.savedViews.queries.listForUserForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			...(args.entityType !== undefined ? { entityType: args.entityType } : {}),
+			...(validatedEntityType !== undefined ? { entityType: validatedEntityType } : {}),
 		})) as Array<{
 			_id: string;
 			name: string;
@@ -129,7 +149,7 @@ const listSavedViews = defineCapability<{
 
 const createSavedView = defineCapability<{
 	name: string;
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	scope?: "user" | "org";
 	filters: Record<string, unknown>;
 	sortBy?: string;
@@ -177,7 +197,9 @@ const createSavedView = defineCapability<{
 	},
 	input: z.object({
 		name: z.string().min(1).describe("View display name."),
-		entityType: ENTITY_TYPE.describe("Which entity list this view filters."),
+		entityType: entityTypeSchema().describe(
+			"Which entity list this view filters. Accepts the canonical type or an org-relabelled alias from describe_workspace.",
+		),
 		scope: SCOPE.optional()
 			.default("user")
 			.describe("`user` (creator-only) or `org` (workspace-wide). Defaults to `user`."),
@@ -199,6 +221,12 @@ const createSavedView = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		// Runtime validation — see listSavedViews for rationale.
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType;
 		// Stringify filters once — the mutation expects a string + validates the JSON.
 		let filtersJson: string;
 		try {
@@ -218,7 +246,7 @@ const createSavedView = defineCapability<{
 				orgId: principal.orgId,
 				userId: principal.userId,
 				name: args.name,
-				entityType: args.entityType,
+				entityType,
 				scope: args.scope ?? "user",
 				filters: filtersJson,
 				sortBy: args.sortBy,
@@ -231,7 +259,7 @@ const createSavedView = defineCapability<{
 			headline: `Saved view "${args.name}".`,
 			changes: [
 				{ label: "View", value: args.name, emphasis: "added" },
-				{ label: "Entity", value: args.entityType, emphasis: "added" },
+				{ label: "Entity", value: entityType, emphasis: "added" },
 				{ label: "Scope", value: args.scope ?? "user", emphasis: "added" },
 				...(args.isPinned
 					? [{ label: "Pinned", value: "yes", emphasis: "added" as const }]

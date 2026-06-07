@@ -107,4 +107,6 @@ export default defineSchema({
 	aiStepUpTokens: ai.aiStepUpTokens,
 	// S16 — long-lived API tokens for the MCP + REST projectors.
 	aiApiTokens: ai.aiApiTokens,
+	// 2026-06-06 — Dynamic AI provider model catalogs (cached `/v1/models`).
+	aiProviderCatalogs: ai.aiProviderCatalogs,
 });

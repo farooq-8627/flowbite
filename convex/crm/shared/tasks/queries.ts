@@ -28,13 +28,7 @@ import type { Id } from "../../../_generated/dataModel";
 import { internalQuery, type QueryCtx } from "../../../_generated/server";
 import { hasPermission, requireRole } from "../../../_shared/permissions";
 
-const taskTypeValidator = v.union(
-	v.literal("todo"),
-	v.literal("call"),
-	v.literal("email"),
-	v.literal("meeting"),
-	v.literal("followup"),
-);
+const taskTypeValidator = v.string();
 const taskStatusValidator = v.union(v.literal("pending"), v.literal("completed"));
 
 // ─── listForPerson ───────────────────────────────────────────────────────────
@@ -48,7 +42,7 @@ async function listForPersonImpl(
 	args: {
 		orgId: Id<"orgs">;
 		personCode: string;
-		type?: "todo" | "call" | "email" | "meeting" | "followup";
+		type?: string;
 	},
 ) {
 	const rows = await ctx.db
@@ -123,7 +117,7 @@ async function listForOrgImpl(
 		orgId: Id<"orgs">;
 		userId: Id<"users">;
 		permissions: readonly string[];
-		type?: "todo" | "call" | "email" | "meeting" | "followup";
+		type?: string;
 		status?: "pending" | "completed";
 	},
 ) {
@@ -133,9 +127,7 @@ async function listForOrgImpl(
 		? await ctx.db
 				.query("tasks")
 				.withIndex("by_org_and_type_and_due", (q) =>
-					q
-						.eq("orgId", args.orgId)
-						.eq("type", args.type as NonNullable<typeof args.type>),
+					q.eq("orgId", args.orgId).eq("type", args.type as string),
 				)
 				.collect()
 		: await ctx.db

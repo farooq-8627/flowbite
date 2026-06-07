@@ -98,12 +98,14 @@ export async function runCapability(
 		}
 
 		// 7. Execute.
+		const startedAt = Date.now();
 		let result: CapabilityResult;
 		try {
 			result = await cap.run(ctx, args);
 		} catch (err) {
 			result = classifyRunError(cap, err);
 		}
+		const durationMs = Math.max(0, Date.now() - startedAt);
 		// 8. Audit feed (S12) — writes ONE row per execution outcome that
 		//    represents real behaviour (ok / partial / business_error /
 		//    infra_retry). Never throws; redacts args before storage.
@@ -125,6 +127,20 @@ export async function runCapability(
 			result,
 			ctx,
 			...(auditSource ? { source: auditSource } : {}),
+		});
+		// 8b. Per-capability `aiToolEvents` row — what the AI tool trace UI
+		//     reads (`convex/ai/queries/toolTrace.ts`). The host writes
+		//     one `(turn)` summary row per stream; without this per-call
+		//     row the trace surface only ever shows turn-level markers
+		//     instead of "create_lead 412ms / convert_lead 318ms / …".
+		//     Fire-and-forget — telemetry must never break a turn.
+		await recordCapabilityToolEvent({
+			cap,
+			ctx,
+			result,
+			startedAt,
+			durationMs,
+			source: auditSource,
 		});
 		return result;
 	} catch (err) {
@@ -243,4 +259,64 @@ function describeReceived(rawArgs: unknown, issue?: ZodIssue): string {
 
 function truncate(s: string, max = 200): string {
 	return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+}
+
+// ─── Per-capability `aiToolEvents` row (trace UI surface) ────────────────────
+
+/**
+ * Outcomes that should produce a trace-UI row. `denied` / `channel_blocked`
+ * / `needs_step_up` / `needs_repair` short-circuit before `cap.run()` runs
+ * so they have no meaningful duration to record (and would clutter the
+ * trace surface). The audit feed still captures them via `writeAudit`.
+ */
+const TOOL_EVENT_OUTCOMES: ReadonlySet<string> = new Set([
+	"ok",
+	"partial",
+	"business_error",
+	"infra_retry",
+]);
+
+/**
+ * Persist one `aiToolEvents` row per capability execution. Read by the
+ * AI tool trace UI (`convex/ai/queries/toolTrace.ts`) to render
+ * "create_lead 412ms / convert_lead 318ms / …" instead of opaque
+ * `(turn)` markers from the host. Never throws — telemetry must never
+ * break a turn.
+ */
+async function recordCapabilityToolEvent(args: {
+	cap: Capability;
+	ctx: CapabilityCtx;
+	result: CapabilityResult;
+	startedAt: number;
+	durationMs: number;
+	source?: string;
+}): Promise<void> {
+	if (!TOOL_EVENT_OUTCOMES.has(args.result.status)) return;
+	// biome-ignore lint/suspicious/noExplicitAny: ActionCtx-shaped lookup, runMutation typed in the host
+	const ctx = args.ctx.ctx as any;
+	if (!ctx || typeof ctx.runMutation !== "function") return;
+	try {
+		const { internal } = await import("../../_generated/api");
+		const triggeredBy = args.source
+			? `${args.source}:${args.ctx.principal.userId}`
+			: `${args.ctx.principal.channel}:${args.ctx.principal.userId}`;
+		const errorMessage =
+			args.result.status === "ok" || args.result.status === "partial"
+				? undefined
+				: truncate(args.result.headline ?? "", 200);
+		await ctx.runMutation(internal.ai.telemetry.recordToolEvent, {
+			orgId: args.ctx.principal.orgId,
+			userId: args.ctx.principal.userId,
+			...(args.ctx.conversationId ? { conversationId: args.ctx.conversationId } : {}),
+			toolName: args.cap.name,
+			layer: args.cap.module ?? args.cap.group ?? "capability",
+			startedAt: args.startedAt,
+			durationMs: args.durationMs,
+			ok: args.result.status === "ok" || args.result.status === "partial",
+			...(errorMessage ? { errorCode: args.result.status, errorMessage } : {}),
+			triggeredBy,
+		});
+	} catch (err) {
+		console.warn("[ai/wrapper] recordCapabilityToolEvent failed:", err);
+	}
 }

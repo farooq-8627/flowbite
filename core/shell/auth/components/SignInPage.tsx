@@ -144,7 +144,7 @@ export function SignInPage() {
 				},
 				bottomRight: {
 					heading: "Need help?",
-					body: "Our support team is available 24/7 — just reach out.",
+					body: "Our support team is available 24/7, just reach out.",
 				},
 			}}
 		>

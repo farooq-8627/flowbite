@@ -198,7 +198,7 @@ export function ApiKeySection({ orgId }: { orgId: Id<"orgs"> }) {
 		<SettingsSection
 			id="ai.keys"
 			title="API Keys (BYOK)"
-			description="Bring your own API key for any supported AI provider. With your own key, AI usage is unlimited — you pay your provider directly. One key per provider unlocks every model that provider offers."
+			description="Bring your own API key for any supported AI provider. With your own key, AI usage is unlimited. You pay your provider directly. One key per provider unlocks every model that provider offers."
 			action={
 				canManageAny ? (
 					<Button

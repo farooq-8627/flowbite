@@ -293,7 +293,7 @@ function HintBanner({ onDismiss, isFileField }: { onDismiss: () => void; isFileF
 		<div className="flex items-start gap-1.5 border-b bg-muted/40 px-2 py-1.5 text-[10px] text-muted-foreground">
 			<span className="leading-snug">
 				{isFileField
-					? "Drop a file or click to browse — the field saves automatically."
+					? "Drop a file or click to browse. The field saves automatically."
 					: "Quick edit. Press Enter to save, Esc to cancel."}
 			</span>
 			<button

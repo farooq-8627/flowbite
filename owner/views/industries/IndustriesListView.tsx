@@ -236,7 +236,7 @@ export function IndustriesListView() {
 
 			<OwnerSettingsCard
 				title="Industry templates"
-				description={`${templates.length} templates · drives step 2 of the picker. "Hidden" templates skip onboarding for new orgs; archived rows are kept around for any org already on them. Edit a row to change every slot — pipelines, fields, AI persona, etc.`}
+				description={`${templates.length} templates · drives step 2 of the picker. "Hidden" templates skip onboarding for new orgs; archived rows are kept around for any org already on them. Edit a row to change every slot: pipelines, fields, AI persona, etc.`}
 				footer={
 					<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
 						<span>
@@ -499,7 +499,7 @@ function CloneTemplateLink({ templateKey }: { templateKey: string }) {
 			href={href}
 			className="inline-flex items-center gap-1 rounded-[var(--radius)] px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 			aria-label="Clone template into a new one"
-			title="Clone — copies all slots into a new editable row"
+			title="Clone: copies all slots into a new editable row"
 		>
 			<Copy className="h-3.5 w-3.5" />
 		</Link>

@@ -312,6 +312,23 @@ export type AgentRunResult = {
 	 * treat that as "no Sources rail" and persist nothing on the message.
 	 */
 	metadata?: { citations?: Citation[] };
+	/**
+	 * A — V1-style inline approval (locked 2026-06-06). Set when the
+	 * stream stopped because an irreversible capability returned a
+	 * `needs_step_up` envelope. The orchestrator settles the assistant
+	 * message with `thinkingState: "awaiting_approval"` and surfaces the
+	 * capability + args + headline so `<StepUpCard>` mounts inline at
+	 * the right timeline row. After the user confirms twice,
+	 * `aiStepUp.confirmStepUp` schedules `processChat.runResume` which
+	 * re-enters this host with the same `assistantMsgId` and the
+	 * issued token; the wrapper consumes the token and the stream
+	 * continues into the SAME message bubble.
+	 */
+	awaitingApproval?: {
+		capability: string;
+		args: Record<string, unknown>;
+		headline: string;
+	};
 };
 
 /** What the caller passes to `runAgent`. */
@@ -475,6 +492,7 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
 		org,
 		activeModuleKeys: active,
 		preflight,
+		userMessage: args.message,
 	});
 	const assembled = assembleSystemPrompt(visibleCaps, tail);
 
@@ -575,13 +593,25 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
 	// B.44 — collected per-step from web_search envelopes; merged with
 	// post-stream providerMetadata citations before we return.
 	const collectedCitations: Citation[] = [];
+	// A — captured inside onStepFinish whenever a tool returns a
+	// `needs_step_up` envelope. The first match wins (multi-tool steps
+	// are rare; if the model triggers two irreversibles in one step we
+	// approve them one at a time). Surfaced on AgentRunResult so the
+	// orchestrator can settle thinkingState as "awaiting_approval".
+	let awaitingApproval: AgentRunResult["awaitingApproval"];
 
 	// Stop-conditions:
 	//   • stepCountIs(MAX_STEPS) — the design ceiling.
 	//   • exhaustedRetryBudget   — bail when the retry budget is gone.
+	//   • awaitingApprovalStop   — A: bail RIGHT after a tool returns
+	//     `needs_step_up` so the model can't generate "Shall I proceed?"
+	//     prose. The user sees the inline approval card at the
+	//     awaiting tool row, clicks Confirm twice, and the stream
+	//     resumes via `processChat.runResume`.
 	const stopConditions: Array<StopCondition<typeof tools>> = [
 		stepCountIs(MAX_STEPS),
 		makeRetryBudgetStopCondition(RETRY_BUDGET),
+		makeAwaitingApprovalStopCondition(),
 	];
 
 	// AI SDK streams are "secure-by-default" — provider errors land on the
@@ -645,6 +675,38 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
 						for (const name of (data as { expand: unknown[] }).expand) {
 							if (typeof name === "string") activeNames.add(name);
 						}
+					}
+					// A — capture the first `needs_step_up` envelope so the
+					// host can surface it on AgentRunResult. The
+					// awaitingApprovalStop condition (above) will halt the
+					// loop after this step finishes; no risk of capturing
+					// a SECOND step-up because there isn't one.
+					const status = (envelope as { status?: unknown }).status;
+					if (status === "needs_step_up" && !awaitingApproval) {
+						const matchingCall = step.toolCalls.find(
+							(c) =>
+								c.toolCallId ===
+								(tr as unknown as { toolCallId?: unknown }).toolCallId,
+						);
+						const capName =
+							typeof toolName === "string"
+								? toolName
+								: (matchingCall?.toolName ?? "");
+						const callInput = matchingCall
+							? ((matchingCall as unknown as { input?: unknown }).input ?? {})
+							: {};
+						const headline =
+							typeof (envelope as { headline?: unknown }).headline === "string"
+								? (envelope as { headline: string }).headline
+								: `"${capName}" is irreversible — confirm to proceed.`;
+						awaitingApproval = {
+							capability: capName,
+							args:
+								callInput && typeof callInput === "object"
+									? (callInput as Record<string, unknown>)
+									: {},
+							headline,
+						};
 					}
 				}
 				if (typeof toolName === "string") {
@@ -720,9 +782,39 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
 	});
 
 	// Drain the stream by awaiting the final-resolved promises.
-	const finalText = await result.text;
-	const finalFinishReason = await result.finishReason;
-	const finalUsage = await result.totalUsage;
+	//
+	// The AI SDK throws `AI_NoOutputGeneratedError` synchronously from
+	// `await result.text` (and friends) when the model produces NEITHER
+	// text NOR tool calls — common with free OpenRouter / Llama / Qwen
+	// models that occasionally close the stream early under rate-limit
+	// pressure. That throw bypasses the `onError` callback above (which
+	// only fires on `error` chunks), so we'd lose the friendly fallback
+	// path entirely. Catch it here, route it through `streamError`, and
+	// let the post-stream guard below decide what to do based on whether
+	// anything useful actually happened this turn (partial text + tool
+	// calls disable the throw — same logic, single decision point).
+	let finalText = "";
+	let finalFinishReason: string | undefined;
+	let finalUsage: Awaited<typeof result.totalUsage> = {
+		inputTokens: 0,
+		outputTokens: 0,
+		totalTokens: 0,
+	} as unknown as Awaited<typeof result.totalUsage>;
+	try {
+		finalText = await result.text;
+	} catch (err) {
+		streamError = streamError ?? err;
+	}
+	try {
+		finalFinishReason = await result.finishReason;
+	} catch (err) {
+		streamError = streamError ?? err;
+	}
+	try {
+		finalUsage = await result.totalUsage;
+	} catch (err) {
+		streamError = streamError ?? err;
+	}
 
 	// If the stream ended on an `error` chunk with no usable output, surface
 	// the captured provider error so the orchestrator can route to the
@@ -796,6 +888,12 @@ export async function runAgent(args: RunAgentArgs): Promise<AgentRunResult> {
 		toolCallCount,
 		stepActiveToolHistory,
 		router,
+		// A — when the stop condition halted the loop on a `needs_step_up`
+		// envelope, surface the captured capability + args + headline so
+		// the orchestrator can settle the assistant message with
+		// `thinkingState: "awaiting_approval"` and the `<StepUpCard>` UI
+		// can mount inline at the awaiting tool row.
+		...(awaitingApproval ? { awaitingApproval } : {}),
 		// B.44 — provider grounding citations. Read providerMetadata for
 		// Google grounding chunks; merge with the per-step Firecrawl
 		// `web_search` citations collected during the stream. Dedup by URL
@@ -856,6 +954,13 @@ function buildPromptTail(args: {
 	org: OrgSnapshot;
 	activeModuleKeys: ReadonlySet<string>;
 	preflight: PreflightContext;
+	/**
+	 * The latest user message — read for "fake / sample / seed / demo /
+	 * mock / dummy / test data" intent so the safety-net instruction
+	 * block can fire. Optional so other callers (e.g. autonomous turns
+	 * driven from a transcript) skip the block by passing `undefined`.
+	 */
+	userMessage?: string;
 }): string {
 	const lines: string[] = [];
 
@@ -905,6 +1010,19 @@ function buildPromptTail(args: {
 		lines.push(preflightBlock, "");
 	}
 
+	// Fake-data safety net — small models routinely emit sparse rows when
+	// asked to seed demo data ("fake N leads", "create some sample
+	// contacts", "seed 5 deals"). The Project drive's rule #7 already
+	// covers this, but the doctrine is buried in the cached prefix and
+	// small models lose the thread. Re-asserting it in the per-turn
+	// tail — RIGHT NEXT TO the live "## Custom fields" block — keeps
+	// the instruction co-located with the keys/options the model needs
+	// to fill. No-op when the user isn't asking for fake data.
+	const safetyNet = renderFakeDataSafetyNet(args.userMessage, args.preflight);
+	if (safetyNet.length > 0) {
+		lines.push(safetyNet, "");
+	}
+
 	// Active group playbooks — only the router-preloaded groups, only when the
 	// group has registered capabilities. Keeps the per-turn tail tight.
 	const playbooks = renderGroupPlaybooks(args.activeGroups, args.caps);
@@ -919,6 +1037,48 @@ function buildPromptTail(args: {
 	);
 
 	return lines.join("\n").trim();
+}
+
+/**
+ * Detect "fake / sample / seed / demo / mock / dummy / test data" creation
+ * intent in the user's latest message. The detector is intentionally
+ * narrow — keyword + a creation verb — so casual prose like "is this real
+ * or fake?" doesn't trigger.
+ *
+ * Returns an empty string when:
+ *   - no user message was passed (e.g. autonomous turn);
+ *   - the message doesn't carry both a fake-data noun and a create verb;
+ *   - the preflight context has no entity types with custom fields, in
+ *     which case the model has nothing extra to fill anyway.
+ */
+function renderFakeDataSafetyNet(
+	userMessage: string | undefined,
+	preflight: PreflightContext,
+): string {
+	if (!userMessage || userMessage.trim().length === 0) return "";
+	const msg = userMessage.toLowerCase();
+	const hasFakeNoun =
+		/\b(fake|sample|seed|demo|mock|dummy|test data|test record|test lead|placeholder)\b/.test(
+			msg,
+		);
+	if (!hasFakeNoun) return "";
+	const hasCreateVerb = /\b(create|add|generate|seed|insert|populate|fill|make)\b/.test(msg);
+	if (!hasCreateVerb) return "";
+	const entityTypes = (
+		Object.entries(preflight.byEntity) as Array<[string, ReadonlyArray<unknown> | undefined]>
+	)
+		.filter(([, rows]) => Array.isArray(rows) && rows.length > 0)
+		.map(([t]) => t);
+	if (entityTypes.length === 0) return "";
+	return [
+		"## Fake-data turn",
+		"The user asked for sample / fake / seed / demo / mock / test records. Treat this as a single high-leverage write turn:",
+		"1. **Use the `## Custom fields` block above** as the schema. For every field with `options:[...]`, pick a VALID option per row — never invent one off-list, never leave the slot blank.",
+		"2. **Invent realistic values yourself.** Full names, plausible emails AND phone numbers, a `source` (e.g. `referral`, `web`, `whatsapp`), and one option per dropdown / select / multiselect / number / date custom field. Numbers go as numbers, not strings.",
+		"3. **Prefer ONE `bulk_create_entities` call** with FULLY-POPULATED `customFields` objects per row over many sparse single creates. The bulk runner accepts `customFields` for leads today; for deals/companies/contacts, fall back to per-row `create_*` capabilities.",
+		"4. **Do not ask the user for the values.** Generating them IS the request. Only call `ask_user` if a column field (displayName / title / name) is genuinely ambiguous — never for fillable custom-field slots.",
+		`5. The relevant entity type${entityTypes.length === 1 ? "" : "s"} for this turn ${entityTypes.length === 1 ? "is" : "are"}: ${entityTypes.map((e) => `\`${e}\``).join(", ")}.`,
+	].join("\n");
 }
 
 /** Build ModelMessage[] from `history` + the latest user message. */
@@ -974,4 +1134,33 @@ function makeRetryBudgetStopCondition(budget: number): StopCondition<ToolSet> {
 /** Tiny helper used inside onStepFinish — counts how many step entries we've snapshotted so far. */
 function snapshotIndex(history: string[][]): number {
 	return Math.max(0, history.length - 1);
+}
+
+/**
+ * A — V1-style inline approval stop condition (locked 2026-06-06).
+ *
+ * Halt the streamText loop the moment a tool returns a `needs_step_up`
+ * envelope. Without this stop, the model sees the envelope as a normal
+ * tool result and generates closing prose ("This action is irreversible.
+ * Shall I proceed?") that ends up beside the inline approval card —
+ * exactly the duplicate-asking UX the user reported. With it, the loop
+ * exits cleanly after the awaiting tool row; the assistant message
+ * settles with `thinkingState: "awaiting_approval"` and the inline
+ * `<StepUpCard>` is the ONLY ask the user sees. After confirm,
+ * `processChat.runResume` re-enters the loop with a fresh stepUpToken
+ * and the SAME assistant message id, so the stream visually continues.
+ */
+function makeAwaitingApprovalStopCondition(): StopCondition<ToolSet> {
+	return ({ steps }) => {
+		if (steps.length === 0) return false;
+		const last = steps[steps.length - 1];
+		for (const tr of last.toolResults) {
+			const envelope = (tr as unknown as { output?: unknown }).output;
+			if (envelope && typeof envelope === "object") {
+				const status = (envelope as { status?: unknown }).status;
+				if (status === "needs_step_up") return true;
+			}
+		}
+		return false;
+	};
 }

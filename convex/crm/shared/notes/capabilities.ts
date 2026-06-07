@@ -42,12 +42,20 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { ok } from "../../../ai/registry/result";
 
-const ENTITY_TYPE = z.enum(["lead", "contact", "deal", "company"]);
-const ENTITY_TYPE_OR_ORG = z.enum(["lead", "contact", "deal", "company", "org"]);
+// Lead/contact/deal/company OR the org-wide bucket. The runtime
+// validator below only restricts the lead-or-org capability — the org
+// bucket is its own enum literal that flows directly through.
+const CORE_OR_ORG_ENTITY_TYPES = [...CORE_ENTITY_TYPES, "org"] as const;
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -71,7 +79,7 @@ Permission: notes.create / notes.updateOwn / notes.deleteOwn protect the verbs. 
 // ─── add_note ───────────────────────────────────────────────────────────────
 
 const addNote = defineCapability<{
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	entityCode: string;
 	content: string;
 	title?: string;
@@ -109,7 +117,9 @@ const addNote = defineCapability<{
 			"If entityCode didn't resolve, run search_crm first. Don't retry blindly.",
 	},
 	input: z.object({
-		entityType: ENTITY_TYPE.describe("The entity kind to attach the note to."),
+		entityType: entityTypeSchema().describe(
+			"The entity kind to attach the note to. Accepts canonical type or org-relabelled alias.",
+		),
 		entityCode: z.string().min(1).describe("Entity public code (P-NNN / D-NNN / C-NNN)."),
 		content: z.string().min(1).describe("Note body. Markdown supported."),
 		title: z.string().optional().describe("Optional note title (max 80 chars)."),
@@ -129,10 +139,15 @@ const addNote = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType;
 		const noteId = (await ctx.runMutation(internal.crm.shared.notes.mutations.createForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			entityType: args.entityType,
+			entityType,
 			entityCode: args.entityCode,
 			content: args.content,
 			title: args.title,
@@ -152,7 +167,7 @@ const addNote = defineCapability<{
 				},
 				{ label: "Excerpt", value: preview, emphasis: "added" },
 			],
-			data: { noteId, entityType: args.entityType, entityCode: args.entityCode },
+			data: { noteId, entityType, entityCode: args.entityCode },
 			display: { kind: "note", noteId: noteId as unknown as string },
 			suggestedNext: [
 				{
@@ -373,7 +388,7 @@ const pinNote = defineCapability<{ noteId: string }>({
 
 const setNoteEntity = defineCapability<{
 	noteId: string;
-	entityType: "lead" | "contact" | "deal" | "company" | "org";
+	entityType: string;
 	entityCode?: string;
 	orgSlug?: string;
 	personCode?: string;
@@ -406,8 +421,8 @@ const setNoteEntity = defineCapability<{
 	input: z
 		.object({
 			noteId: z.string().min(1).describe("The note's Convex _id."),
-			entityType: ENTITY_TYPE_OR_ORG.describe(
-				"Destination entity type. 'org' = detach back to the org-wide bucket.",
+			entityType: entityTypeSchema().describe(
+				"Destination entity type — canonical type or 'org' (detach back to the org-wide bucket).",
 			),
 			entityCode: z
 				.string()
@@ -432,25 +447,31 @@ const setNoteEntity = defineCapability<{
 		}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		// Validate against the org's enabled types PLUS the special "org"
+		// sentinel (detach to the org-wide bucket).
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_OR_ORG_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const destEntityType = validated.entityType;
 
 		// Resolve destination entity code → entityId. For "org" the entityId
 		// is the orgSlug (matches the legacy ui contract where the org-wide
 		// bucket has entityType:"org" + entityId=orgSlug — see notes module docs).
 		let destEntityId: string;
-		const destEntityType = args.entityType;
 		let destPersonCode = args.personCode;
-		if (args.entityType === "org") {
+		if (destEntityType === "org") {
 			destEntityId = args.orgSlug ?? "";
 			destPersonCode = undefined;
 		} else {
 			const resolved = (await ctx.runMutation(internal.ai.aiEntityPatch.resolveEntityCode, {
 				orgId: principal.orgId,
 				userId: principal.userId,
-				entityType: args.entityType,
+				entityType: destEntityType as "lead" | "contact" | "deal" | "company",
 				code: args.entityCode ?? "",
 			})) as { entityId: string; canonicalCode: string };
 			destEntityId = resolved.entityId;
-			if (!destPersonCode && (args.entityType === "lead" || args.entityType === "contact")) {
+			if (!destPersonCode && (destEntityType === "lead" || destEntityType === "contact")) {
 				destPersonCode = resolved.canonicalCode;
 			}
 		}
@@ -464,7 +485,7 @@ const setNoteEntity = defineCapability<{
 			personCode: destPersonCode,
 		});
 		const destLabel =
-			args.entityType === "org" ? "org-wide bucket" : (args.entityCode ?? "(unknown)");
+			destEntityType === "org" ? "org-wide bucket" : (args.entityCode ?? "(unknown)");
 		return ok({
 			headline: `Re-attached note to ${destLabel}.`,
 			changes: [
@@ -532,7 +553,7 @@ const deleteNote = defineCapability<{ noteId: string }>({
 const listOrgNotes = defineCapability<{
 	categoryId?: string;
 	authorId?: string;
-	entityType?: "lead" | "contact" | "deal" | "company";
+	entityType?: string;
 	isPinned?: boolean;
 	limit?: number;
 }>({
@@ -563,7 +584,11 @@ const listOrgNotes = defineCapability<{
 	input: z.object({
 		categoryId: z.string().optional().describe("Filter by noteCategory _id."),
 		authorId: z.string().optional().describe("Filter by author user _id."),
-		entityType: ENTITY_TYPE.optional().describe("Filter by attached entity kind."),
+		entityType: entityTypeSchema()
+			.optional()
+			.describe(
+				"Filter by attached entity kind. Accepts canonical type or org-relabelled alias.",
+			),
 		isPinned: z.boolean().optional().describe("true → only pinned; false → only unpinned."),
 		limit: z
 			.number()
@@ -576,12 +601,20 @@ const listOrgNotes = defineCapability<{
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		let entityType: string | undefined;
+		if (args.entityType !== undefined) {
+			const validated = await validateEntityType(cap, args.entityType, {
+				restrictTo: CORE_ENTITY_TYPES,
+			});
+			if (isEntityTypeError(validated)) return validated;
+			entityType = validated.entityType;
+		}
 		const rows = (await ctx.runQuery(internal.crm.shared.notes.queries.listForOrgForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
 			categoryId: args.categoryId as Id<"noteCategories"> | undefined,
 			authorId: args.authorId as Id<"users"> | undefined,
-			entityType: args.entityType,
+			entityType,
 			isPinned: args.isPinned,
 			limit: args.limit ?? 50,
 		})) as Array<{

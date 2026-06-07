@@ -115,7 +115,7 @@ export function AICockpitSection({ children, className }: AICockpitSectionProps)
 		if (failures === 0) {
 			toast.success("Refreshing", "Pulse + briefing will update in a few seconds.");
 		} else if (failures === 2) {
-			toast.error("Couldn't refresh", "Both proactive surfaces failed — check permissions.");
+			toast.error("Couldn't refresh", "Both proactive surfaces failed. Check permissions.");
 		} else {
 			toast.success(
 				"Partially refreshed",

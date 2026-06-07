@@ -35,7 +35,7 @@ import type { Id } from "../../../_generated/dataModel";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { failed, ok } from "../../../ai/registry/result";
-import { buildCustomFieldKeyResolver } from "../../shared/customFieldKeys";
+import { dispatchSingleRecordFields } from "../../shared/dynamicFieldDispatch";
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ defineGroup({
 	name: "deals",
 	playbook: `Read first → \`search_crm\` (entityType:"deal") to resolve the dealCode (D-NNN); \`get_deal_detail\` confirms a single deal before any stage / close action. \`describe_workspace\` returns the live pipelines + stages, \`describe_entity\` (entityType:"deal") returns the live custom fields — call them BEFORE writing anything you're not 100% sure of.
 
-Create → \`create_deal\`. Required: \`title\`. The deal lands in the org's default deal pipeline + default stage automatically; do NOT fabricate \`pipelineId\`. Optional: \`value\`, \`personCode\`, \`expectedCloseDate\`. \`personCode\` must come from a prior \`search_crm\` — never invent a code.
+Create → \`create_deal\`. Required: \`title\`. By default the deal lands in the org's default deal pipeline + default stage. To target a SPECIFIC pipeline (when the org runs multiple), pass \`pipelineName\` (case-insensitive substring match against \`describe_workspace\` output). To start on a non-default stage, pass \`stageName\` (code OR name). Optional fields: \`value\`, \`personCode\`, \`expectedCloseDate\`. \`personCode\` must come from a prior \`search_crm\` — never invent a code. NEVER fabricate \`pipelineId\` / \`currentStageId\` — use the name args.
 
 Update → \`update_entity\` (entityType:"deal", code:"D-NNN") for column / custom field patches (title, value, currency, expectedCloseDate, custom fields). NEVER patch \`currentStageId\`, \`wonAt\`, \`lostAt\` here — those have dedicated verbs.
 
@@ -59,16 +59,9 @@ Delete → \`soft_delete_deal\` is reversible (trash). Hard-delete is not in thi
 // ─── create_deal ────────────────────────────────────────────────────────────
 
 const createDeal = defineCapability<{
-	title: string;
-	value?: number;
-	currency?: string;
-	personCode?: string;
-	companyCode?: string;
-	expectedCloseDate?: number;
-	source?: string;
-	assignedTo?: string;
-	pipelineId?: string;
-	customFields?: Record<string, unknown>;
+	fields: Record<string, unknown>;
+	pipelineName?: string;
+	stageName?: string;
 }>({
 	name: "create_deal",
 	module: "deals",
@@ -78,81 +71,199 @@ const createDeal = defineCapability<{
 	channels: ["chat", "whatsapp", "mcp", "rest"],
 	spec: {
 		whenToCall:
-			"Open a new sales opportunity. Only `title` is required — the deal lands in the org's default pipeline + default stage. ALWAYS run search_crm first when the user named a person without a P-NNN code.",
+			"Open a new sales opportunity. By default the deal lands in the org's default deal pipeline + default stage. Pass `pipelineName` (case-insensitive substring match) to target a SPECIFIC pipeline — useful when the org runs multiple pipelines like 'Enterprise Sales' / 'SMB' / 'Renewals'. Pass `stageName` (code or name, case-insensitive) to target a non-default stage on the chosen pipeline. ALWAYS run search_crm first when the user named a person without a P-NNN code. Call describe_workspace to see live pipelines + stage codes.",
 		whenNotToCall:
-			"the deal already exists — call update_entity to edit it, or move_stage to advance it. The person doesn't need to be in the CRM yet — `personCode` is optional.",
-		requiredClarifications: ["title"],
+			"the deal already exists — call update_entity to edit it, or move_stage to advance it. The user wants to MOVE an existing deal to a different pipeline — use change_pipeline.",
+		requiredClarifications: ["fields"],
 		synonyms: ["new opportunity", "open a deal", "start a sale", "pipeline entry"],
 		goodExample: {
-			title: "Acme Corp — Enterprise Expansion",
-			value: 25000,
-			currency: "USD",
-			personCode: "P-007",
-			expectedCloseDate: 1717372800000,
+			fields: {
+				title: "Acme Corp — Enterprise Expansion",
+				value: 25000,
+				currency: "USD",
+				personCode: "P-007",
+				expectedCloseDate: 1717372800000,
+			},
+			pipelineName: "Enterprise Sales",
+			stageName: "Qualified",
 		},
 		badExample: {
-			args: { title: "" },
-			why: "title is required. Ask the user for it via ask_user.",
+			args: { fields: {}, pipelineName: "won" },
+			why: "fields must include at least the required field(s) (call describe_entity first). 'won' is a stage, not a pipeline — pass it via stageName, or use close_deal({outcome:'won'}) on an existing deal.",
 		},
 	},
 	drive: {
 		onSuccess:
-			"Reply with one short sentence naming the dealCode (D-NNN) + title. Surface unknownFields if any so the user can fix the slug.",
+			"Reply with one short sentence naming the dealCode (D-NNN) + title. When the deal landed in a non-default pipeline OR non-default stage, mention the pipeline + stage. Surface unknownFields if any so the user can fix the slug.",
 		onValidationError:
-			"If `pipelineId` came back NO_DEAL_PIPELINE, tell the user no deal pipeline exists and point them to Settings → Modules → Deals → Pipelines. Don't loop.",
+			"If `pipelineId` came back NO_DEAL_PIPELINE, tell the user no deal pipeline exists and point them to Settings → Modules → Deals → Pipelines. If `pipelineName` didn't resolve, list available deal pipelines back to the user. If `stageName` didn't resolve, list the chosen pipeline's stages. Don't loop.",
 		suggestNext: "Add the next-touch task and a context note.",
 	},
 	input: z.object({
-		title: z.string().min(1).describe("Deal title — short, opportunity-focused."),
-		value: z.number().nonnegative().optional().describe("Deal value as a number."),
-		currency: z.string().optional().describe("ISO 4217 currency code (e.g. USD, AED)."),
-		personCode: z
-			.string()
-			.optional()
-			.describe("Person code (P-NNN) the deal is FOR. Resolve via search_crm first."),
-		companyCode: z.string().optional().describe("Company code (C-NNN) the deal is WITH."),
-		expectedCloseDate: z.number().int().optional().describe("Expected close epoch ms."),
-		source: z.string().optional().describe("Free-form deal source (defaults to 'ai')."),
-		assignedTo: z.string().optional().describe("Convex user _id of the assignee."),
-		pipelineId: z
-			.string()
-			.optional()
-			.describe(
-				"Convex _id of the pipeline. Leave unset to use the org's default deal pipeline.",
-			),
-		customFields: z
+		fields: z
 			.record(z.string(), z.unknown())
+			.refine((r) => Object.keys(r).length > 0, {
+				message: "fields must contain at least one key/value pair.",
+			})
+			.describe(
+				"FLAT field map — pass EVERY field at the top level keyed by canonical name OR user-facing label. The runner reads live `fieldDefinitions` for `deal` and dispatches each entry: column-backed → row args, fieldValues-backed → custom-field slot. Numeric values may be passed as numbers OR numeric strings (coerced server-side). Call `describe_entity` first to see what fields the org accepts; stage-required fields are enforced at move_stage time, not here.",
+			),
+		pipelineName: z
+			.string()
 			.optional()
 			.describe(
-				"Org-defined custom fields keyed by name. Validated against live fieldDefinitions; unknown keys returned as unknownFields.",
+				"Optional destination pipeline name (case-insensitive substring match against the org's deal pipelines). Omit to use the org default. Example: 'Enterprise Sales'.",
+			),
+		stageName: z
+			.string()
+			.optional()
+			.describe(
+				"Optional initial stage on the chosen pipeline — accepts the stage CODE (e.g. 'QUAL') or the NAME (e.g. 'Qualified'). Omit to use the pipeline's default stage. Server resolves it case-insensitively.",
 			),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
 
+		// Locked 2026-06-06 evening — fully `fieldDefinitions`-driven.
+		// NO hardcoded field knowledge in this capability.
+		const dispatched = await dispatchSingleRecordFields(cap, "deal", {
+			fields: args.fields,
+		});
+
+		const title = dispatched.columnArgs.title;
+		if (typeof title !== "string" || title.trim().length === 0) {
+			return failed(
+				"needs_repair",
+				"`title` is required to create a deal. Call describe_entity to confirm the field name.",
+			);
+		}
+
+		// Coerce common numeric-string values that small/free models
+		// emit. The dispatcher's columnArgs map carries unknown values;
+		// the mutation validator expects `number` for these.
+		const numericKeys = ["value", "expectedCloseDate"];
+		for (const key of numericKeys) {
+			const v = dispatched.columnArgs[key];
+			if (typeof v === "string" && v.length > 0) {
+				const n = Number(v);
+				if (Number.isFinite(n)) dispatched.columnArgs[key] = n;
+			}
+		}
+
+		// Multi-pipeline + multi-stage targeting at create time. Resolve
+		// pipelineName / stageName SERVER-side against the org's live
+		// pipelines so the AI never invents a pipelineId or stageId.
+		// Both args optional — when absent, `createForAI` falls back to
+		// the org default pipeline + its default stage.
+		let resolvedPipelineId: Id<"pipelines"> | undefined;
+		let resolvedStageId: string | undefined;
+		if (args.pipelineName || args.stageName) {
+			const allPipelines = (await ctx.runQuery(
+				internal.crm.fields.pipelines.queries.listByOrgForAI,
+				{ orgId: principal.orgId, userId: principal.userId },
+			)) as Array<{
+				_id: Id<"pipelines">;
+				name: string;
+				entityType: string;
+				isDefault?: boolean;
+				stages: Array<{ id: string; name: string; code: string }>;
+			}>;
+			const dealPipelines = allPipelines.filter((p) => p.entityType === "deal");
+			if (dealPipelines.length === 0) {
+				return failed(
+					"not_found",
+					"No deal pipeline exists. Create one in Settings → Modules → Deals → Pipelines, then retry.",
+				);
+			}
+
+			// Resolve pipeline first (when named) — case-insensitive
+			// match: exact > substring. Default fallback when no
+			// pipelineName supplied but stageName is.
+			let chosenPipeline:
+				| {
+						_id: Id<"pipelines">;
+						name: string;
+						stages: Array<{ id: string; name: string; code: string }>;
+				  }
+				| undefined;
+			if (args.pipelineName) {
+				const norm = args.pipelineName.trim().toLowerCase();
+				const exact = dealPipelines.filter((p) => p.name.toLowerCase() === norm);
+				const partial = dealPipelines.filter((p) => p.name.toLowerCase().includes(norm));
+				const candidate =
+					exact.length === 1 ? exact[0] : partial.length === 1 ? partial[0] : null;
+				if (!candidate) {
+					if (partial.length > 1) {
+						return failed(
+							"ambiguous",
+							`"${args.pipelineName}" matches multiple deal pipelines. Pick one: ${dealPipelines.map((p) => `"${p.name}"`).join(", ")}.`,
+						);
+					}
+					return failed(
+						"not_found",
+						`No deal pipeline matches "${args.pipelineName}". Available: ${dealPipelines.map((p) => `"${p.name}"`).join(", ")}.`,
+					);
+				}
+				chosenPipeline = candidate;
+				resolvedPipelineId = candidate._id;
+			} else {
+				// stageName supplied without pipelineName → fall back to
+				// the org's default deal pipeline so the stage resolver
+				// has somewhere to look.
+				chosenPipeline = dealPipelines.find((p) => p.isDefault) ?? dealPipelines[0];
+				resolvedPipelineId = chosenPipeline._id;
+			}
+
+			// Resolve stage on the chosen pipeline.
+			if (args.stageName && chosenPipeline) {
+				const stageNorm = args.stageName.trim().toLowerCase();
+				const exactCode = chosenPipeline.stages.filter(
+					(s) => s.code.toLowerCase() === stageNorm,
+				);
+				const exactName = chosenPipeline.stages.filter(
+					(s) => s.name.toLowerCase() === stageNorm,
+				);
+				const partial = chosenPipeline.stages.filter(
+					(s) =>
+						s.name.toLowerCase().includes(stageNorm) ||
+						s.code.toLowerCase().includes(stageNorm),
+				);
+				const stageCandidate =
+					exactCode.length === 1
+						? exactCode[0]
+						: exactName.length === 1
+							? exactName[0]
+							: partial.length === 1
+								? partial[0]
+								: null;
+				if (!stageCandidate) {
+					if (partial.length > 1) {
+						return failed(
+							"ambiguous",
+							`"${args.stageName}" matches multiple stages on "${chosenPipeline.name}". Pick a code: ${chosenPipeline.stages.map((s) => s.code).join(", ")}.`,
+						);
+					}
+					return failed(
+						"not_found",
+						`No stage "${args.stageName}" on pipeline "${chosenPipeline.name}". Stages: ${chosenPipeline.stages.map((s) => `${s.name} (${s.code})`).join(", ")}.`,
+					);
+				}
+				resolvedStageId = stageCandidate.id;
+			}
+		}
+
 		const created = (await ctx.runMutation(internal.crm.entities.deals.mutations.createForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			title: args.title,
-			value: args.value,
-			currency: args.currency,
-			personCode: args.personCode,
-			companyCode: args.companyCode,
-			expectedCloseDate: args.expectedCloseDate,
-			source: args.source,
-			assignedTo: args.assignedTo as Id<"users"> | undefined,
-			pipelineId: args.pipelineId as Id<"pipelines"> | undefined,
-		})) as { dealId: Id<"deals">; dealCode: string };
+			...dispatched.columnArgs,
+			...(resolvedPipelineId ? { pipelineId: resolvedPipelineId } : {}),
+			...(resolvedStageId ? { currentStageId: resolvedStageId } : {}),
+		} as never)) as { dealId: Id<"deals">; dealCode: string };
 
-		// Apply custom fields against the live `fieldDefinitions` rows.
+		// Apply custom fields.
 		let appliedCustomFields: string[] = [];
-		let unknownFields: string[] = [];
-		// B (locked 2026-06-06) — coerce label-shaped customField keys
-		// to canonical names BEFORE forwarding. Same rationale as the
-		// per-row resolver in `bulk_create_entities` + `create_lead`.
-		const resolveCustomFieldKeys = await buildCustomFieldKeyResolver(cap, "deal");
-		const resolvedCustomFields = resolveCustomFieldKeys(args.customFields);
-		if (resolvedCustomFields) {
+		let unknownFields: string[] = [...dispatched.dropped];
+		if (dispatched.customFields) {
 			const result = (await ctx.runMutation(
 				internal.ai.aiEntityPatch.applyCustomFieldsForRecord,
 				{
@@ -160,43 +271,41 @@ const createDeal = defineCapability<{
 					userId: principal.userId,
 					entityType: "deal",
 					entityId: created.dealId as unknown as string,
-					customFields: resolvedCustomFields,
+					customFields: dispatched.customFields,
 				},
 			)) as { applied: Array<{ name: string; value: unknown }>; unknown: string[] };
 			appliedCustomFields = result.applied.map((f) => f.name);
-			unknownFields = result.unknown;
+			unknownFields = [...unknownFields, ...result.unknown];
 		}
 
 		const changes = [
 			{ label: "Code", value: created.dealCode, emphasis: "added" as const },
-			{ label: "Title", value: args.title, emphasis: "added" as const },
-			...(args.value !== undefined
+			...Object.entries(dispatched.columnArgs).map(([key, value]) => ({
+				label: key,
+				value: Array.isArray(value) ? value.join(", ") : String(value ?? ""),
+				emphasis: "added" as const,
+			})),
+			...(args.pipelineName
 				? [
 						{
-							label: "Value",
-							value: `${args.value}${args.currency ? ` ${args.currency}` : ""}`,
+							label: "Pipeline",
+							value: args.pipelineName,
 							emphasis: "added" as const,
 						},
 					]
 				: []),
-			...(args.personCode
-				? [{ label: "Person", value: args.personCode, emphasis: "added" as const }]
-				: []),
-			...(args.companyCode
-				? [{ label: "Company", value: args.companyCode, emphasis: "added" as const }]
-				: []),
-			...(args.expectedCloseDate
+			...(args.stageName
 				? [
 						{
-							label: "Expected close",
-							value: new Date(args.expectedCloseDate).toISOString().slice(0, 10),
+							label: "Stage",
+							value: args.stageName,
 							emphasis: "added" as const,
 						},
 					]
 				: []),
-			...appliedCustomFields.map((name) => ({
-				label: name,
-				value: String(resolvedCustomFields?.[name] ?? args.customFields?.[name] ?? ""),
+			...appliedCustomFields.map((cfName) => ({
+				label: cfName,
+				value: String(dispatched.customFields?.[cfName] ?? ""),
 				emphasis: "added" as const,
 			})),
 		];
@@ -207,7 +316,7 @@ const createDeal = defineCapability<{
 			);
 		}
 		return ok({
-			headline: `Created deal ${created.dealCode}: ${args.title}`,
+			headline: `Created deal ${created.dealCode}: ${title}`,
 			changes,
 			facts: facts.length > 0 ? facts : undefined,
 			data: {
@@ -215,6 +324,8 @@ const createDeal = defineCapability<{
 				dealCode: created.dealCode,
 				appliedCustomFields,
 				unknownFields,
+				...(resolvedPipelineId ? { pipelineId: resolvedPipelineId } : {}),
+				...(resolvedStageId ? { stageId: resolvedStageId } : {}),
 			},
 			display: {
 				kind: "entity",

@@ -51,7 +51,7 @@ export function MiniCalendarWidget({ orgSlug, className }: MiniCalendarWidgetPro
 						className="h-7 text-xs"
 						onClick={() =>
 							sendChatPrefill(
-								"Create a reminder for me — pick a date and time and a quick title.",
+								"Create a reminder for me, pick a date and time and a quick title.",
 							)
 						}
 					>

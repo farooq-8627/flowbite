@@ -54,7 +54,11 @@ async function summariseFromDB(
 					stages?: unknown[];
 				}>) ?? [];
 			const stageCount = single?.stages?.length ?? arr[0]?.stages?.length ?? 0;
-			const pipelineName = single?.name ?? arr[0]?.name ?? "Default Pipeline";
+			// Same dynamic-fallback rationale as
+			// `_platform/industries/queries.ts::summariseTemplate` — never
+			// hardcode the literal "Default Pipeline".
+			const fallbackName = t.label?.length > 0 ? `${t.label} pipeline` : "Pipeline";
+			const pipelineName = single?.name ?? arr[0]?.name ?? fallbackName;
 			return {
 				id: t.templateKey,
 				label: t.label,

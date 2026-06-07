@@ -28,6 +28,7 @@ import { generateText } from "ai";
 import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import { internalAction } from "../_generated/server";
+import { isDefaultConversationTitle } from "../_shared/aiTitleDefaults";
 import { decryptApiKey } from "./encryption";
 import type { ProviderId } from "./encryptionTypes";
 import { buildLanguageModel, getPlatformKey, MODEL_REGISTRY } from "./models";
@@ -70,8 +71,11 @@ export const autoTitle = internalAction({
 		if (!conv) return { ok: false as const, reason: "not_found" as const };
 
 		// Defence-in-depth: if user already renamed it, bail before paying for the call.
-		const current = (conv.title ?? "").trim();
-		if (current && current !== "Untitled conversation") {
+		// "New chat" / "New Chat" / "Untitled conversation" are placeholder
+		// titles the auto-titler emitted itself — those re-trigger when a
+		// later message gives the model a less-vague prompt. See
+		// `convex/_shared/aiTitleDefaults.ts` for the SSOT.
+		if (!isDefaultConversationTitle(conv.title)) {
 			return { ok: false as const, reason: "already_titled" as const };
 		}
 
@@ -139,11 +143,26 @@ async function pickTitleModel(
 	orgId: Id<"orgs">,
 	userId: Id<"users">,
 ): Promise<{ model: unknown; modelKey: string } | null> {
+	// Smallest-tier preference order. The first model whose key resolves
+	// (BYOK → platform) wins; the rest aren't reached. Adding a model
+	// here is free — `pickTitleModel` only pays for the model that
+	// actually fires.
+	//
+	// `openrouter-llama-3.3-70b-free` belongs in this list because the
+	// previous five-entry list locked out OpenRouter-only deployments
+	// (no Anthropic / Google / NVIDIA / OpenAI key configured) — those
+	// users could send messages that streamed fine on the chat model
+	// but had `pickTitleModel` return null, so `aiConversations.title`
+	// stayed `undefined` forever and the panel header fell back to the
+	// app brand instead of a real title. Llama-3.3-70B is the smallest
+	// reliable instruction-follower in our OpenRouter free set; tool
+	// support is irrelevant here (the title prompt has no tools).
 	const order = [
 		"claude-haiku-3-5",
 		"gemini-2.5-flash-lite",
 		"gemini-2.5-flash",
 		"nvidia-llama-3.3-70b",
+		"openrouter-llama-3.3-70b-free",
 		"gpt-4o-mini",
 	];
 

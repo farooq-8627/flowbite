@@ -74,7 +74,7 @@ export function AIContextView() {
 			description={
 				ctx
 					? `Currently at ${ctx.version} · last updated ${new Date(ctx.updatedAt).toLocaleString()}.`
-					: "No row yet — first save will create it."
+					: "No row yet. First save will create it."
 			}
 		>
 			<form
@@ -127,7 +127,7 @@ export function AIContextView() {
 						value={content}
 						onChange={(e) => setContent(e.target.value)}
 						className="font-mono text-xs"
-						placeholder="# YourApp — AI Assistant Context"
+						placeholder="# YourApp: AI Assistant Context"
 					/>
 				</div>
 

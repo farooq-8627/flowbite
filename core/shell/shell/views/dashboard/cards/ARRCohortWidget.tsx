@@ -209,7 +209,7 @@ function CohortBars({ buckets, currency, peakValue }: CohortViewProps) {
 		<div
 			className="flex h-32 w-full items-end justify-between gap-2"
 			role="img"
-			aria-label="Won deals per month — last 6 months — bar chart"
+			aria-label="Won deals per month, last 6 months, bar chart"
 		>
 			{buckets.map((b) => {
 				const heightPct = peakValue === 0 ? 0 : (b.value / peakValue) * 100;
@@ -267,7 +267,7 @@ function CohortTrend({ buckets, currency, peakValue }: CohortViewProps) {
 	return (
 		<div className="space-y-1">
 			<div className="flex items-baseline justify-between gap-2 text-[10px] text-muted-foreground">
-				<span>Monthly won — value</span>
+				<span>Monthly won: value</span>
 				<span className="tabular-nums">Peak {shortCurrency(peakValue, currency)}</span>
 			</div>
 			<Sparkline

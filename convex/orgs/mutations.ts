@@ -750,6 +750,19 @@ const orgUpdateArgs = {
 					reminderBeforeHours: v.optional(v.number()),
 				}),
 			),
+			// Per-org task-type catalog. See `schema/identity.ts` for
+			// the full rationale; this validator is the public-mutation
+			// mirror. Validated by `validateTaskType` in the AI tasks
+			// capability layer at runtime.
+			taskTypes: v.optional(
+				v.array(
+					v.object({
+						id: v.string(),
+						label: v.string(),
+						labelAr: v.optional(v.string()),
+					}),
+				),
+			),
 			briefingDefaults: v.optional(
 				v.object({
 					morningBriefingEnabled: v.optional(v.boolean()),

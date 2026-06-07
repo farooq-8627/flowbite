@@ -148,7 +148,7 @@ export function JoinOrgPage({ token }: JoinOrgPageProps) {
 					icon={<CheckCircle className="size-7 text-green-600" />}
 					iconBg="bg-green-500/10"
 					title="Already accepted"
-					description={`This invitation has already been used. The link is now closed — if you need to rejoin ${orgName}, ask your admin to send a fresh invite.`}
+					description={`This invitation has already been used. The link is now closed. If you need to rejoin ${orgName}, ask your admin to send a fresh invite.`}
 					action={
 						<Button
 							className="w-full rounded-[var(--radius)]"

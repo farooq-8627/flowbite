@@ -76,7 +76,7 @@ export function AIFeaturesSection({ orgId }: { orgId: Id<"orgs"> }) {
 		<SettingsSection
 			id="ai.features"
 			title="AI sidebar features"
-			description="Hide AI observability surfaces you don't use from the sidebar. Permission gates still apply — flipping a switch off never grants access, it only removes the nav entry."
+			description="Hide AI observability surfaces you don't use from the sidebar. Permission gates still apply. Flipping a switch off never grants access, it only removes the nav entry."
 		>
 			{FEATURES.map((f) => {
 				// `aiFeatures.<key> !== false` matches the sidebar's resolution rule —

@@ -122,7 +122,7 @@ function MessagesGroup({ personCode }: { personCode: string }) {
 		<ProfileSection
 			id="messages.thread"
 			title="Conversation"
-			description="Human messages and AI on-behalf replies — synced with WhatsApp and email when those channels are wired up."
+			description="Human messages and AI on-behalf replies, synced with WhatsApp and email when those channels are wired up."
 			chromeless
 			fillHeight
 		>
@@ -138,7 +138,7 @@ function TimelineGroup({ personCode, orgSlug: _orgSlug }: { personCode: string; 
 		<ProfileSection
 			id="timeline.feed"
 			title="Feed"
-			description="Unified log — created, updated, stage change, AI action, WhatsApp, reminders."
+			description="Unified log: created, updated, stage change, AI action, WhatsApp, reminders."
 			chromeless
 			fillHeight
 		>
@@ -168,7 +168,7 @@ function NotesGroup({ personCode }: { personCode: string }) {
 			<ProfileSection
 				id="notes.entries"
 				title="Notes"
-				description="Sticky notes — color-code, filter, and drag between categories. Notes added here also appear on the org-wide Notes page."
+				description="Sticky notes: color-code, filter, and drag between categories. Notes added here also appear on the org-wide Notes page."
 				chromeless
 			>
 				<NotesPanel entityType="person" entityId={personCode} personCode={personCode} />
@@ -185,7 +185,7 @@ function DealsGroup({ personCode }: { personCode: string }) {
 		<ProfileSection
 			id="deals.list"
 			title={labels.deal.plural}
-			description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode — full details, with stage-aware fields up to where the ${labels.deal.singular.toLowerCase()} is right now.`}
+			description={`Every ${labels.deal.singular.toLowerCase()} linked via personCode, with full details and stage-aware fields up to where the ${labels.deal.singular.toLowerCase()} is right now.`}
 			chromeless
 			fillHeight
 		>
@@ -203,7 +203,7 @@ function FilesGroup({ personCode, orgId }: { personCode: string; orgId: Id<"orgs
 			<ProfileSection
 				id="files.attachments"
 				title="Attachments"
-				description="Drop files here — contracts, IDs, notes. Files attached to deals/contacts that reference this person also appear here."
+				description="Drop files here: contracts, IDs, notes. Files attached to deals/contacts that reference this person also appear here."
 			>
 				{orgId ? (
 					<EntityFilesPanel

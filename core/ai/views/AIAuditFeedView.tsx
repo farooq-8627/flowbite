@@ -388,7 +388,7 @@ export function AIAuditFeedView() {
 							<p className="text-xs font-medium text-muted-foreground">
 								{rows.length} action{rows.length === 1 ? "" : "s"}
 								{page?.overflowed
-									? " — older results truncated; refine filters to dig further"
+									? " (older results truncated; refine filters to dig further)"
 									: ""}
 							</p>
 						</div>
@@ -620,7 +620,7 @@ function EmptyState({ hasActiveFilter }: { hasActiveFilter: boolean }) {
 					<p className="max-w-md text-xs leading-relaxed text-muted-foreground">
 						{hasActiveFilter
 							? "Try clearing one or two filters to widen the window. The audit feed records every capability call across chat, autonomous turns, WhatsApp, MCP and REST."
-							: "Every time the AI runs a capability — creating a lead, moving a deal, sending a message — it lands here with the full result envelope, source, risk tier and a link to the conversation trace."}
+							: "Every time the AI runs a capability (creating a lead, moving a deal, sending a message) it lands here with the full result envelope, source, risk tier and a link to the conversation trace."}
 					</p>
 				</div>
 			</CardContent>

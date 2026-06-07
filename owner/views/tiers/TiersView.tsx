@@ -138,7 +138,7 @@ function TierCard({ tier }: { tier: TierRow }) {
 
 	const description = tier.seeded
 		? `Last updated ${tier.updatedAt ? new Date(tier.updatedAt).toLocaleString() : "—"}.`
-		: "Not yet seeded — first save will create the row.";
+		: "Not yet seeded. First save will create the row.";
 
 	return (
 		<OwnerSettingsCard title={`${tier.displayName} (${tier.key})`} description={description}>
@@ -247,7 +247,7 @@ function TierCard({ tier }: { tier: TierRow }) {
 							</LabelledField>
 							<LabelledField
 								label="Features (one bullet per line)"
-								hint="Markdown is NOT rendered — plain text only."
+								hint="Markdown is NOT rendered, plain text only."
 							>
 								<Textarea
 									rows={6}

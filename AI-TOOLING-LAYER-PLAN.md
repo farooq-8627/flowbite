@@ -1,4 +1,4 @@
-# AI Tooling Layer — Redesign Plan (Capability Layer v2)
+# AI Tooling Layer, Redesign Plan (Capability Layer v2)
 
 > **Status:** Proposal for review. No code changed yet.
 > **Scope:** Replace the AI **tooling layer** only. Keep the chat layer
@@ -6,7 +6,7 @@
 > `core/ai/` frontend, BYOK keys, models) intact.
 > **Author note:** This is written to be the build blueprint once you approve
 > the direction. It deliberately reverses locked decision #26 (hard-locked
-> approvals) — that requires your explicit sign-off (see §9 + §13).
+> approvals), that requires your explicit sign-off (see §9 + §13).
 
 ---
 
@@ -19,7 +19,7 @@ Capability Registry** that sits directly on top of the canonical Convex
 and every framework talks to that one registry through thin adapters. The AI
 loads only the **capabilities relevant to the request** (not all of them every
 turn), self-corrects on validation errors, and returns a **structured result
-envelope** (what it did + status + errors) — never a bare "Done."
+envelope** (what it did + status + errors), never a bare "Done."
 
 The four problems you reported all dissolve because they share one root cause:
 **today the capability layer and the chat layer are the same layer.** We are
@@ -42,7 +42,7 @@ Stop thinking "an AI tool." Start thinking in **three separated concerns**:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  LAYER 3 — CHANNEL ADAPTERS  (how a request arrives & who is asking)   │
+│  LAYER 3, CHANNEL ADAPTERS  (how a request arrives & who is asking)   │
 │                                                                        │
 │   Chat panel   WhatsApp webhook   MCP server   REST   Slack   Cal.com  │
 │   each one: (a) authenticates a PRINCIPAL (a member),                  │
@@ -50,9 +50,9 @@ Stop thinking "an AI tool." Start thinking in **three separated concerns**:
 └───────────────────────────────┬────────────────────────────────────────┘
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  LAYER 2 — AGENT RUNTIME  (the brain; one, channel-agnostic)           │
+│  LAYER 2, AGENT RUNTIME  (the brain; one, channel-agnostic)           │
 │                                                                        │
-│   • ToolLoopAgent (AI SDK native loop — your own MODULE.md says use it) │
+│   • ToolLoopAgent (AI SDK native loop, your own MODULE.md says use it) │
 │   • Progressive disclosure: starts with a tiny core set, discovers &    │
 │     loads more on demand via prepareStep (per-step active tools)        │
 │   • Driving layers assembled here: PROJECT → GROUP → TOOL               │
@@ -61,7 +61,7 @@ Stop thinking "an AI tool." Start thinking in **three separated concerns**:
 └───────────────────────────────┬────────────────────────────────────────┘
                                 ▼
 ┌──────────────────────────────────────────────────────────────────────┐
-│  LAYER 1 — CAPABILITY REGISTRY  (the single source of truth)           │
+│  LAYER 1, CAPABILITY REGISTRY  (the single source of truth)           │
 │                                                                        │
 │   A capability = { schema(+coercion), module, group, permission,        │
 │                    risk, drive(instructions), run(ctx,args)->Result }   │
@@ -76,7 +76,7 @@ Everything else is a projection of it.
 
 This is the same pattern production teams converged on: a single
 schema-validated control plane (`create_task_impl`) reused across LangChain,
-CrewAI, and MCP — "eliminating duplication and drift"
+CrewAI, and MCP, "eliminating duplication and drift"
 ([Scalekit, 2026](https://www.scalekit.com/blog/unified-tool-calling-architecture-langchain-crewai-mcp)).
 You already have the foundation for it: the `*Impl` / `*ForAI` convention in
 `AGENTS.md`. We are formalizing it into a registry.
@@ -120,7 +120,7 @@ type Capability = {
   };
 
   // The single execution path. Calls the canonical *Impl body.
-  // MUST return a structured envelope (§8) — the type forbids "return 'done'".
+  // MUST return a structured envelope (§8), the type forbids "return 'done'".
   run: (ctx: CapabilityCtx, args: Infer<input>) => Promise<CapabilityResult>;
 };
 ```
@@ -131,7 +131,7 @@ Key differences from today's `ToolDef`:
    the runtime explicitly. That alone makes it reusable by WhatsApp/MCP.
 2. **One schema, one execution path.** No propose schema + commit schema +
    persisted-payload re-parse. (Confirmation, when wanted, is a runtime
-   concern driven by `risk`, not a second schema — §9.)
+   concern driven by `risk`, not a second schema, §9.)
 3. **Coercion is not optional.** It is built into the shared field helpers
    every capability uses. A tool author *cannot* forget it.
 4. **`run` must return a `CapabilityResult`.** The type system rejects a bare
@@ -139,7 +139,7 @@ Key differences from today's `ToolDef`:
 
 ---
 
-## 3. Where capabilities live (co-located with the backend — your idea, refined)
+## 3. Where capabilities live (co-located with the backend, your idea, refined)
 
 You proposed building the tool for each backend call directly in the Convex
 backend folder, then layering groups + proactiveness on top. That is the right
@@ -168,7 +168,7 @@ convex/
 
 Why co-locate `capabilities.ts` next to `mutations.ts`? Because the capability
 is a thin declaration that wraps the `*Impl` that already lives there. When a
-backend function changes, its capability is right next to it — no drift, no
+backend function changes, its capability is right next to it, no drift, no
 hunting through `convex/ai/tools/`. This directly satisfies your "build the
 tool for each backend call" requirement while keeping the registry centralized.
 
@@ -194,12 +194,12 @@ model emits args
 ```
 
 For "irreversible" capabilities that you still want a human pause on, the gate
-in step 4 pauses once and resumes the *same* path with the *same* schema — not a
+in step 4 pauses once and resumes the *same* path with the *same* schema, not a
 separate commit tool. There is no second schema to drift.
 
 ---
 
-## 5. Module-awareness — the part that makes this future-proof
+## 5. Module-awareness, the part that makes this future-proof
 
 This is the requirement that matters most for "later I may build productivity
 tools / freelancer tools / turn pipelines off." We solve it with a **Module
@@ -239,7 +239,7 @@ Consequences, exactly as you asked:
 - **A freelancer workspace** that only has tasks + contacts → the AI's entire
   worldview is tasks + contacts. No dead tools, no hallucinated capabilities.
 
-The AI's competence always equals exactly what the workspace actually has —
+The AI's competence always equals exactly what the workspace actually has,
 because both its tools and its knowledge are derived from the same active-module
 set. This is impossible in the current design, where the system prompt is
 hand-assembled and tools are force-loaded regardless of what's enabled.
@@ -286,7 +286,7 @@ Why three tiers and not one giant prompt:
   in scope. That's a few hundred tokens of driving guidance, not thousands.
 - **Behavior is consistent and centralized.** Edge-case handling that applies
   to everything (retry, output format) lives in PROJECT and is written once.
-  You are not "updating prompts for each and every tool" — you write the
+  You are not "updating prompts for each and every tool", you write the
   cross-cutting behavior once at PROJECT, the domain behavior once per GROUP,
   and only genuinely tool-specific quirks at TOOL.
 - **The stable top is cacheable.** PROJECT + the tool *catalog* (names +
@@ -296,7 +296,7 @@ Why three tiers and not one giant prompt:
 
 ---
 
-## 7. Progressive disclosure — the "top layer that picks the tool set"
+## 7. Progressive disclosure, the "top layer that picks the tool set"
 
 You described it exactly: *"a top layer that has every tool call in sets and
 based on the request it calls a specific tool instead of taking full data or
@@ -329,7 +329,7 @@ Two routing inputs make this cheap and reliable:
 
 1. **Deterministic preload from context.** If the WhatsApp thread / page is
    about a deal, preload the `deals` + `scheduling` groups before the first
-   step. (Replaces today's weak "subagent router" — but it *selects groups*,
+   step. (Replaces today's weak "subagent router", but it *selects groups*,
    not a single persona, and it never *hides* a tool the user needs because
    `discover_capabilities` is always available as the escape hatch.)
 2. **On-demand discovery** for everything else.
@@ -346,7 +346,7 @@ Token math (rough, to set expectations):
 
 ---
 
-## 8. "Doable without errors" — the correctness machine
+## 8. "Doable without errors", the correctness machine
 
 You don't want to babysit each tool's prompt and pray. So correctness must be
 **structural**, guaranteed by the architecture, not by per-tool effort. Four
@@ -356,20 +356,20 @@ mechanisms:
 One set of field builders every capability uses. The model's sloppiness is
 normalized *before* validation:
 
-- `coerceTimestamp()` — accepts epoch ms, ISO string (`"2024-06-05T09:00Z"`),
+- `coerceTimestamp()`, accepts epoch ms, ISO string (`"2024-06-05T09:00Z"`),
   and natural language (`"next Tuesday"`, `"in 3 days"`) → epoch ms in the
   workspace timezone. **This is the fix for `dueAt`.** (Your own
   `core/inbox/ai/MODULE.md` already specified this with `resolveNaturalLanguageDate`
-  — the implementation just never adopted it.)
-- `coerceStringArray()` — array | CSV | JSON-string → array. (Fixes `entityIds`.)
-- `coerceInt()`, null/empty-string stripping — already exist; now applied everywhere.
+ , the implementation just never adopted it.)
+- `coerceStringArray()`, array | CSV | JSON-string → array. (Fixes `entityIds`.)
+- `coerceInt()`, null/empty-string stripping, already exist; now applied everywhere.
 
 Because these live in the shared builders, **a new capability is correct by
 default**. You cannot ship a date field that rejects ISO strings.
 
 ### 8.2 Validation-as-tool-result → real self-correction (your retry idea)
 You observed: the AI said it needed a number, you pasted the error back, and it
-worked — so why can't it self-correct? Because today the **AI SDK rejects the
+worked, so why can't it self-correct? Because today the **AI SDK rejects the
 args before `execute` runs**, throwing `TypeValidationError` out of band. The
 model never receives a usable error inside the loop, so it can't retry.
 
@@ -386,11 +386,11 @@ returns a structured `RepairError` *as the tool result*:
   "example": { "type": "followup", "personCode": "P-007", "dueAt": "2024-06-05" } }
 ```
 
-The agent reads that and retries correctly on the next step — automatically, no
+The agent reads that and retries correctly on the next step, automatically, no
 human pasting the error. Bounded by a retry budget (e.g. 2) so it can't loop
 (the Microsoft "self-healing agent" guidance:
 [LLMOps best practices](https://techcommunity.microsoft.com/blog/appsonazureblog/turn-your-app-service-web-app-into-a-self-healing-agent-llmops-best-practices-fo/4520867)).
-With 8.1 in place, this path rarely even triggers — it's the safety net.
+With 8.1 in place, this path rarely even triggers, it's the safety net.
 
 ### 8.3 Mandatory result envelope (kills "Done.")
 `run` must return:
@@ -425,7 +425,7 @@ itself:
   we wire this one up?"
 - **An audit/coverage report**: "120 capabilities, 120 with driving layers, 118
   with examples, 3 missing `whenNotToCall`." One command tells you whether the
-  layer is complete — answering your "we don't have full confirmation whether
+  layer is complete, answering your "we don't have full confirmation whether
   we built this completely."
 
 ---
@@ -446,7 +446,7 @@ adapters resolve it; the **customer's message is content, never authority**:
 | MCP / REST | the member who owns the API token | data |
 
 So when a lead messages your agent on WhatsApp and the **agent** says *"create a
-lead for this person and set a follow-up Tuesday"* — the principal is the
+lead for this person and set a follow-up Tuesday"*, the principal is the
 agent, the lead's details are extracted from the thread, and `create_lead` +
 `create_task` run with the **agent's** RBAC. *"For P-007 update these details"*
 → `update_entity` runs as the agent. Exactly your scenario.
@@ -458,10 +458,10 @@ guardrail I strongly recommend keeping even in "no approvals" mode.
 
 ### 9.2 RBAC is the only gate on *what* (capability availability + execution)
 - A capability is only shown to the model if `principal.can(c.permission)`
-  (zero tokens spent on forbidden tools — your Layer-3 security rule).
-- `run` re-checks the permission (defense in depth — already your pattern via
+  (zero tokens spent on forbidden tools, your Layer-3 security rule).
+- `run` re-checks the permission (defense in depth, already your pattern via
   `requireOrgMemberByIds`).
-- Whatever the member can do in the UI, the AI can do for them — no more, no
+- Whatever the member can do in the UI, the AI can do for them, no more, no
   less. A viewer's AI can't write. An admin's AI can.
 
 ### 9.3 Autonomy replaces approval cards with risk tiers + audit
@@ -475,7 +475,7 @@ per-capability `risk` and a per-channel policy:
 | `irreversible` | bulk delete, settings/schema edits, member/role changes | **auto, but rate-limited + always audited** (optional one-tap confirm per org policy) |
 
 Everything is written to **one audit feed** (`actorType: "ai"`, the principal,
-the capability, args, result, channel, `source`) — the "log somewhere we can
+the capability, args, result, channel, `source`), the "log somewhere we can
 plan" you asked for. Because reversible writes dominate real WhatsApp/call
 intents and soft-delete already gives you a 30-day undo, this delivers the "it
 just does it" feel without leaving the workspace writable by anonymous inbound
@@ -510,7 +510,7 @@ Capability Registry (define once)
 ```
 
 - **MCP**: because we project the same registry to MCP, external agents (or a
-  customer's own LLM) can operate the CRM "without entering it" — and MCP is now
+  customer's own LLM) can operate the CRM "without entering it", and MCP is now
   the settled standard (Linux Foundation Agentic AI Foundation, Dec 2025;
   AI SDK has native MCP support).
 - **Inbound vs outbound**: capabilities act on *our* CRM. **Connectors**
@@ -519,7 +519,7 @@ Capability Registry (define once)
   reversible/irreversible`), so the agent calls "book a Cal.com slot" exactly
   like any other capability. One uniform surface.
 - The `source` field on canonical mutations (`whatsapp | mcp | slack | …`)
-  stays — it's already the right audit primitive.
+  stays, it's already the right audit primitive.
 
 ---
 
@@ -529,7 +529,7 @@ Not by testing 150 tools by hand, but by construction:
 
 1. **Coverage = registry.** If a backend `*Impl` exists and is exposed as a
    capability, the AI can do it. The audit report (§8.4) lists exactly which
-   backend functions have capabilities and which don't — so "is it complete?"
+   backend functions have capabilities and which don't, so "is it complete?"
    is a generated answer, not a guess.
 2. **Correctness = central coercion + envelope + generated contract tests.** A
    new capability is correct by default and tested automatically.
@@ -545,7 +545,7 @@ Not by testing 150 tools by hand, but by construction:
 
 ## 12. What we keep, delete, and build
 
-**Keep (chat layer — works):**
+**Keep (chat layer, works):**
 `convex/ai/messages.ts`, `conversations.ts`, the streaming orchestrator shell
 (`run.ts`/`streamLoop.ts` reduced to a thin ToolLoopAgent host), `models.ts`,
 `keys*.ts`, BYOK, `core/ai/` frontend, the result/preview React components.
@@ -582,25 +582,25 @@ Each phase is shippable and reversible. Phase 1 alone fixes `dueAt` + `entityIds
 
 ---
 
-## 14. Decisions — RESOLVED (2026-06-03)
+## 14. Decisions, RESOLVED (2026-06-03)
 
 | # | Decision | Resolution |
 |---|---|---|
 | 1 | Autonomy default | **Auto-execute** everything `safe`/`reversible` (create, update, follow-up, note, convert, soft-delete) with zero confirmation. **Destructive/protected** (`irreversible`: bulk/hard delete, settings/schema, members/roles) → **RBAC + step-up 2FA (confirm twice) + channel allow-list**, never auto. |
 | 2 | Reopen locked decision #26 | **Yes, reopen.** Replaced by the risk-tier + 2FA + channel model (§B5). A `Future-Enhancements.md` card will record the change. |
 | 3 | WhatsApp identity binding | **Per-agent** (per-role) via Twilio. Each agent has their own number; inbound resolves that agent as the principal. No shared-number multi-member threads. |
-| 4 | Auto-extraction from conversation | **On by default** (per-org toggle). The AI autonomously creates leads (with dedup), fills fields, creates follow-ups, writes notes, advances deals from the conversation — without being told. Asks the agent only when a required field is missing/ambiguous. |
+| 4 | Auto-extraction from conversation | **On by default** (per-org toggle). The AI autonomously creates leads (with dedup), fills fields, creates follow-ups, writes notes, advances deals from the conversation, without being told. Asks the agent only when a required field is missing/ambiguous. |
 | 5 | RBAC | **Use the existing multi-agent RBAC as-is** (permission catalog + `requireOrgMemberByIds`). The AI's power per agent = that agent's permissions. Not reinvented. |
 | 6 | Field schema | **Schema is data the AI queries**, not prompt text. `describe_entity` returns live fields/types/labels on demand; create/update validate values **server-side against live `fieldDefinitions`** and return per-field repair hints. |
 
 ---
 
-# PART B — Old vs New, Execution Flows, and the Correctness Machine (2026-06-03)
+# PART B, Old vs New, Execution Flows, and the Correctness Machine (2026-06-03)
 
 This part answers, concretely: how every request and every error is handled in
 the new structure vs today, why it's production-ready, and how autonomy works.
 
-## B1. Old vs New — side by side, per concern
+## B1. Old vs New, side by side, per concern
 
 | Concern | OLD (today) | NEW (v2) |
 |---|---|---|
@@ -610,7 +610,7 @@ the new structure vs today, why it's production-ready, and how autonomy works.
 | **Arg validation** | Opt-in `coerceInt`/`coerceStringArray` per tool; **AI SDK rejects before `execute`** → no retry | Central coercion on every field; permissive SDK schema → strict parse **inside** the wrapper → structured `RepairError` the model self-corrects from |
 | **Error handling** | Ad-hoc per tool; many paths throw raw; user sees "bug logged" | **One CorrectnessWrapper** classifies *every* failure into a taxonomy (§B3) → repair / ask / deny / business-error / retry / partial |
 | **Confirmation** | propose schema + persisted payload + **commit schema re-parse in a separate `resume` action** (3 drift points) | Single execution path; destructive ops use one **2FA step-up** on the same schema (§B5) |
-| **Result** | `display`/`summary` optional → often bare "Done." | **Mandatory typed envelope** (status + changes + errors + next) — "Done." is impossible |
+| **Result** | `display`/`summary` optional → often bare "Done." | **Mandatory typed envelope** (status + changes + errors + next), "Done." is impossible |
 | **Loop** | Hand-rolled `streamLoop.ts` (43 KB), single `streamText`, frozen tool dict | `ToolLoopAgent` + `prepareStep` (native, supports growing the tool set per step) |
 | **Driving guidance** | Per-tool runbooks emitted for ALL force-loaded tools | 3-tier: PROJECT (cached) → GROUP playbook (on activation) → TOOL (in scope) |
 | **Channels** | Tools welded to chat (module-global ctx) | One registry → projectors (AI-SDK / MCP / REST) + adapters (chat / WhatsApp-Twilio / Slack) |
@@ -621,7 +621,7 @@ the new structure vs today, why it's production-ready, and how autonomy works.
 ## B2. The per-group "playbook" (your "process per group")
 
 A **group** = a domain bundle (e.g. `leads`). Each group carries a small
-decision procedure — the systematic "what to call when" you described — that
+decision procedure, the systematic "what to call when" you described, that
 loads **only when the router activates that group**:
 
 ```
@@ -638,16 +638,16 @@ GROUP: leads   (loaded only for lead-related requests)
       describe_entity(lead) → map values to field types → update_entity with a
       partial fields map (only what changed). Unknown/ambiguous field → ask.
     • To CONVERT → convert_lead (preserves personCode). Never delete+recreate.
-  Edge cases live here, once — not duplicated across the lead tools.
+  Edge cases live here, once, not duplicated across the lead tools.
 ```
 
 A "list my leads" request therefore activates the `leads` group, uses
-`search_crm`, and **never loads create/update schemas or the field catalog** —
+`search_crm`, and **never loads create/update schemas or the field catalog**,
 that's your "don't give full context for a simple list message." A "create a
 lead" request activates the same group but the playbook walks create→dedup→
 describe→write.
 
-## B3. The Correctness Machine — handling *every* error (not just two)
+## B3. The Correctness Machine, handling *every* error (not just two)
 
 The reason "we don't know how many errors remain" is that today each tool fails
 its own way. In v2 there is exactly **one wrapper** around every capability,
@@ -679,7 +679,7 @@ CorrectnessWrapper(capability, rawArgs, principal, channel):
 | `business_error` | ConvexError from the mutation (dedup, invalid stage…) | Surface the real reason + the fix |
 | `infra_retry` | provider 5xx / timeout / rate-limit | Transparent retry / failover (already in the chain) |
 | `partial` | bulk: some rows failed | Report N ok / M failed + per-row reasons + retry-failed chip |
-| `ok` | — | Narrate the result envelope |
+| `ok` |, | Narrate the result envelope |
 
 Because the classification and the per-outcome behavior live in **one place**
 (the wrapper + the PROJECT driving layer), fixing a class of error fixes it for
@@ -687,7 +687,7 @@ Because the classification and the per-outcome behavior live in **one place**
 
 ## B4. Two execution traces
 
-**Trace 1 — agent command in chat: "update P-007: budget 120k, mark hot, follow up next Tue"**
+**Trace 1, agent command in chat: "update P-007: budget 120k, mark hot, follow up next Tue"**
 
 ```
 OLD: load all 17 layers (~24k tok) → model guesses update_entity args + epoch ms
@@ -698,14 +698,14 @@ NEW:
   step 2: describe_entity("lead") → {budget:number, status:enum[hot|warm|cold], ...}
   step 3: update_entity{ ref:"P-007", fields:{ budget:"120k", status:"hot" } }
             wrapper: coerce "120k"→120000 vs live field type; status valid → APPLY
-            → envelope: "Updated P-007 — budget 120,000; status hot"
+            → envelope: "Updated P-007, budget 120,000; status hot"
   step 4: create_task{ type:"followup", ref:"P-007", dueAt:"next Tue" }
             wrapper: coerceTimestamp("next Tue") → epoch in org tz → APPLY
-            → envelope: "Created T-031 — follow-up Tue 9 Jun"
+            → envelope: "Created T-031, follow-up Tue 9 Jun"
   narrate both envelopes. ~10k tokens, mostly cached. Zero errors.
 ```
 
-**Trace 2 — autonomous, no command. Lead messages the agent on WhatsApp: "Hi, I'm Sara, looking for a 2BR in JVC, budget 120k, can you send options Tuesday?"**
+**Trace 2, autonomous, no command. Lead messages the agent on WhatsApp: "Hi, I'm Sara, looking for a 2BR in JVC, budget 120k, can you send options Tuesday?"**
 
 ```
 Twilio webhook → verify signature → map the agent's number → principal = Agent A
@@ -724,7 +724,7 @@ autonomousTurn (same registry, trigger="autonomous", Agent A's RBAC):
 If a REQUIRED field were missing/ambiguous → ask_user → one WhatsApp question to the AGENT, not the customer.
 ```
 
-Both traces use the **same registry, same wrapper, same RBAC** — only the
+Both traces use the **same registry, same wrapper, same RBAC**, only the
 adapter and the PROJECT drive variant differ. That is the production-ready
 property: one brain, many doors.
 
@@ -747,7 +747,7 @@ Decision per call:
 | create/update/follow-up/note/convert/soft-delete | reversible | ✅ auto | ✅ auto | the matching write perm |
 | bulk delete / hard delete / settings / schema / members & roles | irreversible | ❌ blocked | ✅ **with 2FA** | high perm (e.g. `data.bulkActions`/`members.manage`) **+ 2FA token** |
 
-So: destructive tools are *sophisticated, protected* exactly as you said — only
+So: destructive tools are *sophisticated, protected* exactly as you said, only
 trusted roles/owner hold the permission, they're unavailable over WhatsApp, and
 even in the web app they demand a double confirm (2FA). Everything else the
 agent is allowed to do happens autonomously.
@@ -768,11 +768,11 @@ convex/http.ts  POST /whatsapp/twilio:
 The principal is **always the agent (a member)** with their real permissions.
 The customer's text is content. An unknown/unmapped number can never act.
 
-## B7. Next actions — context-rich, not "follow up"
+## B7. Next actions, context-rich, not "follow up"
 
 The proactive engine (materialized signals you already have in
 `ai/queries/nextActions.ts`) is upgraded to emit, per item: **what + why
-(evidence) + the concrete move + a one-tap intent** — e.g. *"D-007 (Acme, 120k)
+(evidence) + the concrete move + a one-tap intent**, e.g. *"D-007 (Acme, 120k)
 has sat in Negotiation 14 days with no activity; last note says they wanted
 revised pricing → draft a revised proposal"* with a `[Draft proposal]` chip.
 Same engine feeds (a) the dashboard panel, (b) a `list_next_actions` capability,
@@ -780,13 +780,13 @@ and (c) the autonomous engine's "should I proactively do X?" check.
 
 ## B8. Implementation approaches considered (why these choices)
 
-| Decision | Options weighed | Chosen — why |
+| Decision | Options weighed | Chosen, why |
 |---|---|---|
 | Tool exposure | (a) all tools always [today] · (b) static per-group · (c) pure agentic discovery · (d) **adaptive router + discovery hybrid** | (d): cheap deterministic preload for the common case, discovery as the escape hatch so nothing is ever hidden |
-| Field schema | (a) in prompt [today] · (b) **introspection tool + server-side dynamic validation** | (b): tiny prompt, always-live types, AI needn't get types perfect — server coerces vs `fieldDefinitions` |
+| Field schema | (a) in prompt [today] · (b) **introspection tool + server-side dynamic validation** | (b): tiny prompt, always-live types, AI needn't get types perfect, server coerces vs `fieldDefinitions` |
 | Validation | (a) per-tool opt-in [today] · (b) **central boundary + repair-as-result** | (b): fixes the whole error class at once + enables self-correction |
 | Confirmation | (a) propose/commit two-schema [today] · (b) **single path + risk-tier 2FA** | (b): removes the drift surface that caused the `entityIds` bug |
-| Autonomy | (a) request-only · (b) **request + event-driven engine** | (b): your core requirement — act from the conversation, not on command |
+| Autonomy | (a) request-only · (b) **request + event-driven engine** | (b): your core requirement, act from the conversation, not on command |
 | Loop | (a) hand-rolled streamLoop [today] · (b) **ToolLoopAgent + prepareStep** | (b): native per-step tool growth = progressive disclosure works |
 
 ## B9. Why this is production-ready
@@ -803,29 +803,29 @@ and (c) the autonomous engine's "should I proactively do X?" check.
 - **One definition, every channel** → chat, Twilio/WhatsApp, MCP, Slack reuse
   the same capabilities; new integrations are adapters, not rewrites.
 
-# PART C — How the AI works end-to-end (diagrams + verdict)
+# PART C, How the AI works end-to-end (diagrams + verdict)
 
 ## C0. Verdict: is this plan sophisticated/right, and is bolting integrations later simple?
 
-**Yes on both — with two honest caveats.**
+**Yes on both, with two honest caveats.**
 
 - **Right for this project:** it's the pattern production teams use (single
   schema-validated control plane reused across channels/frameworks). It fixes
   the *causes* (fused layers, opt-in coercion, all-tools-every-turn,
   unstructured results), not the symptoms. It rides your existing strengths
   (canonical `*Impl`, `*ForAI` twins, RBAC catalog, live `fieldDefinitions`).
-- **Bolting a new integration later is a thin adapter, NOT re-tooling** — see
+- **Bolting a new integration later is a thin adapter, NOT re-tooling**, see
   §C2. A new channel (Slack, Cal.com, voice, a customer portal) reuses the same
   registry, wrapper, RBAC, and audit. You write ~1 file (an adapter that
   authenticates a principal and hands the runtime a message). Zero capability
   changes. That is the whole point of separating the three layers.
 
 **Caveats (be aware, not blockers):**
-1. **It's a real migration**, not a patch — ~150 tools get ported (Stages S3–S10).
+1. **It's a real migration**, not a patch, ~150 tools get ported (Stages S3–S10).
    Mitigated by the `AI_V2` flag (old path runs until the S17 cutover) and the
    coverage report (you know exactly what's ported).
 2. **The most extreme token optimization (Code-Execution Mode, 98.7%) is
-   deferred** — not needed for typical 1–3-tool CRM turns, and it needs a code
+   deferred**, not needed for typical 1–3-tool CRM turns, and it needs a code
    sandbox. Progressive disclosure + caching already gets ~90% of the win.
 
 ## C1. The complete working (one diagram)
@@ -850,15 +850,15 @@ and (c) the autonomous engine's "should I proactively do X?" check.
    │      [ CACHED PREFIX ]  PROJECT drive + capability CATALOG  ◄── billed ~10%    │
    │      [ DYNAMIC TAIL  ]  active-module context (LIVE) + group playbook(s)       │
    │                         + in-scope tool drive + route/convo + user message     │
-   │ ③ TOOL-LOOP (AI SDK ToolLoopAgent + prepareStep — grows tools per step):       │
+   │ ③ TOOL-LOOP (AI SDK ToolLoopAgent + prepareStep, grows tools per step):       │
    │      core tools always on: search_crm · describe_entity · describe_workspace · │
    │                            discover_capabilities · ask_user                    │
    │      model may call discover_capabilities → runtime injects that group's       │
    │      capabilities + drive into the NEXT step (progressive disclosure)          │
    └───────────────────────────────┬───────────────────────────────────────────────┘
-            every tool call ▼ (the ONE path — same for every capability/channel)
+            every tool call ▼ (the ONE path, same for every capability/channel)
    ┌──────────────────────────── CORRECTNESS WRAPPER (runCapability) ───────────────┐
-   │  1 coerce args (dates/arrays/ints/null-strip — central, never per-tool)        │
+   │  1 coerce args (dates/arrays/ints/null-strip, central, never per-tool)        │
    │  2 strict parse ───────────────────────────► fail → return REPAIR (self-fix)   │
    │  3 resolve refs (P-007→_id, name→row) ─────► none→not_found · many→ambiguous   │
    │  4 RBAC: principal.can(permission) ────────► else → denied                     │
@@ -904,14 +904,14 @@ available on every channel at once).
 
 ## C3. Request lifecycle in 8 steps (the short version)
 
-1. **Arrive** — request hits a channel adapter (chat send / Twilio webhook / MCP call).
-2. **Identify** — adapter verifies the source and resolves the **principal** (a member + live permissions). Unknown sender → read/suggest only, never write.
-3. **Route** — runtime maps the request to group(s) and assembles the prompt (cached prefix + dynamic tail).
-4. **Reason** — ToolLoopAgent runs; core tools are always on; it discovers/loads more tools per step as needed.
-5. **Act** — each tool call goes through the one Correctness Wrapper: coerce → parse(repair) → resolve → RBAC → channel → risk/2FA → run the `*Impl`.
-6. **Self-correct** — any bad arg comes back as a `repair` result; the model fixes it next step (bounded). Live field validation happens server-side at write time.
-7. **Report** — every action returns a structured envelope (what changed + status + errors + suggested next); the runtime narrates it (never "Done.").
-8. **Record & reply** — every action is written to the audit log; the reply streams back through the same adapter. Autonomous turns do steps 3–8 without a human prompt.
+1. **Arrive**, request hits a channel adapter (chat send / Twilio webhook / MCP call).
+2. **Identify**, adapter verifies the source and resolves the **principal** (a member + live permissions). Unknown sender → read/suggest only, never write.
+3. **Route**, runtime maps the request to group(s) and assembles the prompt (cached prefix + dynamic tail).
+4. **Reason**, ToolLoopAgent runs; core tools are always on; it discovers/loads more tools per step as needed.
+5. **Act**, each tool call goes through the one Correctness Wrapper: coerce → parse(repair) → resolve → RBAC → channel → risk/2FA → run the `*Impl`.
+6. **Self-correct**, any bad arg comes back as a `repair` result; the model fixes it next step (bounded). Live field validation happens server-side at write time.
+7. **Report**, every action returns a structured envelope (what changed + status + errors + suggested next); the runtime narrates it (never "Done.").
+8. **Record & reply**, every action is written to the audit log; the reply streams back through the same adapter. Autonomous turns do steps 3–8 without a human prompt.
 
 ---
 

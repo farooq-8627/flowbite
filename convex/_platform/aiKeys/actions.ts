@@ -72,7 +72,7 @@ export const addPlatformKey = action({
 		const encryptedKey = encryptApiKey(args.apiKey);
 		const hint = keyHint(args.apiKey);
 
-		return (await ctx.runMutation(
+		const result = (await ctx.runMutation(
 			_ref("_platform/aiKeys/mutations:insertEncrypted"),
 			_anyArgs({
 				provider,
@@ -84,5 +84,27 @@ export const addPlatformKey = action({
 				actorEmail: owner.email,
 			}),
 		)) as { id: unknown; replaced: number };
+
+		// Best-effort: refresh the dynamic model catalog for this provider
+		// so every workspace's picker surfaces the full roster (Qwen3 Coder
+		// etc. on OpenRouter; full NIM/Moonshot rosters too). Fire-and-forget;
+		// the daily cron retries on failure.
+		try {
+			await ctx.scheduler.runAfter(
+				0,
+				// biome-ignore lint/suspicious/noExplicitAny: pre-codegen cross-module ref
+				_ref("ai/providerCatalogActions:refreshCatalog") as any,
+				_anyArgs({
+					provider,
+					baseUrl: args.baseUrl,
+					apiKey: args.apiKey,
+					source: "key-save:platform",
+				}),
+			);
+		} catch {
+			// Scheduler unavailable — cron picks it up on the next tick.
+		}
+
+		return result;
 	},
 });

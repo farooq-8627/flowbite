@@ -356,7 +356,7 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	if (isWarming && (fallbackSuggestions === undefined || fallbackSuggestions.length === 0)) {
 		return (
 			<section
-				aria-label="AI pulse — refreshing"
+				aria-label="AI pulse, refreshing"
 				className={cn(
 					"flex items-center gap-2 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card px-3 py-2",
 					className,
@@ -384,7 +384,7 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 	if (visible.length === 0) {
 		return (
 			<section
-				aria-label="AI pulse — ready"
+				aria-label="AI pulse, ready"
 				className={cn(
 					"flex items-start gap-3 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-3",
 					className,
@@ -423,7 +423,7 @@ export function AIPulseRibbon({ orgId, orgSlug, className }: AIPulseRibbonProps)
 
 	return (
 		<section
-			aria-label="AI pulse — top suggestions for you"
+			aria-label="AI pulse: top suggestions for you"
 			className={cn(
 				"flex flex-col gap-2 rounded-[var(--radius)] border border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card p-3",
 				className,

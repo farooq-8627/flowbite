@@ -199,8 +199,11 @@ Once `npx convex dev --once` succeeds, the typed `internal.ai.foo.insertSomethin
 | `aiMessages` | `convex/schema/ai.ts` |
 | `aiBriefings` | `convex/schema/ai.ts` |
 | `orgAiKeys` | `convex/schema/ai.ts` |
+| `aiProviderCatalogs` | `convex/schema/ai.ts` (2026-06-06 — dynamic `/v1/models` cache, 24h TTL) |
 
 `aiMessages` carries: `role` (`user` / `assistant` / `tool`), `content`, optional `toolCalls[]`, optional `confirmationState` + `confirmationPayload`, optional usage tokens, model + provider + usageMode.
+
+`aiProviderCatalogs` is the cache of `GET <baseUrl>/v1/models` per (provider, baseUrl). Read by `useAvailableProviders` to merge dynamic models into the picker (~300 OpenRouter models including Qwen3 Coder 480B); written by `convex/ai/providerCatalogActions.ts:refreshCatalog` (Node action) on key save + every 24h cron tick. The static `MODEL_REGISTRY` is unchanged — dynamic catalogs ADD to it, dedup on `modelId`. Dynamic entries surface in the picker with the modelKey shape `dyn:<provider>:<modelId>`; `getModel` + `modelResolver` split on the FIRST colon to recover provider + slug (so `:free`-suffixed slugs survive unmangled).
 
 ## Permissions
 

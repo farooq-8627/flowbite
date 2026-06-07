@@ -106,7 +106,7 @@ export function PropertyFunnelWidget({ orgId, orgSlug, className }: PropertyFunn
 							className="mt-1 h-7 text-xs"
 							onClick={() =>
 								sendChatPrefill(
-									`Create a new ${labels.deal.singular.toLowerCase()} — pick a property and seed the basics.`,
+									`Create a new ${labels.deal.singular.toLowerCase()}, pick a property and seed the basics.`,
 								)
 							}
 						>

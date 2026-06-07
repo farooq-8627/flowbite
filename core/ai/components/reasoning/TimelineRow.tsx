@@ -22,7 +22,7 @@
  * in <ThinkingTimeline> and rendered as a full <ChatConfirmation> outside
  * the timeline (so the approve/reject buttons stay reachable).
  */
-import { CheckCircle2, ChevronRight, Globe, Loader2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronRight, Globe, Loader2, ShieldAlert, XCircle } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { AIMessage } from "../../types";
@@ -212,6 +212,21 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 	const status = tc.status;
 	const isInProgress = status === "started";
 	const isError = status === "failed";
+	// A — V1-style inline approval (locked 2026-06-06). The orchestrator
+	// persists `needs_step_up` envelopes as `status: "completed"` rows
+	// (so the rail doesn't render red ❌), but the underlying envelope
+	// status carries the awaiting signal. Detect it here so the row
+	// renders amber shield + "Awaiting confirmation" instead of green
+	// check, and so the step-up rendering can mount its inline card
+	// directly under this row.
+	const isAwaitingApproval =
+		!isInProgress &&
+		!isError &&
+		(() => {
+			const out = tc.output;
+			if (!out || typeof out !== "object") return false;
+			return (out as { status?: unknown }).status === "needs_step_up";
+		})();
 
 	const { title, meta } = getRowTitle(tc.name, tc.input, tc.output);
 	const display = extractToolDisplay(tc.output);
@@ -274,7 +289,13 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 
 	const hasExpandableContent = hasStructuredKind || !!rawData || (!!errorText && !friendlyError);
 
-	const Icon = isInProgress ? Loader2 : isError ? XCircle : CheckCircle2;
+	const Icon = isInProgress
+		? Loader2
+		: isError
+			? XCircle
+			: isAwaitingApproval
+				? ShieldAlert
+				: CheckCircle2;
 
 	return (
 		<div className={cn("relative ps-6", !isLast && "pb-2")}>
@@ -295,7 +316,8 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 				className={cn(
 					"absolute start-[6px] top-1 size-[10px] rounded-full ring-2 ring-background",
 					isInProgress && "bg-primary/60 animate-pulse",
-					!isInProgress && !isError && "bg-emerald-500",
+					!isInProgress && !isError && !isAwaitingApproval && "bg-emerald-500",
+					isAwaitingApproval && "bg-amber-500",
 					isError && "bg-destructive",
 				)}
 			/>
@@ -316,7 +338,11 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 					className={cn(
 						"size-3.5 flex-none",
 						isInProgress && "animate-spin text-muted-foreground",
-						!isInProgress && !isError && "text-muted-foreground/70",
+						!isInProgress &&
+							!isError &&
+							!isAwaitingApproval &&
+							"text-muted-foreground/70",
+						isAwaitingApproval && "text-amber-600 dark:text-amber-400",
 						isError && "text-destructive",
 					)}
 				/>
@@ -324,11 +350,17 @@ export function TimelineRow({ toolMessage, orgId, isLast }: Props) {
 					className={cn(
 						"truncate",
 						isError && "text-destructive",
-						!isError && "text-foreground/80",
+						isAwaitingApproval && "text-amber-700 dark:text-amber-300 font-medium",
+						!isError && !isAwaitingApproval && "text-foreground/80",
 					)}
 				>
 					{title}
 				</span>
+				{!meta && isAwaitingApproval && (
+					<span className="ms-auto shrink-0 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+						Awaiting confirmation
+					</span>
+				)}
 				{meta && (
 					<span className="ms-auto shrink-0 text-[11px] text-muted-foreground/70">
 						{meta}

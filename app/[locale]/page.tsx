@@ -10,9 +10,9 @@ import { HomeView } from "@/core/landing/views/HomeView";
  * workspace inside HomeView.
  */
 export const metadata: Metadata = {
-	title: `${APP_CONFIG.name} — Talk to your CRM`,
+	title: `${APP_CONFIG.name}: Talk to your CRM`,
 	description:
-		"The AI-native CRM that drafts your follow-ups, manages your pipeline, and tells you what to do next — all through conversation. Free Pro for early users. BYOK on every plan.",
+		"The AI-native CRM that drafts your follow-ups, manages your pipeline, and tells you what to do next. All through conversation. Free Pro for early users. BYOK on every plan.",
 	keywords: [
 		"ai crm",
 		"talk to your crm",
@@ -27,13 +27,13 @@ export const metadata: Metadata = {
 		type: "website",
 		url: APP_CONFIG.url,
 		siteName: APP_CONFIG.name,
-		title: `${APP_CONFIG.name} — Talk to your CRM`,
+		title: `${APP_CONFIG.name}: Talk to your CRM`,
 		description:
 			"The AI-native CRM where you manage your pipeline through conversation. The AI proposes, you approve, the work is done.",
 	},
 	twitter: {
 		card: "summary_large_image",
-		title: `${APP_CONFIG.name} — Talk to your CRM`,
+		title: `${APP_CONFIG.name}: Talk to your CRM`,
 		description:
 			"The AI-native CRM where you manage your pipeline through conversation. Free Pro for early users.",
 	},

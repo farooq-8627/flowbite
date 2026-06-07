@@ -75,13 +75,13 @@ const ONBOARDING_TOUR_STEPS: TourStep[] = [
 	{
 		target: "workspace-switcher",
 		title: "Your workspace",
-		body: "Switch between workspaces, see pending invitations, or create a new one — all from here at the top of the sidebar.",
+		body: "Switch between workspaces, see pending invitations, or create a new one. All from here at the top of the sidebar.",
 		side: "end",
 	},
 	{
 		target: "sidebar-nav",
 		title: "Navigate your CRM",
-		body: "Every section — leads, contacts, deals, companies, tasks, and more — lives here. Your workspace decides which modules show.",
+		body: "Every section (leads, contacts, deals, companies, tasks, and more) lives here. Your workspace decides which modules show.",
 		side: "end",
 	},
 	{
@@ -105,7 +105,7 @@ const ONBOARDING_TOUR_STEPS: TourStep[] = [
 	{
 		target: "ai-cockpit",
 		title: "AI Cockpit",
-		body: "Your workspace on autopilot — today's pulse, the top things to act on, and AI suggestions, all in one place.",
+		body: "Your workspace on autopilot: today's pulse, the top things to act on, and AI suggestions, all in one place.",
 		side: "top",
 	},
 ];

@@ -312,3 +312,120 @@ describe("coverage.buildCoverageReport", () => {
 		]);
 	});
 });
+
+// ─── Brittleness audit (locked 2026-06-06) ──────────────────────────────────
+
+describe("coverage — brittleness audit", () => {
+	function defineCap(over: Partial<Capability> = {}): Capability {
+		return {
+			name: over.name ?? "test_cap",
+			module: over.module ?? "test",
+			group: over.group ?? "test",
+			permission: over.permission ?? null,
+			risk: over.risk ?? "safe",
+			channels: over.channels ?? ["chat"],
+			spec: {
+				whenToCall: "test",
+				goodExample: { name: "x" },
+				...over.spec,
+			},
+			drive: { onSuccess: "ok", ...over.drive },
+			input: over.input ?? z.object({ name: z.string() }),
+			run: over.run ?? (async () => ok({ headline: "ok" })),
+		};
+	}
+
+	it("flags caps with undocumented required string fields", () => {
+		const cap = defineCap({
+			name: "brittle_cap",
+			input: z.object({ query: z.string().min(1) }),
+			spec: {
+				whenToCall: "x",
+				goodExample: { query: "hello" },
+				// requiredClarifications NOT set — this is the bug class.
+			},
+		});
+		const report = buildCoverageReport([cap], new Set(["test"]));
+		expect(report.summary.brittleCount).toBe(1);
+		expect(report.brittleCapabilities[0]).toMatchObject({
+			capability: "brittle_cap",
+			module: "test",
+			undocumentedRequiredFields: ["query"],
+		});
+	});
+
+	it("does NOT flag a required field when it is documented in requiredClarifications", () => {
+		const cap = defineCap({
+			name: "documented_cap",
+			input: z.object({ query: z.string().min(1) }),
+			spec: {
+				whenToCall: "x",
+				goodExample: { query: "hello" },
+				requiredClarifications: ["query"],
+			},
+		});
+		const report = buildCoverageReport([cap], new Set(["test"]));
+		expect(report.summary.brittleCount).toBe(0);
+		expect(report.brittleCapabilities).toEqual([]);
+	});
+
+	it("does NOT flag optional fields", () => {
+		const cap = defineCap({
+			name: "optional_cap",
+			input: z.object({ query: z.string().optional() }),
+			spec: { whenToCall: "x", goodExample: { query: "hello" } },
+		});
+		const report = buildCoverageReport([cap], new Set(["test"]));
+		expect(report.summary.brittleCount).toBe(0);
+	});
+
+	it("recognises multi-token requiredClarifications entries (e.g. 'a or b')", () => {
+		const cap = defineCap({
+			name: "either_cap",
+			input: z.object({
+				personCode: z.string().optional(),
+				conversationId: z.string().optional(),
+			}),
+			spec: {
+				whenToCall: "x",
+				goodExample: { personCode: "P-001" },
+				requiredClarifications: ["personCode or conversationId"],
+			},
+		});
+		const report = buildCoverageReport([cap], new Set(["test"]));
+		expect(report.summary.brittleCount).toBe(0);
+	});
+
+	it("buildContractCases generates a weak-model fuzz case per required field", () => {
+		const cap = defineCap({
+			name: "fuzz_cap",
+			input: z.object({ query: z.string().min(1) }),
+			spec: {
+				whenToCall: "x",
+				goodExample: { query: "hello" },
+				requiredClarifications: ["query"],
+			},
+		});
+		const cases = buildContractCases(cap);
+		const fuzz = cases.find((c) => c.name.includes("weak-model-safe"));
+		expect(fuzz).toBeDefined();
+		// Documented field — fuzz case must pass (no throw).
+		expect(() => fuzz?.run()).not.toThrow();
+	});
+
+	it("buildContractCases fuzz fails for an undocumented required field", () => {
+		const cap = defineCap({
+			name: "fuzz_brittle",
+			input: z.object({ query: z.string().min(1) }),
+			spec: {
+				whenToCall: "x",
+				goodExample: { query: "hello" },
+				// requiredClarifications NOT set
+			},
+		});
+		const cases = buildContractCases(cap);
+		const fuzz = cases.find((c) => c.name.includes("weak-model-safe"));
+		expect(fuzz).toBeDefined();
+		expect(() => fuzz?.run()).toThrow(/requiredClarifications/);
+	});
+});

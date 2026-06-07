@@ -290,6 +290,25 @@ describe("gate.needsStepUp", () => {
 // ─── B.38 — round-trip: ctx.trigger overrides audit source ────────────────────
 
 describe("runCapability — B.38 audit source override", () => {
+	// 2026-06-06 — `runCapability` now writes TWO mutations per execution:
+	// (a) `writeAudit` → `internal.ai._logAIActivityInternal.logAIActivity`
+	//     (the audit feed row); (b) `recordCapabilityToolEvent` →
+	// `internal.ai.telemetry.recordToolEvent` (per-tool row consumed by
+	// the trace UI). The original B.38 assertion was `toHaveBeenCalledTimes(1)`
+	// — now it's two. The tests below find the audit call by its `action`
+	// prefix (`ai.cap.…`) instead of relying on a fixed index.
+	function findAuditPayload(runMutation: ReturnType<typeof vi.fn>): {
+		metadata?: Record<string, string | number | boolean>;
+	} {
+		for (const call of runMutation.mock.calls) {
+			const arg = call[1] as { action?: string } | undefined;
+			if (typeof arg?.action === "string" && arg.action.startsWith("ai.cap.")) {
+				return call[1] as { metadata?: Record<string, string | number | boolean> };
+			}
+		}
+		throw new Error("no audit call recorded");
+	}
+
 	it("ctx.trigger:'autonomous' lands as source:'autonomous' on the audit row", async () => {
 		const runMutation = vi.fn().mockResolvedValue(undefined);
 		const fakeCtx = { runMutation } as unknown as ActionCtx;
@@ -300,12 +319,9 @@ describe("runCapability — B.38 audit source override", () => {
 		};
 		await runCapability(makeCap(), { name: "Sara" }, ctx);
 
-		// One audit-write call. metadata.source must be 'autonomous',
-		// NOT 'whatsapp' — that's the whole point of B.38.
-		expect(runMutation).toHaveBeenCalledTimes(1);
-		const auditPayload = runMutation.mock.calls[0][1] as {
-			metadata?: Record<string, string | number | boolean>;
-		};
+		// 2 mutations — audit row + per-tool aiToolEvents row.
+		expect(runMutation).toHaveBeenCalledTimes(2);
+		const auditPayload = findAuditPayload(runMutation);
 		expect(auditPayload.metadata?.source).toBe("autonomous");
 		expect(auditPayload.metadata?.channel).toBe("whatsapp");
 	});
@@ -319,9 +335,7 @@ describe("runCapability — B.38 audit source override", () => {
 			// trigger intentionally omitted — older callers
 		};
 		await runCapability(makeCap(), { name: "Sara" }, ctx);
-		const auditPayload = runMutation.mock.calls[0][1] as {
-			metadata?: Record<string, string | number | boolean>;
-		};
+		const auditPayload = findAuditPayload(runMutation);
 		expect(auditPayload.metadata?.source).toBe("chat");
 	});
 
@@ -334,9 +348,7 @@ describe("runCapability — B.38 audit source override", () => {
 			trigger: "autonomous_reply",
 		};
 		await runCapability(makeCap(), { name: "Sara" }, ctx);
-		const auditPayload = runMutation.mock.calls[0][1] as {
-			metadata?: Record<string, string | number | boolean>;
-		};
+		const auditPayload = findAuditPayload(runMutation);
 		expect(auditPayload.metadata?.source).toBe("autonomous_reply");
 	});
 });

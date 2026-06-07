@@ -7,6 +7,7 @@
 import { z } from "zod";
 import type { Id } from "../../_generated/dataModel";
 import { groupCapabilities, listGroupKeys } from "../registry/catalog";
+import { field } from "../registry/coerce";
 import { defineCapability, listCapabilities } from "../registry/define";
 import { ask, failed, ok } from "../registry/result";
 import type { Capability, CapabilityCtx } from "../registry/types";
@@ -43,7 +44,7 @@ function aiQuery<T = unknown>(
 
 // ─── search_crm ─────────────────────────────────────────────────────────────
 
-const searchCrm = defineCapability<{ query: string; entityType?: string; limit?: number }>({
+const searchCrm = defineCapability<{ query?: string; entityType?: string; limit?: number }>({
 	name: "search_crm",
 	module: "core",
 	group: "core",
@@ -52,9 +53,9 @@ const searchCrm = defineCapability<{ query: string; entityType?: string; limit?:
 	channels: ["chat", "whatsapp", "mcp", "rest"],
 	spec: {
 		whenToCall:
-			"PRE-FLIGHT for every create_* or update_* action: search by name/email before you write so you never duplicate. Also use whenever the user mentions a person/company by NAME — resolve to a code first.",
+			"PRE-FLIGHT for every create_* or update_* action involving a REAL person/company/deal: search by name/email before you write so you never duplicate. Also use whenever the user mentions a person/company by NAME — resolve to a code first.",
 		whenNotToCall:
-			"the user already gave a code (P-001 / D-001 / C-001 / T-001) — use describe_entity / get_entity_detail instead.",
+			"the user already gave a code (P-001 / D-001 / C-001 / T-001) — use describe_entity / get_entity_detail instead. ALSO: skip search_crm entirely when the user explicitly asked for synthetic / fake / sample / test / demo data with no real subject — there is nothing to pre-search; jump directly to the relevant create_* tool.",
 		requiredClarifications: ["query"],
 		synonyms: ["find", "look up", "search", "is X in the CRM"],
 		goodExample: { query: "Sarah Khan", entityType: "all", limit: 10 },
@@ -69,8 +70,23 @@ const searchCrm = defineCapability<{ query: string; entityType?: string; limit?:
 		onEmpty:
 			"Tell the user nothing matched. Offer to broaden the query (partial name; drop the entityType filter). Do NOT retry by stripping characters off the query.",
 	},
+	// Schema: `query` is OPTIONAL (locked 2026-06-06). The model is *expected*
+	// to provide it (`requiredClarifications: ["query"]` documents that),
+	// but a weak model that omits it now hits the graceful no-arg branch in
+	// `run()` instead of burning the host's retry budget on a `needs_repair`
+	// envelope it can't fix. Mirrors the same pattern shipped for
+	// `discover_capabilities` (SHIPPED.md L133, 2026-06-04).
+	//
+	// `field.str()` coerces `""` / whitespace → `undefined` BEFORE z.string,
+	// so all three of `{}` / `{ query: "" }` / `{ query: "   " }` route
+	// through the same hint branch.
 	input: z.object({
-		query: z.string().min(1).describe("Name, email, company, deal title, etc. to search."),
+		query: field
+			.str()
+			.optional()
+			.describe(
+				"Name, email, company, deal title, etc. to search. OMIT entirely when the user asked for synthetic / fake / sample / test data with no real subject — skip search_crm and call create_* directly.",
+			),
 		entityType: z
 			.enum(["lead", "contact", "deal", "company", "all"])
 			.optional()
@@ -86,11 +102,28 @@ const searchCrm = defineCapability<{ query: string; entityType?: string; limit?:
 			.describe("Maximum results per entity type."),
 	}),
 	run: async (ctx, args) => {
+		// Empty/missing query → graceful hint envelope. Reaches here only
+		// when `field.str()` already normalised "" / whitespace → undefined,
+		// or the model genuinely omitted the field. The `ok()` envelope is
+		// deliberate: this is not a bug from the model's POV, it's a "tell
+		// me what to look for" prompt that costs zero retry budget.
+		const rawQuery = typeof args.query === "string" ? args.query.trim() : "";
+		if (rawQuery.length === 0) {
+			return ok({
+				headline: "Tell me what to search for — a name, email, company, or deal title.",
+				facts: [
+					"If the user explicitly asked for synthetic / fake / sample / test / demo data with no real subject, SKIP search_crm entirely and call the relevant create_* tool directly. There is nothing to pre-search.",
+					"Otherwise, re-call search_crm with a non-empty `query` string. Optionally pass `entityType` to scope the search.",
+				],
+				data: { availableEntityTypes: ["lead", "contact", "deal", "company", "all"] },
+			});
+		}
+
 		const orgId = ctx.principal.orgId;
 		const permissions = ctx.principal.permissions;
 		const limit = args.limit ?? 10;
 		const entityType = args.entityType ?? "all";
-		const q = args.query.toLowerCase().trim();
+		const q = rawQuery.toLowerCase();
 
 		const buckets: Record<string, unknown[]> = {};
 		const wants = (kind: "lead" | "contact" | "deal" | "company") =>
@@ -128,16 +161,16 @@ const searchCrm = defineCapability<{ query: string; entityType?: string; limit?:
 		const total = Object.values(buckets).reduce((s, arr) => s + arr.length, 0);
 		if (total === 0) {
 			return ok({
-				headline: `No results for "${args.query}".`,
+				headline: `No results for "${rawQuery}".`,
 				facts: [
 					"Try a partial name, or drop the entityType filter to search across all types.",
 				],
-				data: { ...buckets, total, query: args.query },
+				data: { ...buckets, total, query: rawQuery },
 			});
 		}
 		return ok({
-			headline: `${total} match${total === 1 ? "" : "es"} for "${args.query}".`,
-			data: { ...buckets, total, query: args.query },
+			headline: `${total} match${total === 1 ? "" : "es"} for "${rawQuery}".`,
+			data: { ...buckets, total, query: rawQuery },
 		});
 	},
 });

@@ -71,7 +71,7 @@ export function TaskEmptyState({
 			className={className}
 			icon={<CheckCircle2Icon className="size-5" aria-hidden />}
 			title="No tasks yet"
-			description="Track your work — calls, emails, meetings, follow-ups, and to-dos all in one place. Tasks attach to people, deals, and companies, and surface across your dashboard, profiles, and calendar."
+			description="Track your work: calls, emails, meetings, follow-ups, and to-dos all in one place. Tasks attach to people, deals, and companies, and surface across your dashboard, profiles, and calendar."
 			action={
 				onCreate ? (
 					<Button onClick={onCreate}>

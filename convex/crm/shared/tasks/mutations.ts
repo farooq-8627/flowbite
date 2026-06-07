@@ -43,16 +43,13 @@ import { sendNotification } from "../../../notifications/helpers";
 
 // ─── Closed unions ───────────────────────────────────────────────────────────
 
-type TaskType = "todo" | "call" | "email" | "meeting" | "followup";
+type TaskType = string;
 type TaskPriority = "low" | "normal" | "high" | "urgent";
 
-const taskTypeValidator = v.union(
-	v.literal("todo"),
-	v.literal("call"),
-	v.literal("email"),
-	v.literal("meeting"),
-	v.literal("followup"),
-);
+// Per-org task-type catalog (B.46) — schema is `v.string()`, so the
+// mutation validator is too. The AI capability layer + the form UI
+// constrain values to the org's effective list at write time.
+const taskTypeValidator = v.string();
 const taskPriorityValidator = v.union(
 	v.literal("low"),
 	v.literal("normal"),

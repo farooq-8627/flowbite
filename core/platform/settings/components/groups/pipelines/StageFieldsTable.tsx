@@ -172,8 +172,8 @@ export function StageFieldsTable({ orgId, pipeline, scope }: StageFieldsTablePro
 			) : scopedFields.length === 0 ? (
 				<div className="rounded-[var(--radius)] border border-dashed py-6 text-center text-xs text-muted-foreground">
 					{isDefaultStage
-						? "No default fields yet — click \u201CAdd field\u201D to add one. These are the fields every deal in this pipeline carries (always present, no matter the stage)."
-						: "No fields pinned to this stage yet — click \u201CAdd field\u201D to add a stage-specific one."}
+						? "No default fields yet. Click \u201CAdd field\u201D to add one. These are the fields every deal in this pipeline carries (always present, no matter the stage)."
+						: "No fields pinned to this stage yet. Click \u201CAdd field\u201D to add a stage-specific one."}
 				</div>
 			) : (
 				<SortableFieldsTable

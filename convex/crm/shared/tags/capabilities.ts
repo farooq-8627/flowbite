@@ -34,11 +34,15 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { ok } from "../../../ai/registry/result";
-
-const ENTITY_TYPE = z.enum(["lead", "contact", "deal", "company"]);
 
 // ─── Group playbook ─────────────────────────────────────────────────────────
 
@@ -275,7 +279,7 @@ const deleteTag = defineCapability<{ tagId: string }>({
 
 const attachTag = defineCapability<{
 	tagId: string;
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	entityCode: string;
 }>({
 	name: "attach_tag",
@@ -304,23 +308,31 @@ const attachTag = defineCapability<{
 	},
 	input: z.object({
 		tagId: z.string().min(1).describe("The tag's Convex _id (from list_tags)."),
-		entityType: ENTITY_TYPE.describe("Which entity kind to attach to."),
+		entityType: entityTypeSchema().describe(
+			"Which entity kind to attach to. Accepts the canonical type or an org-relabelled alias from describe_workspace.",
+		),
 		entityCode: z.string().min(1).describe("Entity public code (P-NNN / D-NNN / C-NNN)."),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		// Runtime entityType validation against the org's enabled types.
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as "lead" | "contact" | "deal" | "company";
 		// Resolve P-007 / D-001 / C-005 → internal entityId via the shared resolver.
 		const resolved = (await ctx.runMutation(internal.ai.aiEntityPatch.resolveEntityCode, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			entityType: args.entityType,
+			entityType,
 			code: args.entityCode,
 		})) as { entityId: string; canonicalCode: string };
 		await ctx.runMutation(internal.crm.shared.tags.mutations.attachToEntityForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
 			tagId: args.tagId as Id<"tags">,
-			entityType: args.entityType,
+			entityType,
 			entityId: resolved.entityId,
 		});
 		return ok({
@@ -331,7 +343,7 @@ const attachTag = defineCapability<{
 			],
 			data: {
 				tagId: args.tagId,
-				entityType: args.entityType,
+				entityType,
 				entityId: resolved.entityId,
 				entityCode: resolved.canonicalCode,
 			},
@@ -343,7 +355,7 @@ const attachTag = defineCapability<{
 
 const detachTag = defineCapability<{
 	tagId: string;
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	entityCode: string;
 }>({
 	name: "detach_tag",
@@ -366,22 +378,29 @@ const detachTag = defineCapability<{
 	},
 	input: z.object({
 		tagId: z.string().min(1).describe("The tag's Convex _id."),
-		entityType: ENTITY_TYPE.describe("Which entity kind to detach from."),
+		entityType: entityTypeSchema().describe(
+			"Which entity kind to detach from. Accepts the canonical type or an org-relabelled alias.",
+		),
 		entityCode: z.string().min(1).describe("Entity public code (P-NNN / D-NNN / C-NNN)."),
 	}),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType as "lead" | "contact" | "deal" | "company";
 		const resolved = (await ctx.runMutation(internal.ai.aiEntityPatch.resolveEntityCode, {
 			orgId: principal.orgId,
 			userId: principal.userId,
-			entityType: args.entityType,
+			entityType,
 			code: args.entityCode,
 		})) as { entityId: string; canonicalCode: string };
 		await ctx.runMutation(internal.crm.shared.tags.mutations.detachFromEntityForAI, {
 			orgId: principal.orgId,
 			userId: principal.userId,
 			tagId: args.tagId as Id<"tags">,
-			entityType: args.entityType,
+			entityType,
 			entityId: resolved.entityId,
 		});
 		return ok({
@@ -392,7 +411,7 @@ const detachTag = defineCapability<{
 			],
 			data: {
 				tagId: args.tagId,
-				entityType: args.entityType,
+				entityType,
 				entityId: resolved.entityId,
 				entityCode: resolved.canonicalCode,
 			},

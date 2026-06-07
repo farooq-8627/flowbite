@@ -173,7 +173,7 @@ export function NewTemplateView({ initialSourceKey }: { initialSourceKey?: strin
 
 			<OwnerSettingsCard
 				title="New industry template"
-				description="Pick a starting point. Cloning copies the source template's pipelines, fields, AI persona, and mock data into a new editable row. Starting from scratch lands you in the editor with empty slots — you'll fill them in tab-by-tab."
+				description="Pick a starting point. Cloning copies the source template's pipelines, fields, AI persona, and mock data into a new editable row. Starting from scratch lands you in the editor with empty slots. You'll fill them in tab-by-tab."
 			>
 				<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 					<button
@@ -219,7 +219,7 @@ export function NewTemplateView({ initialSourceKey }: { initialSourceKey?: strin
 				{mode === "clone" ? (
 					<OwnerSettingsCard
 						title="Source template"
-						description="Pick the row whose definition you want to copy. Identity fields below auto-fill from the chosen source — feel free to override."
+						description="Pick the row whose definition you want to copy. Identity fields below auto-fill from the chosen source. Feel free to override."
 					>
 						{templates.length === 0 ? (
 							<p className="text-sm text-muted-foreground">
@@ -274,7 +274,7 @@ export function NewTemplateView({ initialSourceKey }: { initialSourceKey?: strin
 
 				<OwnerSettingsCard
 					title="Identity"
-					description="The templateKey is the stable id stored in `org.industry`. It cannot be renamed later — choose carefully. Hyphens and lowercase only."
+					description="The templateKey is the stable id stored in `org.industry`. It cannot be renamed later. Choose carefully. Hyphens and lowercase only."
 				>
 					<div className="grid gap-4 sm:grid-cols-2">
 						<div className="flex flex-col gap-1.5 sm:col-span-2">
@@ -347,7 +347,7 @@ export function NewTemplateView({ initialSourceKey }: { initialSourceKey?: strin
 								onChange={(e) => setGroupKey(e.target.value)}
 								className="h-9 rounded-[var(--radius)] border border-input bg-background px-3 text-sm outline-none focus:border-ring"
 							>
-								<option value="">— select group —</option>
+								<option value="">select group</option>
 								{groups.map((g) => (
 									<option key={g.groupKey} value={g.groupKey}>
 										{g.label} ({g.groupKey})

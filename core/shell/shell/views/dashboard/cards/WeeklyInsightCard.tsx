@@ -65,7 +65,7 @@ export function WeeklyInsightCard({ orgId }: Props) {
 			await refresh({ orgId });
 			toast.success(
 				"Generating weekly insight",
-				"It will appear in a few seconds — visible to every member.",
+				"It will appear in a few seconds, visible to every member.",
 			);
 		} catch (err) {
 			toast.mutationError(err, "Could not generate weekly insight.");
@@ -107,7 +107,7 @@ export function WeeklyInsightCard({ orgId }: Props) {
 				<ul className="flex flex-col gap-1 text-xs text-muted-foreground">
 					<li className="flex gap-2 leading-relaxed">
 						<span className="text-primary">•</span>
-						<span>Pipeline movement — won, lost, advanced, stalled</span>
+						<span>Pipeline movement: won, lost, advanced, stalled</span>
 					</li>
 					<li className="flex gap-2 leading-relaxed">
 						<span className="text-primary">•</span>

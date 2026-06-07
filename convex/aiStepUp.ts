@@ -26,9 +26,14 @@ import { requireRole } from "./_shared/permissions/helpers";
 /** Token TTL — short enough to be hard to abuse, long enough that a slow re-run still finds it. */
 export const STEP_UP_TTL_MS = 5 * 60 * 1000;
 
-// Forward reference resolved after codegen — same pattern as `messages.ts`.
-const processChatRun = makeFunctionReference<"action", Record<string, unknown>, null>(
-	"ai/processChat:run",
+// A — V1-style inline approval (locked 2026-06-06). After a 2FA
+// confirm the user expects the SAME assistant bubble to keep
+// streaming, not a brand-new message. `confirmStepUp` schedules
+// `processChat.runResume`; the resume action re-enters `runAgent`
+// with the existing assistantMsgId so onTextDelta / onToolEvent
+// target the same row. See `convex/ai/processChat.ts` (added 2026-06-06).
+const processChatRunResume = makeFunctionReference<"action", Record<string, unknown>, null>(
+	"ai/processChat:runResume",
 );
 
 /**
@@ -203,24 +208,36 @@ export const confirmStepUp = orgMutation({
 			expiresAt: now + STEP_UP_TTL_MS,
 		});
 
-		// Append a synthetic user message so the agent has a clear cue to
-		// re-run the capability with the just-confirmed args.
-		const userMsgId = await ctx.db.insert("aiMessages", {
-			orgId: args.orgId,
-			conversationId: args.conversationId,
-			role: "user",
-			content: `[step-up confirmed] Re-run \`${args.capability}\` with the same arguments — the user has authorised the irreversible action.`,
-			createdAt: now,
+		// A — V1-style inline approval (locked 2026-06-06). The legacy
+		// V2 path inserted a synthetic user message ("[step-up
+		// confirmed] Re-run X with EXACTLY these arguments...") and
+		// scheduled a brand-new `processChat.run` action — which spawned
+		// a SECOND assistant message AFTER the original prose. The user
+		// reported this as a regression: V1 paused mid-stream and
+		// resumed in the SAME assistant message.
+		//
+		// New path: NO synthetic user message; flip the existing
+		// assistant message back to `streaming` so the UI hides the
+		// inline approval card; schedule `processChat.runResume` which
+		// re-enters `runAgent` with the same assistantMessageId, the
+		// fresh stepUpToken, and a synthesised "you may now continue"
+		// system cue (in-prompt, not persisted). The wrapper consumes
+		// the token before re-running the irreversible cap; the stream
+		// continues into the SAME bubble.
+		await ctx.db.patch(args.assistantMessageId, {
+			thinkingState: "thinking",
 		});
 
 		// Update conversation lastMessageAt so the history sort surfaces this thread.
 		await ctx.db.patch(args.conversationId, { lastMessageAt: now, updatedAt: now });
 
-		await ctx.scheduler.runAfter(0, processChatRun, {
+		await ctx.scheduler.runAfter(0, processChatRunResume, {
 			orgId: args.orgId,
 			userId,
 			conversationId: args.conversationId,
-			userMessageId: userMsgId,
+			assistantMessageId: args.assistantMessageId,
+			capability: args.capability,
+			capabilityArgs: args.args,
 			stepUpToken: token,
 		});
 

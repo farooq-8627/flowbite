@@ -42,6 +42,10 @@ const MODEL_LABEL: Record<string, string> = {
 	"mistral-large": "Mistral Large",
 	"nvidia-llama-3.3-70b": "Llama 3.3 70B (NVIDIA)",
 	"openrouter-llama-3.3-70b-free": "Llama 3.3 70B (Free)",
+	"openrouter-qwen3-coder-free": "Qwen3 Coder 480B (Free)",
+	"openrouter-qwen3-next-80b-free": "Qwen3 Next 80B (Free)",
+	"openrouter-glm-4.5-air-free": "GLM 4.5 Air (Free)",
+	"openrouter-gpt-oss-120b-free": "GPT-OSS 120B (Free)",
 	"kimi-k2": "Kimi K2",
 	"moonshot-v1-128k": "Moonshot v1 128k",
 	"moonshot-v1-32k": "Moonshot v1 32k",
@@ -67,7 +71,17 @@ const TIER_BADGE: Record<ModelTier, { label: string; className: string }> = {
 };
 
 function modelLabel(key: string) {
-	return MODEL_LABEL[key] ?? key;
+	if (MODEL_LABEL[key]) return MODEL_LABEL[key];
+	if (key.startsWith("dyn:")) {
+		const rest = key.slice(4);
+		const sep = rest.indexOf(":");
+		if (sep > 0) {
+			const id = rest.slice(sep + 1);
+			const noCreator = id.includes("/") ? id.slice(id.indexOf("/") + 1) : id;
+			return noCreator.replace(/:free$/, "");
+		}
+	}
+	return key;
 }
 
 export function AIPreferencesSection() {
@@ -100,7 +114,7 @@ export function AIPreferencesSection() {
 		<SettingsSection
 			id="ai.preferences"
 			title="AI Preferences"
-			description="Personal preferences for the AI assistant — saved per user."
+			description="Personal preferences for the AI assistant, saved per user."
 		>
 			<SettingsRow
 				label="Default model"
@@ -154,7 +168,7 @@ export function AIPreferencesSection() {
 
 			<SettingsRow
 				label="Auto-load entity context"
-				description="When viewing a lead/contact/deal, automatically include its summary in the next AI message. Free — no extra tokens until you send a message."
+				description="When viewing a lead/contact/deal, automatically include its summary in the next AI message. Free of charge, no extra tokens until you send a message."
 				compact
 			>
 				<Switch

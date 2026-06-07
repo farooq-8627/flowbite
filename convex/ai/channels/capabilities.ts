@@ -34,29 +34,24 @@ import type { Id } from "../../_generated/dataModel";
 import { defineCapability } from "../registry/define";
 import { defineGroup } from "../registry/groups";
 import { failed, ok, repair } from "../registry/result";
-import {
-	DEFAULT_WHATSAPP_TEMPLATES,
-	isWithinSessionWindow,
-	renderTemplateBody,
-	SESSION_WINDOW_MS,
-} from "./whatsappTemplates";
+import { isWithinSessionWindow, renderTemplateBody, SESSION_WINDOW_MS } from "./whatsappTemplates";
 
 // ─── Group ────────────────────────────────────────────────────────────────
 //
-// `seedTemplateIdsHint` is the static list of built-in ids used inside
-// the cached system-prompt playbook (the playbook is assembled once at
-// module-load — we don't have orgId at that point). At RUNTIME, every
-// repair envelope reads the org's *effective* template list from the
-// DB, so org admins who add a custom template see it surfaced in the
-// hint when the AI picks a wrong id.
-
-const seedTemplateIdsHint = DEFAULT_WHATSAPP_TEMPLATES.map((t) => t.id);
+// The playbook below is rendered once at module-load (cached prompt
+// prefix; no orgId available). It deliberately AVOIDS interpolating
+// the seed template ids — `whatsappTemplates` is per-org-mutable, and
+// hardcoding the seed list teaches the model a stale fact when an
+// admin adds / removes / renames a template (B.40). The runtime
+// `repair` envelope reads `whatsappTemplates` from the DB and surfaces
+// the org's *effective* list when a wrong id is passed, so the model
+// always self-corrects with the right hint.
 
 defineGroup({
 	name: "whatsapp",
 	playbook: `Send WhatsApp → call \`send_whatsapp\` with the recipient's personCode (P-NNN). The capability resolves the agent's outbound number, the recipient's phone, and the 24h customer-service window automatically.
 
-Within 24h of the lead's last inbound → pass \`message\` (free-form session text). Outside that window → pass \`templateId\` (built-ins: ${seedTemplateIdsHint.join(", ")} — the org may also have custom templates returned in the repair envelope) + \`templateVars\` filling every required variable. The capability rejects free-form out-of-window — that's a Twilio policy, not our choice.
+Within 24h of the lead's last inbound → pass \`message\` (free-form session text). Outside that window → pass \`templateId\` + \`templateVars\` filling every required variable. The org's effective template catalog (system seeds + admin-added rows in \`whatsappTemplates\`) is surfaced by the capability's repair envelope when you pick a wrong id — never hardcode template ids in your reply, and call \`describe_workspace\` first if you're unsure what's available. The capability rejects free-form out-of-window — that's a Twilio policy, not our choice.
 
 Don't fabricate template variables. If the agent didn't tell you the appointment time, ask via \`ask_user\` instead of guessing. The capability writes the outbound row into the lead's message box with \`authorType:"ai"\` (when the AI composed it) or \`"user"\` (when a human dictated the text verbatim) — \`onBehalfOf\` is always the acting agent.
 
@@ -64,12 +59,6 @@ If \`send_whatsapp\` returns \`not_found\` for the channel, Mode B isn't configu
 });
 
 // ─── send_whatsapp ────────────────────────────────────────────────────────
-
-// `seedTemplateIds` is the static list of seed template ids used in the
-// arg-schema description (rendered into the cached prompt prefix). The
-// runtime always reads the org's effective template list from the DB,
-// so org-custom templates are fully supported via the repair envelope.
-const seedTemplateIds = DEFAULT_WHATSAPP_TEMPLATES.map((t) => t.id);
 
 const sendWhatsappArgs = z
 	.object({
@@ -89,7 +78,7 @@ const sendWhatsappArgs = z
 			.string()
 			.optional()
 			.describe(
-				`Pre-approved template id when sending OUT-OF-WINDOW. Built-ins: ${seedTemplateIds.join(", ")}. Org-custom ids surface in the repair envelope when a wrong id is passed.`,
+				"Pre-approved template id when sending OUT-OF-WINDOW. The org's effective template list is surfaced in the repair envelope when an unknown id is passed; do NOT guess from a built-in list.",
 			),
 		templateVars: z
 			.record(z.string(), z.string())

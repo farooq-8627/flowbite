@@ -94,6 +94,7 @@ export const aiMessages = defineTable({
 			v.literal("thinking"),
 			v.literal("calling_tool"),
 			v.literal("streaming"),
+			v.literal("awaiting_approval"),
 			v.literal("done"),
 			v.literal("error"),
 		),
@@ -1260,3 +1261,88 @@ export const aiApiTokens = defineTable({
 	.index("by_hash", ["hash"])
 	.index("by_org", ["orgId"])
 	.index("by_user", ["orgId", "userId"]);
+
+/**
+ * 2026-06-06 — Dynamic AI provider model catalogs.
+ *
+ * Cache of `GET <baseUrl>/v1/models` per (provider, baseUrl). Lets the
+ * model picker surface EVERY model an OpenAI-compat provider exposes
+ * (e.g. ~300 OpenRouter models including Qwen3 Coder 480B and
+ * deepseek-chat-v3.x:free) instead of only the ~20 hand-listed in
+ * `convex/ai/modelRegistry.ts`. The static registry remains the SSOT
+ * for known-provider quality / tier metadata; dynamic catalogs ADD to
+ * it — they don't replace it.
+ *
+ * Lifecycle:
+ *   - Written by `convex/ai/providerCatalogActions.ts:refreshCatalog`
+ *     (Node action) on key save + every 24h cron tick.
+ *   - Read by V8 `convex/ai/providerCatalogQueries.ts:listForOrg` —
+ *     joined into the model picker via `useAvailableProviders`.
+ *   - 24h TTL is enforced at READ time (rows older than `expiresAt`
+ *     surface a `stale: true` flag — the cron normally refreshes them
+ *     before that, but a long quiet window won't break the UI).
+ *
+ * `providerKey` shape: `<provider>` for the default endpoint
+ * (e.g. `"openrouter"`, `"openai"`, `"moonshot"`) — or
+ * `<provider>|<baseUrl>` when a custom baseUrl differentiates two
+ * deployments (self-hosted NIM, .cn Moonshot, an LM Studio box). One
+ * row per `providerKey`.
+ *
+ * Storage shape: an array of normalised `{ id, label, contextLength,
+ * supportsTools, isFree }` rows. Normalisation lives in the action so
+ * V8 readers don't have to understand each provider's response shape.
+ *
+ * Sources:
+ *   - https://openrouter.ai/api/v1/models (OpenAI-compat list endpoint)
+ *   - https://platform.openai.com/docs/api-reference/models/list (OpenAI shape)
+ *   - https://docs.api.nvidia.com/nim/reference/models-list (NIM)
+ *
+ * Indexes:
+ *   - `by_providerKey` — point lookup; used by the upsert path + the
+ *     read query. The table holds ≤ 10 rows in practice (one per
+ *     supported OpenAI-compat provider) so a sparse index is enough.
+ *   - `by_expiresAt` — used by the daily refresh cron (range scan +
+ *     `.take(20)` — bounded).
+ */
+export const aiProviderCatalogs = defineTable({
+	/**
+	 * Composite cache key. Default endpoint → just the provider id; a
+	 * non-default `baseUrl` adds the `|<baseUrl>` suffix so multiple
+	 * deployments of the same provider don't collide.
+	 */
+	providerKey: v.string(),
+	/** Provider id from `convex/ai/encryptionTypes:ProviderId`. */
+	provider: v.string(),
+	/** baseUrl that produced this catalog, or null for the provider default. */
+	baseUrl: v.optional(v.string()),
+	/**
+	 * Normalised model rows. `id` is the provider-native model slug
+	 * (`qwen/qwen3-coder:free`, `kimi-k2-0711-preview`, etc.) — the
+	 * picker prefixes `dyn:<provider>:` to it before persisting on a
+	 * user's preference, so resolver code can split on the FIRST colon
+	 * to recover provider + slug without confusing the `:free` suffix.
+	 *
+	 * `isFree` is heuristic: true when both prompt + completion pricing
+	 * are zero (OpenRouter's convention) OR the slug ends in `:free`.
+	 */
+	models: v.array(
+		v.object({
+			id: v.string(),
+			label: v.string(),
+			contextLength: v.optional(v.number()),
+			supportsTools: v.boolean(),
+			isFree: v.boolean(),
+			// Optional creator name surfaced as the group label in the
+			// picker (e.g. "Qwen", "DeepSeek", "Mistral"). Falls back to
+			// the provider id when missing.
+			creator: v.optional(v.string()),
+		}),
+	),
+	/** Best-effort source of the row — `key-save` or `cron` or `manual`. */
+	lastFetchSource: v.optional(v.string()),
+	fetchedAt: v.number(),
+	/** `fetchedAt + 24h`. The refresh cron sweeps rows past this stamp. */
+	expiresAt: v.number(),
+})
+	.index("by_providerKey", ["providerKey"])
+	.index("by_expiresAt", ["expiresAt"]);

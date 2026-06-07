@@ -142,7 +142,7 @@ export function NotesSingleBoard({
 	highlightEpoch,
 	showAddButton = true,
 	emptyTitle = "No notes yet",
-	emptyDescription = "Drop a sticky note here. Drag cards to reorder them — the layout is yours.",
+	emptyDescription = "Drop a sticky note here. Drag cards to reorder them, the layout is yours.",
 	attachmentDisplays,
 }: NotesSingleBoardProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -185,7 +185,7 @@ export function NotesSingleBoard({
 	async function handleAdd() {
 		const orgId = notes?.[0]?.orgId ?? categories?.[0]?.orgId;
 		if (!orgId) {
-			toast.error("Workspace not ready yet — try again in a moment.");
+			toast.error("Workspace not ready yet. Try again in a moment.");
 			return;
 		}
 		const categoryId = defaultCategoryId ?? categories?.find((c) => c.isDefault)?._id;

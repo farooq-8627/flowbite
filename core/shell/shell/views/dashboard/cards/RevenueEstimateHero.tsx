@@ -138,7 +138,7 @@ export function RevenueEstimateHero({ orgId, orgSlug, className }: RevenueEstima
 						title="Estimate revenue from your deals"
 						body={
 							hasPipelines
-								? "Add your first deal to see a weighted revenue forecast — sum of every open deal's value × its stage probability."
+								? "Add your first deal to see a weighted revenue forecast. That's the sum of every open deal's value times its stage probability."
 								: "Set up a sales pipeline and add a few deals to see a weighted revenue forecast right here."
 						}
 						primary={{

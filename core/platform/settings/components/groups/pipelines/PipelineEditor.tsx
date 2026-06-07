@@ -163,14 +163,14 @@ function StageRow({
 
 	const handleDelete = async () => {
 		if (isDefault) {
-			toast.error("The Default stage can't be removed — every pipeline must have one.");
+			toast.error("The Default stage can't be removed. Every pipeline must have one.");
 			return;
 		}
 		if (!confirm(`Remove stage "${stage.name}"? This cannot be undone.`)) return;
 		try {
 			await removeStage({ orgId, pipelineId, stageId: stage.id });
 		} catch (err) {
-			toast.error(normalizeError(err, "Cannot remove stage — it may have active deals"));
+			toast.error(normalizeError(err, "Cannot remove stage. It may have active deals"));
 		}
 	};
 
@@ -191,7 +191,7 @@ function StageRow({
 						? "cursor-not-allowed opacity-30"
 						: "cursor-grab hover:text-foreground active:cursor-grabbing",
 				)}
-				aria-label={isDefault ? "Default stage — pinned" : "Drag to reorder"}
+				aria-label={isDefault ? "Default stage, pinned" : "Drag to reorder"}
 				disabled={isDefault}
 				{...(isDefault ? {} : attributes)}
 				{...(isDefault ? {} : listeners)}
@@ -432,7 +432,7 @@ function StageAdvancedSettingsDialog({
 			return "Warning threshold must be smaller than the stale threshold.";
 		}
 		if (isFinalDraft && !finalTypeDraft) {
-			return "Pick a final type — positive (won), negative (lost), or neutral.";
+			return "Pick a final type: positive (won), negative (lost), or neutral.";
 		}
 		return null;
 	}, [staleDraft, warningDraft, isFinalDraft, finalTypeDraft]);
@@ -466,7 +466,7 @@ function StageAdvancedSettingsDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-md">
 				<DialogHeader>
-					<DialogTitle>Advanced settings — {stage.name}</DialogTitle>
+					<DialogTitle>Advanced settings: {stage.name}</DialogTitle>
 					<DialogDescription>
 						Stale &amp; warning thresholds drive the indicator on each deal card.
 						Marking the stage as final tells reports it's a closed state.
@@ -877,7 +877,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 								)}
 								title={
 									isDef
-										? "Fields every deal in this pipeline carries — always present, no matter the stage"
+										? "Fields every deal in this pipeline carries, always present, no matter the stage"
 										: `Fields specific to the ${s.name} stage`
 								}
 							>

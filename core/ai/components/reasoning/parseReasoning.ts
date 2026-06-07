@@ -45,7 +45,13 @@ const TOOL_ERR_RE = /^✗\s*`([^`]+)`\s+failed:\s*(.*)$/u;
  */
 export function parseReasoning(
 	reasoning: string | null | undefined,
-	currentState?: "thinking" | "calling_tool" | "streaming" | "done" | "error",
+	currentState?:
+		| "thinking"
+		| "calling_tool"
+		| "streaming"
+		| "awaiting_approval"
+		| "done"
+		| "error",
 	activeTool?: string | null,
 ): ParsedStep[] {
 	if (!reasoning) return [];

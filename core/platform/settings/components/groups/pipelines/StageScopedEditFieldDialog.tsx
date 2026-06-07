@@ -241,7 +241,7 @@ export function StageScopedEditFieldDialog({
 									}
 								>
 									{isUnpinned
-										? "Not pinned to any stage — this field is invisible on every form. Pick at least one stage below."
+										? "Not pinned to any stage. This field is invisible on every form. Pick at least one stage below."
 										: `Pinned to ${showInStages.length} of ${stages.length} stages.`}
 								</p>
 							</div>

@@ -35,7 +35,7 @@ defineGroup({
 	name: "settings",
 	playbook: `Workspace settings edits are IRREVERSIBLE — they reshape the org's data shape (entity labels, slugs, module defaults). Every settings capability requires a 2FA step-up, blocked over WhatsApp. Always summarise the proposed change in the assistant text BEFORE the user confirms; never settle a change without naming what changed and what the previous value was.
 
-Use \`update_org_settings\` for currency / timezone / softDeleteRetentionDays / taskDefaults / fileUpload edits. Use \`set_entity_default_view\` to flip a slot's defaultView. Use \`rename_entity_labels\` for renaming "Lead" → "Inquiry" etc. (slugs validated against the SSOT reserved-slug list). The dashboardLayout is per-org via the platform-owner panel — locked decision #13 — the AI does NOT write the canonical dashboard layout from chat.`,
+Use \`update_org_settings\` for currency / timezone / softDeleteRetentionDays / taskDefaults / taskTypes / fileUpload edits. Use \`set_entity_default_view\` to flip a slot's defaultView. Use \`rename_entity_labels\` for renaming "Lead" → "Inquiry" etc. (slugs validated against the SSOT reserved-slug list). The dashboardLayout is per-org via the platform-owner panel — locked decision #13 — the AI does NOT write the canonical dashboard layout from chat.`,
 });
 
 defineGroup({
@@ -54,6 +54,7 @@ const ALLOWED_SETTING_KEYS = new Set([
 	"badgeCountsVisible",
 	"codePrefixes",
 	"taskDefaults",
+	"taskTypes",
 	"briefingDefaults",
 	"fileUpload",
 	"softDeleteRetentionDays",
@@ -70,7 +71,7 @@ const updateOrgSettings = defineCapability<{
 	channels: ["chat", "mcp", "rest"],
 	spec: {
 		whenToCall:
-			"Edit a top-level org settings field (currency, timezone, lead stale-after-days, code prefixes, task defaults, file-upload caps, soft-delete retention). Allowed keys: defaultCurrency, timezone, leadStaleAfterDays, badgeCountsVisible, codePrefixes, taskDefaults, briefingDefaults, fileUpload, softDeleteRetentionDays.",
+			"Edit a top-level org settings field (currency, timezone, lead stale-after-days, code prefixes, task defaults, task-type catalog, file-upload caps, soft-delete retention). Allowed keys: defaultCurrency, timezone, leadStaleAfterDays, badgeCountsVisible, codePrefixes, taskDefaults, taskTypes, briefingDefaults, fileUpload, softDeleteRetentionDays.",
 		whenNotToCall:
 			"the user wants to flip an entity's default view (use set_entity_default_view), rename a label (use rename_entity_labels), or change the dashboard layout (locked — not AI-writable per decision #13).",
 		requiredClarifications: ["settings"],
@@ -94,7 +95,7 @@ const updateOrgSettings = defineCapability<{
 				message: "Pass at least one setting to change.",
 			})
 			.describe(
-				"Object of allowed top-level settings keys (defaultCurrency, timezone, leadStaleAfterDays, badgeCountsVisible, codePrefixes, taskDefaults, briefingDefaults, fileUpload, softDeleteRetentionDays).",
+				"Object of allowed top-level settings keys (defaultCurrency, timezone, leadStaleAfterDays, badgeCountsVisible, codePrefixes, taskDefaults, taskTypes, briefingDefaults, fileUpload, softDeleteRetentionDays).",
 			),
 	}),
 	run: async (cap, args) => {

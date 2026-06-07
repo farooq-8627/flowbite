@@ -40,7 +40,7 @@ export function TimelineSection() {
 		<SettingsSection
 			id="notes.timeline"
 			title="Timeline Display"
-			description="Choose which event types surface on entity, profile, and org-wide timelines. Only affects what YOU see — the activity log is always written. Stored on this device."
+			description="Choose which event types surface on entity, profile, and org-wide timelines. Only affects what YOU see. The activity log is always written. Stored on this device."
 			action={
 				<Button
 					type="button"

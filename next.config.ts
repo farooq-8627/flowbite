@@ -12,7 +12,7 @@ import createNextIntlPlugin from "next-intl/plugin";
 //   - `tsconfig` sets `"module": "esnext"`, so tsc type-checks this file as
 //     ESM where `__dirname` is undefined.
 //   - But the project has no `"type": "module"`, so Next compiles the config
-//     to CJS — and any `import.meta` usage flips Next's loader to ESM output,
+//     to CJS, and any `import.meta` usage flips Next's loader to ESM output,
 //     which then throws `ReferenceError: exports is not defined` at load time.
 //   - `process.cwd()` is valid + typed in BOTH module systems (the file
 //     already reads `process.env` throughout) and never triggers that switch.
@@ -28,12 +28,12 @@ const projectRoot = process.cwd();
 //
 //   - Strict-Transport-Security: pin HTTPS for 2 years, include subdomains,
 //     and request preload listing.
-//   - X-Frame-Options: DENY all framing — prevents clickjacking.
-//   - X-Content-Type-Options: nosniff — block MIME-sniffing attacks.
-//   - Referrer-Policy: strict-origin-when-cross-origin — ship origin to
+//   - X-Frame-Options: DENY all framing, prevents clickjacking.
+//   - X-Content-Type-Options: nosniff, block MIME-sniffing attacks.
+//   - Referrer-Policy: strict-origin-when-cross-origin, ship origin to
 //     same-site, omit on downgrade.
 //   - Permissions-Policy: turn off browser APIs we don't use (camera/mic
-//     stay off; we don't have voice yet — Phase 3C will revisit).
+//     stay off; we don't have voice yet, Phase 3C will revisit).
 //   - Content-Security-Policy: lock down third-party script + connect
 //     origins. We allow:
 //       * 'self' for our own assets.
@@ -55,7 +55,7 @@ const projectRoot = process.cwd();
 //     deploys run in enforce mode automatically when `NODE_ENV === "production"`.
 //
 // To rotate the Convex deployment URL, update NEXT_PUBLIC_CONVEX_URL in
-// `.env.production` — the CSP reads it at build time via process.env.
+// `.env.production`, the CSP reads it at build time via process.env.
 
 const isProd = process.env.NODE_ENV === "production";
 
@@ -138,7 +138,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
 	// Pin Turbopack's workspace root to THIS project. Without this, Next
-	// infers the root from the highest pnpm-lock.yaml on the path — which
+	// infers the root from the highest pnpm-lock.yaml on the path, which
 	// (per the warning users were seeing) sometimes finds a stray lockfile
 	// in `~/` and complains about ambiguity. Pinning here silences the
 	// warning AND guarantees deterministic resolution.
@@ -193,7 +193,7 @@ export default withNextIntl(
 		widenClientFileUpload: true,
 
 		// Skip source-map upload entirely if Sentry isn't configured for this build.
-		// `disableLogger` was removed in 2026-06-06 — replaced by
+		// `disableLogger` was removed in 2026-06-06, replaced by
 		// `webpack.treeshake.removeDebugLogging` below, which is the
 		// non-deprecated equivalent (and the only form Turbopack honours).
 		sourcemaps: {

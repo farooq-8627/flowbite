@@ -150,6 +150,53 @@ export function getModel(args: {
 
 	let modelKey = args.modelKey ?? null;
 	if (!modelKey) modelKey = process.env.AI_DEFAULT_MODEL ?? PLATFORM_DEFAULT_MODEL;
+
+	// 2026-06-06 — Dynamic catalog entries use the modelKey shape
+	// `dyn:<provider>:<modelId>`. Recognise it BEFORE the legacy colon
+	// strip below (which was only ever there for namespaced static keys
+	// like `anthropic:claude-sonnet-4-5`). Split on the FIRST colon so a
+	// modelId containing its own `:free` suffix survives unmangled.
+	if (modelKey.startsWith("dyn:")) {
+		const rest = modelKey.slice(4); // drop "dyn:" prefix
+		const sep = rest.indexOf(":");
+		if (sep > 0) {
+			const dynProvider = rest.slice(0, sep) as ProviderId;
+			const dynModelId = rest.slice(sep + 1);
+			// Pick the key + baseUrl for this provider. BYOK first, then
+			// platform-DB, then env. Same precedence the registry path uses.
+			let apiKey: string | null = null;
+			let baseUrl: string | undefined;
+			let usageMode: "platform" | "byok" = "platform";
+			if (resolvedKey && decryptedKey) {
+				apiKey = decryptedKey;
+				baseUrl = resolvedKey.baseUrl ?? undefined;
+				usageMode = "byok";
+			} else {
+				const pk = platformKeyFor(dynProvider);
+				if (pk) {
+					apiKey = pk.key;
+					baseUrl = pk.baseUrl;
+				}
+			}
+			if (!apiKey) {
+				throw new Error(`Platform API key not configured: ${dynProvider}`);
+			}
+			return {
+				model: buildLanguageModel({
+					provider: dynProvider,
+					modelId: dynModelId,
+					apiKey,
+					baseUrl,
+				}),
+				provider: dynProvider,
+				modelKey,
+				modelId: dynModelId,
+				tier: "small",
+				usageMode,
+			};
+		}
+	}
+
 	if (modelKey.includes(":")) modelKey = modelKey.split(":")[1];
 
 	const info = MODEL_REGISTRY[modelKey] ?? MODEL_REGISTRY[PLATFORM_DEFAULT_MODEL];

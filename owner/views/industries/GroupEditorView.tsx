@@ -105,7 +105,7 @@ export function GroupEditorView({ groupKey }: { groupKey: string }) {
 				<GroupForm
 					initial={initial}
 					title={`Group · ${group.label}`}
-					description={`Stable key: ${groupKey}. Drives step 1 of the onboarding picker. Uniqueness key — cannot be renamed; remove + recreate to change.`}
+					description={`Stable key: ${groupKey}. Drives step 1 of the onboarding picker. Uniqueness key, cannot be renamed; remove + recreate to change.`}
 					onSubmit={async (data) => {
 						await updateGroup({
 							groupKey,
@@ -285,7 +285,7 @@ function GroupForm({
 						</LabelledField>
 						<LabelledField
 							label="Sort order"
-							hint="Ascending — lower comes first."
+							hint="Ascending: lower comes first."
 							error={form.formState.errors.sortOrder?.message?.toString()}
 						>
 							<Input

@@ -37,7 +37,13 @@ import { cn } from "@/lib/utils";
 import { parseReasoning } from "./parseReasoning";
 import { ReasoningStepCard } from "./ReasoningStepCard";
 
-export type ThinkingState = "thinking" | "calling_tool" | "streaming" | "done" | "error";
+export type ThinkingState =
+	| "thinking"
+	| "calling_tool"
+	| "streaming"
+	| "awaiting_approval"
+	| "done"
+	| "error";
 
 interface Props {
 	state: ThinkingState | undefined;
@@ -131,6 +137,8 @@ export function ReasoningPanel({ state, activeTool, reasoning }: Props) {
 					: "Calling tool…";
 			case "streaming":
 				return hasContent ? "Reasoning" : "Writing response…";
+			case "awaiting_approval":
+				return "Awaiting your confirmation";
 			case "error":
 				return "Reasoning · failed";
 			case "done":

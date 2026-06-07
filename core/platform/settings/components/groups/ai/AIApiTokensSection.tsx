@@ -225,7 +225,7 @@ export function AIApiTokensSection({ orgId }: { orgId: Id<"orgs"> }) {
 		<SettingsSection
 			id="ai.apiTokens"
 			title="API Tokens (MCP + REST)"
-			description="Personal access tokens for external agents using the MCP or REST projectors. Each token executes under YOUR RBAC — anyone holding a token can do exactly what you can do in this workspace. Plaintext is shown once at creation and never again."
+			description="Personal access tokens for external agents using the MCP or REST projectors. Each token executes under YOUR RBAC. Anyone holding a token can do exactly what you can do in this workspace. Plaintext is shown once at creation and never again."
 			action={
 				canManage ? (
 					<Button
@@ -582,7 +582,7 @@ function IssueTokenDialog({
 						</div>
 						<p className="text-xs text-muted-foreground">
 							{wildcard
-								? "Wildcard tokens can call every capability you have RBAC for. The server-side gate is still your role — the token never escalates beyond what you can do."
+								? "Wildcard tokens can call every capability you have RBAC for. The server-side gate is still your role. The token never escalates beyond what you can do."
 								: "Pick the capabilities the holder can call. Anything you don't tick will return a 403 from the projectors."}
 						</p>
 						{!wildcard && (

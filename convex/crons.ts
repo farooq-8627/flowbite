@@ -257,4 +257,24 @@ crons.cron(
 	{},
 );
 
+/**
+ * Daily refresh of the dynamic AI provider model catalogs (07:30 UTC).
+ *
+ * Reads `aiProviderCatalogs` rows whose `expiresAt < now` (24h TTL on
+ * each row) and re-fetches `/v1/models` from each provider with whatever
+ * key is available (platform DB → env). One row per (provider, baseUrl);
+ * bounded `.take(20)` per tick so a swamped fetch loop drains over
+ * multiple ticks.
+ *
+ * Failure-tolerant — a flaky provider just keeps showing the stale
+ * cached entry until the next tick succeeds.
+ */
+crons.interval(
+	"refresh-provider-catalogs",
+	{ hours: 24 },
+	// biome-ignore lint/suspicious/noExplicitAny: pre-codegen forward ref ("use node" action)
+	"ai/providerCatalogActions:refreshExpiredCatalogs" as any,
+	{},
+);
+
 export default crons;

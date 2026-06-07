@@ -370,7 +370,7 @@ function IdentityTab({ template, groups }: { template: TemplateRow; groups: Grou
 	return (
 		<OwnerSettingsCard
 			title={`${template.label} · identity`}
-			description={`Stable templateKey: ${template.templateKey} (uniqueness key — cannot be renamed; remove + recreate to change).`}
+			description={`Stable templateKey: ${template.templateKey} (uniqueness key, cannot be renamed; remove + recreate to change).`}
 		>
 			<Form {...form}>
 				<form

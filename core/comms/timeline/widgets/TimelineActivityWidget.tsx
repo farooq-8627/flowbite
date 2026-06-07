@@ -83,7 +83,7 @@ export function TimelineActivityWidget({ orgSlug, limit = 6 }: TimelineActivityW
 						action: {
 							label: "Ask AI to create a lead",
 							chatPrefillIntent:
-								"Create a new lead — pick a name and seed the basics.",
+								"Create a new lead, pick a name and seed the basics.",
 						},
 					}}
 					className="min-h-0"

@@ -124,7 +124,7 @@ export function TimelineComposer({
 					disabled
 					className="size-8"
 					aria-label="Attach file (coming soon)"
-					title="Attachments — coming soon"
+					title="Attachments, coming soon"
 				>
 					<PaperclipIcon className="size-4" />
 				</Button>

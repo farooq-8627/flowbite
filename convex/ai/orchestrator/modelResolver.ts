@@ -54,14 +54,27 @@ export async function resolveModelAndKey(args: {
 	plan: OrgPlan;
 }): Promise<ResolvedModel> {
 	const requestedModelKey = args.requestedModel ?? args.defaultModel ?? null;
-	const registryEntry = requestedModelKey
-		? MODEL_REGISTRY[
-				requestedModelKey.includes(":")
-					? (requestedModelKey.split(":")[1] ?? requestedModelKey)
-					: requestedModelKey
-			]
-		: undefined;
+
+	// Dynamic catalog entries use `dyn:<provider>:<modelId>`. Provider
+	// comes off the FIRST colon (split on first only — modelId can carry
+	// its own `:` for `:free`-suffixed slugs). For static keys, fall
+	// back to the legacy registry lookup.
+	let dynamicProvider: string | null = null;
+	if (requestedModelKey?.startsWith("dyn:")) {
+		const rest = requestedModelKey.slice(4);
+		const sep = rest.indexOf(":");
+		if (sep > 0) dynamicProvider = rest.slice(0, sep);
+	}
+	const registryEntry =
+		!dynamicProvider && requestedModelKey
+			? MODEL_REGISTRY[
+					requestedModelKey.includes(":")
+						? (requestedModelKey.split(":")[1] ?? requestedModelKey)
+						: requestedModelKey
+				]
+			: undefined;
 	const provider = (args.requestedProvider ??
+		dynamicProvider ??
 		registryEntry?.provider ??
 		args.defaultProvider ??
 		"anthropic") as string;

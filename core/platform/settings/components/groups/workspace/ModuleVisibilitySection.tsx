@@ -60,7 +60,7 @@ export function ModuleVisibilitySection({ org, orgId }: { org: OrgSettings; orgI
 		<SettingsSection
 			id="workspace.modules"
 			title="Module Visibility"
-			description="Hide CRM entities you don't use from the sidebar. Data is preserved — toggle back on at any time."
+			description="Hide CRM entities you don't use from the sidebar. Data is preserved, toggle back on at any time."
 		>
 			{ENTITY_KEYS.map((slot) => {
 				const hidden = isHidden(slot);

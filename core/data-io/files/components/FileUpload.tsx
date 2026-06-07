@@ -131,14 +131,14 @@ export function useFileAttachments({
 			const accepted: File[] = [];
 			for (const file of list) {
 				if (!isFileAllowed(file, effectiveCategories)) {
-					toast.error(`${file.name} — file type not allowed`, {
+					toast.error(`${file.name}: file type not allowed`, {
 						description:
 							"This field only accepts certain file categories. Pick a different file or ask an admin to update the field's settings.",
 					});
 					continue;
 				}
 				if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) {
-					toast.error(`${file.name} — exceeds ${maxSizeMb} MB`);
+					toast.error(`${file.name}: exceeds ${maxSizeMb} MB`);
 					continue;
 				}
 				accepted.push(file);
@@ -246,11 +246,11 @@ export function useBufferedFileUpload(
 			const accepted: File[] = [];
 			for (const file of list) {
 				if (!isFileAllowed(file, effectiveCategories)) {
-					toast.error(`${file.name} — file type not allowed`);
+					toast.error(`${file.name}: file type not allowed`);
 					continue;
 				}
 				if (maxSizeMb && file.size > maxSizeMb * 1024 * 1024) {
-					toast.error(`${file.name} — exceeds ${maxSizeMb} MB`);
+					toast.error(`${file.name}: exceeds ${maxSizeMb} MB`);
 					continue;
 				}
 				accepted.push(file);

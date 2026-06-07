@@ -81,7 +81,7 @@ export function useFileBuffer(orgId: Id<"orgs"> | undefined): FileBufferContextV
 			const accepted: File[] = [];
 			for (const file of list) {
 				if (!isFileAllowed(file, allowedFileTypes)) {
-					toast.error(`${file.name} — file type not allowed for this field`);
+					toast.error(`${file.name}: file type not allowed for this field`);
 					continue;
 				}
 				accepted.push(file);

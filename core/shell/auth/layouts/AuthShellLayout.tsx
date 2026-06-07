@@ -66,7 +66,7 @@ export function AuthShellLayout({ children, panel }: AuthShellLayoutProps) {
 									</h2>
 									<p className="text-sm opacity-80">
 										{panel?.bottomRight?.body ??
-											"Reach out to support — we're here for you."}
+											"Reach out to support, we're here for you."}
 									</p>
 								</div>
 							</div>

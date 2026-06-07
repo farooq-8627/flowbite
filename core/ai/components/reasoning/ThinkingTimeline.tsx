@@ -44,7 +44,13 @@ import type { AIMessage } from "../../types";
 import { parseReasoning } from "./parseReasoning";
 import { PendingTimelineRow, ThinkingTimelineRow, TimelineRow } from "./TimelineRow";
 
-export type ThinkingState = "thinking" | "calling_tool" | "streaming" | "done" | "error";
+export type ThinkingState =
+	| "thinking"
+	| "calling_tool"
+	| "streaming"
+	| "awaiting_approval"
+	| "done"
+	| "error";
 
 interface Props {
 	state: ThinkingState | undefined;

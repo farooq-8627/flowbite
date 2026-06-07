@@ -33,11 +33,16 @@
 import { z } from "zod";
 import { internal } from "../../../_generated/api";
 import type { Id } from "../../../_generated/dataModel";
+import {
+	CORE_ENTITY_TYPES,
+	entityTypeSchema,
+	isEntityTypeError,
+	validateEntityType,
+} from "../../../_shared/entityTypes";
 import { defineCapability } from "../../../ai/registry/define";
 import { defineGroup } from "../../../ai/registry/groups";
 import { ok } from "../../../ai/registry/result";
 
-const ENTITY_TYPE = z.enum(["lead", "contact", "deal", "company"]);
 const FIELD_TYPE = z.enum([
 	"text",
 	"number",
@@ -72,7 +77,7 @@ Permission: every write needs \`fieldDefinitions.manage\` (Owner / Admin). Reads
 // ─── create_field ───────────────────────────────────────────────────────────
 
 const createField = defineCapability<{
-	entityType: "lead" | "contact" | "deal" | "company";
+	entityType: string;
 	name: string;
 	label: string;
 	type:
@@ -136,7 +141,9 @@ const createField = defineCapability<{
 	},
 	input: z
 		.object({
-			entityType: ENTITY_TYPE.describe("Which entity owns this field."),
+			entityType: entityTypeSchema().describe(
+				"Which entity owns this field. Accepts canonical type or org-relabelled alias.",
+			),
 			name: z
 				.string()
 				.min(1)
@@ -187,12 +194,17 @@ const createField = defineCapability<{
 		),
 	run: async (cap, args) => {
 		const { ctx, principal } = cap;
+		const validated = await validateEntityType(cap, args.entityType, {
+			restrictTo: CORE_ENTITY_TYPES,
+		});
+		if (isEntityTypeError(validated)) return validated;
+		const entityType = validated.entityType;
 		const fieldId = (await ctx.runMutation(
 			internal.crm.fields.fieldDefinitions.mutations.createForAI,
 			{
 				orgId: principal.orgId,
 				userId: principal.userId,
-				entityType: args.entityType,
+				entityType,
 				name: args.name,
 				label: args.label,
 				labelAr: args.labelAr,
@@ -205,9 +217,9 @@ const createField = defineCapability<{
 			},
 		)) as Id<"fieldDefinitions">;
 		return ok({
-			headline: `Created ${args.entityType} field "${args.label}".`,
+			headline: `Created ${entityType} field "${args.label}".`,
 			changes: [
-				{ label: "Entity", value: args.entityType, emphasis: "unchanged" },
+				{ label: "Entity", value: entityType, emphasis: "unchanged" },
 				{ label: "Field", value: args.label, emphasis: "added" },
 				{ label: "Type", value: args.type, emphasis: "added" },
 				...(args.required

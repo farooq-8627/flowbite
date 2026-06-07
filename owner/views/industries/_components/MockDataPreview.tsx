@@ -34,7 +34,7 @@ export function MockDataPreview({ template }: { template: Doc<"platformTemplates
 		return (
 			<OwnerSettingsCard
 				title="Mock data"
-				description="Sample records seeded into new orgs alongside this template — leads, contacts, companies, deals, notes, tasks. Read-only in v1."
+				description="Sample records seeded into new orgs alongside this template: leads, contacts, companies, deals, notes, tasks. Read-only in v1."
 			>
 				<p className="text-sm text-muted-foreground">
 					No mock data configured for this template.
@@ -46,7 +46,7 @@ export function MockDataPreview({ template }: { template: Doc<"platformTemplates
 	return (
 		<OwnerSettingsCard
 			title="Mock data"
-			description="Sample records seeded into new orgs alongside this template. Read-only in v1 — full cross-reference editor lands in v2 (see Future-Enhancements §B for the plan)."
+			description="Sample records seeded into new orgs alongside this template. Read-only in v1. Full cross-reference editor lands in v2 (see Future-Enhancements §B for the plan)."
 		>
 			<Alert variant="default" className="mb-4 border-muted-foreground/20 bg-muted/40">
 				<AlertDescription className="text-xs leading-relaxed">

@@ -400,7 +400,7 @@ const CHAT_LANDING_TOUR_STEPS: TourStep[] = [
 	{
 		target: "landing-pulse",
 		title: "Today's pulse",
-		body: "Your morning briefing lives here — a one-paragraph summary of what changed in your workspace today.",
+		body: "Your morning briefing lives here: a one-paragraph summary of what changed in your workspace today.",
 	},
 	{
 		target: "landing-actions",

@@ -49,23 +49,37 @@
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
+import { dispatchRowKeys, fieldDefLookupFromDocs } from "../crm/shared/dynamicFieldDispatch";
 import { logFieldUpdates } from "./fieldUpdateLog";
 import { normaliseCode } from "./synonyms";
 
 // ─── Per-entity routing tables ──────────────────────────────────────────────
 //
-// COLUMN_KEYS is the SSOT — keep in lock-step with the entity update
-// mutation validators. A patch key in this set is forwarded to
-// `ctx.db.patch`; everything else is routed through `fieldValues`.
+// Keys that NEVER flow into a patch — they're either auto-generated codes
+// (personCode/dealCode/companyCode), foreign-key id fields the public update
+// validators don't accept, or table-id slots (leadId/contactId/dealId/companyId)
+// callers sometimes leak in. The dispatcher drops these UNCONDITIONALLY so a
+// model that misroutes them never hits an `ArgumentValidationError`.
+//
+// The previous `COLUMN_KEYS` allowlist (lead/contact/deal/company → fixed set
+// of column keys) was REMOVED 2026-06-06: column dispatch now reads the org's
+// live `fieldDefinitions` rows via `dispatchRowKeys` from
+// `crm/shared/dynamicFieldDispatch.ts`, so a column-backed field admin added
+// via the field manager (e.g. lead `industry`) flows through correctly without
+// any code change here.
 
 export type AIEntityType = "lead" | "contact" | "deal" | "company";
 
-const COLUMN_KEYS: Record<AIEntityType, ReadonlySet<string>> = {
-	lead: new Set(["displayName", "email", "phone", "status", "source", "assignedTo", "sortOrder"]),
-	contact: new Set(["displayName", "email", "phone", "companyId", "assignedTo", "sortOrder"]),
-	deal: new Set(["title", "value", "currency", "assignedTo", "expectedCloseDate", "sortOrder"]),
-	company: new Set(["name", "industry", "website", "size", "assignedTo", "sortOrder"]),
-};
+const BLOCKED_KEYS: ReadonlySet<string> = new Set([
+	"code",
+	"personCode",
+	"dealCode",
+	"companyCode",
+	"leadId",
+	"contactId",
+	"dealId",
+	"companyId",
+]);
 
 const PERMISSION_KEY: Record<AIEntityType, string> = {
 	lead: "leads.update",
@@ -156,60 +170,64 @@ export interface SplitPatchResult {
 /**
  * Decide for each key in `patch` whether it's a column write, a custom
  * `fieldValues` write, or an unknown key (no matching column AND no
- * matching `fieldDefinitions` row). Unknown keys are surfaced — never
- * silently dropped.
+ * matching `fieldDefinitions` row).
  *
- * `definitionsByName` is the org's full field-definitions index for the
- * entityType, keyed by `name`. The caller pre-fetches it once.
+ * Locked 2026-06-06 — fully `fieldDefinitions`-driven (no hardcoded
+ * column allowlist). Delegates to `dispatchRowKeys` from
+ * `crm/shared/dynamicFieldDispatch.ts`. Result shape preserved for
+ * existing callers (`applyEntityPatchByCodeImpl`).
  */
 export function splitPatchForEntity(args: {
 	entityType: AIEntityType;
 	patch: Record<string, unknown>;
 	definitionsByName: Map<string, Doc<"fieldDefinitions">>;
 }): SplitPatchResult {
-	const columnSet = COLUMN_KEYS[args.entityType];
-	const columnPatch: Record<string, unknown> = {};
-	const customFields: SplitPatchResult["customFields"] = [];
-	const unknownFields: string[] = [];
-
+	// Strip BLOCKED_KEYS first so they never reach the dispatcher (and
+	// their values are never accidentally surfaced as `unknownFields`).
+	const safePatch: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(args.patch)) {
 		if (value === undefined) continue;
-		// Defensive: never let a code-shaped key bleed into the column patch.
-		// This is what the original incident did — `code: "P-001"` got passed
-		// to `leads.update` and exploded. The helper catches it explicitly.
-		if (
-			key === "code" ||
-			key === "personCode" ||
-			key === "dealCode" ||
-			key === "companyCode" ||
-			key === "leadId" ||
-			key === "contactId" ||
-			key === "dealId" ||
-			key === "companyId"
-		) {
-			continue;
-		}
-
-		if (columnSet.has(key)) {
-			columnPatch[key] = value;
-			continue;
-		}
-
-		const def = args.definitionsByName.get(key);
-		if (def && (def.storage === "fieldValues" || def.storage === undefined)) {
-			customFields.push({ name: key, value, fieldId: def._id });
-			continue;
-		}
-
-		// Some templates store certain things on the row but expose them
-		// under the same name in fieldDefinitions (e.g. system "displayName").
-		// We've already handled the column case above, so anything left
-		// either lacks a definition (unknown) or is wired to "join" / "column"
-		// without a matching column key — surface it.
-		unknownFields.push(key);
+		if (BLOCKED_KEYS.has(key)) continue;
+		safePatch[key] = value;
 	}
 
-	return { columnPatch, customFields, unknownFields };
+	// Build the dispatcher's lookup from the caller's definitions map.
+	// `definitionsByName` is keyed by `def.name` (case-sensitive) — we
+	// re-project to the dispatcher's case-insensitive lookup that also
+	// keys on `def.label`. Single pass.
+	const lookup = fieldDefLookupFromDocs(Array.from(args.definitionsByName.values()));
+
+	const dispatched = dispatchRowKeys(safePatch, lookup);
+
+	// Map customFields entries back onto `Doc<"fieldDefinitions">` ids
+	// — `applyEntityPatchByCodeImpl` writes into the `fieldValues` table
+	// keyed by `fieldId`, so we need the live row, not just the name.
+	const customFields: SplitPatchResult["customFields"] = [];
+	const unknownFields: string[] = [...dispatched.dropped];
+	for (const [name, value] of Object.entries(dispatched.customFields)) {
+		const def = args.definitionsByName.get(name);
+		if (!def) {
+			// dispatchRowKeys can only produce a customFields entry when
+			// the lookup matched, so we should always find the def here.
+			// Defensive surface: surface as unknown if it ever drifts.
+			unknownFields.push(name);
+			continue;
+		}
+		customFields.push({ name, value, fieldId: def._id });
+	}
+
+	// Join-storage fields aren't supported by `applyEntityPatchByCodeImpl`
+	// (tags etc. flow through dedicated tools). Surface them as unknown
+	// so the model gets a clear signal to use the right tool instead.
+	for (const name of Object.keys(dispatched.joinFields)) {
+		unknownFields.push(name);
+	}
+
+	return {
+		columnPatch: dispatched.columnArgs,
+		customFields,
+		unknownFields,
+	};
 }
 
 // ─── Custom-field upsert ────────────────────────────────────────────────────
@@ -495,7 +513,17 @@ export async function applyCustomFieldsForRecordImpl(
 	for (const [name, value] of Object.entries(args.customFields)) {
 		if (value === undefined || value === null) continue;
 		const def = defByName.get(name);
-		if (!def || (def.storage !== "fieldValues" && def.storage !== undefined)) {
+		if (!def) {
+			unknown.push(name);
+			continue;
+		}
+		// Reject column-backed and join-backed defs reaching this helper:
+		// the customFields slot is for fieldValues storage ONLY. A caller
+		// that passed a column-backed field name here (e.g. `status` for
+		// a lead) probably meant to set it via the entity update path —
+		// surface as `unknownFields[]` so the model gets a clear "use
+		// the right slot" signal instead of a silent double-write.
+		if (def.storage === "column" || def.storage === "join") {
 			unknown.push(name);
 			continue;
 		}

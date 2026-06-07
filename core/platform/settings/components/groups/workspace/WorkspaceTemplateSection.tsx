@@ -342,7 +342,7 @@ export function WorkspaceTemplateSection({ org, orgId }: { org: OrgSettings; org
 				<SettingsSection
 					id="workspace.sampleData"
 					title="Sample Data"
-					description="Your workspace was seeded with sample leads, contacts, deals, companies, notes, and reminders so it didn't feel empty on first open. Clear them once you've added your own — real data is never touched."
+					description="Your workspace was seeded with sample leads, contacts, deals, companies, notes, and reminders so it didn't feel empty on first open. Clear them once you've added your own. Real data is never touched."
 				>
 					<div className="flex flex-col gap-3 rounded-[var(--radius)] border border-amber-300/60 bg-amber-50/60 p-4 dark:border-amber-700/40 dark:bg-amber-950/20 sm:flex-row sm:items-center sm:justify-between">
 						<div className="flex items-start gap-3">

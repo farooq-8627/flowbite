@@ -276,8 +276,8 @@ export function TemplateEditorDrawer({
 						{mode === "create"
 							? "Built-in templates apply to every org that hasn't set its own override."
 							: isBuiltIn
-								? "Built-in template — edits propagate to every org without an override."
-								: "Org override — edits only affect this single workspace."}
+								? "Built-in template. Edits propagate to every org without an override."
+								: "Org override. Edits only affect this single workspace."}
 					</SheetDescription>
 				</SheetHeader>
 

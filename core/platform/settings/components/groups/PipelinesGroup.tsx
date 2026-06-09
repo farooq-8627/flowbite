@@ -27,9 +27,9 @@
  * pipeline.
  */
 
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -58,6 +58,11 @@ export function PipelinesGroup({ orgId }: { orgId: Id<"orgs"> }) {
 	const canManage = useOrgPermission(orgId, "pipelines.manage");
 	const createPipeline = useMutation(api.crm.fields.pipelines.mutations.create);
 	const ensureFields = useMutation(api.crm.fields.fieldDefinitions.mutations.ensureForOrg);
+
+	// Per-pipeline deal counts — drives the editor's Delete affordance.
+	// `undefined` while loading so the editor keeps the action disabled.
+	// Returns `Record<pipelineId, number>` once subscribed.
+	const dealCounts = useQuery(api.crm.fields.pipelines.queries.countByPipelines, { orgId });
 
 	// Self-heal pass — when the pipelines panel mounts we fire the
 	// idempotent `ensureForOrg` once. The seeder is a no-op for orgs that
@@ -98,6 +103,16 @@ export function PipelinesGroup({ orgId }: { orgId: Id<"orgs"> }) {
 	}, [dealPipelines, activeId, setActiveId]);
 
 	const activePipeline = dealPipelines?.find((p) => p._id === activeId);
+
+	// When the editor reports a successful delete, clear the persisted
+	// active id so the parent's auto-fallback effect picks the next
+	// available pipeline (or the dashed "Create your first pipeline"
+	// placard if none remain). Without this the persisted id hangs
+	// around for a tick and the editor briefly renders against a
+	// pipeline doc that no longer exists in the listByOrg subscription.
+	const handlePipelineDeleted = useCallback(() => {
+		setActiveId(undefined);
+	}, [setActiveId]);
 
 	const handleCreate = async () => {
 		const name = newName.trim();
@@ -267,6 +282,8 @@ export function PipelinesGroup({ orgId }: { orgId: Id<"orgs"> }) {
 									key={activePipeline._id}
 									pipeline={activePipeline}
 									orgId={orgId}
+									dealCount={dealCounts?.[activePipeline._id]}
+									onDeleted={handlePipelineDeleted}
 								/>
 							) : (
 								<div className="rounded-[var(--radius)] border border-dashed py-8 text-center text-sm text-muted-foreground">

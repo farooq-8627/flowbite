@@ -57,6 +57,9 @@ export async function seedFieldDefinitionsForOrg(
 		.collect();
 	const dealDefaultStageIds: string[] = [];
 	for (const p of dealPipelines) {
+		// Skip trashed pipelines — fields shouldn't be pinned to a
+		// soft-deleted pipeline's default stage.
+		if (p.deletedAt !== undefined) continue;
 		const def = p.stages.find((s) => s.isDefaultStage === true);
 		if (def) dealDefaultStageIds.push(def.id);
 	}

@@ -14,6 +14,7 @@ import { useMutation, useQuery } from "convex/react";
 import { PencilIcon, PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -75,6 +76,7 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const [addOpen, setAddOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingCompany, setEditingCompany] = useState<Doc<"companies"> | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 	const [search, setSearch] = useState("");
 	// Per-session view options — persisted to localStorage so they survive
 	// route changes and reloads. Stale entries that point at admin-hidden
@@ -323,15 +325,12 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		tagsByEntityId,
 		onDelete: async (row) => {
 			if (!orgId) return;
-			try {
-				await deleteCompany({
-					orgId,
-					companyId: (row._id ?? row.id) as Id<"companies">,
-				});
-				toast.success(`${labels.company.singular} deleted`);
-			} catch (err) {
-				toast.error(normalizeError(err, "Couldn't delete"));
-			}
+			const candidate = (row as unknown as { name?: unknown }).name;
+			const name = typeof candidate === "string" ? candidate : labels.company.singular;
+			setPendingDelete({
+				id: ((row._id ?? row.id) as string) ?? "",
+				name,
+			});
 		},
 		rowExtraActions: (row) => (
 			<DropdownMenuItem
@@ -435,6 +434,32 @@ export function CompaniesView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				orgId={orgId}
 				mode="edit"
 				company={editingCompany}
+			/>
+
+			<ConfirmDialog
+				open={pendingDelete !== null}
+				onOpenChange={(v) => {
+					if (!v) setPendingDelete(null);
+				}}
+				title={`Delete "${pendingDelete?.name ?? ""}"?`}
+				description={`The ${labels.company.singular.toLowerCase()} will be moved to trash. Owners can restore it from Settings → Data → Trash within the retention window.`}
+				confirmLabel={`Delete ${labels.company.singular.toLowerCase()}`}
+				busyLabel="Deleting…"
+				confirmVariant="destructive"
+				onConfirm={async () => {
+					if (!pendingDelete || !orgId) return;
+					try {
+						await deleteCompany({
+							orgId,
+							companyId: pendingDelete.id as Id<"companies">,
+						});
+						toast.success(`${labels.company.singular} moved to trash`);
+						setPendingDelete(null);
+					} catch (err) {
+						toast.error(normalizeError(err, "Couldn't delete"));
+						throw err;
+					}
+				}}
 			/>
 		</>
 	);

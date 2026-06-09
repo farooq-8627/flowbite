@@ -28,6 +28,7 @@ import { useMutation, useQuery } from "convex/react";
 import { CheckCircle2Icon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -178,6 +179,7 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	//  - Red dropdown / drag-to-Lost-stage (Lost — confirmation compulsory)
 	const [markDoneFor, setMarkDoneFor] = useState<Doc<"deals"> | null>(null);
 	const [markLostFor, setMarkLostFor] = useState<Doc<"deals"> | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
 	useQuickAddListener("create-deal", () => setAddOpen(true));
 
@@ -262,14 +264,9 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		hiddenColumnIds,
 		onDelete: async (row) => {
 			if (!orgId) return;
-			try {
-				await softDeleteDeal({ orgId, dealId: row.id as Id<"deals"> });
-				toast.success(`${labels.deal.singular} deleted`);
-			} catch (err) {
-				toast.error(`Couldn't delete ${labels.deal.singular.toLowerCase()}`, {
-					description: normalizeErrorDescription(err),
-				});
-			}
+			const candidate = (row as unknown as { title?: unknown }).title;
+			const name = typeof candidate === "string" ? candidate : labels.deal.singular;
+			setPendingDelete({ id: row.id as string, name });
 		},
 		rowExtraActions: (row) => (
 			<DropdownMenuItem
@@ -483,29 +480,17 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 							icon: Trash2Icon,
 							variant: "destructive",
 							separatorBefore: true,
-							onSelect: async () => {
+							onSelect: () => {
 								if (!orgId) return;
-								const title =
-									(item as Record<string, unknown>).title ??
-									(item as Record<string, unknown>).dealCode ??
-									"Untitled";
-								if (
-									!confirm(
-										`Delete ${labels.deal.singular.toLowerCase()} "${title}"?`,
-									)
-								)
-									return;
-								try {
-									await softDeleteDeal({ orgId, dealId: item.id as Id<"deals"> });
-									toast.success(`${labels.deal.singular} deleted`);
-								} catch (err) {
-									toast.error(
-										`Couldn't delete ${labels.deal.singular.toLowerCase()}`,
-										{
-											description: normalizeErrorDescription(err),
-										},
-									);
-								}
+								const titleVal = (item as Record<string, unknown>).title;
+								const codeVal = (item as Record<string, unknown>).dealCode;
+								const name =
+									typeof titleVal === "string"
+										? titleVal
+										: typeof codeVal === "string"
+											? codeVal
+											: labels.deal.singular;
+								setPendingDelete({ id: item.id as string, name });
 							},
 						},
 					];
@@ -603,6 +588,34 @@ export function DealsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 					onMarked={() => setMarkLostFor(null)}
 				/>
 			)}
+
+			<ConfirmDialog
+				open={pendingDelete !== null}
+				onOpenChange={(v) => {
+					if (!v) setPendingDelete(null);
+				}}
+				title={`Delete "${pendingDelete?.name ?? ""}"?`}
+				description={`The ${labels.deal.singular.toLowerCase()} will be moved to trash. Owners can restore it from Settings → Data → Trash within the retention window.`}
+				confirmLabel={`Delete ${labels.deal.singular.toLowerCase()}`}
+				busyLabel="Deleting…"
+				confirmVariant="destructive"
+				onConfirm={async () => {
+					if (!pendingDelete || !orgId) return;
+					try {
+						await softDeleteDeal({
+							orgId,
+							dealId: pendingDelete.id as Id<"deals">,
+						});
+						toast.success(`${labels.deal.singular} moved to trash`);
+						setPendingDelete(null);
+					} catch (err) {
+						toast.error(`Couldn't delete ${labels.deal.singular.toLowerCase()}`, {
+							description: normalizeErrorDescription(err),
+						});
+						throw err;
+					}
+				}}
+			/>
 		</>
 	);
 }

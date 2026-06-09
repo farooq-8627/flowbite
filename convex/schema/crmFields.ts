@@ -10,7 +10,7 @@
 
 import { defineTable } from "convex/server";
 import { v } from "convex/values";
-import { orgScoped, timestamps } from "../_shared/validators";
+import { orgScoped, softDelete, timestamps } from "../_shared/validators";
 
 /**
  * Deal pipelines with inline stages. Seeded on industry selection.
@@ -121,6 +121,7 @@ export const pipelines = defineTable({
 		}),
 	),
 	...timestamps,
+	...softDelete,
 })
 	.index("by_org", ["orgId"])
 	.index("by_org_and_entity", ["orgId", "entityType"])

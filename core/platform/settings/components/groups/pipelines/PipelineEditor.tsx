@@ -29,6 +29,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
 	Dialog,
 	DialogContent,
@@ -586,10 +587,101 @@ function StageAdvancedSettingsDialog({
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Delete-pipeline confirm dialog
+// ────────────────────────────────────────────────────────────────────────────
+//
+// Locked 2026-06-10 (per user): admins can delete any pipeline — including
+// the default — so long as it has zero deals. The UI surfaces a kebab
+// menu on the editor header. The Delete option is enabled only when the
+// pipeline's deal count is 0; otherwise it's disabled with a tooltip
+// explaining what to do (move/delete the deals first).
+//
+// When deleting the default pipeline, the dialog adds a callout that the
+// next pipeline will be auto-promoted to default — matches the backend
+// behaviour in `deletePipelineImpl`.
+//
+// Pipeline delete is now SOFT — `deletedAt` is set instead of removing
+// the row outright. Owners can restore from Settings → Data → Trash
+// during the retention window. The cron purges after the configured
+// retention. So the dialog copy says "moved to trash" rather than
+// "permanently removed".
+
+function DeletePipelineDialog({
+	open,
+	onOpenChange,
+	pipeline,
+	orgId,
+	onDeleted,
+}: {
+	open: boolean;
+	onOpenChange: (v: boolean) => void;
+	pipeline: Pipeline;
+	orgId: Id<"orgs">;
+	onDeleted: () => void;
+}) {
+	const deletePipeline = useMutation(api.crm.fields.pipelines.mutations.deletePipeline);
+
+	const handleDelete = async () => {
+		try {
+			await deletePipeline({ orgId, pipelineId: pipeline._id });
+			toast.success(`Pipeline "${pipeline.name}" moved to trash`);
+			onDeleted();
+		} catch (err) {
+			toast.error(normalizeError(err, "Failed to delete pipeline"));
+			throw err;
+		}
+	};
+
+	return (
+		<ConfirmDialog
+			open={open}
+			onOpenChange={onOpenChange}
+			title={`Delete "${pipeline.name}"?`}
+			description="The pipeline will be moved to trash. Owners can restore it from Settings → Data → Trash within the retention window. The pipeline currently has zero deals, so nothing will be orphaned."
+			callout={
+				pipeline.isDefault ? (
+					<div className="rounded-[var(--radius)] border border-amber-500/40 bg-amber-500/10 p-3 text-xs leading-snug">
+						<span className="font-medium">This is your default pipeline.</span> After
+						deletion, your next-oldest deal pipeline will automatically become the
+						default. If no other deal pipeline exists, you'll need to create one before
+						you can add new deals.
+					</div>
+				) : null
+			}
+			confirmLabel="Delete pipeline"
+			busyLabel="Deleting…"
+			confirmVariant="destructive"
+			onConfirm={handleDelete}
+		/>
+	);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Pipeline card — stages list + add-stage input
 // ────────────────────────────────────────────────────────────────────────────
 
-export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId: Id<"orgs"> }) {
+export function PipelineEditor({
+	pipeline,
+	orgId,
+	dealCount,
+	onDeleted,
+}: {
+	pipeline: Pipeline;
+	orgId: Id<"orgs">;
+	/**
+	 * Number of deals (incl. soft-deleted) currently referencing this
+	 * pipeline. Drives whether the Delete action is enabled. Pass
+	 * `undefined` while still loading to keep the action disabled.
+	 */
+	dealCount: number | undefined;
+	/**
+	 * Called after a successful delete so the parent can switch the
+	 * active editor pipeline (the now-deleted one no longer exists in
+	 * the listByOrg subscription, but the parent's persisted activeId
+	 * needs to be cleared).
+	 */
+	onDeleted: () => void;
+}) {
 	const reorderStages = useMutation(api.crm.fields.pipelines.mutations.reorderStages);
 	const addStage = useMutation(api.crm.fields.pipelines.mutations.addStage);
 	const updatePipeline = useMutation(api.crm.fields.pipelines.mutations.update);
@@ -600,6 +692,10 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 
 	// Inline pipeline-name edit (rename in place, blur to commit, Esc to cancel).
 	const [renameDraft, setRenameDraft] = useState<string | null>(null);
+
+	// Delete-pipeline confirm dialog open state.
+	const [deleteOpen, setDeleteOpen] = useState(false);
+	const canDelete = dealCount === 0;
 
 	// Active "stage tab" inside this pipeline editor — persisted per device
 	// so opening the settings page returns the user to the stage they were
@@ -738,7 +834,7 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 
 	return (
 		<div className="flex flex-col gap-4 rounded-[var(--radius)] border p-3">
-			{/* ── Header — rename only (settings live at the bottom) ─────── */}
+			{/* ── Header — rename + actions menu ──────────────────────── */}
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="flex min-w-0 flex-1 flex-col gap-1">
 					<div className="flex items-center gap-2">
@@ -773,6 +869,14 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 						)}
 						<span className="text-xs text-muted-foreground">
 							· {pipeline.entityType} · {stages.length} stages
+							{dealCount !== undefined && (
+								<>
+									{" · "}
+									{dealCount === 0
+										? "no deals"
+										: `${dealCount === 500 ? "500+" : dealCount} deal${dealCount === 1 ? "" : "s"}`}
+								</>
+							)}
 						</span>
 					</div>
 					<p className="text-[10px] leading-snug text-muted-foreground">
@@ -780,7 +884,66 @@ export function PipelineEditor({ pipeline, orgId }: { pipeline: Pipeline; orgId:
 						the bottom apply only to this pipeline.
 					</p>
 				</div>
+
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button
+							type="button"
+							size="icon"
+							variant="ghost"
+							className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+							aria-label="Pipeline actions"
+						>
+							<MoreHorizontal className="size-4" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-60">
+						<Tooltip>
+							<TooltipTrigger asChild>
+								{/* The TooltipTrigger child must be a single focusable
+								    element. Wrapping the disabled DropdownMenuItem in a
+								    span lets the tooltip anchor while the item itself
+								    handles disabled-state semantics. */}
+								<span tabIndex={canDelete ? -1 : 0}>
+									<DropdownMenuItem
+										onSelect={(e) => {
+											if (!canDelete) {
+												e.preventDefault();
+												return;
+											}
+											setDeleteOpen(true);
+										}}
+										disabled={!canDelete}
+										className={
+											canDelete
+												? "text-destructive focus:text-destructive"
+												: "opacity-50"
+										}
+									>
+										<Trash2 className="me-2 size-3.5" />
+										Delete pipeline
+									</DropdownMenuItem>
+								</span>
+							</TooltipTrigger>
+							{!canDelete && (
+								<TooltipContent side="left">
+									{dealCount === undefined
+										? "Loading deal count…"
+										: `Move or delete the ${dealCount === 500 ? "500+" : dealCount} deal${dealCount === 1 ? "" : "s"} in this pipeline first.`}
+								</TooltipContent>
+							)}
+						</Tooltip>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
+
+			<DeletePipelineDialog
+				open={deleteOpen}
+				onOpenChange={setDeleteOpen}
+				pipeline={pipeline}
+				orgId={orgId}
+				onDeleted={onDeleted}
+			/>
 
 			{/* ── Stages list (drag, rename, code, color, default, delete) ── */}
 			<div className="flex flex-col gap-2 rounded-[var(--radius)] border bg-muted/10 p-2">

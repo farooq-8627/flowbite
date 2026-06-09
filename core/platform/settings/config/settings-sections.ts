@@ -589,6 +589,23 @@ export function getSettingsSections(
 			permission: "org.editSettings",
 		},
 		{
+			id: "data.trash",
+			groupId: "data",
+			label: "Trash",
+			description: "Restore soft-deleted records during the retention window.",
+			keywords: [
+				"trash",
+				"deleted",
+				"restore",
+				"recycle",
+				"recover",
+				"undo delete",
+				"recently deleted",
+				...entityKeywords,
+			],
+			permission: "data.viewTrash",
+		},
+		{
 			id: "data.danger",
 			groupId: "data",
 			label: "Danger Zone",

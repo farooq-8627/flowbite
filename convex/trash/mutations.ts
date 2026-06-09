@@ -24,7 +24,7 @@ async function restoreImpl(
 	args: {
 		orgId: Id<"orgs">;
 		userId: Id<"users">;
-		entityType: "lead" | "contact" | "company" | "deal";
+		entityType: "lead" | "contact" | "company" | "deal" | "pipeline";
 		entityId: string;
 	},
 ) {
@@ -35,7 +35,9 @@ async function restoreImpl(
 				? "contacts"
 				: args.entityType === "company"
 					? "companies"
-					: "deals";
+					: args.entityType === "deal"
+						? "deals"
+						: "pipelines";
 
 	const row = await ctx.db.get(args.entityId as never);
 	if (!row || (row as { orgId?: string }).orgId !== args.orgId) {
@@ -68,6 +70,12 @@ async function restoreImpl(
 			await applyOrgStat(ctx, args.orgId, "deals.open", +1);
 			await applyOrgStat(ctx, args.orgId, "deals.total", +1);
 			break;
+		case "pipeline":
+			// Pipelines don't have stats counters; the row is back, that's
+			// the whole restore. The pipeline returns as a non-default
+			// pipeline (the org may have already promoted another to
+			// default during soft-delete; we don't auto-demote).
+			break;
 	}
 
 	await logActivity(ctx, {
@@ -90,6 +98,7 @@ export const restore = orgMutation({
 			v.literal("contact"),
 			v.literal("company"),
 			v.literal("deal"),
+			v.literal("pipeline"),
 		),
 		entityId: v.string(),
 	},
@@ -113,6 +122,7 @@ export const restoreForAI = internalMutation({
 			v.literal("contact"),
 			v.literal("company"),
 			v.literal("deal"),
+			v.literal("pipeline"),
 		),
 		entityId: v.string(),
 	},
@@ -142,7 +152,7 @@ export const purgeOldTrash = internalMutation({
 			const retentionDays = org.settings?.softDeleteRetentionDays ?? DEFAULT_RETENTION_DAYS;
 			const cutoff = now - retentionDays * 86_400_000;
 
-			const tables = ["leads", "contacts", "companies", "deals"] as const;
+			const tables = ["leads", "contacts", "companies", "deals", "pipelines"] as const;
 			for (const table of tables) {
 				const rows = await ctx.db
 					.query(table)
@@ -184,7 +194,7 @@ async function hardDeleteImpl(
 	args: {
 		orgId: Id<"orgs">;
 		userId: Id<"users">;
-		entityType: "lead" | "contact" | "company" | "deal";
+		entityType: "lead" | "contact" | "company" | "deal" | "pipeline";
 		entityId: string;
 	},
 ) {
@@ -195,7 +205,9 @@ async function hardDeleteImpl(
 				? "contacts"
 				: args.entityType === "company"
 					? "companies"
-					: "deals";
+					: args.entityType === "deal"
+						? "deals"
+						: "pipelines";
 
 	const row = await ctx.db.get(args.entityId as never);
 	if (!row || (row as { orgId?: string }).orgId !== args.orgId) {
@@ -208,28 +220,31 @@ async function hardDeleteImpl(
 		});
 	}
 
-	// Field values + tag links for this entity.
-	const fieldRows = await ctx.db
-		.query("fieldValues")
-		.withIndex("by_entity", (q) =>
-			q
-				.eq("orgId", args.orgId)
-				.eq("entityType", args.entityType)
-				.eq("entityId", args.entityId),
-		)
-		.collect();
-	for (const fv of fieldRows) await ctx.db.delete(fv._id);
+	// Field values + tag links cascade — only relevant to the 4 CRM
+	// entity types. Pipelines don't carry fieldValues or entityTags.
+	if (args.entityType !== "pipeline") {
+		const fieldRows = await ctx.db
+			.query("fieldValues")
+			.withIndex("by_entity", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
+			)
+			.collect();
+		for (const fv of fieldRows) await ctx.db.delete(fv._id);
 
-	const tagRows = await ctx.db
-		.query("entityTags")
-		.withIndex("by_entity", (q) =>
-			q
-				.eq("orgId", args.orgId)
-				.eq("entityType", args.entityType)
-				.eq("entityId", args.entityId),
-		)
-		.collect();
-	for (const t of tagRows) await ctx.db.delete(t._id);
+		const tagRows = await ctx.db
+			.query("entityTags")
+			.withIndex("by_entity", (q) =>
+				q
+					.eq("orgId", args.orgId)
+					.eq("entityType", args.entityType)
+					.eq("entityId", args.entityId),
+			)
+			.collect();
+		for (const t of tagRows) await ctx.db.delete(t._id);
+	}
 
 	await ctx.db.delete(args.entityId as never);
 
@@ -243,6 +258,9 @@ async function hardDeleteImpl(
 			break;
 		case "deal":
 			await applyOrgStat(ctx, args.orgId, "deals.total", -1);
+			break;
+		case "pipeline":
+			// Pipelines don't have stats counters.
 			break;
 	}
 
@@ -271,6 +289,7 @@ export const hardDelete = orgMutation({
 			v.literal("contact"),
 			v.literal("company"),
 			v.literal("deal"),
+			v.literal("pipeline"),
 		),
 		entityId: v.string(),
 	},
@@ -294,6 +313,7 @@ export const hardDeleteForAI = internalMutation({
 			v.literal("contact"),
 			v.literal("company"),
 			v.literal("deal"),
+			v.literal("pipeline"),
 		),
 		entityId: v.string(),
 	},

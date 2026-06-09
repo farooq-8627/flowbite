@@ -14,6 +14,7 @@ import { useQuery } from "convex/react";
 import { ArrowRightCircleIcon, PencilIcon, Undo2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -95,6 +96,7 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 	const [convertOpen, setConvertOpen] = useState(false);
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingContact, setEditingContact] = useState<Doc<"contacts"> | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 	const [search, setSearch] = useState("");
 	// Persisted view options — survive route changes / reloads.
 	// `cardFields:v2` (2026-05-18) — see LeadsView for context.
@@ -384,13 +386,12 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 		companiesByPersonCode,
 		onDelete: async (row) => {
 			if (!orgId) return;
-			const contactId = (row._id ?? row.id) as Id<"contacts">;
-			try {
-				await softDeleteContact({ orgId, contactId });
-				toast.success(`${labels.contact.singular} deleted`);
-			} catch (err) {
-				toast.error(normalizeError(err, "Failed to delete"));
-			}
+			const candidate = (row as unknown as { displayName?: unknown }).displayName;
+			const name = typeof candidate === "string" ? candidate : labels.contact.singular;
+			setPendingDelete({
+				id: ((row._id ?? row.id) as string) ?? "",
+				name,
+			});
 		},
 		rowExtraActions: (row) => {
 			const canRevert = !!row.leadId && canConvert === true;
@@ -545,6 +546,32 @@ export function ContactsView({ orgSlug: _orgSlug }: { orgSlug: string }) {
 				}}
 				orgId={orgId}
 				contact={editingContact}
+			/>
+
+			<ConfirmDialog
+				open={pendingDelete !== null}
+				onOpenChange={(v) => {
+					if (!v) setPendingDelete(null);
+				}}
+				title={`Delete "${pendingDelete?.name ?? ""}"?`}
+				description={`The ${labels.contact.singular.toLowerCase()} will be moved to trash. Owners can restore it from Settings → Data → Trash within the retention window.`}
+				confirmLabel={`Delete ${labels.contact.singular.toLowerCase()}`}
+				busyLabel="Deleting…"
+				confirmVariant="destructive"
+				onConfirm={async () => {
+					if (!pendingDelete || !orgId) return;
+					try {
+						await softDeleteContact({
+							orgId,
+							contactId: pendingDelete.id as Id<"contacts">,
+						});
+						toast.success(`${labels.contact.singular} moved to trash`);
+						setPendingDelete(null);
+					} catch (err) {
+						toast.error(normalizeError(err, "Failed to delete"));
+						throw err;
+					}
+				}}
 			/>
 		</>
 	);

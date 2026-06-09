@@ -24,7 +24,7 @@ const DEFAULT_RETENTION_DAYS = 30;
 
 export interface TrashItem {
 	id: string;
-	entityType: "lead" | "contact" | "company" | "deal";
+	entityType: "lead" | "contact" | "company" | "deal" | "pipeline";
 	title: string;
 	deletedAt: number;
 	purgeAt: number;
@@ -47,7 +47,7 @@ async function listImpl(
 
 	const purgeAtFor = (deletedAt: number) => deletedAt + retentionMs;
 
-	const [leads, contacts, companies, deals] = await Promise.all([
+	const [leads, contacts, companies, deals, pipelines] = await Promise.all([
 		ctx.db
 			.query("leads")
 			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
@@ -62,6 +62,10 @@ async function listImpl(
 			.collect(),
 		ctx.db
 			.query("deals")
+			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
+			.collect(),
+		ctx.db
+			.query("pipelines")
 			.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
 			.collect(),
 	]);
@@ -106,6 +110,17 @@ async function listImpl(
 				id: r._id,
 				entityType: "deal",
 				title: r.title,
+				deletedAt: r.deletedAt,
+				purgeAt: purgeAtFor(r.deletedAt),
+			});
+		}
+	}
+	for (const r of pipelines) {
+		if (r.deletedAt !== undefined) {
+			items.push({
+				id: r._id,
+				entityType: "pipeline",
+				title: r.name,
 				deletedAt: r.deletedAt,
 				purgeAt: purgeAtFor(r.deletedAt),
 			});

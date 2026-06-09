@@ -384,7 +384,7 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		key: "deals.delete",
 		module: "deals",
 		label: "Delete {deals}",
-		defaultRoles: ["Owner", "Admin"],
+		defaultRoles: ["Owner"],
 	},
 	{
 		key: "deals.assign",
@@ -843,14 +843,14 @@ export const PERMISSION_CATALOG: readonly PermissionEntry[] = [
 		module: "data",
 		label: "View trash",
 		description: "See deleted records pending purge.",
-		defaultRoles: ["Owner", "Admin"],
+		defaultRoles: ["Owner"],
 	},
 	{
 		key: "data.restore",
 		module: "data",
 		label: "Restore deleted records",
 		description: "Bring soft-deleted records back from trash.",
-		defaultRoles: ["Owner", "Admin"],
+		defaultRoles: ["Owner"],
 	},
 	{
 		key: "data.export",

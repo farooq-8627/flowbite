@@ -222,8 +222,11 @@ export const createForAI = internalMutation({
 					q.eq("orgId", args.orgId).eq("entityType", "deal"),
 				)
 				.collect();
+			// Skip trashed pipelines — never create a deal in a soft-deleted
+			// pipeline (would orphan immediately on next retention purge).
+			const livePipelines = dealPipelines.filter((p) => p.deletedAt === undefined);
 			const defaultPipeline =
-				dealPipelines.find((p) => p.isDefault === true) ?? dealPipelines[0];
+				livePipelines.find((p) => p.isDefault === true) ?? livePipelines[0];
 			if (!defaultPipeline) {
 				throw new ConvexError({
 					code: "NO_DEAL_PIPELINE",

@@ -45,6 +45,7 @@ import type * as _migrations_2026_05_30_clearMockDataDismissedAt from "../_migra
 import type * as _migrations_2026_06_04_approvalsToAutonomy from "../_migrations/2026_06_04_approvalsToAutonomy.js";
 import type * as _migrations_2026_06_05_seedDefaultWhatsappTemplates from "../_migrations/2026_06_05_seedDefaultWhatsappTemplates.js";
 import type * as _migrations_2026_06_06_backfillRecordsViewAll from "../_migrations/2026_06_06_backfillRecordsViewAll.js";
+import type * as _migrations_2026_06_10_tightenDeleteAndTrashPermissions from "../_migrations/2026_06_10_tightenDeleteAndTrashPermissions.js";
 import type * as _migrations_addDefaultStage from "../_migrations/addDefaultStage.js";
 import type * as _migrations_addNotesColorAndType from "../_migrations/addNotesColorAndType.js";
 import type * as _migrations_allowAudioUploads from "../_migrations/allowAudioUploads.js";
@@ -402,6 +403,7 @@ declare const fullApi: ApiFromModules<{
   "_migrations/2026_06_04_approvalsToAutonomy": typeof _migrations_2026_06_04_approvalsToAutonomy;
   "_migrations/2026_06_05_seedDefaultWhatsappTemplates": typeof _migrations_2026_06_05_seedDefaultWhatsappTemplates;
   "_migrations/2026_06_06_backfillRecordsViewAll": typeof _migrations_2026_06_06_backfillRecordsViewAll;
+  "_migrations/2026_06_10_tightenDeleteAndTrashPermissions": typeof _migrations_2026_06_10_tightenDeleteAndTrashPermissions;
   "_migrations/addDefaultStage": typeof _migrations_addDefaultStage;
   "_migrations/addNotesColorAndType": typeof _migrations_addNotesColorAndType;
   "_migrations/allowAudioUploads": typeof _migrations_allowAudioUploads;

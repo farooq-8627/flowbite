@@ -15,6 +15,9 @@
  * aware surface — no duplicate `useQuery` per consumer.
  */
 
+import { useQuery } from "convex/react";
+import { useCallback } from "react";
+import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import { usePipelines } from "@/core/entities/_entities/deals/hooks/usePipelines";
 import type { EntitySlot } from "@/core/entities/shared/types";
@@ -33,6 +36,12 @@ interface Props {
 export function SlotPipelinesSection({ slot, orgId }: Props) {
 	const entityType = SLOT_TO_ENTITY_TYPE[slot];
 	const pipelines = usePipelines(orgId);
+	const dealCounts = useQuery(api.crm.fields.pipelines.queries.countByPipelines, { orgId });
+
+	// No-op delete callback: this surface lists all pipelines stacked,
+	// so when one is deleted the listByOrg subscription already removes
+	// the row. Nothing for the parent to clear here.
+	const handleDeleted = useCallback(() => {}, []);
 
 	if (!entityType) return null;
 
@@ -50,7 +59,15 @@ export function SlotPipelinesSection({ slot, orgId }: Props) {
 						No pipelines yet.
 					</div>
 				) : (
-					filtered.map((p) => <PipelineEditor key={p._id} pipeline={p} orgId={orgId} />)
+					filtered.map((p) => (
+						<PipelineEditor
+							key={p._id}
+							pipeline={p}
+							orgId={orgId}
+							dealCount={dealCounts?.[p._id]}
+							onDeleted={handleDeleted}
+						/>
+					))
 				)}
 			</div>
 		</SettingsSection>

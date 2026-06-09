@@ -30,6 +30,7 @@ import { ArrowRightCircleIcon, PencilIcon, PlusIcon, XIcon } from "lucide-react"
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { KanbanColumnConfig } from "@/core/data-display/kanban/components/KanbanBoard";
@@ -114,6 +115,7 @@ export function LeadsView(_props: { orgSlug: string }) {
 	const [convertIds, setConvertIds] = useState<Id<"leads">[]>([]);
 	const [editOpen, setEditOpen] = useState(false);
 	const [editingLead, setEditingLead] = useState<NonNullable<typeof items>[number] | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 	const [search, setSearch] = useState("");
 
 	// Persisted view-options — survive navigation. Keyed by slot so each
@@ -198,11 +200,9 @@ export function LeadsView(_props: { orgSlug: string }) {
 		tagsByEntityId,
 		companiesByPersonCode,
 		onDelete: async (row) => {
-			try {
-				await remove(row.id as Id<"leads">);
-			} catch (err) {
-				toast.error(normalizeError(err, "Couldn't delete"));
-			}
+			const candidate = (row as unknown as { displayName?: unknown }).displayName;
+			const name = typeof candidate === "string" ? candidate : labels.lead.singular;
+			setPendingDelete({ id: row.id as string, name });
 		},
 		rowExtraActions: (row) => (
 			<>
@@ -512,12 +512,16 @@ export function LeadsView(_props: { orgSlug: string }) {
 		onClick: () => setAddOpen(true),
 	};
 
-	const handleDelete = async (leadId: Id<"leads">) => {
-		try {
-			await remove(leadId);
-		} catch (err) {
-			toast.error(normalizeError(err, "Couldn't delete"));
-		}
+	// Lead deletion is funneled through the ConfirmDialog at the bottom
+	// of the JSX. Both the LIST view's row kebab AND the BOARD view's
+	// card kebab call this helper so the user always gets the same
+	// "Delete X — moved to trash" confirmation modal. The actual
+	// soft-delete fires inside the dialog's onConfirm handler.
+	const handleDelete = (leadId: Id<"leads">) => {
+		const lead = leadLookup.get(leadId);
+		const candidate = (lead as unknown as { displayName?: unknown } | undefined)?.displayName;
+		const name = typeof candidate === "string" ? candidate : labels.lead.singular;
+		setPendingDelete({ id: leadId, name });
 	};
 
 	const handleMarkLost = async (leadId: Id<"leads">) => {
@@ -713,6 +717,29 @@ export function LeadsView(_props: { orgSlug: string }) {
 				}}
 				orgId={orgId}
 				lead={editingLead as unknown as Doc<"leads"> | null}
+			/>
+
+			<ConfirmDialog
+				open={pendingDelete !== null}
+				onOpenChange={(v) => {
+					if (!v) setPendingDelete(null);
+				}}
+				title={`Delete "${pendingDelete?.name ?? ""}"?`}
+				description={`The ${labels.lead.singular.toLowerCase()} will be moved to trash. Owners can restore it from Settings → Data → Trash within the retention window.`}
+				confirmLabel={`Delete ${labels.lead.singular.toLowerCase()}`}
+				busyLabel="Deleting…"
+				confirmVariant="destructive"
+				onConfirm={async () => {
+					if (!pendingDelete) return;
+					try {
+						await remove(pendingDelete.id as Id<"leads">);
+						toast.success(`${labels.lead.singular} moved to trash`);
+						setPendingDelete(null);
+					} catch (err) {
+						toast.error(normalizeError(err, "Couldn't delete"));
+						throw err;
+					}
+				}}
 			/>
 		</>
 	);

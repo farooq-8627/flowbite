@@ -339,6 +339,8 @@ async function readPipelineForecast(
 	const out: PipelineForecastResult[] = [];
 	for (const p of pipelines) {
 		if (p.entityType !== "deal") continue;
+		// Skip soft-deleted pipelines from forecast.
+		if (p.deletedAt !== undefined) continue;
 		out.push(
 			computeForecastFromDeals({
 				pipeline: p,

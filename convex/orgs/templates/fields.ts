@@ -195,7 +195,7 @@ const BUILT_IN_CONTACT_FIELDS: FieldDefinitionSeed[] = [
 	},
 ];
 
-const BUILT_IN_DEAL_FIELDS: FieldDefinitionSeed[] = [
+export const BUILT_IN_DEAL_FIELDS: FieldDefinitionSeed[] = [
 	{
 		entityType: "deal",
 		name: "dealCode",

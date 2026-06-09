@@ -246,7 +246,9 @@ async function readDefaultDealPipeline(
 		.query("pipelines")
 		.withIndex("by_org", (q) => q.eq("orgId", orgId))
 		.collect();
-	const dealPipelines = pipelines.filter((p) => p.entityType === "deal");
+	const dealPipelines = pipelines.filter(
+		(p) => p.entityType === "deal" && p.deletedAt === undefined,
+	);
 	if (dealPipelines.length === 0) return null;
 	return (
 		dealPipelines.find((p) => p.isDefault) ??
@@ -271,7 +273,9 @@ async function readInvoiceAging(
 		.query("pipelines")
 		.withIndex("by_org", (q) => q.eq("orgId", args.orgId))
 		.collect();
-	const dealPipelines = pipelines.filter((p) => p.entityType === "deal");
+	const dealPipelines = pipelines.filter(
+		(p) => p.entityType === "deal" && p.deletedAt === undefined,
+	);
 
 	// Identify invoice-stage IDs across every deal pipeline. A workspace
 	// with multiple deal pipelines may have an invoice-named stage in

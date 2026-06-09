@@ -192,7 +192,10 @@ function TrashSection({ orgId, canRestore }: { orgId: Id<"orgs">; canRestore: bo
 	const restore = useMutation(api.trash.mutations.restore);
 	const [pending, setPending] = useState<string | null>(null);
 
-	const handleRestore = async (id: string, type: "lead" | "contact" | "company" | "deal") => {
+	const handleRestore = async (
+		id: string,
+		type: "lead" | "contact" | "company" | "deal" | "pipeline",
+	) => {
 		setPending(id);
 		try {
 			await restore({ orgId, entityType: type, entityId: id });
@@ -209,6 +212,7 @@ function TrashSection({ orgId, canRestore }: { orgId: Id<"orgs">; canRestore: bo
 			id="data.trash"
 			title="Trash"
 			description="Soft-deleted records are kept for the configured retention period before being permanently removed. Restore anything you deleted by mistake."
+			collapsible
 		>
 			{items === undefined ? (
 				<p className="text-sm text-muted-foreground">Loading…</p>

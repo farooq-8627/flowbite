@@ -197,7 +197,7 @@ async function readPipelineVelocity(
 	);
 
 	return pipelines
-		.filter((p) => p.entityType === "deal")
+		.filter((p) => p.entityType === "deal" && p.deletedAt === undefined)
 		.map((p) => {
 			const stages = computeStageVelocity({
 				pipeline: p,

@@ -191,6 +191,8 @@ async function updateImpl(
 			.collect();
 		const validStageIds = new Set<string>();
 		for (const p of pipelines) {
+			// Trashed pipelines' stage ids are not valid pin targets.
+			if (p.deletedAt !== undefined) continue;
 			for (const s of p.stages) validStageIds.add(s.id);
 		}
 		const unknown = args.showInStages.filter((id) => !validStageIds.has(id));
@@ -335,6 +337,21 @@ async function removeImpl(
 			code: "UNDELETABLE",
 			message:
 				"Assignee fields can be hidden but not deleted, so they can be brought back any time.",
+		});
+	}
+
+	// Tags follow the same hide-yes / delete-no rule as assignee
+	// (locked 2026-06-10 per user). Tags are `storage: "join"`, which
+	// the field manager UI doesn't support creating from scratch — so
+	// once deleted there's no recovery short of re-seeding. Keeping the
+	// row alive lets the owner toggle visibility per stage / per
+	// pipeline without losing the field forever. `protected: true`
+	// would block hide too, which the user explicitly wants to remain
+	// available.
+	if (field.kind === "tags") {
+		throw new ConvexError({
+			code: "UNDELETABLE",
+			message: "Tags can be hidden but not deleted, so they can be brought back any time.",
 		});
 	}
 

@@ -27,6 +27,7 @@ import { getPlanLimitsFromDb, isWithinLimit, type PlanTier } from "../../../_pla
 import { ERRORS } from "../../../_shared/errors";
 import { requireRole } from "../../../_shared/permissions";
 import { logActivity } from "../../../activityLogs/helpers";
+import { BUILT_IN_DEAL_FIELDS } from "../../../orgs/templates/fields";
 import { deriveStageCode, validateStageCode } from "./helpers";
 
 const stageShape = v.object({
@@ -70,38 +71,6 @@ function makeDefaultStage(): {
 	};
 }
 
-/**
- * Collect the Default stage ids of every deal pipeline in the org EXCEPT
- * the one identified by `excludePipelineId`. Used by `pipelines.create` to
- * decide whether an existing deal field is a "Defaults"-only field
- * (currently pinned only to other pipelines' Default stages → extend) or
- * a stage-aware field (pinned to specific non-default stages → leave
- * alone). The exclusion lets us call this with the just-created pipeline
- * id so we don't double-count.
- */
-async function getOtherDefaultStageIds(
-	// biome-ignore lint/suspicious/noExplicitAny: ctx.db is generic across mutations; concrete types live in convex-generated server code
-	ctx: { db: any },
-	orgId: unknown,
-	excludePipelineId: unknown,
-): Promise<Set<string>> {
-	const pipelines = (await ctx.db
-		.query("pipelines")
-		// biome-ignore lint/suspicious/noExplicitAny: index callback param is implicitly any in Convex internals
-		.withIndex("by_org_and_entity", (q: any) => q.eq("orgId", orgId).eq("entityType", "deal"))
-		.collect()) as Array<{
-		_id: unknown;
-		stages: Array<{ id: string; isDefaultStage?: boolean }>;
-	}>;
-	const out = new Set<string>();
-	for (const p of pipelines) {
-		if (p._id === excludePipelineId) continue;
-		const def = p.stages.find((s) => s.isDefaultStage === true);
-		if (def) out.add(def.id);
-	}
-	return out;
-}
-
 type StageInput = {
 	id: string;
 	name: string;
@@ -134,7 +103,10 @@ async function createImpl(
 			q.eq("orgId", args.orgId).eq("entityType", args.entityType),
 		)
 		.collect();
-	if (!isWithinLimit(existingForType.length, limits.maxPipelinesPerEntityType)) {
+	// Don't count trashed pipelines against the plan limit — they're
+	// recoverable but otherwise gone.
+	const liveForType = existingForType.filter((p) => p.deletedAt === undefined);
+	if (!isWithinLimit(liveForType.length, limits.maxPipelinesPerEntityType)) {
 		throw new ConvexError({
 			code: "PLAN_LIMIT_EXCEEDED",
 			message: `Your ${tier} plan allows ${limits.maxPipelinesPerEntityType} ${args.entityType} pipeline(s). Upgrade to add more.`,
@@ -194,37 +166,97 @@ async function createImpl(
 		updatedAt: Date.now(),
 	});
 
+	// Auto-pin baseline (system) fields onto the new pipeline's Default stage.
+	//
+	// Rule (locked 2026-06-10, per user feedback): a brand-new pipeline
+	// MUST carry the 6 baseline system deal fields (dealCode, title,
+	// value, currentStageId, assignedTo, tags) on its Default stage.
+	// Custom fields (admin-added or industry-template fields like
+	// `property_type`, `industry_vertical`, `bedrooms`) are NOT
+	// auto-extended onto the new pipeline. The owner pins what they
+	// want via the Stage fields tab.
+	//
+	// SSOT: `BUILT_IN_DEAL_FIELDS` from `convex/orgs/templates/fields.ts`.
+	// Driven by NAME, not by trusting the `f.system` flag on existing
+	// rows — orgs onboarded via `setupWorkspaceFromTemplate` (the
+	// production path) never get the BUILT_IN seed, only their
+	// industry-specific template fields. The lazy `ensureFields` in
+	// `PipelinesGroup.tsx` plugs the gap when the page loads, but it's
+	// async + fire-and-forget so a quick "+ New pipeline" click can
+	// race ahead of it. We make this path self-sufficient: insert any
+	// missing system rows, self-heal stale `system`/`protected` flags,
+	// then pin to the new Default stage.
 	if (args.entityType === "deal") {
 		const newDefaultStage = stages.find((s) => s.isDefaultStage === true);
 		if (newDefaultStage) {
-			const dealFields = await ctx.db
+			const existingDealFields = await ctx.db
 				.query("fieldDefinitions")
 				.withIndex("by_org_and_entity", (q) =>
 					q.eq("orgId", args.orgId).eq("entityType", "deal"),
 				)
 				.collect();
+			const existingByName = new Map(existingDealFields.map((f) => [f.name, f]));
 			const now = Date.now();
-			for (const f of dealFields) {
-				const existing = f.showInStages ?? [];
-				if (existing.includes(newDefaultStage.id)) continue;
-				if (existing.length === 0) {
-					await ctx.db.patch(f._id, {
+			let nextOrder = existingDealFields.reduce(
+				(acc, r) => (r.order > acc ? r.order : acc),
+				-1,
+			);
+
+			for (const seed of BUILT_IN_DEAL_FIELDS) {
+				const existing = existingByName.get(seed.name);
+				if (!existing) {
+					// Missing → seed it now, pinned to the new Default stage.
+					nextOrder += 1;
+					await ctx.db.insert("fieldDefinitions", {
+						orgId: args.orgId,
+						entityType: "deal",
+						name: seed.name,
+						label: seed.label,
+						type: seed.type,
+						kind: seed.kind,
+						storage: seed.storage,
+						columnKey: seed.columnKey,
+						system: true,
+						protected: seed.protected ?? false,
+						hidden: false,
+						options: seed.options,
+						required: seed.required ?? false,
+						order: nextOrder,
 						showInStages: [newDefaultStage.id],
+						createdAt: now,
 						updatedAt: now,
 					});
-				} else {
-					const otherDefaults = await getOtherDefaultStageIds(
-						ctx,
-						args.orgId,
-						pipelineId,
-					);
-					const stillDefault = existing.every((id) => otherDefaults.has(id));
-					if (stillDefault) {
-						await ctx.db.patch(f._id, {
-							showInStages: [...existing, newDefaultStage.id],
-							updatedAt: now,
-						});
-					}
+					continue;
+				}
+
+				// Self-heal stale flags so the field manager renders the
+				// right lock icons + delete-disabled state. Only patch
+				// if a flag actually drifts.
+				const wantSystem = true;
+				const wantProtected = seed.protected ?? false;
+				const flagPatch: Partial<{
+					system: boolean;
+					protected: boolean;
+					updatedAt: number;
+				}> = {};
+				if (existing.system !== wantSystem) flagPatch.system = wantSystem;
+				if ((existing.protected ?? false) !== wantProtected) {
+					flagPatch.protected = wantProtected;
+				}
+
+				// Pin to the new Default stage idempotently.
+				const showInStages = existing.showInStages ?? [];
+				const stagePatch: { showInStages?: string[] } = {};
+				if (!showInStages.includes(newDefaultStage.id)) {
+					stagePatch.showInStages = [...showInStages, newDefaultStage.id];
+				}
+
+				if (Object.keys(flagPatch).length > 0 || stagePatch.showInStages) {
+					await ctx.db.patch(existing._id, {
+						...flagPatch,
+						...stagePatch,
+						updatedAt: now,
+					});
 				}
 			}
 		}
@@ -756,39 +788,88 @@ export const updateForAI = internalMutation({
 
 async function deletePipelineImpl(
 	ctx: MutationCtx,
-	args: { orgId: Id<"orgs">; pipelineId: Id<"pipelines"> },
+	args: { orgId: Id<"orgs">; userId: Id<"users">; pipelineId: Id<"pipelines"> },
 ) {
 	const pipeline = await ctx.db.get(args.pipelineId);
 	if (!pipeline || pipeline.orgId !== args.orgId) throw new ConvexError(ERRORS.NOT_FOUND);
-	if (pipeline.isDefault)
+	if (pipeline.deletedAt !== undefined) {
 		throw new ConvexError({
-			code: "DEFAULT_PIPELINE",
-			message: "Cannot delete the default pipeline",
+			code: "ALREADY_DELETED",
+			message: "This pipeline is already in the trash.",
 		});
-
-	for (const stage of pipeline.stages) {
-		const deal = await ctx.db
-			.query("deals")
-			.withIndex("by_org_and_stage", (q) =>
-				q.eq("orgId", args.orgId).eq("currentStageId", stage.id),
-			)
-			.first();
-		if (deal)
-			throw new ConvexError({
-				code: "PIPELINE_HAS_DEALS",
-				message: `Cannot delete — deals exist in stage "${stage.name}"`,
-			});
 	}
 
-	await ctx.db.delete(args.pipelineId);
+	// Refuse if ANY deal references this pipeline — including soft-deleted
+	// deals, because restoring them later would land them on a still-trashed
+	// pipeline. Locked 2026-06-10: the default pipeline IS deletable as
+	// long as the workspace is empty of deals (per user). For a populated
+	// pipeline the owner must move / delete the deals first; we don't
+	// silently orphan rows.
+	const anyDeal = await ctx.db
+		.query("deals")
+		.withIndex("by_org_and_pipeline", (q) =>
+			q.eq("orgId", args.orgId).eq("pipelineId", args.pipelineId),
+		)
+		.first();
+	if (anyDeal) {
+		throw new ConvexError({
+			code: "PIPELINE_HAS_DEALS",
+			message: "Cannot delete a pipeline that has deals. Move or delete the deals first.",
+		});
+	}
+
+	const wasDefault = pipeline.isDefault === true;
+	const entityType = pipeline.entityType;
+	const now = Date.now();
+
+	// Soft-delete: mark deletedAt, drop default flag so the auto-promote
+	// resolves cleanly. Owners can restore via Settings → Data → Trash.
+	// Hard-delete (cascade purge) happens via the `purgeOldTrash` cron
+	// once the retention window passes, OR via the explicit "Delete
+	// forever" trash mutation.
+	await ctx.db.patch(args.pipelineId, {
+		deletedAt: now,
+		isDefault: false,
+		updatedAt: now,
+	});
+
+	// Auto-promote the next live pipeline of the same entityType to
+	// default when the trashed one was the default. Picks the oldest
+	// live one (deterministic + matches "your original pipeline takes
+	// over" intuition). When no other live pipeline exists, the org is
+	// left with no active default until the owner creates one or
+	// restores from trash.
+	if (wasDefault) {
+		const candidates = await ctx.db
+			.query("pipelines")
+			.withIndex("by_org_and_entity", (q) =>
+				q.eq("orgId", args.orgId).eq("entityType", entityType),
+			)
+			.collect();
+		const live = candidates.filter((p) => p.deletedAt === undefined);
+		if (live.length > 0) {
+			const next = [...live].sort((a, b) => a._creationTime - b._creationTime)[0];
+			await ctx.db.patch(next._id, { isDefault: true, updatedAt: now });
+		}
+	}
+
+	await logActivity(ctx, {
+		orgId: args.orgId,
+		userId: args.userId,
+		action: "pipeline_deleted",
+		entityType: "pipeline",
+		entityId: args.pipelineId,
+		description: `Pipeline moved to trash: ${pipeline.name}`,
+		metadata: { wasDefault, entityType, soft: true },
+	});
 }
 
 export const deletePipeline = orgMutation({
 	args: { orgId: v.id("orgs"), pipelineId: v.id("pipelines") },
 	handler: async (ctx, args) => {
-		const { member } = await requireOrgMember(ctx, args.orgId);
+		const { member, userId } = await requireOrgMember(ctx, args.orgId);
 		requireRole(member.permissions, "pipelines.manage");
-		return deletePipelineImpl(ctx, args);
+		return deletePipelineImpl(ctx, { ...args, userId });
 	},
 });
 
@@ -802,7 +883,6 @@ export const deletePipelineForAI = internalMutation({
 	handler: async (ctx, args) => {
 		const { member } = await requireOrgMemberByIds(ctx, args.orgId, args.userId);
 		requireRole(member.permissions, "pipelines.manage");
-		const { userId: _u, ...rest } = args;
-		return deletePipelineImpl(ctx, rest);
+		return deletePipelineImpl(ctx, args);
 	},
 });

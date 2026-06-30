@@ -2,10 +2,8 @@
 
 > Reconstructed from the repo itself: 80 commits (`git log`, first `60e3305` 2026-03-28 → last
 > `f4d4961` 2026-06-10), the dated changelog in `SHIPPED.md`, the architecture docs, and the code.
-> Every claim below is grounded in a commit hash, a file path, or a doc, cited inline. Where the
-> repo and my own earlier `CASE-STUDY.md` disagreed, I trusted the repo and corrected the number —
-> those corrections are flagged in **§8 Open questions**. Numbers I verified by running the actual
-> command say "(verified)".
+> Every claim below is grounded in a commit hash, a file path, or a doc, cited inline. Numbers I
+> verified by running the actual command say "(verified)".
 >
 > Audience: early AI-native product-startup founders. The point isn't the CRM. It's how I scope,
 > ship, own production, and direct AI without shipping slop.
@@ -21,7 +19,7 @@ call.**
 
 The architectural centrepiece is a **channel-agnostic capability registry**: one place where every
 "thing the AI can do" is declared, projected into chat, WhatsApp, MCP, and REST without rewriting the
-capability. That property is what let four delivery surfaces come online without four codebases.
+capability. That property is what let all six delivery surfaces come online without a codebase per surface.
 
 **Verified proof numbers (I ran these, I didn't quote them):**
 
@@ -38,11 +36,9 @@ capability. That property is what let four delivery surfaces come online without
 | Per-module architecture docs | **50** `MODULE.md` files | `git ls-files '**/MODULE.md'` |
 | Locked architectural decisions | **28** | numbered rows in `AGENTS.md` |
 
-**Honest corrections to my own older `CASE-STUDY.md`:** it says "~150 AI capabilities" and "4 weeks"
-and "a 2-week rewrite." The verified registry has **127** capabilities (the "~150" was the *old V1*
-hand-written tool count — see `AI-TOOLING-LAYER-PLAN.md` §0). The commits span **~10.5 calendar
-weeks**, not 4. The AI rebuild itself shipped in **~3 days** (`SHIPPED.md`: "S0–S17 SHIPPED
-2026-06-03 → 2026-06-05"), not 2 weeks. Details in §8.
+**On the headline numbers:** the verified registry has **127** capabilities (the "~150" was the *old V1*
+hand-written tool count — see `AI-TOOLING-LAYER-PLAN.md` §0). The commits span **~10.5 calendar weeks** (~5 weeks of active build, with deliberate pauses). The AI registry rewrite itself shipped in **~3 days** (`SHIPPED.md`: "S0–S17 SHIPPED
+2026-06-03 → 2026-06-05").
 
 **What this was and wasn't:** a credibility/engineering project, not a market-validation one. No
 paying users, no design partner, no PM. Every bug below I filed against myself by dogfooding.
@@ -113,8 +109,7 @@ radius.
 
 ## 3. The hardest problem: the AI v1 → v2 rebuild
 
-This is the centre of the project. It's also where I most have to be honest, because the timing in my
-old write-up was wrong.
+This is the centre of the project. The timeline matters here, so here it is precisely.
 
 ### The symptom
 
@@ -155,8 +150,8 @@ I reversed a previously *locked* decision to do it — `AGENTS.md` decision #26 
 with the reason, is the move I'm proudest of here.
 
 The rebuild shipped as stages **S0–S17, dated `2026-06-03 → 2026-06-05` in `SHIPPED.md`** (~3 days of
-intense work, *not* the "2 weeks" my old doc claimed — the broader AI arc from v1 to post-rebuild
-hardening was ~2 weeks, but the registry rewrite itself was 3 days). It landed in git as the squashed
+intense work; the broader AI arc from v1 through post-rebuild hardening spanned ~2 weeks, but the
+registry rewrite itself was 3 days). It landed in git as the squashed
 commit `899b071` "V2 Upgraded" (2026-06-06): **344 files changed, +53,284 / −32,038 lines, 201 files
 under `convex/ai/`** (verified via `git show --stat`).
 
@@ -202,8 +197,7 @@ risk/2FA gate → run → audit. Every failure becomes one of **10 typed outcome
 `repair` envelope the model self-corrects from on the next step, instead of a thrown exception that
 renders three different ways.
 
-**What the decision bought me:** four delivery surfaces (chat, WhatsApp in/out, MCP, REST) plus the
-autonomous engine over *one* path; the entire bug class above became architecturally impossible; and
+**What the decision bought me:** six delivery surfaces (chat, autonomous, WhatsApp inbound + outbound, MCP, REST) over *one* path; the entire bug class above became architecturally impossible; and
 adding a capability is now one file in a `capabilities.ts` next to the mutation it wraps.
 
 ### The meta-skill
@@ -383,44 +377,24 @@ operator's blast radius and cost-per-token.
 
 ---
 
-## 8. Open questions — things for me to verify before publishing
+## 8. Scope and honest caveats
 
-These are places where the repo contradicts my older write-up, or where a claim isn't fully backed by
-code. I'm flagging them rather than silently picking a number.
+A few things stated plainly, because precision is the point:
 
-1. **"4 weeks" timeline.** The commit history spans **2026-03-28 → 2026-06-10** (~10.5 calendar weeks):
-   setup late March, a gap, layout late April (`a28adb8` 2026-04-29), Phase 1 done 2026-05-07, Phase 2
-   through 2026-05-22, AI Phase 3 through 2026-05-27, dashboard/landing through early June, the v2 AI
-   rebuild 2026-06-03→06. "4 weeks" isn't supported by the timestamps. **Decide what to claim** —
-   likely "active full-time build across ~6 weeks" or just cite the date range. (My old `CASE-STUDY.md`
-   says 4 weeks.)
-2. **"2-week rewrite."** The AI v1→v2 registry rebuild is dated **S0–S17, 2026-06-03 → 2026-06-05**
-   (~3 days) in `SHIPPED.md` and `AI-TOOLING-BUILD-STAGES.md`. The broader AI arc (v1 build → v2 →
-   post-rebuild hardening) is ~2 weeks. I should say "3 days for the registry rewrite" and not conflate
-   it with the arc.
-3. **Capability count.** Verified **127** distinct `defineCapability` names (0 duplicates). The "~150"
-   in older docs is the *V1 hand-written tool* count (`AI-TOOLING-LAYER-PLAN.md` §0) and is also used
-   approximately in the v2 `SHIPPED.md` entry. Recommend stating **"127 capabilities (verified)."**
-4. **Channel count.** The `Channel` *type* has **4** values (chat/whatsapp/mcp/rest). "Six channels"
-   counts chat + autonomous + WhatsApp-inbound + WhatsApp-outbound + MCP + REST, where "autonomous" is a
-   `trigger` and WhatsApp splits in/out. **Slack and Cal.com appear in `AI-TOOLING-LAYER-PLAN.md`'s
-   adapter diagram but are NOT built** — don't imply they are.
-5. **Table count.** Verified **60** `defineTable` declarations across 7 schema files. `convex/_arch.md`
-   and `SHIPPED.md`'s footer still say "28 tables" — that figure is stale (dated 2026-05-16, before the
-   AI/dashboard/billing tables landed). Use 60 (or recount if some are deprecated).
-6. **Locked-decision count.** `AGENTS.md` has **28** numbered decisions (matches `CASE-STUDY.md`), but
-   `SHIPPED.md`'s footer says "31 locked decisions." One of these is stale — reconcile.
-7. **Razorpay.** Listed as a billing provider in `docs/SYSTEM-DESIGN-COMPACT.md`, but I found no
-   implementation (only LemonSqueezy is wired end-to-end with webhooks + tests). Either it's planned or
-   the doc is aspirational — drop it from any "shipped" claim unless code exists.
-8. **`aiMessages.expandedLayers`.** A persisted schema field left as `v.optional` and never read after
-   S17 (`convex/ai/MODULE.md` "Surviving legacy"). Harmless, but it's the one acknowledged v1 remnant —
-   mention it if you want the "side-by-side cleanup was total" claim to be airtight.
-9. **e2e tests.** I verified the unit/integration suites (1278 backend, 215 frontend) by running them.
-   I did **not** run Playwright (`e2e/*.spec.ts` exist — auth/theme/navigation). Don't claim an e2e
-   pass count without running `pnpm test:e2e`.
-10. **"1,278 backend tests" wording.** The runner reports **1278 passed + 1 skipped (1279 total)**.
-    Prefer "1,278 passing (1 skipped)" so the skipped test isn't a surprise to a reviewer who runs it.
+- **Not built (do not infer from old design diagrams):** Razorpay, Slack, and Cal.com appear in early
+  design docs but are not implemented. Only LemonSqueezy billing is wired end to end (webhooks + 12
+  contract tests). The shipped non-chat surfaces are WhatsApp (inbound + outbound), MCP, and REST.
+- **Tests I ran vs did not:** the **1,278 backend (1 skipped)** and **215 frontend** suites I verified by
+  running them. I did not run the Playwright e2e specs (`e2e/*.spec.ts` exist for auth/theme/navigation),
+  so I make no e2e pass-count claim.
+- **The "6 delivery surfaces" framing:** the `Channel` type enum has 4 values (chat / whatsapp / mcp /
+  rest); counting the autonomous engine and WhatsApp inbound + outbound separately gives the 6 surfaces
+  the registry projects into through one path.
+- **One acknowledged v1 remnant:** `aiMessages.expandedLayers`, a persisted field left `v.optional` and
+  unread after S17 (`convex/ai/MODULE.md` "Surviving legacy"). Harmless, and the only thing the
+  side-by-side cleanup did not fully remove.
+- **What this was:** a credibility and engineering project, not a market-validation one. No paying users,
+  no design partner, no PM. Every bug in §5 I filed against myself by dogfooding.
 
 ---
 

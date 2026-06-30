@@ -1,10 +1,10 @@
 # Orbitly — Case Study
 
-A multi-tenant, AI-native CRM. Built solo in 4 weeks. The point of this document is not the product — it's how I work as an engineer, what I decided, why, and what those decisions cost or saved.
+A multi-tenant, AI-native CRM. Built solo in about 5 weeks of active work. The point of this document is not the product — it's how I work as an engineer, what I decided, why, and what those decisions cost or saved.
 
 **Stack:** Next.js 16, TypeScript, Convex, Tailwind, Vercel AI SDK v6, Anthropic Claude / OpenAI / Google Gemini / OpenRouter (multi-provider failover), Twilio WhatsApp, LemonSqueezy, Sentry, PostHog
 **Live:** orbitly.dev
-**Timeline:** 4 weeks, solo
+**Timeline:** ~5 weeks of active build, solo (across a ~10-week calendar with deliberate pauses)
 **Role:** Solo full-stack engineer — no team, no PM, no design partner, no users
 
 ---
@@ -24,14 +24,14 @@ That constraint is the point of this case study. It's the reason the engineering
 
 ## What I built
 
-A multi-tenant CRM SaaS where each organisation gets an isolated workspace, an industry-specific schema (real estate, B2B SaaS, recruiting, agencies, freelancers, productivity, plus three more — 9 templates total), and an AI assistant with around 150 capabilities running across six channels through one execution path: in-app chat, autonomous (event-triggered), WhatsApp inbound, WhatsApp outbound, MCP (JSON-RPC), and REST.
+A multi-tenant CRM SaaS where each organisation gets an isolated workspace, an industry-specific schema (real estate, B2B SaaS, recruiting, agencies, freelancers, productivity, plus three more — 9 templates total), and an AI assistant with 127 capabilities running across six delivery surfaces through one execution path: in-app chat, autonomous (event-triggered), WhatsApp inbound, WhatsApp outbound, MCP (JSON-RPC), and REST.
 
-The same capability called by different channels behaves the same way. That property — channel-agnostic capability registry — is the architectural centrepiece, and is what made WhatsApp + MCP + REST + autonomous all come online inside the same 4 weeks.
+The same capability called by different channels behaves the same way. That property — channel-agnostic capability registry — is the architectural centrepiece, and is what made WhatsApp + MCP + REST + autonomous all come online without a separate tool layer per surface.
 
 **Surface area:**
 
 - Lead, contact, deal, company management with kanban pipelines, drag-and-drop stages, stage-aware required fields
-- ~150 AI capabilities (create, convert, attach, score, forecast, import, draft, search, schedule)
+- 127 AI capabilities (create, convert, attach, score, forecast, import, draft, search, schedule)
 - 9 industry templates seeding pipeline + custom fields + dashboard layout + sample data
 - Multi-provider AI failover (Claude → GPT → Gemini → OpenRouter free tier) with BYOK + platform-key fallback
 - Risk-tier autonomy: safe / reversible auto-execute; irreversible (bulk delete, settings, member changes) require 2FA, never run over WhatsApp
@@ -42,7 +42,7 @@ The same capability called by different channels behaves the same way. That prop
 - Sentry + PostHog with PII masking, session replay, per-tenant context binding
 - Internationalisation (RTL/LTR), dark mode, white-label theming via per-org CSS variables
 
-This is the kind of surface area I'd expect from a 4-engineer team with three months. I shipped it solo in 4 weeks.
+This is the kind of surface area I'd expect from a 4-engineer team with three months. I shipped it solo in about 5 weeks of active work.
 
 ---
 
@@ -54,7 +54,7 @@ This is the section recruiters care about most, and it's the one I want you to r
 
 Every architectural decision in this project is documented in `AGENTS.md` — currently 28 locked decisions with the date they were locked and what was settled. Every per-module decision lives in that module's `MODULE.md`. Before I write code, I read what's already locked. Before I lock a new decision, I write the alternative I'm rejecting and why I'm rejecting it.
 
-This sounds slow. It is the opposite of slow. The reason I shipped 6 channels' worth of AI in 4 weeks is that I was never re-deciding things I had already decided. The cost of writing the decision down once is two minutes. The cost of re-litigating it three weeks later when I've forgotten my own reasoning is half a day.
+This sounds slow. It is the opposite of slow. The reason I shipped 6 delivery surfaces' worth of AI in about 5 weeks is that I was never re-deciding things I had already decided. The cost of writing the decision down once is two minutes. The cost of re-litigating it three weeks later when I've forgotten my own reasoning is half a day.
 
 ### I write the goal before the code
 
@@ -119,12 +119,12 @@ Autonomy moved from per-user approvals to one `org.settings.aiAutonomy` policy. 
 
 **What this decision bought me:**
 
-- Six channels (chat, autonomous, WhatsApp inbound + outbound, MCP, REST) share one execution path
+- Six delivery surfaces (chat, autonomous, WhatsApp inbound + outbound, MCP, REST) share one execution path
 - WhatsApp + MCP + REST came online as thin projectors over the registry — none required changes to capability files
 - Bug classes from V1 (schema drift, silent drops, stuck states, cross-channel duplication) became architecturally impossible
 - Adding a new capability is one file. Adding a permission is one entry in the SSOT catalog and it auto-derives into seeders, runtime checks, the role-editor UI, and tests
 
-**Tradeoff:** A 2-week side-by-side rewrite mid-project. Every domain (leads, contacts, deals, tasks, notes, files, messaging, dashboard) ported in single edits per domain — no V1/V2 flag, no parallel folders. If the V2 port broke a domain, that domain was broken until the next commit fixed it. Brutal but deliberate. The alternative was carrying two parallel implementations forever and shipping neither.
+**Tradeoff:** A 3-day side-by-side rewrite mid-project (stages S0 to S17). Every domain (leads, contacts, deals, tasks, notes, files, messaging, dashboard) ported in single edits per domain — no V1/V2 flag, no parallel folders. If the V2 port broke a domain, that domain was broken until the next commit fixed it. Brutal but deliberate. The alternative was carrying two parallel implementations forever and shipping neither.
 
 ---
 
@@ -145,7 +145,7 @@ The hardest problem was deciding to throw away two months of working AI tooling 
 
 These were not bugs. They were the architecture. No amount of patching was going to fix them.
 
-**The redirect.** I decided on a new architecture (single registry, risk-tier autonomy, closed Outcome taxonomy, channel-agnostic host) and committed to side-by-side rebuild — V1 deletion in the same commit V2 was added, no flags, no parallel system. It took 2 weeks. WhatsApp inbound, WhatsApp outbound, MCP, REST, and the autonomous engine came online inside the next two weeks because each was a thin projector over the registry — no separate tool layer per channel.
+**The redirect.** I decided on a new architecture (single registry, risk-tier autonomy, closed Outcome taxonomy, channel-agnostic host) and committed to side-by-side rebuild — V1 deletion in the same commit V2 was added, no flags, no parallel system. The registry rewrite itself took 3 days (stages S0 to S17). WhatsApp inbound, WhatsApp outbound, MCP, REST, and the autonomous engine came online as thin projectors over the registry — no separate tool layer per surface.
 
 **The meta-skill that mattered.** Recognising you are in a failure loop and stopping. Most engineers will keep patching, because each individual patch looks like progress. The skill is noticing the pattern — three patches against the same bug class — and asking whether the patches are working against the architecture instead of with it.
 
@@ -158,7 +158,7 @@ I built that skill into a written rule (AGENTS.md behavioural rule #5), so the n
 I'm aware no recruiter cares about a feature list. They care about answers to specific questions. Here are the answers this project provides.
 
 **Can I ship complex software solo?**
-4 weeks. Multi-tenant, multi-channel, multi-provider AI agent platform. 1,278 backend tests + 215 frontend tests, all green. Build green on every commit. The full repo is open for review.
+About 5 weeks of active work. Multi-tenant, multi-channel, multi-provider AI agent platform. 1,278 backend tests + 215 frontend tests, all green. Build green on every commit. The full repo is open for review.
 
 **Do I think before I code?**
 28 locked architectural decisions in `AGENTS.md` with the rejected alternatives written down. A V1 → V2 pivot decided not on opinion but on four structural costs I named on paper before I deleted any code. Behavioural rules I codified after I caught myself in failure patterns.

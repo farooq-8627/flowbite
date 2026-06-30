@@ -563,7 +563,7 @@ Three concrete fixes from the user-reported `P-005` bug. (1) Files: AI can now a
 
 ## 📐 Locked architectural decisions
 
-The 31 locked decisions + 5 performance-critical rules + 4 absolute rules live in `AGENTS.md`. Per-module rationale lives in `core/*/MODULE.md` and `convex/**/MODULE.md`. Convex backend layout (28 tables + 7-step canonical mutation pattern + permission/reservedSlugs/notificationKeys SSOTs) lives in `convex/_arch.md`.
+The 28 locked decisions + 5 performance-critical rules + 4 absolute rules live in `AGENTS.md`. Per-module rationale lives in `core/*/MODULE.md` and `convex/**/MODULE.md`. Convex backend layout (60 tables + 7-step canonical mutation pattern + permission/reservedSlugs/notificationKeys SSOTs) lives in `convex/_arch.md`.
 
 ## How to use this file
 

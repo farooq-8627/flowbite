@@ -53,9 +53,10 @@ This repo is structured to show *judgment and ownership*, not just output:
   stopped, named the four structural costs on paper, and rebuilt the layer — finishing the rewrite
   instead of carrying two systems forever (**side-by-side cleanup**: legacy code dies in the same commit
   the replacement lands).
-- **Own production.** Multi-provider failover that was built but never actually wired; a bulk-create
-  duplicate loop; a cross-org URL-probing security hole; React #310 on logout — each fixed at root
-  cause with a regression test or a written rule left behind. Traced in `SHIPPED.md`.
+- **Own production.** I found and fixed at root cause: a multi-provider failover that shipped but was
+  never wired into the orchestrator (a quota-limited provider returned a blank message until I drove a
+  real failure through it); a bulk-create duplicate loop; a cross-org URL-probing security hole; React
+  #310 on logout — each closed with a regression test or a written rule left behind. Traced in `SHIPPED.md`.
 - **Document for the next engineer (and the next AI agent).** **50 `MODULE.md` files**, a backend
   architecture map (`convex/_arch.md`), and `SHIPPED.md` / `PENDING.md` / `Future-Enhancements.md` doing
   three distinct jobs (done / to-do / deferred-with-reason).
@@ -122,7 +123,7 @@ commit the new layer landed — is the centre of the [case study](./ORBITLY-CASE
 **The AI capability layer**
 - **127 capabilities** across CRM, pipelines, fields, tasks, notes, tags, messaging, files, dashboard,
   analytics, and creative drafting — each one file, co-located with the mutation it wraps.
-- **5 delivery surfaces**: in-app chat, autonomous engine, WhatsApp (two-way, 24h session-window logic),
+- **6 delivery surfaces**: in-app chat, autonomous engine, WhatsApp inbound, WhatsApp outbound,
   MCP (JSON-RPC), REST — all over one execution path; a cross-channel parity test proves identical
   behaviour across them.
 - **7 AI providers** via the Vercel AI SDK (Anthropic, OpenAI, Google, Groq, Mistral, xAI, OpenRouter)
